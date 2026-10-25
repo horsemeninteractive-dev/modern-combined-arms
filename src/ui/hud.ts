@@ -896,17 +896,35 @@ export class HUD {
       const totalHp = entities.reduce((a, e) => a + e.hp, 0);
       const totalMax = entities.reduce((a, e) => a + e.maxHp, 0);
       const frac = totalMax > 0 ? totalHp / totalMax : 0;
+      const stance = units[0]?.stance ?? 'aggressive';
+      // The breakdown lives in the status column so no line has to be clipped:
+      // up to three types by strength, then a count of the rest.
+      const mix = [...types.entries()].sort((a, b) => b[1] - a[1]);
+      const shown = mix.slice(0, 3);
+      const hidden = mix.length - shown.length;
+      const composition = `
+        ${shown.map(([id, n]) => `<div class="group-mix"><span>${escapeHtml(UNITS[id]?.shortName ?? id)}</span><b>×${n}</b></div>`).join('')}
+        ${hidden > 0 ? `<div class="group-mix more"><span>${hidden} more type${hidden === 1 ? '' : 's'}</span></div>` : ''}`;
+      const role = units.length === 0 ? 'STRUCTURES' : `${stance.toUpperCase()} STANCE`;
       body.innerHTML = `
         <div class="sel-primary">
           <div class="sel-main">
             ${this.thumbMarkup(lead.kind, lead.defId, ownerColor(game, lead), 'portrait', leadIcon, 'sel-icon', entities.length)}
             <div class="sel-info">
-              <div class="sel-title"><h3>${units.length} units</h3><span>${buildings.length} structures</span></div>
-              <div class="sel-role">${[...types.entries()].map(([id, n]) => `${UNITS[id]?.shortName ?? id} ×${n}`).join(' · ')}</div>
-              <div class="hp-block"><div class="hp-label"><span>GROUP INTEGRITY</span><span>${Math.round(totalHp)} / ${Math.round(totalMax)}</span></div><div class="hp-bar"><i class="${hpClass(frac)}" style="width:${frac * 100}%"></i></div></div>
+              <div class="sel-title"><h3>${units.length} ${units.length === 1 ? 'unit' : 'units'}</h3><span>${buildings.length > 0 ? `${buildings.length} ${buildings.length === 1 ? 'structure' : 'structures'}` : ''}</span></div>
+              <div class="sel-role">${role}</div>
             </div>
           </div>
         </div>
+        <div class="sel-stats">
+          <div class="stat-grid">
+            <div class="stat"><span>UNITS</span><b>${units.length}</b></div>
+            <div class="stat"><span>STRUCTURES</span><b>${buildings.length}</b></div>
+            <div class="stat"><span>INTEGRITY</span><b>${Math.round(frac * 100)}%</b></div>
+            <div class="stat"><span>TYPES</span><b>${mix.length}</b></div>
+          </div>
+        </div>
+        <div class="sel-notes">${composition}</div>
         <div class="sel-actions">
           ${this.stanceButtons(entities)}
           ${this.garrisonOrderButtons(entities)}
@@ -928,7 +946,9 @@ export class HUD {
     const garrisonDef = e.kind === 'building' ? BUILDINGS[e.defId]?.garrison : undefined;
     const occupants = garrisonDef ? game.garrisonOccupants(e.id) : [];
     const stateText = objective ? objective.caption : stateLabel(e);
-    const roleText = objective ? `${def?.role ?? ''} · ${stateText}` : `${def?.role ?? ''} · ${stateText}`;
+    // Role only: the live state is already a value in the middle column, so
+    // repeating it here only pushed the role line past the column width.
+    const roleText = objective ? `${def?.role ?? ''} · ${stateText}` : (def?.role ?? '');
     // An objective's primary vital is who holds it and how far a capture has
     // progressed. Capture-only structures (relays, forward depots) show control
     // alone; destructible infrastructure adds an integrity bar beneath it.
@@ -945,7 +965,7 @@ export class HUD {
     const integrityBlock =
       e.kind !== 'building' || isIndestructibleStructure(e.defId)
         ? ''
-        : `<div class="hp-block"><div class="hp-label"><span>INTEGRITY</span><span>${Math.ceil(e.hp)} / ${Math.ceil(e.maxHp)}</span></div><div class="hp-bar"><i class="${hpClass(frac)}" style="width:${frac * 100}%"></i></div></div>`;
+        : `<div class="hp-block"><div class="hp-label"><span>INTEGRITY</span><span>${Math.ceil(e.hp)}/${Math.ceil(e.maxHp)}</span></div><div class="hp-bar"><i class="${hpClass(frac)}" style="width:${frac * 100}%"></i></div></div>`;
     const vitalBlock = `${controlBlock}${integrityBlock}`;
     let stats = '';
     if (e.kind === 'unit' && def && 'speed' in def) {
@@ -962,31 +982,46 @@ export class HUD {
         </div>`;
     } else if (e.kind === 'building' && def) {
       const q = e.queue[0];
-      const benefit = BUILDINGS[e.defId] ? structureBenefit(BUILDINGS[e.defId]) : '';
+      // Stat cells are one short value each, so the long-form benefit is
+      // abbreviated here; the full wording lives in the data description.
+      const benefit = BUILDINGS[e.defId]
+        ? structureBenefit(BUILDINGS[e.defId])
+            .replace(' requisition/s', ' req/s')
+            .replace(' materials/s', ' mat/s')
+            .replace('-tile scan', ' tile scan')
+        : '';
+      const power = BUILDINGS[e.defId]?.power ?? 0;
+      const compactState = e.construction
+        ? `BUILDING ${Math.round(e.buildProgress * 100)}%`
+        : objective
+          ? objective.progress > 0
+            ? `CAPTURING ${Math.round(objective.progress * 100)}%`
+            : objective.owner >= 0
+              ? 'CONTROLLED'
+              : 'NEUTRAL'
+          : stateLabel(e);
       stats = `
         <div class="stat-grid">
-          <div class="stat"><span>STATE</span><b>${e.construction ? `BUILDING ${Math.round(e.buildProgress * 100)}%` : escapeHtml(stateText)}</b></div>
+          <div class="stat"><span>STATE</span><b>${escapeHtml(compactState)}</b></div>
           <div class="stat"><span>${benefit ? 'BENEFIT' : 'QUEUE'}</span><b>${benefit ? escapeHtml(benefit) : `${e.queue.length}${q ? ` · ${UNITS[q.defId]?.shortName ?? q.defId}` : ''}`}</b></div>
           <div class="stat"><span>VISION</span><b>${def.vision} tiles</b></div>
-          <div class="stat"><span>ROLE</span><b>${escapeHtml(def.role)}</b></div>
+          <div class="stat"><span>POWER</span><b>${power > 0 ? `+${power}` : `${power}`}</b></div>
         </div>`;
     }
-    let facilityNote = '';
+    // Status lines are single fixed-height rows in the right-hand column, which
+    // also carries the vitals: the identity keeps its full width for the name
+    // and role, so neither can be ellipsised away.
+    let statusLines = '';
     if (garrisonDef) {
       const occupancy = Math.min(garrisonDef.capacity, occupants.length);
-      const fill = garrisonDef.capacity > 0 ? occupancy / garrisonDef.capacity : 0;
       const ownerBreakdown = occupants.length === 0
         ? 'EMPTY'
         : occupants.some((u) => u.owner === this.app.localPlayerId)
-          ? 'FRIENDLY OCCUPANTS'
+          ? 'FRIENDLY'
           : this.app.game?.isHostile(occupants[0].owner, this.app.localPlayerId)
-            ? 'HOSTILE OCCUPANTS'
+            ? 'HOSTILE'
             : 'OCCUPIED';
-      facilityNote += `<div class="infra-note garrison-note">
-        <div class="infra-head"><span>GARRISON</span><b>${occupancy}/${garrisonDef.capacity} · ${ownerBreakdown}</b></div>
-        <div class="hp-bar"><i style="width:${fill * 100}%"></i></div>
-        <div class="infra-parts"><span>PROTECTION ${Math.round(garrisonDef.protection * 100)}%</span><span>FIRING SLOTS ${garrisonDef.firingSlots}</span></div>
-      </div>`;
+      statusLines += `<div class="sel-line"><span>GARRISON ${occupancy}/${garrisonDef.capacity} · ${ownerBreakdown}</span><b>${Math.round(garrisonDef.protection * 100)}% PROT · ${garrisonDef.firingSlots} SLOTS</b></div>`;
     }
     if (objective) {
       const radar = BUILDINGS[e.defId]?.scanRadius ?? 0;
@@ -994,10 +1029,23 @@ export class HUD {
         const owner = e.owner;
         const net = owner >= 0 ? game.radarNetwork(owner) : null;
         const online = !!net && net.online > 0 && !net.brownout;
-        facilityNote += `<div class="infra-note"><div class="infra-head"><span>RECONNAISSANCE</span><b class="${online ? 'good' : 'bad'}">${owner < 0 ? 'UNCLAIMED' : online ? `ONLINE · ${net!.contacts} CONTACTS` : net?.brownout ? 'OFFLINE — GRID' : 'OFFLINE'}</b></div><div class="infra-parts"><span>SCAN ${radar} TILES</span><span>${online ? 'PLOTS THROUGH COVER' : 'NOT PROVIDING A FEED'}</span></div></div>`;
+        const feed = owner < 0
+          ? 'UNCLAIMED'
+          : online
+            ? `ONLINE · ${net!.contacts} CONTACTS`
+            : net?.brownout
+              ? 'OFFLINE — GRID'
+              : 'OFFLINE';
+        statusLines += `<div class="sel-line"><span>RADAR ${feed}</span><b>SCAN ${radar} TILES</b></div>`;
       }
     }
-    const desc = def?.description ?? '';
+    const hint = !isOwn && objective
+      ? 'CAPTURE WITH A COMBAT ENGINEER'
+      : !isOwn && garrisonDef
+        ? 'GARRISON WITH INFANTRY'
+        : !isOwn && isEnemy
+          ? 'HOSTILE — ORDER AN ATTACK'
+          : '';
     body.innerHTML = `
       <div class="sel-primary">
         <div class="sel-main">
@@ -1005,17 +1053,14 @@ export class HUD {
           <div class="sel-info">
             <div class="sel-title"><h3>${escapeHtml(def?.name ?? e.defId)}</h3><span>${p ? escapeHtml(FACTIONS[p.factionId]?.shortName ?? p.name) : 'NEUTRAL'}${isOwn ? '' : isEnemy ? ' · HOSTILE' : ''}</span></div>
             <div class="sel-role">${escapeHtml(roleText)}</div>
-            ${vitalBlock}
           </div>
         </div>
       </div>
       <div class="sel-stats">${stats}</div>
       <div class="sel-notes">
-        ${facilityNote}
-        ${!isOwn && objective ? `<div class="sel-orders"><span class="construction-note">${objective.owner === -1 ? 'Unclaimed objective.' : 'Hostile objective.'} Select a Combat Engineer and use CAPTURE to seize it.</span></div>` : ''}
-        ${!isOwn && !objective && garrisonDef ? `<div class="sel-orders"><span class="construction-note">Neutral shelter. Select riflemen or ATGM teams and use GARRISON to occupy it.</span></div>` : ''}
-        ${!isOwn && !objective && !garrisonDef && isEnemy ? `<div class="sel-orders"><span class="construction-note">Hostile asset. Select your forces and order an attack.</span></div>` : ''}
-        <div class="construction-note sel-desc">${escapeHtml(desc)}</div>
+        ${vitalBlock}
+        ${statusLines}
+        ${hint ? `<div class="sel-hint">${hint}</div>` : ''}
       </div>
       <div class="sel-actions">
         ${isOwn ? this.stanceButtons([e]) : ''}

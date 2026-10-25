@@ -1119,7 +1119,11 @@ export class Renderer {
     const style = this.unitMeshes.get(defId);
     if (!style) return;
     const vs = unitVisualScale(defId) * verticalScale;
-    const model = modelFor(x, y, z, -facing, vs, vs);
+    // A unit with no turret mesh aims with its whole body, so it is drawn on
+    // the weapon heading (which follows the hull while walking and the target
+    // while standing). A turreted hull keeps its own heading.
+    const bodyFacing = style.turret ? facing : turretFacing;
+    const model = modelFor(x, y, z, -bodyFacing, vs, vs);
     gl.uniformMatrix4fv(mp.u.uModel, false, model);
     gl.uniform3fv(mp.u.uTeamColor, team);
     gl.uniform1f(mp.u.uAlpha, alpha);
@@ -1128,7 +1132,7 @@ export class Renderer {
     if (style.load && loadFill > 0.01) {
       const load = this.unitMeshes.get(defId)?.load;
       if (load) {
-        const lm = modelFor(x, y + 1.6 * vs, z, -facing, vs, vs * 0.5 * loadFill);
+        const lm = modelFor(x, y + 1.6 * vs, z, -bodyFacing, vs, vs * 0.5 * loadFill);
         gl.uniformMatrix4fv(mp.u.uModel, false, lm);
         load.draw();
         gl.uniformMatrix4fv(mp.u.uModel, false, model);
@@ -1144,7 +1148,7 @@ export class Renderer {
         const swing = 0.15 + 0.5 * pace * Math.sin(phase);
         for (const side of [1, -1]) {
           const hip: Vec3 = [rig.hip[0], rig.hip[1], rig.hip[2] * side];
-          const lm = limbModelMatrix(x, y, z, facing, hip, swing * side, vs);
+          const lm = limbModelMatrix(x, y, z, bodyFacing, hip, swing * side, vs);
           gl.uniformMatrix4fv(mp.u.uModel, false, lm);
           style.leg.draw();
         }

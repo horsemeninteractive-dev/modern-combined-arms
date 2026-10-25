@@ -448,6 +448,32 @@ describe('right-click orders on a shelter', () => {
   });
 });
 
+describe('shelters and the fog of war', () => {
+  it('keeps a neutral shelter unknown until a friendly unit can see it', () => {
+    const game = shelterGame();
+    const house = building(game, 'tenement');
+    expect(game.isVisibleTo(0, house.id)).toBe(false);
+    expect(game.isVisibleTo(1, house.id)).toBe(false);
+  });
+
+  it('reveals the shelter to the side that has line of sight on it', () => {
+    const game = shelterGame([{ defId: 'rifle', owner: 0, x: 22, z: 13 }]);
+    const house = building(game, 'tenement');
+    expect(game.isVisibleTo(0, house.id)).toBe(true);
+    expect(game.isVisibleTo(1, house.id)).toBe(false);
+  });
+
+  it('still charts neutral strategic objectives for both sides', () => {
+    const game = new Game(
+      scenarioWith([{ defId: 'relay', owner: -1, x: 40, z: 8 }], []),
+      { enableAI: false },
+    );
+    const relay = building(game, 'relay');
+    expect(game.isVisibleTo(0, relay.id)).toBe(true);
+    expect(game.isVisibleTo(1, relay.id)).toBe(true);
+  });
+});
+
 describe('AI garrison awareness', () => {
   it('uses a nearby neutral shelter when its base is threatened', () => {
     const scenario = scenarioWith(

@@ -2529,8 +2529,13 @@ export class Game {
         continue;
       }
       if (e.owner === -1) {
-        set.add(e.id); // Neutral objectives are always charted.
-        continue;
+        // Strategic objectives are charted for both sides. Neutral ground and
+        // its shelters (tenements, ruins) are not: they only appear once a
+        // friendly unit can actually see the tile they stand on.
+        if (BUILDINGS[e.defId]?.capturable) {
+          set.add(e.id);
+          continue;
+        }
       }
       if (e.kind === 'unit' && e.garrisonId) continue;
       const radar = radars.find(
@@ -2559,7 +2564,9 @@ export class Game {
         }
       }
       set.add(e.id);
-      this.recordContact(team, e);
+      // Contacts are hostile sightings: neutral shelters and objectives can be
+      // charted without ever being filed as an enemy position.
+      if (e.owner >= 0) this.recordContact(team, e);
       if (radar && !previous.has(e.id) && e.kind === 'unit') {
         radarContacts++;
         radarSource ??= radar;
@@ -3373,11 +3380,24 @@ export class Game {
    * heading. It never gates firing, so firing rates are unchanged.
    */
   private updateTurret(e: Entity, def: UnitDef, dt: number): void {
-    if (!def.turretRate) return;
     const target = e.aimTargetId ? this.getEntity(e.aimTargetId) : undefined;
     const valid = !!target && target.hp > 0 && this.isHostile(e.owner, target.owner);
     if (!valid) {
       e.aimTargetId = 0;
+    }
+    if (!def.turretRate) {
+      // Turretless units aim with the whole body. On these units turretFacing
+      // is presentation state -- nothing rotates a rifle's muzzle offset with
+      // it -- so a squad standing its ground turns to face what it is shooting
+      // at while movement, firing maths and the tuned AI matchups stay put.
+      // Walking squads keep their weapon heading on the direction of travel.
+      if (e.path.length > 0 || e.state === 'moving') {
+        e.turretFacing = e.facing;
+        return;
+      }
+      const bearing = valid ? angleTo(e.x, e.z, target!.x, target!.z) : e.facing;
+      e.turretFacing = turnToward(e.turretFacing, bearing, def.turnRate * dt);
+      return;
     }
     const desired = valid ? angleTo(e.x, e.z, target!.x, target!.z) : e.facing;
     e.turretFacing = turnToward(e.turretFacing, desired, def.turretRate * dt);

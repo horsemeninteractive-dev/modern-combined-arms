@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Game } from '../src/sim/game';
 import { TILE_SIZE } from '../src/sim/constants';
+import { normalizeAngle } from '../src/core/math';
 import { islandWith } from './helpers';
 
 function newGame(ai = false) {
@@ -82,6 +83,30 @@ describe('land combat', () => {
     playerTank.z = 38 * TILE_SIZE;
     game.advance(20 * 4);
     expect(playerTank.targetId).toBe(0);
+  });
+
+  it('turns a stationary rifleman to face what it is firing at', () => {
+    const game = newGame();
+    const rifle = unit(game, 'rifle', 0);
+    const enemy = unit(game, 'tank', 1);
+    rifle.order = null;
+    rifle.path = [];
+    rifle.x = 26 * TILE_SIZE;
+    rifle.z = 38 * TILE_SIZE;
+    // Close enough for rifle fire, and off the rifleman's initial heading.
+    enemy.x = 29 * TILE_SIZE;
+    enemy.z = 35 * TILE_SIZE;
+    enemy.order = null;
+    enemy.path = [];
+    const expected = Math.atan2(enemy.z - rifle.z, enemy.x - rifle.x);
+    rifle.facing = expected + Math.PI;
+    rifle.turretFacing = expected + Math.PI;
+    game.advance(20 * 3);
+    expect(rifle.targetId !== 0 || rifle.aimTargetId !== 0).toBe(true);
+    // The drawn heading turns onto the target…
+    expect(Math.abs(normalizeAngle(rifle.turretFacing - expected))).toBeLessThan(0.25);
+    // …while the hull heading the simulation moves and fires from is untouched.
+    expect(Math.abs(normalizeAngle(rifle.facing - (expected + Math.PI)))).toBeLessThan(0.01);
   });
 
   it('destroys structures under sustained fire', () => {
