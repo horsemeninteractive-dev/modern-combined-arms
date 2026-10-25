@@ -432,7 +432,9 @@ export class App {
       if (seen.has(id)) continue;
       const e = this.game.getEntity(id);
       if (!e || e.hp <= 0) continue;
-      if (e.owner !== this.localPlayerId && !this.game.isVisibleTo(this.localPlayerId, id)) continue;
+      // A charted structure can still be selected after it slips out of vision;
+      // a hidden one cannot be clicked at all.
+      if (e.owner !== this.localPlayerId && !this.game.isKnownTo(this.game.teamOf(this.localPlayerId), id)) continue;
       seen.add(id);
       next.push(id);
       if (next.length >= 48) break;
@@ -477,7 +479,10 @@ export class App {
     let bestD = Infinity;
     for (const e of this.game.state.entities) {
       if (e.hp <= 0) continue;
-      if (e.owner !== this.localPlayerId && !this.game.isVisibleTo(this.localPlayerId, e.id)) continue;
+      if (
+        e.owner !== this.localPlayerId &&
+        !this.game.isKnownTo(this.game.teamOf(this.localPlayerId), e.id)
+      ) continue;
       const y = terrainVisualHeight(this.game.state.scenario, e.x, e.z) + (e.kind === 'unit' && UNITS[e.defId]?.domain === 'air' ? 12 : 1);
       const p = this.renderer.camera.worldToScreen(e.x, y, e.z);
       if (!p.visible) continue;

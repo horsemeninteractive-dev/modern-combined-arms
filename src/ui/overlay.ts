@@ -379,7 +379,12 @@ export class Overlay {
     const p = game.player(e.owner);
     const faction = p ? FACTIONS[p.factionId]?.shortName ?? p.name : 'NEUTRAL';
     const title = def.name;
-    const sub = `${faction} · ${Math.ceil(e.hp)}/${Math.ceil(e.maxHp)}${e.construction ? ' · UNDER CONSTRUCTION' : ''}`;
+    // A charted structure outside vision reports no live integrity: the player
+    // only remembers that it is there.
+    const remembered = game.visionStateOf(game.teamOf(app.localPlayerId), e.id) === 'remembered';
+    const sub = remembered
+      ? `${faction} · LAST KNOWN POSITION`
+      : `${faction} · ${Math.ceil(e.hp)}/${Math.ceil(e.maxHp)}${e.construction ? ' · UNDER CONSTRUCTION' : ''}`;
     ctx.font = '600 11px Inter, Segoe UI, sans-serif';
     const w = Math.max(ctx.measureText(title).width, ctx.measureText(sub).width) + 18;
     ctx.fillStyle = 'rgba(7,12,14,0.9)';

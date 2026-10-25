@@ -532,9 +532,23 @@ export interface GameState {
   ai: AIControlState;
   /** Records of last known enemy sightings per team, keyed by entity id. */
   contacts: ContactRecord[];
+  /**
+   * Structures each team has seen at least once. Buildings never move, so a
+   * charted structure stays on the map as a remembered silhouette once it
+   * drops out of vision; units are never charted.
+   */
+  charted: ChartedStructure[];
   commandCount: number;
   /** True once the scenario has been initialised fully. */
   ready: boolean;
+}
+
+/** How much of a structure a team currently knows about. */
+export type VisionState = 'visible' | 'remembered' | 'hidden';
+
+export interface ChartedStructure {
+  team: number;
+  entityId: number;
 }
 
 export interface ContactRecord {

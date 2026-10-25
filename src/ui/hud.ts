@@ -1736,9 +1736,16 @@ export class HUD {
       if (e.hp <= 0) continue;
       // Garrisoned infantry are shown by their shelter marker.
       if (e.kind === 'unit' && e.garrisonId) continue;
-      if (e.owner !== this.app.localPlayerId && !game.isVisibleTo(this.app.localPlayerId, e.id) && !game.contactsFor(this.app.localPlayerId).some((c) => c.entityId === e.id)) continue;
+      const vision = e.owner === this.app.localPlayerId
+        ? 'visible'
+        : game.visionStateOf(game.teamOf(this.app.localPlayerId), e.id);
+      const contact = vision === 'hidden' &&
+        game.contactsFor(this.app.localPlayerId).some((c) => c.entityId === e.id);
+      if (vision === 'hidden' && !contact) continue;
       const tx = e.x / TILE_SIZE;
       const tz = e.z / TILE_SIZE;
+      // Remembered structures and cold contacts stay on the map as faint marks.
+      ctx.globalAlpha = vision === 'remembered' || contact ? 0.42 : 1;
       ctx.fillStyle = e.owner === -1 ? '#c9d2ce' : ownerColor(game, e);
       if (e.kind === 'building') {
         const def = BUILDINGS[e.defId];
@@ -1746,6 +1753,7 @@ export class HUD {
       } else {
         ctx.fillRect(tx - 0.7, tz - 0.7, 1.8, 1.8);
       }
+      ctx.globalAlpha = 1;
       if (this.app.selected.includes(e.id)) {
         ctx.strokeStyle = '#f1c27e';
         ctx.lineWidth = 1.25 / strokeScale;

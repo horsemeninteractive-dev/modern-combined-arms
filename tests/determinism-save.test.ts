@@ -105,6 +105,25 @@ describe('save and load', () => {
     expect(() => Game.fromSave(save)).toThrow(/not installed|corrupted/i);
   });
 
+  it('keeps charted structures remembered across a reload', () => {
+    const game = new Game(scenario(), { enableAI: false });
+    const scout = game.state.entities.find((e) => e.owner === 0 && e.defId === 'tank')!;
+    const relay = game.state.entities.find((e) => e.defId === 'relay')!;
+    const home = { x: scout.x, z: scout.z };
+    scout.x = relay.x + 6;
+    scout.z = relay.z;
+    game.advance(20);
+    expect(game.visionStateOf(0, relay.id)).toBe('visible');
+    scout.x = home.x;
+    scout.z = home.z;
+    game.advance(20);
+    expect(game.visionStateOf(0, relay.id)).toBe('remembered');
+
+    const restored = Game.fromSave(JSON.parse(JSON.stringify(game.toSave())), { enableAI: false });
+    expect(restored.visionStateOf(0, relay.id)).toBe('remembered');
+    expect(restored.isVisibleTo(0, relay.id)).toBe(false);
+  });
+
   it('preserves depleted ore fields and projectile state', () => {
     const game = new Game(scenario(), { enableAI: false });
     const tank = game.state.entities.find((e) => e.owner === 0 && e.defId === 'tank')!;

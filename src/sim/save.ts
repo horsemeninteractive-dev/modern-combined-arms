@@ -2,6 +2,7 @@ import { SAVE_FORMAT, SAVE_FORMAT_VERSION } from './constants';
 import type { Scenario } from './scenario';
 import type {
   AIControlState,
+  ChartedStructure,
   ContactRecord,
   Entity,
   PlayerState,
@@ -38,6 +39,8 @@ export interface SerializedGameState {
   startedAtTick: number;
   ai: AIControlState;
   contacts: ContactRecord[];
+  /** Structures each team has seen, so remembered silhouettes survive a reload. */
+  charted?: ChartedStructure[];
   commandCount: number;
 }
 

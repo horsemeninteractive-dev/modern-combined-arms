@@ -68,6 +68,7 @@ import type {
   AIDifficulty,
   ContactRecord,
   PathPoint,
+  VisionState,
 } from './types';
 
 export interface GameOptions {
@@ -130,6 +131,8 @@ export class Game {
   pending: Command[] = [];
   ai: AIController | null = null;
   private byId = new Map<number, Entity>();
+  /** Fast lookup over `state.charted`, keyed "team:entityId". */
+  private chartedIndex = new Set<string>();
   private incomeSamples = 0;
   private lastMatsSample: number[] = [];
   /** Last grid state announced per owner; presentation-only, never saved. */
@@ -160,6 +163,7 @@ export class Game {
         opts.aiDifficulty ?? 'veteran',
       ),
       contacts: [],
+      charted: [],
       commandCount: 0,
       ready: false,
     };
@@ -2528,15 +2532,8 @@ export class Game {
         set.add(e.id);
         continue;
       }
-      if (e.owner === -1) {
-        // Strategic objectives are charted for both sides. Neutral ground and
-        // its shelters (tenements, ruins) are not: they only appear once a
-        // friendly unit can actually see the tile they stand on.
-        if (BUILDINGS[e.defId]?.capturable) {
-          set.add(e.id);
-          continue;
-        }
-      }
+      // Every structure, neutral objectives included, has to be seen before
+      // it is drawn: nothing is charted for free.
       if (e.kind === 'unit' && e.garrisonId) continue;
       const radar = radars.find(
         (r) => dist(r.x, r.z, e.x, e.z) <= r.radius * TILE_SIZE,
@@ -2564,6 +2561,9 @@ export class Game {
         }
       }
       set.add(e.id);
+      // Structures never move, so a building that has been seen once is kept
+      // as a remembered silhouette after it drops out of vision.
+      if (e.kind === 'building' && this.teamOf(e.owner) !== team) this.chartBuilding(team, e.id);
       // Contacts are hostile sightings: neutral shelters and objectives can be
       // charted without ever being filed as an enemy position.
       if (e.owner >= 0) this.recordContact(team, e);
@@ -2621,6 +2621,38 @@ export class Game {
   isVisibleTo(team: number, entityId: number): boolean {
     if (!this.state.scenario.settings.fog) return true;
     return this.visible[team]?.has(entityId) ?? false;
+  }
+
+  /** Record a structure as seen by a team; safe to call every vision refresh. */
+  private chartBuilding(team: number, entityId: number): void {
+    const key = `${team}:${entityId}`;
+    if (this.chartedIndex.has(key)) return;
+    this.chartedIndex.add(key);
+    this.state.charted.push({ team, entityId });
+  }
+
+  private rebuildChartedIndex(): void {
+    this.chartedIndex.clear();
+    for (const c of this.state.charted) this.chartedIndex.add(`${c.team}:${c.entityId}`);
+  }
+
+  /**
+   * Three-state knowledge for drawing: a unit is only ever visible or hidden,
+   * while a structure the team has already charted stays on the map as a
+   * dimmed silhouette once it leaves vision. Structure coordinates never move,
+   * so a remembered building is always drawn where it really is.
+   */
+  visionStateOf(team: number, entityId: number): VisionState {
+    if (!this.state.scenario.settings.fog) return 'visible';
+    if (this.visible[team]?.has(entityId)) return 'visible';
+    const e = this.byId.get(entityId);
+    if (!e || e.hp <= 0 || e.kind !== 'building') return 'hidden';
+    return this.chartedIndex.has(`${team}:${entityId}`) ? 'remembered' : 'hidden';
+  }
+
+  /** Visible now, or a structure the team can still recall. */
+  isKnownTo(team: number, entityId: number): boolean {
+    return this.visionStateOf(team, entityId) !== 'hidden';
   }
 
   visibleEnemies(owner: number): Entity[] {
@@ -3919,6 +3951,10 @@ export class Game {
     }
     this.state.entities = this.state.entities.filter((e) => e.hp > 0);
     this.state.contacts = this.state.contacts.filter((c) => this.byId.has(c.entityId));
+    if (this.state.charted.some((c) => !this.byId.has(c.entityId))) {
+      this.state.charted = this.state.charted.filter((c) => this.byId.has(c.entityId));
+      this.rebuildChartedIndex();
+    }
     // Clear orders pointing at dead entities.
     for (const e of this.state.entities) {
       if (e.order?.targetId && !this.byId.has(e.order.targetId)) {
@@ -4140,6 +4176,7 @@ export class Game {
         startedAtTick: rest.startedAtTick,
         ai: rest.ai,
         contacts: rest.contacts,
+        charted: rest.charted,
         commandCount: rest.commandCount,
       },
       localPlayerId: this.localPlayerId,
@@ -4213,6 +4250,8 @@ export class Game {
       }
     }
     game.visible = [[], []].map(() => new Set<number>());
+    game.state.charted = Array.isArray(state.charted) ? state.charted : [];
+    game.rebuildChartedIndex();
     game.state.ready = true;
     game.refreshVision(false);
     game.lastMatsSample = game.state.players.map((p) => p.stats.matsGathered);

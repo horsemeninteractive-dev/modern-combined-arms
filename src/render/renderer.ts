@@ -1019,12 +1019,17 @@ export class Renderer {
     for (const e of game.state.entities) {
       if (e.hp <= 0) continue;
       if (e.kind === 'unit' && e.garrisonId) continue;
-      if (!game.isVisibleTo(team, e.id)) continue;
+      // Units are only ever drawn in vision. A structure the team has charted
+      // stays on the map as a dimmed silhouette once it leaves vision, and a
+      // structure never seen is not drawn at all.
+      const vision = game.visionStateOf(team, e.id);
+      if (vision === 'hidden') continue;
+      const remembered = vision === 'remembered';
       const v = this.visuals.get(e.id);
       const x = v?.x ?? e.x;
       const z = v?.z ?? e.z;
       const facing = v?.facing ?? e.facing;
-      const turret = v?.turret ?? e.turretFacing;
+      const turret = remembered ? e.facing : v?.turret ?? e.turretFacing;
       const def = BUILDINGS[e.defId] ? null : UNITS[e.defId];
       const isAir = def?.domain === 'air';
       const y = isAir
@@ -1033,17 +1038,19 @@ export class Renderer {
           : AIRCRAFT_ALTITUDE + Math.sin(this.time * 1.7 + e.id) * 0.16
         : tileWorldHeight(this.scenario!, x, z) + (def?.domain === 'naval' ? 0.12 : 0);
       const bob = def?.domain === 'naval' ? Math.sin(this.time * 1.2 + e.id * 0.7) * 0.06 : 0;
-      const flash = game.state.tick - e.lastHitTick < 3 ? 0.75 : 0;
+      const flash = !remembered && game.state.tick - e.lastHitTick < 3 ? 0.75 : 0;
       // An occupied shelter switches to its garrisoned model and takes the trim
-      // colour of the infantry inside, whoever owns the building itself.
+      // colour of the infantry inside, whoever owns the building itself. A
+      // remembered structure shows the shape that was charted, not live state.
       const occupants =
-        e.kind === 'building' && BUILDINGS[e.defId]?.garrison
+        !remembered && e.kind === 'building' && BUILDINGS[e.defId]?.garrison
           ? game.garrisonOccupants(e.id)
           : [];
       const garrisonOwner = occupants.length > 0 ? occupants[0].owner : null;
       const construction = e.construction;
       const progress = construction ? 0.25 + e.buildProgress * 0.75 : 1;
-      const alpha = construction ? 0.72 : e.hp / e.maxHp < 0.25 ? 0.94 : 1;
+      const liveAlpha = construction ? 0.72 : e.hp / e.maxHp < 0.25 ? 0.94 : 1;
+      const alpha = remembered ? 0.5 : liveAlpha;
       this.drawEntityMesh(
         e.kind,
         e.defId,

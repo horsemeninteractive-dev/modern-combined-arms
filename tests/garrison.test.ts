@@ -463,14 +463,60 @@ describe('shelters and the fog of war', () => {
     expect(game.isVisibleTo(1, house.id)).toBe(false);
   });
 
-  it('still charts neutral strategic objectives for both sides', () => {
+  it('hides a neutral objective that has never been seen', () => {
     const game = new Game(
       scenarioWith([{ defId: 'relay', owner: -1, x: 40, z: 8 }], []),
       { enableAI: false },
     );
     const relay = building(game, 'relay');
-    expect(game.isVisibleTo(0, relay.id)).toBe(true);
-    expect(game.isVisibleTo(1, relay.id)).toBe(true);
+    expect(game.isVisibleTo(0, relay.id)).toBe(false);
+    expect(game.visionStateOf(0, relay.id)).toBe('hidden');
+    expect(game.isKnownTo(0, relay.id)).toBe(false);
+  });
+
+  it('remembers a charted structure after it leaves vision', () => {
+    const game = new Game(
+      scenarioWith([
+        { defId: 'relay', owner: -1, x: 40, z: 8 },
+        { defId: 'relay', owner: -1, x: 10, z: 30 },
+      ], [{ defId: 'rifle', owner: 0, x: 38, z: 8 }], true),
+      { enableAI: false },
+    );
+    const relays = game.state.entities.filter((e) => e.defId === 'relay');
+    // Authored order is preserved, so [0] is the relay beside the scout.
+    const seenFirst = relays[0];
+    const unseen = relays[1];
+    const scout = game.entitiesOf(0, 'unit').find((e) => e.defId === 'rifle')!;
+    expect(game.visionStateOf(0, seenFirst.id)).toBe('visible');
+    expect(game.visionStateOf(0, unseen.id)).toBe('hidden');
+
+    // Walk the scout home: the charted relay becomes a remembered silhouette,
+    // while the one never seen stays unknown.
+    scout.x = 3 * TILE_SIZE;
+    scout.z = 3 * TILE_SIZE;
+    game.advance(20);
+    expect(game.isVisibleTo(0, seenFirst.id)).toBe(false);
+    expect(game.visionStateOf(0, seenFirst.id)).toBe('remembered');
+    expect(game.isKnownTo(0, seenFirst.id)).toBe(true);
+    expect(game.visionStateOf(0, unseen.id)).toBe('hidden');
+    // Units are never charted: only structures are remembered.
+    expect(game.state.charted.every((c) => c.team === 0)).toBe(true);
+  });
+
+  it('never remembers a unit, only the ground it was standing on', () => {
+    const game = new Game(
+      scenarioWith([], [
+        { defId: 'rifle', owner: 0, x: 24, z: 20 },
+        { defId: 'rifle', owner: 1, x: 26, z: 20 },
+      ]),
+      { enableAI: false },
+    );
+    const enemy = game.entitiesOf(1, 'unit')[0];
+    expect(game.visionStateOf(0, enemy.id)).toBe('visible');
+    enemy.x = 44 * TILE_SIZE;
+    enemy.z = 34 * TILE_SIZE;
+    game.advance(20);
+    expect(game.visionStateOf(0, enemy.id)).toBe('hidden');
   });
 });
 
