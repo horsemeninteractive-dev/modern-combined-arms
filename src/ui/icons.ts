@@ -1,0 +1,75 @@
+const PATHS: Record<string, string> = {
+  rifle: `<circle cx="12" cy="6.5" r="2"/><path d="M12 8.5v6.5M9 11.5h6M12 15v6M10 21h4"/><path d="M14.5 11.5l4.5-1.2"/>`,
+  atgm: `<circle cx="6.5" cy="8" r="1.6"/><path d="M6.5 10v6M4 13h5M6.5 16v4"/><path d="M10 16l9-4M19 12l2 1-1.4 2.2-2-.9z"/><path d="M12 18l5-2"/>`,
+  medic: `<path d="M12 2l8 3v6c0 5-3.4 8.6-8 11-4.6-2.4-8-6-8-11V5z"/><path d="M12 7v10M7 12h10"/>`,
+  engineer: `<path d="M3 15V9h9l2 6H3z"/><circle cx="6" cy="17.5" r="2"/><circle cx="12" cy="17.5" r="2"/><path d="M14 15l4-3 3 2M17 12v6M3 9V6h4"/>`,
+  tank: `<path d="M3 16h18v2H3z"/><path d="M5 14V9h10l2 5"/><circle cx="11" cy="11" r="2.6"/><path d="M13.5 11H22"/><path d="M4 19h3M9 19h3M14 19h3"/>`,
+  recon: `<path d="M3 14l2-5h10l3 5"/><path d="M3 14h18v3H3z"/><circle cx="6.5" cy="17.5" r="1.8"/><circle cx="16.5" cy="17.5" r="1.8"/><path d="M9 9V4M9 5l3 1"/>`,
+  aa: `<path d="M3 15l2-4h11l3 4"/><path d="M3 15h16v3H3z"/><circle cx="6" cy="18" r="1.7"/><circle cx="15" cy="18" r="1.7"/><path d="M13 11l6-5M15 12l6-5M17 12l4-3"/>`,
+  harvester: `<path d="M3 13V7h10v6"/><path d="M13 9h5l3 4v3H3"/><circle cx="6" cy="17" r="2"/><circle cx="16" cy="17" r="2"/><path d="M5 10h6M16 9v3"/>`,
+  fighter: `<path d="M2 12l8-2 5-6 2 6 5 1-5 2-2 6-5-6-8 1z"/>`,
+  corvette: `<path d="M2 14h18l2 3H2z"/><path d="M5 14V9h7l3 5M8 9V6h4v3"/><path d="M14 8h2l1 2h-2z"/>`,
+  command: `<path d="M4 20V8l5-3 5 3v12"/><path d="M9 5V2M9 2l4 1-4 2M14 20V12h4v8"/><path d="M2 20h20"/>`,
+  barracks: `<path d="M3 20V11l9-5 9 5v9"/><path d="M3 15h18M8 20v-5h8v5"/><path d="M12 6V3"/>`,
+  factory: `<path d="M3 20V10l5 3V10l5 3V7h6v13z"/><path d="M16 7V3h3v4"/><path d="M6 20v-4h4v4"/>`,
+  refinery: `<path d="M4 20V8h6v12"/><ellipse cx="7" cy="8" rx="3" ry="1.4"/><path d="M13 20V12h6v8"/><ellipse cx="16" cy="12" rx="3" ry="1.4"/><path d="M10 16h3M3 20h18"/>`,
+  airfield: `<path d="M3 20l5-14h8l5 14"/><path d="M9 7h6M7 13h10M5 20h14"/><path d="M17 6V2h3v4"/>`,
+  shipyard: `<path d="M2 18h20M5 18V8h8v10"/><path d="M13 11l4-3 3 3"/><path d="M4 8h7M8 8V4M7 6h2M16 8v10"/>`,
+  sam: `<path d="M3 19h18M6 19l2-5h8l2 5"/><path d="M10 14l3-9 3 9"/><path d="M13 5V2M9 8h6"/>`,
+  mg: `<path d="M3 20h18M7 20l5-5 5 5"/><path d="M9 15h8M13 15l6-4"/><path d="M17 9h4v3h-4z"/><path d="M6 12h4v3H6z"/>`,
+  atgun: `<path d="M3 20h18M5 17h14"/><path d="M7 17l4-5h3l4 5"/><path d="M11 12l8-5M19 5l2 2"/><path d="M3 12h3M18 12h3"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/>`,
+  relay: `<path d="M8 21l4-17 4 17M6 21h12"/><path d="M9 13h6M10 9h4"/><path d="M5 5a8 8 0 0 1 14 0M7 7a5 5 0 0 1 10 0"/>`,
+  supply: `<path d="M3 10l9-5 9 5-9 5z"/><path d="M3 10v8l9 5 9-5v-8M12 15v8"/><path d="M7 12.2v4.2M17 12.2v4.2"/>`,
+  radarstation: `<path d="M4 21h16M6 21V9h12v12"/><path d="M12 9V4M8.5 6.5a5 5 0 0 1 7 0"/><path d="M9.2 4.8a7.5 7.5 0 0 1 5.6 0"/><path d="M9 14h6M9 17h6"/>`,
+  tenement: `<path d="M5 21V5h14v16M3 21h18"/><path d="M8 8h2v2H8zM14 8h2v2h-2zM8 12h2v2H8zM14 12h2v2h-2zM8 16h2v2H8z"/><path d="M14 16h2v5h-2z"/>`,
+  ruin: `<path d="M4 21V11l4-4 3 3 3-5 6 5v11M2 21h20"/><path d="M8 13v3M12 12v4M17 15v2"/><path d="M14 6l1 2M6 9l1-2"/>`,
+  garrison: `<path d="M4 21V9l8-6 8 6v12"/><path d="M9 21v-6h6v6"/><circle cx="12" cy="10" r="1.4"/><path d="M9 13h6"/>`,
+  ungarrison: `<path d="M4 21V9l8-6 8 6v12"/><path d="M9 21v-6h6v6"/><path d="M4 15H1M4 15l-2-2M4 15l-2 2"/>`,
+  move: `<path d="M12 2v20M12 2l-3 3M12 2l3 3M12 22l-3-3M12 22l3-3M2 12h20M2 12l3-3M2 12l3 3M22 12l-3-3M22 12l-3 3"/>`,
+  attack: `<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>`,
+  attackMove: `<path d="M4 18L18 4M18 4h-6M18 4v6"/><circle cx="8" cy="16" r="3"/><path d="M8 13v6M5 16h6"/>`,
+  stop: `<rect x="5" y="5" width="14" height="14" rx="1"/><path d="M9 9h6v6H9z"/>`,
+  hold: `<path d="M12 2l8 3v6c0 5-3.4 8.6-8 11-4.6-2.4-8-6-8-11V5z"/><path d="M8 12l3 3 5-6"/>`,
+  capture: `<path d="M6 21V3"/><path d="M6 4h12l-3 4 3 4H6"/><path d="M3 21h6"/>`,
+  repair: `<path d="M14.5 4.5a4 4 0 0 0-5.3 5.3L4 15v4h4l5.2-5.2a4 4 0 0 0 5.3-5.3l-2.8 2.8-2.2-2.2z"/><path d="M4 19l3-3"/>`,
+  return: `<path d="M4 12h13a4 4 0 0 0 4-4V4"/><path d="M8 8l-4 4 4 4"/><path d="M12 20h8"/>`,
+  box: `<path d="M3 8V3h5M16 3h5v5M21 16v5h-5M8 21H3v-5" stroke-dasharray="2 2"/><path d="M9 9l6 6M15 9l-6 6" opacity=".3"/>`,
+  pause: `<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>`,
+  settings: `<circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/>`,
+  menu: `<path d="M3 6h18M3 12h18M3 18h18"/>`,
+  alert: `<path d="M12 2l10 18H2z"/><path d="M12 8v6M12 17v1"/>`,
+  log: `<path d="M4 4h16v16H4zM8 8h8M8 12h8M8 16h5"/>`,
+  sound: `<path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 9a4 4 0 0 1 0 6M19 6a8 8 0 0 1 0 12"/>`,
+  materials: `<path d="M12 2l8 5v10l-8 5-8-5V7z"/><path d="M12 7l4 2.5v5L12 17l-4-2.5v-5z"/>`,
+  power: `<path d="M13 2L4 14h6l-1 8 9-12h-6z"/>`,
+  requisition: `<path d="M12 2l9 10-9 10L3 12z"/><path d="M8 12h8M12 8v8" opacity=".55"/>`,
+  target: `<circle cx="12" cy="12" r="8"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/>`,
+  fuel: `<path d="M5 21V5h9v16M7 5V2h5v3M14 9h3l3 3v6a2 2 0 0 1-4 0"/><path d="M8 9h3v4H8z"/>`,
+  ammo: `<rect x="4" y="8" width="4" height="12"/><rect x="10" y="8" width="4" height="12"/><rect x="16" y="8" width="4" height="12"/><path d="M4 8l2-4 2 4M10 8l2-4 2 4M16 8l2-4 2 4"/>`,
+  speed: `<path d="M3 17a9 9 0 1 1 18 0"/><path d="M12 17l4-6"/><circle cx="12" cy="17" r="1.5"/>`,
+  scope: `<circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>`,
+  terrain: `<path d="M2 19l6-11 4 6 3-4 7 9z"/><path d="M4 7h3M17 5h4"/>`,
+  water: `<path d="M3 9c3 0 3 2 6 2s3-2 6-2 3 2 6 2M3 14c3 0 3 2 6 2s3-2 6-2 3 2 6 2M3 19c3 0 3 2 6 2s3-2 6-2 3 2 6 2"/>`,
+  elevation: `<path d="M3 20h18M5 20l5-9 4 5 3-4 3 8"/><path d="M10 11V6M8 8l2-2 2 2"/>`,
+  erase: `<path d="M4 17l8-12 8 8-6 7H7z"/><path d="M4 17h13M9 21h11"/>`,
+  save: `<path d="M4 4h13l3 3v13H4z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/>`,
+  folder: `<path d="M3 6h6l2 2h10v11H3z"/>`,
+  play: `<path d="M7 4l13 8-13 8z"/>`,
+  chevron: `<path d="M8 5l7 7-7 7"/>`,
+  close: `<path d="M5 5l14 14M19 5L5 19"/>`,
+  squad: `<circle cx="8" cy="8" r="2.2"/><path d="M8 11v5M5.5 21h5M5.5 14h5"/><circle cx="16" cy="9" r="2.2"/><path d="M16 12v5M13.5 21h5M13.5 15h5"/>`,
+  build: `<path d="M3 21h18M5 21V10l7-5 7 5v11"/><path d="M9 21v-6h6v6M9 10h6"/>`,
+  commander: `<circle cx="12" cy="7" r="3"/><path d="M5 21v-3a7 7 0 0 1 14 0v3"/><path d="M4 4l2 2M20 4l-2 2"/>`,
+};
+
+export function icon(name: string, cls = ''): string {
+  const path = PATHS[name] ?? PATHS.target;
+  return `<span class="icon ${cls}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${path}</svg></span>`;
+}
+
+export function iconSvg(name: string): string {
+  const path = PATHS[name] ?? PATHS.target;
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
+}
+
+export const ICON_NAMES = Object.keys(PATHS);

@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Local dev server logs and pid files
+.dev/
+.freebuff/
+*.log
+*.pid
+
+# Scratch work: diagnostic scripts, screenshots, packed archives
+tmp/
+ss/
+repomix-output.xml
+MCA.zip
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
