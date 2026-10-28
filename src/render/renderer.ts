@@ -1,7 +1,7 @@
 import { HARVESTER_CAPACITY, TILE_SIZE } from '../sim/constants';
 import { BUILDINGS } from '../data/buildings';
 import { UNITS } from '../data/units';
-import { NATION_LIST, tryIdentityDef } from '../data/factions';
+import { NATION_LIST } from '../data/factions';
 import { footprintCenter } from '../sim/map';
 import type { Scenario } from '../sim/scenario';
 import type { Entity } from '../sim/types';
@@ -63,18 +63,43 @@ import {
 import { ParticleSystem } from './particles';
 import { ParticleGpu, type GpuParticle } from './particleGpu';
 import { ShadowGpu, type GpuShadow } from './shadowGpu';
-import { hexToRgb, type Vec3 } from './math';
-import { limbModelMatrix, turretModelMatrix } from './unitTransform';
+import type { Vec3 } from './math';
+import { teamColorForOwner } from './teamColor';
+import { limbModelMatrix, turretModelMatrix, unitBodyHeading } from './unitTransform';
 import { rotateLocalOffset } from '../core/math';
+import {
+  sampleProjectile,
+  staticMuzzleAnchor,
+  weaponFxProfile,
+  type ProjectileSample,
+} from './combatFx';
 
 const NEAR = 1;
 const FAR = 3000;
+const MAX_WRECKS = 24;
+
+interface VisualWreck {
+  defId: string;
+  x: number;
+  y: number;
+  z: number;
+  facing: number;
+}
 
 interface VisualEntity {
   x: number;
   z: number;
   facing: number;
   turret: number;
+  /**
+   * Heading of the last real displacement. Vehicles are drawn on this while
+   * moving so a collision nudge or a wall-slip correction turns the hull onto
+   * the direction it is actually travelling instead of sliding it sideways.
+   */
+  motion: number;
+  /** Last simulated position, used to measure that displacement. */
+  lastX: number;
+  lastZ: number;
   trailTimer: number;
   damageTimer: number;
   /** Infantry walk cycle phase in radians and 0..1 blend. */
@@ -226,8 +251,12 @@ export class Renderer {
     launcherElevation?: number;
   }>();
   private visuals = new Map<number, VisualEntity>();
+  /** Presentation-only hulks; never entities, picks, saves or collision. */
+  private wrecks: VisualWreck[] = [];
   private trailTimers = new Map<number, number>();
   private projectileTrailTimers = new Map<number, number>();
+  private projectileViews = new Map<number, { previous: ProjectileSample; current: ProjectileSample }>();
+  private simulationAlpha = 1;
   private lastEventSeq = 0;
   private time = 0;
   private shake = 0;
@@ -431,6 +460,8 @@ export class Renderer {
     this.scenario = scenario;
     this.game = null;
     this.visuals.clear();
+    this.wrecks.length = 0;
+    this.projectileViews.clear();
     this.particles.clear();
     this.lastEventSeq = 0;
     this.camera.setMap(scenario.width, scenario.height);
@@ -466,8 +497,10 @@ export class Renderer {
     }
     this.game = game;
     this.visuals.clear();
+    this.wrecks.length = 0;
     this.trailTimers.clear();
     this.projectileTrailTimers.clear();
+    this.projectileViews.clear();
     this.particles.clear();
     if (game) {
       this.lastEventSeq = game.state.eventSeq;
@@ -597,6 +630,11 @@ export class Renderer {
     }
   }
 
+  /** Fraction of the next simulation tick already elapsed, for smooth projectiles. */
+  setSimulationAlpha(alpha: number): void {
+    this.simulationAlpha = alpha < 0 ? 0 : alpha > 1 ? 1 : alpha;
+  }
+
   update(dt: number): void {
     this.time += dt;
     this.particles.update(dt);
@@ -604,6 +642,7 @@ export class Renderer {
     if (this.game) {
       this.consumeEvents(this.game);
       this.updateVisuals(dt, this.game);
+      this.updateProjectileViews(this.game);
       this.emitAmbientEffects(dt, this.game);
       this.updateProjectileTrails(dt, this.game);
       this.refreshOre();
@@ -625,6 +664,9 @@ export class Renderer {
           z: e.z,
           facing: e.facing,
           turret: e.turretFacing,
+          motion: e.facing,
+          lastX: e.x,
+          lastZ: e.z,
           trailTimer: 0,
           damageTimer: 0,
           gait: 0,
@@ -676,11 +718,23 @@ export class Renderer {
       // A unit leaving its bay eases out slowly enough to be seen driving.
       const ease = v.emerge > 0 ? 1 - Math.exp(-dt * 4.5) : k;
       if (v.emerge > 0) v.emerge = Math.max(0, v.emerge - dt);
+      // Measure the step the simulation actually took before easing toward
+      // it. A hull pushed off its centreline is still seen driving that way,
+      // not strafing with its nose fixed.
+      const travelX = e.x - v.lastX;
+      const travelZ = e.z - v.lastZ;
+      v.lastX = e.x;
+      v.lastZ = e.z;
+      if (e.kind === 'unit' && Math.hypot(travelX, travelZ) > 0.004) {
+        const travel = Math.atan2(travelZ, travelX);
+        v.motion += normalizeDiff(travel - v.motion) * k;
+      }
       if (teleport) {
         v.x = e.x;
         v.z = e.z;
         v.facing = e.facing;
         v.turret = e.turretFacing;
+        v.motion = e.facing;
         v.emerge = 0;
       } else {
         v.x += (e.x - v.x) * ease;
@@ -798,12 +852,57 @@ export class Renderer {
     }
   }
 
+  /**
+   * Keep the last two simulated positions of every projectile. The render
+   * thread draws between them using the fraction of a tick that has elapsed,
+   * so a fast bullet is a short streak instead of a dot that teleports three
+   * tiles at once.
+   */
+  private updateProjectileViews(game: Game): void {
+    const seen = new Set<number>();
+    for (const p of game.state.projectiles) {
+      seen.add(p.id);
+      const current: ProjectileSample = { x: p.x, y: p.y, z: p.z };
+      const view = this.projectileViews.get(p.id);
+      if (!view) {
+        this.projectileViews.set(p.id, {
+          previous: { x: p.startX ?? p.x, y: p.startY ?? p.y, z: p.startZ ?? p.z },
+          current,
+        });
+        continue;
+      }
+      if (p.x !== view.current.x || p.y !== view.current.y || p.z !== view.current.z) {
+        view.previous = view.current;
+        view.current = current;
+      }
+    }
+    for (const id of [...this.projectileViews.keys()]) {
+      if (!seen.has(id)) this.projectileViews.delete(id);
+    }
+  }
+
+  private projectilePosition(id: number, fallback: ProjectileSample): ProjectileSample {
+    const view = this.projectileViews.get(id);
+    if (!view) return fallback;
+    return sampleProjectile(view.previous, view.current, this.simulationAlpha);
+  }
+
+  private pointVisible(game: Game, x: number, z: number): boolean {
+    if (!this.scenario?.settings.fog) return true;
+    const team = game.teamOf(game.localPlayerId);
+    if (team < 0) return true;
+    return game.fogAt(team, Math.floor(x / TILE_SIZE), Math.floor(z / TILE_SIZE)) === 2;
+  }
+
   private updateProjectileTrails(dt: number, game: Game): void {
     if (!this.settings.effects) return;
     const seen = new Set<number>();
     for (const p of game.state.projectiles) {
       seen.add(p.id);
-      if (p.kind !== 'missile' && p.kind !== 'sam') continue;
+      if (!weaponFxProfile(p.weaponId).trailSmoke) continue;
+      // A smoking missile beyond the vision boundary is still hidden: the
+      // trail is presentation, not a sensor.
+      if (!this.pointVisible(game, p.x, p.z)) continue;
       let t = this.projectileTrailTimers.get(p.id) ?? 0;
       t -= dt;
       if (t <= 0) {
@@ -832,38 +931,92 @@ export class Renderer {
         game.fogAt(team, tx, tz) === 2;
       if (!visible) continue;
       const groundY = tileWorldHeight(this.scenario!, ev.x, ev.z);
+      const profile = weaponFxProfile(ev.weaponId);
       switch (ev.type) {
         case 'shot': {
           const shooter = ev.entityId ? game.getEntity(ev.entityId) : undefined;
           // The simulation reports the real muzzle height; only fall back to
           // the old per-domain guess for legacy events.
-          const y = ev.y ?? (shooter?.kind === 'unit' && UNITS[shooter.defId]?.domain === 'air'
+          let mx = ev.x;
+          let my = ev.y ?? (shooter?.kind === 'unit' && UNITS[shooter.defId]?.domain === 'air'
             ? AIR_UNIT_ALTITUDE
             : groundY + (shooter?.kind === 'building' ? 3.2 : 1.5));
-          this.particles.muzzle(ev.x, y, ev.z, !!shooter && (shooter.defId === 'tank' || shooter.defId === 'corvette'));
+          let mz = ev.z;
+          // Static weapons fire from centre-of-building in the simulation. Draw
+          // the flash at the authored barrel tip instead, without changing the
+          // projectile origin or the gameplay hardpoint.
+          if (shooter?.kind === 'building') {
+            const baseY = tileWorldHeight(this.scenario!, shooter.x, shooter.z);
+            const anchor = staticMuzzleAnchor(
+              shooter.defId,
+              shooter.x,
+              baseY,
+              shooter.z,
+              shooter.facing,
+              shooter.turretFacing,
+            );
+            if (anchor) {
+              mx = anchor.x;
+              my = anchor.y;
+              mz = anchor.z;
+            }
+          }
+          this.particles.muzzle(mx, my, mz, profile.muzzleScale, profile.muzzleSmoke);
           break;
         }
-        case 'impact':
-          this.particles.impact(ev.x, groundY + 0.5, ev.z, isWaterAt(this.scenario!, ev.x, ev.z));
-          break;
-        case 'explosion': {
-          const water = isWaterAt(this.scenario!, ev.x, ev.z);
-          if (water) {
-            this.particles.impact(ev.x, 0.3, ev.z, true);
+        case 'impact': {
+          const y = ev.y ?? groundY + 0.5;
+          const water = ev.surface === 'water' || isWaterAt(this.scenario!, ev.x, ev.z);
+          if (ev.hit && !water) {
+            if (ev.surface === 'ground') {
+              this.particles.hit(ev.x, y, ev.z, profile.hitSparkScale);
+            } else {
+              this.particles.sparks(ev.x, y, ev.z, profile.hitSparkScale);
+            }
           } else {
-            this.particles.explosion(ev.x, groundY + 0.4, ev.z, 0.85);
-            this.addShake(ev.x, ev.z, 0.16);
+            this.particles.impact(ev.x, y, ev.z, water, profile.impactScale);
           }
           break;
         }
-        case 'unitLost':
-          this.particles.explosion(ev.x, groundY + 0.4, ev.z, 1.15);
-          this.addShake(ev.x, ev.z, 0.24);
+        case 'explosion': {
+          const y = ev.y ?? groundY + 0.4;
+          const water = ev.surface === 'water' || isWaterAt(this.scenario!, ev.x, ev.z);
+          if (water) {
+            this.particles.impact(ev.x, y, ev.z, true, profile.impactScale);
+          } else {
+            this.particles.explosion(ev.x, y, ev.z, profile.explosionScale || 0.8);
+            this.addShake(ev.x, ev.z, Math.max(0.04, profile.shake));
+          }
           break;
+        }
+        case 'unitLost': {
+          const def = ev.defId ? UNITS[ev.defId] : undefined;
+          const y = groundY + 0.4;
+          if (def?.domain === 'air') {
+            this.particles.explosion(ev.x, y + 0.3, ev.z, 1.05);
+            this.addShake(ev.x, ev.z, 0.18);
+          } else {
+            // The killing impact already produced the fireball. A wreck is a
+            // second, quieter event: smoke and a small fire, not another blast.
+            const armoured = !!def && def.armour !== 'infantry';
+            this.particles.wreck(ev.x, y, ev.z, armoured ? 1 : 0.4, armoured);
+            this.addShake(ev.x, ev.z, armoured ? 0.1 : 0.025);
+            if (def?.domain === 'land' && armoured) {
+              this.wrecks.push({
+                defId: ev.defId!,
+                x: ev.x,
+                y: groundY + 0.1,
+                z: ev.z,
+                facing: ev.facing ?? 0,
+              });
+              if (this.wrecks.length > MAX_WRECKS) this.wrecks.shift();
+            }
+          }
+          break;
+        }
         case 'buildingLost':
-          this.particles.explosion(ev.x, groundY + 1.0, ev.z, 2.6);
-          this.particles.smoke(ev.x, groundY + 1.5, ev.z, 14, 0.2);
-          this.addShake(ev.x, ev.z, 0.5);
+          this.particles.collapse(ev.x, groundY + 0.4, ev.z, 1.4);
+          this.addShake(ev.x, ev.z, 0.34);
           break;
         case 'buildingPlaced':
         case 'buildingComplete':
@@ -893,17 +1046,13 @@ export class Renderer {
   }
 
   private teamColorOf(game: Game, owner: number): [number, number, number] {
-    if (owner < 0) return [0.55, 0.6, 0.58];
-    const player = game.player(owner);
-    const faction = player ? tryIdentityDef(player.factionId) : undefined;
-    return hexToRgb(faction?.color ?? '#7a8b80');
+    return [...teamColorForOwner(owner, game.player(owner)?.factionId)];
   }
 
   private teamColorScenario(owner: number): [number, number, number] {
-    if (!this.scenario || owner < 0) return [0.55, 0.6, 0.58];
+    if (!this.scenario) return [...teamColorForOwner(owner, undefined)];
     const p = this.scenario.players.find((pl) => pl.id === owner);
-    const faction = p ? tryIdentityDef(p.factionId) : undefined;
-    return hexToRgb(faction?.color ?? '#7a8b80');
+    return [...teamColorForOwner(owner, p?.factionId)];
   }
 
   render(): void {
@@ -924,8 +1073,12 @@ export class Renderer {
     this.drawWater();
     this.drawShadows();
     this.drawProps();
-    if (this.game) this.drawBattleEntities(this.game);
-    else this.drawScenarioEntities();
+    if (this.game) {
+      this.drawBattleEntities(this.game);
+      this.drawWrecks(this.game);
+    } else {
+      this.drawScenarioEntities();
+    }
     this.drawParticles();
   }
 
@@ -1341,6 +1494,39 @@ export class Renderer {
     }
   }
 
+  /**
+   * Hulks of destroyed land vehicles. They are drawn from the existing unit
+   * body mesh with a charred tint: no new geometry, no entity, no collision,
+   * no picking and no save entry. The cap keeps a long match bounded.
+   */
+  private drawWrecks(game: Game): void {
+    if (this.wrecks.length === 0) return;
+    const gl = this.gl;
+    const mp = this.meshProgram;
+    gl.useProgram(mp.program);
+    this.setCameraUniforms(mp);
+    gl.uniform3fv(mp.u.uSun, this.sun);
+    gl.uniform1f(mp.u.uAmbient, this.ambient);
+    gl.uniform1f(mp.u.uUseFog, 0);
+    gl.uniform3f(mp.u.uTeamColor, 0.17, 0.17, 0.15);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    this.bindFlagTexture();
+    for (const wreck of this.wrecks) {
+      if (!this.pointVisible(game, wreck.x, wreck.z)) continue;
+      const body = this.unitMeshes.get(wreck.defId)?.body;
+      if (!body) continue;
+      const vs = unitVisualScale(wreck.defId);
+      const model = modelFor(wreck.x, wreck.y, wreck.z, -wreck.facing, vs, vs);
+      gl.uniformMatrix4fv(mp.u.uModel, false, model);
+      gl.uniform3f(mp.u.uTint, 0.4, 0.36, 0.3);
+      gl.uniform1f(mp.u.uAlpha, 0.9);
+      gl.uniform1f(mp.u.uFlash, 0);
+      body.draw();
+    }
+    gl.uniform3f(mp.u.uTint, 1, 1, 1);
+  }
+
   private drawBattleEntities(game: Game): void {
     const gl = this.gl;
     const mp = this.meshProgram;
@@ -1415,7 +1601,13 @@ export class Renderer {
         flash,
         construction,
         e.harvester ? Math.min(1, e.harvester.ore / HARVESTER_CAPACITY) : 0,
-        { gait: v?.gait ?? 0, pace: v?.pace ?? 0, elevation: v?.elevation ?? 0 },
+        {
+          gait: v?.gait ?? 0,
+          pace: v?.pace ?? 0,
+          elevation: v?.elevation ?? 0,
+          motion: v?.motion ?? e.facing,
+          moving: e.state === 'moving' || e.path.length > 0,
+        },
         garrisonOwner,
         doorOpen,
         rotorAngle,
@@ -1439,7 +1631,7 @@ export class Renderer {
     flash: number,
     construction: boolean,
     loadFill: number,
-    anim: { gait: number; pace: number; elevation?: number } | null = null,
+    anim: { gait: number; pace: number; elevation?: number; motion?: number; moving?: boolean } | null = null,
     garrisonOwner: number | null = null,
     doorOpen = 0,
     rotorAngle = 0,
@@ -1504,10 +1696,18 @@ export class Renderer {
     const style = this.unitMeshes.get(defId);
     if (!style) return;
     const vs = unitVisualScale(defId) * verticalScale;
-    // A unit with no turret mesh aims with its whole body, so it is drawn on
-    // the weapon heading (which follows the hull while walking and the target
-    // while standing). A turreted hull keeps its own heading.
-    const bodyFacing = style.turret ? facing : turretFacing;
+    // A unit with no turret mesh aims with its whole body; a turreted hull
+    // keeps its own heading; an airframe follows its flight heading.
+    const airframe = UNITS[defId]?.domain === 'air';
+    let bodyFacing = unitBodyHeading(!!style.turret, airframe, facing, turretFacing);
+    if (
+      !airframe &&
+      anim?.moving &&
+      anim.motion !== undefined &&
+      UNITS[defId]?.moveClass !== 'foot'
+    ) {
+      bodyFacing = anim.motion;
+    }
     const model = modelFor(x, y, z, -bodyFacing, vs, vs);
     gl.uniformMatrix4fv(mp.u.uModel, false, model);
     gl.uniform3fv(mp.u.uTeamColor, team);
@@ -1686,34 +1886,45 @@ export class Renderer {
       }
     }
     if (this.game) {
-      const team = this.game.teamOf(this.game.localPlayerId);
       for (const pr of this.game.state.projectiles) {
-        const tx = Math.floor(pr.x / TILE_SIZE);
-        const tz = Math.floor(pr.z / TILE_SIZE);
-        if (this.settings.showFog && this.game.state.scenario.settings.fog && this.game.fogAt(team, tx, tz) !== 2) continue;
-        const color =
-          pr.kind === 'sam'
-            ? [0.8, 0.9, 1]
-            : pr.kind === 'missile'
-              ? [1, 0.72, 0.35]
-              : pr.kind === 'shell'
-                ? [1, 0.6, 0.25]
-                : [1, 0.85, 0.45];
-        const size = pr.kind === 'missile' || pr.kind === 'sam' ? 0.62 : 0.34;
-        additive.push({ x: pr.x, y: pr.y, z: pr.z, size, r: color[0], g: color[1], b: color[2], a: 0.9 });
-        const dx = pr.tx - pr.x;
-        const dz = pr.tz - pr.z;
-        const len = Math.hypot(dx, dz) || 1;
-        additive.push({
-          x: pr.x - (dx / len) * 0.7,
-          y: pr.y,
-          z: pr.z - (dz / len) * 0.7,
-          size: size * 0.55,
-          r: color[0],
-          g: color[1],
-          b: color[2],
-          a: 0.4,
-        });
+        // Fog hiding is a gameplay rule, not a visual toggle: turning the fog
+        // texture off must never reveal a projectile the team cannot see.
+        if (!this.pointVisible(this.game, pr.x, pr.z)) continue;
+        const profile = weaponFxProfile(pr.weaponId);
+        const pos = this.projectilePosition(pr.id, { x: pr.x, y: pr.y, z: pr.z });
+        const view = this.projectileViews.get(pr.id);
+        let dx = 0;
+        let dy = 0;
+        let dz = 0;
+        if (view) {
+          dx = view.current.x - view.previous.x;
+          dy = view.current.y - view.previous.y;
+          dz = view.current.z - view.previous.z;
+        }
+        if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) < 0.0001) {
+          dx = pr.tx - pos.x;
+          dy = pr.ty - pos.y;
+          dz = pr.tz - pos.z;
+        }
+        const len = Math.hypot(dx, dy, dz) || 1;
+        const ux = dx / len;
+        const uy = dy / len;
+        const uz = dz / len;
+        const [r, g, b] = profile.tracerColor;
+        additive.push({ x: pos.x, y: pos.y, z: pos.z, size: profile.projectileSize, r, g, b, a: 0.92 });
+        for (let i = 1; i <= profile.tracerSegments; i++) {
+          const t = i / profile.tracerSegments;
+          additive.push({
+            x: pos.x - ux * profile.tracerLength * t,
+            y: pos.y - uy * profile.tracerLength * t,
+            z: pos.z - uz * profile.tracerLength * t,
+            size: profile.tracerWidth * (1 - 0.35 * t),
+            r,
+            g,
+            b,
+            a: 0.55 * (1 - 0.45 * t),
+          });
+        }
       }
     }
     gl.enable(gl.BLEND);

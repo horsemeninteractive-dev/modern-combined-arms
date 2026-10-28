@@ -124,7 +124,9 @@ describe('build provenance', () => {
 
 describe('menu wiring', () => {
   it('stamps the footer and offers the changelog beside the briefing', () => {
-    expect(html).toMatch(/id="menu-build"[^>]*>v0\.1\.0 BETA · BUILD/);
+    expect(html).toMatch(
+      new RegExp(`id="menu-build"[^>]*>v${pkg.version.replaceAll('.', '\\.')} ${pkg.releaseStage.toUpperCase()} · BUILD`),
+    );
     expect(html).toContain('id="btn-changelog"');
     expect(html).toMatch(/id="btn-changelog"[\s\S]*id="btn-briefing"/);
   });

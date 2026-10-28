@@ -32,10 +32,22 @@ describe('building ownership surfaces', () => {
     }
   });
 
-  it('keeps authored neutral objectives free of a permanent faction panel', () => {
+  it('gives capturable objectives a neutral ownership surface, not a fixed faction panel', () => {
+    // Capture objectives carry a team mask so the renderer can show grey when
+    // neutral and the owner's colour after capture. The mask is not a faction
+    // colour by itself; it resolves from the live owner.
+    for (const id of ['relay', 'radarStation', 'supplyDepot']) {
+      const body = buildingStyle(id)!.body;
+      const masked = body.teamMask.filter((v) => v > 0).length;
+      expect(masked, id).toBeGreaterThan(0);
+      for (const mask of body.teamMask) {
+        expect(mask, id).toBeGreaterThanOrEqual(0);
+        expect(mask, id).toBeLessThanOrEqual(1);
+      }
+    }
+    // Garrisonable shelters and landmark strongpoints remain unpainted: their
+    // ownership reads from the flag and health-bar edge, not a body panel.
     for (const id of [
-      'relay',
-      'radarStation',
       'tenement',
       'warehouse',
       'civicHall',

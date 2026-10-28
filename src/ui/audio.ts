@@ -12,6 +12,8 @@ export class AudioEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private sfx: GainNode | null = null;
+  /** Temporary per-cue trim, used to attenuate visible distant combat. */
+  private playGain = 1;
   private ambient: GainNode | null = null;
   private noiseBuffer: AudioBuffer | null = null;
   private started = false;
@@ -492,7 +494,7 @@ export class AudioEngine {
     osc.type = type;
     osc.frequency.setValueAtTime(freq, t);
     if (slideTo !== undefined) osc.frequency.exponentialRampToValueAtTime(Math.max(1, slideTo), t + duration);
-    g.gain.setValueAtTime(gain, t);
+    g.gain.setValueAtTime(gain * this.playGain, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + duration);
     osc.connect(g);
     g.connect(this.sfx);
@@ -512,7 +514,7 @@ export class AudioEngine {
     filter.frequency.setValueAtTime(lowpass, t);
     filter.frequency.exponentialRampToValueAtTime(Math.max(60, lowpass * 0.25), t + duration);
     const g = ctx.createGain();
-    g.gain.setValueAtTime(gain, t);
+    g.gain.setValueAtTime(gain * this.playGain, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + duration);
     src.connect(filter);
     filter.connect(g);
@@ -521,13 +523,14 @@ export class AudioEngine {
     src.stop(t + duration + 0.03);
   }
 
-  play(name: string): void {
+  play(name: string, gain = 1): void {
     if (!this.started || this.muted) return;
     const now = performance.now();
     const last = this.lastPlayed.get(name) ?? 0;
     const minGap = name === 'rifle' ? 55 : name === 'cannon' ? 70 : name === 'explosion' ? 60 : 35;
     if (now - last < minGap) return;
     this.lastPlayed.set(name, now);
+    this.playGain = gain < 0 ? 0 : gain > 1 ? 1 : gain;
     switch (name) {
       case 'rifle':
         this.noise(0.07, 0.14, 2600);
@@ -603,6 +606,7 @@ export class AudioEngine {
       default:
         this.tone(600, 0.04, 'triangle', 0.02);
     }
+    this.playGain = 1;
   }
 
   dispose(): void {

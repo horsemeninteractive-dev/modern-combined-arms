@@ -4,7 +4,20 @@
 
 export type Domain = 'land' | 'air' | 'naval';
 export type MoveClass = 'foot' | 'wheeled' | 'tracked' | 'naval' | 'air';
-export type ArmourClass = 'infantry' | 'light' | 'heavy' | 'structure' | 'air' | 'naval';
+/**
+ * `support` covers unarmed working vehicles (engineer, harvester). They are
+ * armoured enough that anti-tank rounds still hurt, but they must not take the
+ * `heavy` bonus that is meant for fighting hulls, or a single tank deletes an
+ * economy unit in four shells.
+ */
+export type ArmourClass =
+  | 'infantry'
+  | 'light'
+  | 'heavy'
+  | 'support'
+  | 'structure'
+  | 'air'
+  | 'naval';
 export type TargetClass = 'ground' | 'air' | 'naval' | 'structure';
 export type WeaponFx = 'bullet' | 'shell' | 'missile' | 'sam' | 'cannon';
 export type EntityKind = 'unit' | 'building';
@@ -488,6 +501,8 @@ export type SimEventCode =
   | 'forcesUnderAttack'
   | 'enemyDetected';
 
+export type ImpactSurface = 'ground' | 'water' | 'armour' | 'structure' | 'air';
+
 export type SimEventType =
   | 'shot'
   | 'impact'
@@ -521,6 +536,16 @@ export interface SimEvent {
   entityId?: number;
   defId?: string;
   sound?: string;
+  /** Weapon that produced this shot, impact or death. */
+  weaponId?: string;
+  /** Actual surface at an impact; presentation only, never a hit roll. */
+  surface?: ImpactSurface;
+  /** A projectile reached its intended target rather than falling nearby. */
+  hit?: boolean;
+  /** Target of a direct hit, or zero for a splash-only impact. */
+  targetId?: number;
+  /** Hull or structure heading at the moment of destruction, for wrecks. */
+  facing?: number;
   /** Machine-readable transition for presentation services such as the announcer. */
   code?: SimEventCode;
   /** Alert priority for the UI layer. */

@@ -8,7 +8,11 @@ export const TILE_SIZE = 4;
 export const MAP_FORMAT = 'iron-tide-scenario';
 export const MAP_FORMAT_VERSION = 1;
 export const SAVE_FORMAT = 'iron-tide-save';
-export const SAVE_FORMAT_VERSION = 1;
+/**
+ * Bumped whenever the saved shape changes. Older versions migrate forward in
+ * src/sim/saveMigrations.ts; a newer version is refused with a clear message.
+ */
+export const SAVE_FORMAT_VERSION = 2;
 
 /**
  * A structure hit within this many ticks cannot be repaired: the crew can patch

@@ -57,7 +57,7 @@ export function scoutedForceMix(game: Game, aiId: number): ScoutedForceMix {
     // useful, and aircraft/naval units are outside the MG/AT remit.
     if (!def || def.domain !== 'land' || def.weapons.length === 0) return;
     if (def.armour === 'infantry') mix.infantry++;
-    else if (def.armour === 'heavy' || def.armour === 'light') mix.armour++;
+    else if (def.armour === 'heavy' || def.armour === 'light' || def.armour === 'support') mix.armour++;
   };
   for (const e of game.visibleEnemies(aiId)) {
     if (e.kind === 'unit') count(e.id, e.defId);
@@ -1791,6 +1791,9 @@ export class AIController {
           e.hp > 0 &&
           !e.garrisonId &&
           !!UNITS[e.defId]?.canGarrison &&
+          // Medics may take cover by hand, but the commander keeps unarmed
+          // support outside so it can keep treating the line.
+          (UNITS[e.defId]?.weapons.length ?? 0) > 0 &&
           this.free(e),
       )
       .sort((a, b) => a.id - b.id);

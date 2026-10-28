@@ -9,6 +9,22 @@ import {
 } from './math';
 
 /**
+ * Heading the body mesh is drawn on. A turreted hull keeps its own heading
+ * while the turret lays on a target. A turretless ground unit aims with the
+ * whole body, so it follows the weapon heading. An airframe always follows its
+ * flight heading: aircraft have no traversing turret in the update loop, and
+ * using the stale turret angle left them flying sideways.
+ */
+export function unitBodyHeading(
+  hasTurret: boolean,
+  isAirframe: boolean,
+  facing: number,
+  turretFacing: number,
+): number {
+  return hasTurret || isAirframe ? facing : turretFacing;
+}
+
+/**
  * Model matrix for a turret sitting on a unit body.
  *
  * The body mesh is drawn with `modelFor(x, y, z, -facing, …)`, which is exactly

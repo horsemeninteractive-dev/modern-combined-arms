@@ -103,30 +103,59 @@ export class ParticleSystem {
     }
   }
 
-  impact(x: number, y: number, z: number, onWater: boolean): void {
-    const count = onWater ? 8 : 5;
+  impact(x: number, y: number, z: number, onWater: boolean, scale = 1): void {
+    const count = Math.max(2, Math.round((onWater ? 8 : 5) * scale));
     for (let i = 0; i < count; i++) {
       const a = Math.random() * Math.PI * 2;
-      const sp = 1 + Math.random() * 4;
+      const sp = (1 + Math.random() * 4) * Math.sqrt(scale);
       this.push({
         x, y: y + 0.2, z,
-        vx: Math.cos(a) * sp, vy: 1 + Math.random() * 3.5, vz: Math.sin(a) * sp,
+        vx: Math.cos(a) * sp, vy: (1 + Math.random() * 3.5) * scale, vz: Math.sin(a) * sp,
         life: 0.25 + Math.random() * 0.35, maxLife: 0.6,
-        size0: 0.35, size1: 0.08,
+        size0: 0.35 * scale, size1: 0.08,
         r: onWater ? 0.65 : 1, g: onWater ? 0.8 : 0.66, b: onWater ? 0.85 : 0.26,
         alpha: 0.9, gravity: 12, drag: 1.2, additive: !onWater,
       });
     }
-    this.dust(x, y, z, onWater ? 1 : 2, onWater ? 0.55 : 0.36);
+    this.dust(x, y, z, onWater ? 1 : Math.max(1, Math.round(2 * scale)), onWater ? 0.55 : 0.36);
   }
 
-  muzzle(x: number, y: number, z: number, big: boolean): void {
+  muzzle(x: number, y: number, z: number, scale = 1, smoke = 1): void {
     this.push({
       x, y, z, vx: 0, vy: 0.4, vz: 0,
-      life: 0.1, maxLife: 0.1, size0: big ? 1.7 : 0.8, size1: big ? 2.6 : 1.2,
+      life: 0.1, maxLife: 0.1, size0: 0.8 * scale, size1: 1.2 * scale,
       r: 1, g: 0.74, b: 0.32, alpha: 0.9, gravity: 0, drag: 0, additive: true,
     });
-    this.smoke(x, y + 0.1, z, 1, 0.55);
+    if (smoke > 0) this.smoke(x, y + 0.1, z, smoke, 0.55);
+  }
+
+  /** A destroyed vehicle or squad: smoke and a small fire, not a second blast. */
+  wreck(x: number, y: number, z: number, scale = 1, armoured = true): void {
+    this.push({
+      x, y: y + 0.35, z, vx: 0, vy: 0.55, vz: 0,
+      life: 0.22 + 0.12 * scale, maxLife: 0.34,
+      size0: 0.65 * scale, size1: 0.15,
+      r: 1, g: 0.52, b: 0.14, alpha: 0.75, gravity: 3, drag: 1.2, additive: true,
+    });
+    if (armoured) {
+      this.smoke(x, y + 0.5, z, 4, 0.16);
+      this.dust(x, y + 0.2, z, 3, 0.24);
+    } else {
+      this.smoke(x, y + 0.3, z, 2, 0.28);
+      this.dust(x, y + 0.1, z, 2, 0.32);
+    }
+  }
+
+  /** A structure falling in: dust and smoke, with only a small residual flame. */
+  collapse(x: number, y: number, z: number, scale = 1): void {
+    this.dust(x, y + 0.4, z, Math.round(14 + 6 * scale), 0.3);
+    this.smoke(x, y + 1.2, z, Math.round(6 + 4 * scale), 0.2);
+    this.push({
+      x, y: y + 1, z, vx: 0, vy: 0.8, vz: 0,
+      life: 0.35, maxLife: 0.35,
+      size0: 1.1 * scale, size1: 0.2,
+      r: 1, g: 0.45, b: 0.12, alpha: 0.65, gravity: 2, drag: 1, additive: true,
+    });
   }
 
   smoke(x: number, y: number, z: number, count: number, tint = 0.4): void {
@@ -226,12 +255,24 @@ export class ParticleSystem {
     }
   }
 
-  sparks(x: number, y: number, z: number): void {
-    for (let i = 0; i < 4; i++) {
+  /** A direct hit on infantry: a small bright impact, not a ground miss puff. */
+  hit(x: number, y: number, z: number, scale = 1): void {
+    this.push({
+      x, y, z, vx: 0, vy: 0.3, vz: 0,
+      life: 0.12, maxLife: 0.12, size0: 0.55 * scale, size1: 0.12,
+      r: 1, g: 0.74, b: 0.38, alpha: 0.8, gravity: 2, drag: 0.8, additive: true,
+    });
+    this.sparks(x, y, z, Math.max(0.45, scale * 0.6));
+    this.dust(x, y, z, 1, 0.3);
+  }
+
+  sparks(x: number, y: number, z: number, scale = 1): void {
+    const count = Math.max(2, Math.round(4 * scale));
+    for (let i = 0; i < count; i++) {
       const a = Math.random() * Math.PI * 2;
       this.push({
-        x, y, z, vx: Math.cos(a) * 4, vy: 2 + Math.random() * 4, vz: Math.sin(a) * 4,
-        life: 0.28, maxLife: 0.3, size0: 0.3, size1: 0.05,
+        x, y, z, vx: Math.cos(a) * 4 * scale, vy: (2 + Math.random() * 4) * scale, vz: Math.sin(a) * 4 * scale,
+        life: 0.28, maxLife: 0.3, size0: 0.3 * scale, size1: 0.05,
         r: 1, g: 0.75, b: 0.3, alpha: 0.9, gravity: 14, drag: 0, additive: true,
       });
     }

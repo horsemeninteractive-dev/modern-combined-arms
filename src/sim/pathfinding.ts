@@ -10,6 +10,12 @@ export interface NavGrid {
   moveClass: MoveClass;
   /** 1 = blocked by a structure (or impassable for this mover). */
   occupied?: Uint8Array;
+  /**
+   * 1 = traffic worth avoiding, but passable. Idle friendly units are marked
+   * here so a route prefers the open lane around a formation instead of
+   * ploughing through it and relying on collision separation.
+   */
+  soft?: Uint8Array;
 }
 
 const NEIGHBOURS: Array<[number, number, number]> = [
@@ -100,7 +106,10 @@ function stepCost(nav: NavGrid, from: number, to: number, diagonal: boolean): nu
     nav.moveClass,
   );
   if (!Number.isFinite(cost)) return Number.POSITIVE_INFINITY;
-  return cost * (diagonal ? 1.41421356 : 1);
+  // Traffic is a preference, not a wall: a corridor packed with friendly
+  // units must still be usable, just less attractive than an open lane.
+  const traffic = nav.soft?.[to] ? 2.5 : 1;
+  return cost * (diagonal ? 1.41421356 : 1) * traffic;
 }
 
 /** True if diagonal movement between two tiles would clip a blocked corner. */

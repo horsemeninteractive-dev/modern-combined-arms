@@ -69,9 +69,17 @@ function chromaticity(c: Color): Color {
 
 export function materialForColor(color: Color): number {
   const max = Math.max(color[0], color[1], color[2]);
-  // Tracks and tyres are the only surfaces this dark; a shaded concrete edge
-  // still has a much higher absolute value.
-  if (max < 0.135) return MATERIAL.track;
+  const min = Math.min(color[0], color[1], color[2]);
+  // Tracks and tyres are near-neutral and very dark. A shaded glassDark face
+  // is just as dark in absolute terms but keeps its blue-green cast, so the
+  // shortcut must test hue as well as value. Returning track before the anchor
+  // comparison used to turn every shaded window band into rubber.
+  if (max < 0.135 && max - min < max * 0.2) {
+    // The authored track palette tops out around 0.09. A near-neutral surface
+    // above that is a shaded dark-metal edge, not rubber. The threshold is
+    // proportional so a heavily shaded blue-green window is still glass.
+    return max < 0.1 ? MATERIAL.track : MATERIAL.bareMetal;
+  }
   const c = chromaticity(color);
   let best: number = MATERIAL.painted;
   let bestDistance = Number.POSITIVE_INFINITY;

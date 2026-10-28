@@ -67,6 +67,38 @@ function sandbagWall(
 }
 
 /**
+ * Thick plate leaning back from its base. The coastal battery's blast
+ * deflector needs a slope that a yaw-only box cannot express; five quads give
+ * it a readable front, back, cap and side edges without a new mesh type.
+ */
+function slopedPlate(
+  b: MeshBuilder,
+  x: number,
+  baseY: number,
+  z: number,
+  width: number,
+  height: number,
+  thickness: number,
+  lean: number,
+  color: Color,
+): void {
+  const hw = width / 2;
+  const frontLeft: [number, number, number] = [x, baseY, z + hw];
+  const frontRight: [number, number, number] = [x, baseY, z - hw];
+  const frontTopLeft: [number, number, number] = [x - lean, baseY + height, z + hw];
+  const frontTopRight: [number, number, number] = [x - lean, baseY + height, z - hw];
+  const backLeft: [number, number, number] = [x - thickness, baseY, z + hw];
+  const backRight: [number, number, number] = [x - thickness, baseY, z - hw];
+  const backTopLeft: [number, number, number] = [x - lean - thickness, baseY + height, z + hw];
+  const backTopRight: [number, number, number] = [x - lean - thickness, baseY + height, z - hw];
+  b.addQuad(frontLeft, frontRight, frontTopRight, frontTopLeft, color);
+  b.addQuad(backRight, backLeft, backTopLeft, backTopRight, shade(color, 0.8));
+  b.addQuad(frontTopLeft, frontTopRight, backTopRight, backTopLeft, shade(color, 1.08));
+  b.addQuad(frontRight, backRight, backTopRight, frontTopRight, shade(color, 0.9));
+  b.addQuad(backLeft, frontLeft, frontTopLeft, backTopLeft, shade(color, 0.82));
+}
+
+/**
  * Occupied-shelter dressing: a concertina ring around the footprint, sandbag
  * firing positions on the roof and a team-tinted trim band. Team colour is
  * carried by masked vertices, so the same mesh is recoloured for whoever is
@@ -772,94 +804,138 @@ function buildMgNestTurret(): MeshBuffers {
 
 function buildAtTurretBody(): MeshBuffers {
   const b = new MeshBuilder();
-  b.box(0, 0.3, 0, 7.6, 0.6, 7.6, PALETTE.concreteDark);
-  b.box(0, 0.75, 0, 7.0, 0.4, 7.0, PALETTE.concrete);
-  // Revetment: low concrete kerbs with sandbags on three sides.
-  b.box(0, 0.95, 0, 5.2, 0.4, 4.6, PALETTE.oliveDark);
-  sandbagWall(b, 0, -3.0, 6.4, true);
-  sandbagWall(b, -3.0, 0, 5.2, false);
-  sandbagWall(b, 2.9, 2.0, 2.2, false);
-  sandbagWall(b, 2.9, -2.0, 2.2, false);
-  // Gun carriage and trails.
-  b.box(-0.9, 1.3, 0, 2.2, 0.4, 0.7, PALETTE.hullDark);
-  b.box(-1.9, 1.05, -0.9, 2.6, 0.22, 0.3, PALETTE.metal);
-  b.box(-1.9, 1.05, 0.9, 2.6, 0.22, 0.3, PALETTE.metal);
-  b.box(-3.1, 0.9, -1.6, 0.8, 0.5, 0.5, PALETTE.darkMetal);
-  b.box(-3.1, 0.9, 1.6, 0.8, 0.5, 0.5, PALETTE.darkMetal);
-  // Ready ammunition and a range board.
-  b.box(-2.1, 1.2, 2.4, 1.2, 0.55, 0.8, PALETTE.oliveDark);
-  b.box(-2.1, 1.55, 2.4, 1.3, 0.12, 0.9, PALETTE.olive);
-  b.box(1.7, 2.0, -2.6, 0.12, 1.8, 0.12, PALETTE.metal);
-  b.box(1.9, 2.55, -2.6, 0.6, 0.45, 0.08, PALETTE.warning);
-  b.box(2.3, 1.0, 2.6, 0.55, 0.55, 0.55, PALETTE.warning);
-  b.box(-0.9, 1.52, 0, 2.0, 0.12, 0.7, PALETTE.hull, 0.84);
-  ownershipPanel(b, -2.1, 1.7, 2.4, 1.4, 0.9);
+  // A low, open revetment only beds the weapon. The barrel, shield and split
+  // trails have to carry the silhouette at battle zoom.
+  b.box(0, 0.16, 0, 7.4, 0.32, 7.4, PALETTE.concreteDark);
+  b.box(0, 0.42, 0, 6.8, 0.2, 6.8, PALETTE.concrete);
+  sandbagWall(b, 0, -3.05, 5.8, true, 0.5);
+  sandbagWall(b, -2.9, -0.9, 3.6, false, 0.5);
+  sandbagWall(b, 2.9, -0.9, 3.6, false, 0.5);
+  // Steel gun deck, deliberately smaller than the concrete pad.
+  b.box(-0.2, 0.66, 0, 3.8, 0.26, 3.2, PALETTE.hullDark);
+  b.box(-0.2, 0.82, 0, 3.2, 0.06, 2.6, PALETTE.oliveDark);
+  // Split trails run back to steel spades, the clearest low-level cue that
+  // this is a towed anti-tank gun rather than a turret on a bunker.
+  b.boxRot(-1.85, 0.9, -0.8, 3.9, 0.2, 0.3, Math.PI - 0.36, PALETTE.metal);
+  b.boxRot(-1.85, 0.9, 0.8, 3.9, 0.2, 0.3, Math.PI + 0.36, PALETTE.metal);
+  b.box(-3.65, 0.7, -1.48, 0.55, 0.4, 0.72, PALETTE.darkMetal);
+  b.box(-3.65, 0.7, 1.48, 0.55, 0.4, 0.72, PALETTE.darkMetal);
+  // Ready rack and its lid carry the ownership panel; the gun stays clear.
+  b.box(-2.45, 0.82, 2.55, 2.0, 0.6, 0.95, PALETTE.oliveDark);
+  b.box(-2.45, 1.14, 2.55, 2.1, 0.12, 1.05, PALETTE.olive);
+  ownershipPanel(b, -2.45, 1.24, 2.55, 1.8, 0.72);
+  b.box(2.35, 0.75, 2.35, 0.9, 0.5, 0.75, PALETTE.oliveDark);
+  b.box(2.2, 1.72, -2.3, 0.1, 1.8, 0.1, PALETTE.metal);
+  b.box(2.2, 2.2, -2.3, 0.55, 0.4, 0.07, PALETTE.warning);
   return b.build();
 }
 
 /** Shield, breech and barrel, authored around the trunnion at local origin. */
 function buildAtTurretGun(): MeshBuffers {
   const b = new MeshBuilder();
-  b.boxRot(0.2, 0.45, 0, 0.25, 1.5, 2.1, -0.18, PALETTE.oliveDark);
-  b.boxRot(0.32, 0.55, 0.55, 0.12, 0.5, 0.6, -0.18, PALETTE.olive);
-  b.box(-0.25, 0.4, 0, 1.0, 0.5, 0.55, PALETTE.hull);
-  b.cylinderX(1.9, 0.48, 0, 0.13, 3.4, 8, PALETTE.metal);
-  b.cylinderX(3.45, 0.48, 0, 0.2, 0.6, 8, PALETTE.darkMetal);
-  b.box(3.75, 0.48, 0, 0.25, 0.22, 0.22, PALETTE.warning);
+  // Broad sloped shield with folded side cheeks and a sight slit. The single
+  // long barrel is what separates this from the twin-rail coastal launcher.
+  b.boxRot(0.25, 0.62, 0, 0.24, 1.55, 2.25, -0.12, PALETTE.oliveDark);
+  b.box(0.23, 1.34, 0, 0.3, 0.2, 2.3, PALETTE.olive);
+  b.boxRot(0.12, 0.62, -1.13, 0.2, 1.15, 0.58, -0.42, PALETTE.oliveDark);
+  b.boxRot(0.12, 0.62, 1.13, 0.2, 1.15, 0.58, 0.42, PALETTE.oliveDark);
+  b.box(0.46, 0.98, 0, 0.06, 0.2, 0.72, PALETTE.hullDark);
+  // The pintle block reaches down to the steel deck: the shield is tall, and a
+  // gun floating above its platform is worse than a short mount.
+  b.box(0, -0.1, 0, 1.0, 0.9, 0.9, PALETTE.hullDark);
+  b.box(-0.45, 0.4, 0, 1.15, 0.55, 0.8, PALETTE.hull);
+  b.box(-0.98, 0.35, 0, 0.5, 0.9, 0.55, PALETTE.darkMetal);
+  b.cylinderX(1.75, 0.48, 0, 0.13, 3.4, 8, PALETTE.metal);
+  b.cylinderX(3.55, 0.48, 0, 0.2, 0.6, 8, PALETTE.darkMetal);
+  b.box(3.86, 0.48, 0, 0.18, 0.22, 0.22, PALETTE.warning);
   return b.build();
 }
 
 function buildCoastalBatteryBody(): MeshBuffers {
   const b = new MeshBuilder();
-  b.box(0, 0.3, 0, 7.6, 0.6, 7.6, PALETTE.concreteDark);
-  b.box(0, 0.72, 0, 7.0, 0.35, 7.0, PALETTE.concrete);
-  // Blast revetment open toward the sea, with ready rounds under cover.
-  sandbagWall(b, 0, -3.0, 6.0, true);
-  sandbagWall(b, -3.0, 0, 4.8, false);
-  sandbagWall(b, 3.0, 1.8, 2.6, false);
-  sandbagWall(b, 3.0, -1.8, 2.6, false);
-  b.box(-2.1, 1.2, 2.3, 1.6, 0.65, 0.9, PALETTE.oliveDark);
-  b.box(-2.1, 1.58, 2.3, 1.7, 0.12, 1.0, PALETTE.olive);
-  b.box(0, 1.1, 0, 3.2, 0.55, 2.8, PALETTE.hullDark);
-  b.box(-2.3, 1.1, -2.4, 0.5, 0.9, 0.5, PALETTE.warning);
-  ownershipPanel(b, -2.1, 1.7, 2.3, 1.7, 1.0);
+  b.box(0, 0.16, 0, 7.4, 0.32, 7.4, PALETTE.concreteDark);
+  b.box(0, 0.42, 0, 6.9, 0.2, 6.9, PALETTE.concrete);
+  b.box(0, 0.62, 0, 5.0, 0.35, 5.0, PALETTE.hullDark);
+  b.box(0, 0.82, 0, 4.2, 0.08, 4.2, PALETTE.oliveDark);
+  // The landward blast wall and low wing walls frame an opening toward water.
+  b.box(-3.1, 0.9, 0, 0.55, 1.2, 5.4, PALETTE.concreteDark);
+  b.box(-3.1, 1.52, 0, 0.7, 0.12, 5.6, PALETTE.concrete);
+  b.box(-1.5, 0.55, -2.9, 3.0, 0.6, 0.45, PALETTE.concrete);
+  b.box(-1.5, 0.55, 2.9, 3.0, 0.6, 0.45, PALETTE.concrete);
+  // Ready rounds in a covered rack, with the ownership panel on its lid.
+  b.box(1.9, 0.85, 2.35, 1.5, 0.7, 1.8, PALETTE.oliveDark);
+  for (const x of [1.55, 2.25]) {
+    b.box(x, 1.72, 2.35, 0.42, 1.2, 0.42, PALETTE.hullLight);
+    b.box(x, 2.35, 2.35, 0.46, 0.12, 0.46, PALETTE.warning);
+  }
+  ownershipPanel(b, 1.9, 1.32, 2.35, 1.3, 1.0);
+  // Fire-control box on the seaward edge.
+  b.box(2.3, 1.05, -2.35, 1.25, 1.0, 1.2, PALETTE.hullLight);
+  b.box(2.3, 1.25, -1.73, 0.7, 0.28, 0.08, PALETTE.glassDark);
   return b.build();
 }
 
 /** Twin anti-ship launch rails, authored around the traversing pintle. */
 function buildCoastalBatteryTurret(): MeshBuffers {
   const b = new MeshBuilder();
-  b.box(-0.3, 0.38, 0, 1.8, 0.7, 2.0, PALETTE.hullDark);
-  b.box(-0.9, 0.9, 0, 0.9, 0.5, 1.4, PALETTE.oliveDark);
-  for (const z of [-0.65, 0.65]) {
-    b.box(0.8, 0.82, z, 3.0, 0.42, 0.5, PALETTE.olive);
-    b.cylinderX(2.4, 0.86, z, 0.14, 1.6, 6, PALETTE.darkMetal);
-    b.box(3.3, 0.86, z, 0.25, 0.2, 0.2, PALETTE.warning);
+  // Rotating pedestal and turntable bridge the low deck to the raised rails.
+  b.box(0, -0.05, 0, 2.6, 1.1, 2.8, PALETTE.hullDark);
+  b.cylinder(0, 0.5, 0, 1.1, 0.22, 8, PALETTE.darkMetal);
+  for (const z of [-1.0, 1.0]) {
+    // Two open rails, separated by two metres, on visible pylons.
+    b.box(0.15, 1.05, z, 3.2, 0.22, 0.42, PALETTE.oliveDark);
+    b.box(-1.0, 1.3, z, 0.24, 0.7, 0.4, PALETTE.metal);
+    b.box(1.35, 1.25, z, 0.22, 0.55, 0.35, PALETTE.metal);
+    b.box(0.25, 1.48, z, 3.5, 0.14, 0.3, PALETTE.metal);
+    b.cylinderX(1.05, 1.72, z, 0.17, 4.0, 6, PALETTE.hullLight);
+    b.box(3.18, 1.72, z, 0.3, 0.26, 0.26, PALETTE.warning);
   }
-  b.box(-0.4, 1.35, 0, 0.16, 1.2, 0.16, PALETTE.metal);
-  b.box(-0.4, 1.9, 0, 0.7, 0.2, 0.35, PALETTE.metal);
+  b.box(-1.3, 1.25, 0, 0.24, 0.3, 2.3, PALETTE.metal);
+  slopedPlate(b, -1.9, 1.4, 0, 2.9, 1.65, 0.2, 0.75, PALETTE.oliveDark);
+  // The sight sits on the outer rail so the launcher reads as aimed, not just
+  // parked ordnance.
+  b.box(0.8, 1.9, 1.35, 0.5, 0.35, 0.35, PALETTE.darkMetal);
+  b.box(1.05, 1.95, 1.35, 0.22, 0.18, 0.18, PALETTE.warning);
   return b.build();
 }
 
 function buildRelay(): MeshBuffers {
   const b = new MeshBuilder();
-  b.box(0, 0.3, 0, 7.6, 0.6, 7.6, PALETTE.concreteDark);
-  b.box(0, 0.75, 0, 6.8, 0.4, 6.8, PALETTE.concrete);
-  b.box(0, 4.0, 0, 0.5, 7.0, 0.5, PALETTE.metal);
-  for (let i = 0; i < 3; i++) {
-    const y = 1.4 + i * 1.9;
-    b.box(0, y, 0, 2.2 - i * 0.5, 0.12, 2.2 - i * 0.5, PALETTE.metal);
+  b.box(0, 0.18, 0, 7.4, 0.36, 7.4, PALETTE.concreteDark);
+  b.box(0, 0.45, 0, 6.8, 0.2, 6.8, PALETTE.concrete);
+  // A field communications cabin gives the relay a real functional mass;
+  // the mast rises through its roof instead of standing alone on the pad.
+  b.box(-1.2, 1.95, -1.2, 4.2, 2.9, 3.4, PALETTE.hull);
+  b.box(-1.2, 3.43, -1.2, 4.6, 0.22, 3.8, PALETTE.hullLight);
+  ownershipPanel(b, -1.5, 3.63, -1.35, 2.6, 1.4);
+  b.box(-1.2, 2.35, 0.62, 2.8, 0.55, 0.1, PALETTE.glassDark);
+  b.box(0.65, 1.25, 0.64, 0.75, 1.3, 0.1, PALETTE.hullDark);
+  b.box(-2.8, 2.2, 0.58, 0.55, 0.5, 0.08, PALETTE.warning);
+  // Lattice mast and service platform for the rotating uplink.
+  b.box(0, 5.15, 0, 0.3, 3.4, 0.3, PALETTE.metal);
+  b.box(0, 4.35, 0, 1.9, 0.18, 1.9, PALETTE.metal);
+  for (const [x, z] of [
+    [-0.65, -0.65],
+    [0.65, -0.65],
+    [0.65, 0.65],
+    [-0.65, 0.65],
+  ]) {
+    b.box(x, 3.95, z, 0.14, 0.8, 0.14, PALETTE.metal);
   }
-  b.box(-1.0, 5.6, 0, 0.12, 2.2, 0.12, PALETTE.metal);
-  b.box(0.9, 6.6, 0, 0.12, 1.2, 0.12, PALETTE.metal);
-  b.box(0, 7.3, 0, 0.25, 0.25, 0.25, PALETTE.red);
-  b.box(-1.6, 4.4, 0, 0.14, 1.0, 0.14, PALETTE.metal);
-  b.box(1.4, 4.4, 0, 0.14, 1.0, 0.14, PALETTE.metal);
-  // The uplink dish and drum sit on a spinning mount (buildRelayDish).
-  b.box(0, 2.6, 2.2, 2.6, 1.4, 1.4, PALETTE.oliveDark);
-  b.box(0, 3.3, 2.2, 2.9, 0.2, 1.7, PALETTE.olive);
-  b.box(0.6, 2.8, 2.95, 1.0, 0.4, 0.1, PALETTE.amber);
-  sandbagWall(b, 0, 3.3, 4.0, true);
+  b.box(0, 6.2, 0, 0.7, 0.14, 0.7, PALETTE.darkMetal);
+  b.box(0, 6.72, 0, 0.16, 0.85, 0.16, PALETTE.metal);
+  b.box(0, 7.2, 0, 0.24, 0.24, 0.24, PALETTE.red);
+  // Secondary fixed dish on the cabin roof, distinct from the broad sweeping
+  // array of the radar station.
+  b.box(-2.55, 3.9, -2.45, 0.16, 1.0, 0.16, PALETTE.metal);
+  b.cylinderZ(-2.55, 4.35, -2.35, 0.72, 0.18, 8, PALETTE.hullLight);
+  b.box(-2.55, 4.35, -2.24, 0.16, 0.16, 0.18, PALETTE.metal);
+  b.box(-2.55, 4.0, -2.24, 0.06, 0.5, 0.06, PALETTE.metal);
+  // Cable drum and a generator cabinet at ground level.
+  b.box(2.35, 0.9, 2.15, 1.6, 1.0, 1.5, PALETTE.oliveDark);
+  b.box(2.3, 1.5, 2.15, 0.8, 0.2, 0.8, PALETTE.olive);
+  b.cylinderZ(2.35, 1.2, 2.9, 0.5, 0.4, 8, PALETTE.darkMetal);
+  sandbagWall(b, 0, 3.15, 4.4, true, 0.28);
   return b.build();
 }
 
@@ -894,23 +970,42 @@ function buildSupplyDepot(): MeshBuffers {
 
 function buildRadarStation(): MeshBuffers {
   const b = new MeshBuilder();
-  b.box(0, 0.3, 0, 11.8, 0.6, 11.8, PALETTE.concreteDark);
-  b.box(0, 0.72, 0, 11.0, 0.4, 11.0, PALETTE.concrete);
-  // Bunker base, taller mast and a broad dish.
-  b.box(-0.9, 1.9, -0.8, 6.2, 2.4, 6.0, PALETTE.hull);
-  b.box(-0.9, 3.2, -0.8, 6.8, 0.35, 6.6, PALETTE.hullLight);
-  b.box(3.0, 1.4, 2.4, 2.6, 1.6, 2.6, PALETTE.oliveDark);
-  b.cylinder(3.0, 2.5, 2.4, 0.7, 1.5, 8, PALETTE.metal);
-  b.box(0, 4.8, 0, 2.6, 0.24, 2.6, PALETTE.hullDark);
-  b.box(0, 4.2, 0, 0.34, 4.0, 0.34, PALETTE.metal);
-  b.cylinder(0, 6.0, 0, 0.55, 0.45, 10, PALETTE.darkMetal);
-  // The broad dish sweeps above the bunker (buildRadarStationDish).
-  // Fortified perimeter and a satellite uplink.
-  sandbagWall(b, 0, 5.6, 8.0, true);
-  sandbagWall(b, 5.5, 0, 8.0, false);
-  b.box(-4.6, 2.6, 4.2, 0.14, 3.8, 0.14, PALETTE.metal);
-  b.cylinder(-4.6, 4.4, 4.2, 0.9, 0.25, 8, PALETTE.hullLight);
-  b.box(-4.6, 4.85, 4.2, 0.12, 0.7, 0.12, PALETTE.metal);
+  b.box(0, 0.18, 0, 11.6, 0.36, 11.6, PALETTE.concreteDark);
+  b.box(0, 0.46, 0, 10.8, 0.2, 10.8, PALETTE.concrete);
+  // The operations block is the mass; the tower and array are its roof, not a
+  // mast bolted onto a bunker.
+  b.box(-0.8, 2.4, -0.6, 7.2, 3.5, 6.8, PALETTE.hull);
+  b.box(-0.8, 4.25, -0.6, 7.8, 0.34, 7.4, PALETTE.hullLight);
+  // Front-right roof plate: the array is mounted aft, so from the normal
+  // camera this panel is not hidden behind the array's silhouette.
+  ownershipPanel(b, 1.2, 4.51, 1.8, 2.8, 1.6);
+  b.box(-0.8, 2.65, 2.82, 5.4, 0.8, 0.1, PALETTE.glassDark);
+  b.box(-0.8, 1.55, 2.83, 1.2, 1.5, 0.12, PALETTE.hullDark);
+  b.box(1.5, 2.65, 2.82, 1.0, 0.55, 0.08, PALETTE.warning);
+  // Stepped equipment annex breaks the roofline and houses the fixed uplink.
+  b.box(3.6, 1.55, 3.1, 3.2, 1.9, 3.6, PALETTE.oliveDark);
+  b.box(3.6, 2.62, 3.1, 3.5, 0.22, 3.9, PALETTE.olive);
+  b.box(-4.2, 0.95, 3.9, 1.6, 0.8, 1.2, PALETTE.oliveDark);
+  // Four-leg sensor tower with visible bracing under the array.
+  b.box(0, 4.55, 0, 2.2, 0.22, 2.2, PALETTE.hullDark);
+  for (const [x, z] of [
+    [-0.65, -0.65],
+    [0.65, -0.65],
+    [0.65, 0.65],
+    [-0.65, 0.65],
+  ]) {
+    b.box(x, 5.3, z, 0.14, 1.5, 0.14, PALETTE.metal);
+  }
+  b.box(0, 5.35, 0, 1.5, 0.12, 0.12, PALETTE.metal);
+  b.box(0, 5.35, 0, 0.12, 0.12, 1.5, PALETTE.metal);
+  b.box(0, 5.95, 0, 1.0, 0.18, 1.0, PALETTE.darkMetal);
+  // A small fixed dish on the annex keeps the composition asymmetric without
+  // competing with the sweeping array above.
+  b.box(3.6, 2.95, 3.1, 0.14, 0.45, 0.14, PALETTE.metal);
+  b.cylinder(3.6, 3.3, 3.1, 0.72, 0.2, 8, PALETTE.hullLight);
+  b.box(3.6, 3.55, 3.1, 0.1, 0.5, 0.1, PALETTE.metal);
+  sandbagWall(b, 0, 4.95, 6.0, true, 0.28);
+  sandbagWall(b, 4.9, 0, 4.0, false, 0.28);
   return b.build();
 }
 
@@ -1451,13 +1546,22 @@ function buildRadarDish(): MeshBuffers {
   return b.build();
 }
 
-/** Broad dish of a radar station, authored around the mast top. */
+/** Broad swept array of a radar station, authored around the tower top. */
 function buildRadarStationDish(): MeshBuffers {
   const b = new MeshBuilder();
-  b.boxRot(-0.2, 0.1, 0, 4.4, 1.8, 0.24, 0.62, PALETTE.hullLight);
-  b.box(0, 0.05, 0, 0.2, 1.2, 0.2, PALETTE.darkMetal);
-  b.box(0, 0.85, 0, 0.4, 0.24, 0.4, PALETTE.warning);
-  b.box(-1.9, 0.1, 0, 0.3, 1.1, 0.3, PALETTE.hullDark);
+  b.box(0, -0.05, 0, 0.9, 0.3, 0.9, PALETTE.darkMetal);
+  b.box(0, 0.35, 0, 0.35, 1.1, 0.35, PALETTE.metal);
+  // Backing frame first, then the broad sail and its horizontal stiffeners.
+  b.box(-0.35, 0.85, 0, 0.22, 1.8, 0.5, PALETTE.darkMetal);
+  b.box(-0.35, 1.5, 0, 0.22, 0.16, 4.6, PALETTE.metal);
+  b.box(-0.35, 0.15, 0, 0.22, 0.16, 4.6, PALETTE.metal);
+  b.boxRot(-0.2, 0.85, 0, 5.6, 2.1, 0.26, 0.18, PALETTE.hullLight);
+  for (const y of [0.25, 0.85, 1.45]) {
+    b.boxRot(0.08, y, 0, 5.4, 0.08, 0.06, 0.18, PALETTE.darkMetal);
+  }
+  b.box(-3.2, 0.85, 0, 0.4, 0.12, 0.12, PALETTE.metal);
+  b.box(-3.25, 0.5, 0, 0.18, 0.8, 0.18, PALETTE.metal);
+  b.box(2.5, 1.9, 0, 0.4, 0.2, 0.4, PALETTE.warning);
   return b.build();
 }
 

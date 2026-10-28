@@ -1007,6 +1007,9 @@ export class App {
       const sig = this.hudSignatureOf(this.game);
       this.hud.update(this.game, dt, sig);
       this.checkVictory();
+      this.renderer.setSimulationAlpha(
+        this.paused ? 1 : Math.min(1, this.accumulator / (TICK_MS / 1000)),
+      );
       this.renderer.update(dt);
       this.renderer.render();
       this.overlay.draw(this);
@@ -1032,7 +1035,26 @@ export class App {
       const isLocal = ev.team === local;
       const cue = announcementForEvent(ev, local);
       if (cue) this.audio.announce(cue);
-      if (isLocal && ev.sound) this.audio.play(ev.sound);
+      // Visible enemy fire is part of the battle, not hidden information. Feed
+      // it through the same fog gate the renderer uses, with distance trim so
+      // a firefight across the island does not sound like one in the base.
+      const visible =
+        isLocal ||
+        !this.game.state.scenario.settings.fog ||
+        this.game.fogAt(
+          this.game.teamOf(local),
+          Math.floor(ev.x / TILE_SIZE),
+          Math.floor(ev.z / TILE_SIZE),
+        ) === 2;
+      if (visible && ev.sound) {
+        let gain = 1;
+        if (!isLocal) {
+          const d = Math.hypot(ev.x - this.renderer.camera.cx, ev.z - this.renderer.camera.cz);
+          const reach = Math.max(1, this.renderer.camera.zoom * 2.6);
+          gain = Math.max(0.12, 1 - d / reach) * 0.55;
+        }
+        this.audio.play(ev.sound, gain);
+      }
       if (isLocal && (ev.level === 'warning' || ev.level === 'critical')) {
         this.hud.log(ev.text, ev.level, ev.tick);
         this.toast(ev.text, ev.level === 'critical' ? 'critical' : 'warning');

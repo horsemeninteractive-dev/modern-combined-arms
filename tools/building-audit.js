@@ -64,6 +64,82 @@ function freeze(app) {
 }
 
 /**
+ * Several different structures in one real battlefield frame. Unlike
+ * `contactSheet`, this composes them together, so a side-by-side pair can be
+ * judged at the same camera, scale and lighting. Positions are scenario tiles.
+ *
+ * @param {Array<{defId: string, owner?: number, x: number, z: number, facing?: number}>} items
+ * @param {{zoom?: number, fog?: boolean, select?: boolean}} [options]
+ */
+export async function showStructures(items, options = {}) {
+  const app = window.ironTide;
+  if (!app) throw new Error('Open the game page first: window.ironTide is missing.');
+  const { createIslandAssault } = await import('/src/data/scenarios.ts');
+  const { footprintCenter } = await import('/src/sim/map.ts');
+  const scenario = createIslandAssault();
+  scenario.structures.push(
+    ...items.map((item) => ({
+      defId: item.defId,
+      owner: item.owner ?? 0,
+      x: item.x,
+      z: item.z,
+      ...(item.facing === undefined ? {} : { facing: item.facing }),
+    })),
+  );
+  scenario.settings.fog = options.fog ?? false;
+  scenario.settings.timeOfDay = options.timeOfDay ?? 'day';
+  scenario.settings.weather = 'clear';
+  app.settings.mapId = 'island-assault';
+  app.settings.fogVisual = options.fog ?? false;
+  app.settings.effects = false;
+  app.renderer.settings.showFog = options.fog ?? false;
+  app.renderer.settings.effects = false;
+  app.speed = 0;
+  await app.startBattle(scenario);
+  const centers = items.map((item) => footprintCenter(item.defId, item.x, item.z));
+  const missing = items.filter((item) => {
+    const center = footprintCenter(item.defId, item.x, item.z);
+    return !app.game?.state.entities.some(
+      (e) => e.kind === 'building' && e.defId === item.defId && Math.abs(e.x - center.x) < 0.01 && Math.abs(e.z - center.z) < 0.01,
+    );
+  });
+  if (missing.length > 0) throw new Error(`Scenario did not spawn: ${missing.map((m) => m.defId).join(', ')}`);
+  app.speed = 0;
+  app.paused = false;
+  preparePage(app);
+  const focus = {
+    x: centers.reduce((sum, c) => sum + c.x, 0) / centers.length,
+    z: centers.reduce((sum, c) => sum + c.z, 0) / centers.length,
+  };
+  const camera = app.renderer.camera;
+  camera.setScreenLift(0, 0);
+  camera.zoom = options.zoom ?? 36;
+  camera.update();
+  camera.centerOn(focus.x, focus.z);
+  app.selected = [];
+  freeze(app);
+  app.overlay.clear();
+  const result = {
+    ready: true,
+    ids: items.map((item) => item.defId),
+    focus,
+    camera: {
+      cx: camera.cx,
+      cz: camera.cz,
+      zoom: camera.zoom,
+      pitchDeg: Math.round((camera.pitch * 180) / Math.PI),
+    },
+    frame: {
+      css: [camera.width, camera.height],
+      buffer: [app.renderer.gl.drawingBufferWidth, app.renderer.gl.drawingBufferHeight],
+      dpr: app.renderer.dpr,
+    },
+  };
+  window.__buildingPair = result;
+  return result;
+}
+
+/**
  * One authored building, plus optional friendly/enemy duplicate for team
  * colour and a rifleman/tank scale reference in the foreground.
  *
@@ -227,6 +303,10 @@ export async function contactSheet(ids, options = {}) {
       fog: options.fog ?? false,
       facing: options.facing ?? 0,
       refs: options.refs ?? false,
+      // A coastal battery has to sit on a valid navigable-water edge; the
+      // generic grass showroom rejects it and would silently keep the previous
+      // frame in the sheet.
+      at: options.atById?.[ids[i]] ?? (ids[i] === 'coastalBattery' ? { x: 15, z: 51 } : undefined),
     });
     const gl = app.renderer.gl;
     const canvas = gl.canvas;
@@ -341,20 +421,27 @@ export async function silhouetteSheet(ids, options = {}) {
  * Frozen opening frame of a shipped map, focused on the urban core rather than
  * the player's base. Used to judge structures in their real authored context.
  */
-export async function showMap(mapId = 'foundry-district', focus = { x: 46, z: 34 }, zoom = 30) {
+export async function showMap(
+  mapId = 'foundry-district',
+  focus = { x: 46, z: 34 },
+  zoom = 30,
+  options = {},
+) {
   const app = window.ironTide;
   if (!app) throw new Error('Open the game page first: window.ironTide is missing.');
   document.documentElement.classList.remove('booting');
   const intro = document.getElementById('intro-screen');
   if (intro) intro.classList.add('hidden');
   const { createFoundryDistrict } = await import('/src/data/maps.ts');
-  const scenario = createFoundryDistrict();
-  scenario.settings.fog = false;
+  const { createIslandAssault } = await import('/src/data/scenarios.ts');
+  const scenario = mapId === 'island-assault' ? createIslandAssault() : createFoundryDistrict();
+  const fog = options.fog ?? false;
+  scenario.settings.fog = fog;
   scenario.settings.timeOfDay = 'day';
   app.settings.mapId = mapId;
-  app.settings.fogVisual = false;
+  app.settings.fogVisual = fog;
   app.settings.effects = false;
-  app.renderer.settings.showFog = false;
+  app.renderer.settings.showFog = fog;
   app.renderer.settings.effects = false;
   app.speed = 0;
   await app.startBattle(scenario);
@@ -407,6 +494,24 @@ export async function saveReviewSheet(name, maxWidth = 1100) {
   canvas.height = Math.round(sheet.height * scale);
   canvas.getContext('2d').drawImage(sheet, 0, 0, canvas.width, canvas.height);
   return saveDataUrl(name, canvas.toDataURL('image/png'));
+}
+
+/**
+ * Save a close crop with building flags suppressed. Team tint is untouched, so
+ * this is the evidence for body ownership after capture, independent of the
+ * flag rig. The renderer method is restored even if the save fails.
+ */
+export async function saveFlaglessCrop(name, width = 800, height = 600, includeOverlay = false) {
+  const app = window.ironTide;
+  if (!app) throw new Error('Open the game page first: window.ironTide is missing.');
+  const renderer = app.renderer;
+  const original = renderer.drawBuildingFlags;
+  renderer.drawBuildingFlags = () => {};
+  try {
+    return await saveCentreCrop(name, width, height, includeOverlay);
+  } finally {
+    renderer.drawBuildingFlags = original;
+  }
 }
 
 /** Save the current game frame at native canvas resolution. */

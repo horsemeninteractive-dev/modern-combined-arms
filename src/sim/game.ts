@@ -74,10 +74,12 @@ import {
   SAVE_FORMAT_VERSION,
   type SaveData,
 } from './save';
+import { migrateSave } from './saveMigrations';
 import type {
   Command,
   Entity,
   GameState,
+  ImpactSurface,
   PlayerState,
   PowerStatus,
   Projectile,
@@ -1176,21 +1178,28 @@ export class Game {
     });
   }
 
+  /**
+   * A structure an engineer may work on: the team's own, or a neutral shelter
+   * its infantry are holding. The second case is what lets a squad patch the
+   * tenement it is fighting from instead of watching it crumble around them.
+   */
+  private isRepairableBy(owner: number, target: Entity): boolean {
+    if (target.kind !== 'building' || target.hp <= 0 || target.construction || target.hp >= target.maxHp) {
+      return false;
+    }
+    if (target.owner === owner) return true;
+    if (!BUILDINGS[target.defId]?.garrison) return false;
+    return this.garrisonOccupants(target.id).some((unit) => unit.owner === owner);
+  }
+
   private commandRepair(owner: number, ids: number[], targetId: number): void {
     const target = this.getEntity(targetId);
-    if (
-      !target ||
-      target.kind !== 'building' ||
-      target.owner !== owner ||
-      target.hp <= 0 ||
-      target.construction ||
-      target.hp >= target.maxHp
-    ) {
+    if (!target || !this.isRepairableBy(owner, target)) {
       this.emit('orderFailed', {
         team: owner,
         x: target?.x ?? 0,
         z: target?.z ?? 0,
-        text: 'Only a damaged friendly structure can be repaired.',
+        text: 'Only a damaged friendly structure, or a shelter your infantry hold, can be repaired.',
         level: 'warning',
         sound: 'denied',
       });
@@ -1375,7 +1384,7 @@ export class Game {
         team: owner,
         x: target.x,
         z: target.z,
-        text: 'Only riflemen and ATGM teams can garrison a building.',
+        text: 'Only infantry can garrison a building.',
         level: 'warning',
         sound: 'denied',
       });
@@ -1755,7 +1764,7 @@ export class Game {
     const damage = computeDamage(raw, weapon.multipliers, 'infantry');
     if (damage <= 0) return;
     occupant.suppression = Math.min(1, occupant.suppression + weapon.suppression * cfg.exposure);
-    this.damageEntity(occupant, damage, attackerOwner, shooterId);
+    this.damageEntity(occupant, damage, attackerOwner, shooterId, weapon.id);
   }
 
   /**
@@ -3229,7 +3238,17 @@ export class Game {
     const player = this.player(e.owner);
     if (!player) return;
     if (e.order?.type === 'attack' || e.order?.type === 'capture') return;
-    // A full hopper always seeks a refinery, even after a player move order.
+    // A player move is authoritative until the hull arrives. The seek phase
+    // used to replace the ordered path on the very next tick, which is why a
+    // harvester could not be steered by hand.
+    if (e.order?.type === 'move' || e.order?.type === 'attackMove') {
+      if (e.path.length > 0) return;
+      e.order = null;
+      if (h.ore >= HARVESTER_CAPACITY) this.sendHarvesterToRefinery(e);
+      else h.phase = 'seek';
+      return;
+    }
+    // A full hopper always seeks a refinery, even after a player order.
     if (h.ore >= HARVESTER_CAPACITY && h.phase !== 'toRefinery' && h.phase !== 'unloading') {
       this.sendHarvesterToRefinery(e);
       return;
@@ -3324,14 +3343,6 @@ export class Game {
           e.state = 'idle';
         }
         break;
-      }
-    }
-    if (e.order?.type === 'move' || e.order?.type === 'attackMove') {
-      // Let explicit movement execute, then resume automatic harvesting. A
-      // move to a refinery keeps its offload phase so the hopper empties first.
-      if (e.path.length === 0) {
-        if (h.phase !== 'toRefinery') h.phase = 'seek';
-        e.order = null;
       }
     }
   }
@@ -3486,14 +3497,7 @@ export class Game {
     }
     if (e.order?.type === 'repair') {
       const target = this.getEntity(e.order.targetId ?? 0);
-      if (
-        !target ||
-        target.kind !== 'building' ||
-        target.hp <= 0 ||
-        target.owner !== e.owner ||
-        target.construction ||
-        target.hp >= target.maxHp
-      ) {
+      if (!target || !this.isRepairableBy(e.owner, target)) {
         e.order = null;
         e.path = [];
         e.state = 'idle';
@@ -3783,6 +3787,7 @@ export class Game {
       z: start.z,
       text: '',
       entityId: e.id,
+      weaponId: weapon.id,
       sound: weapon.projectile === 'sam' ? 'sam' : weapon.projectile === 'missile' ? 'missile' : weapon.projectile === 'shell' ? 'cannon' : 'rifle',
     });
     void weapons;
@@ -3967,14 +3972,35 @@ export class Game {
   }
 
   private navFor(e: Entity): NavGrid {
-    return {
+    const def = unitDef(e.defId);
+    const nav: NavGrid = {
       width: this.state.map.width,
       height: this.state.map.height,
       terrain: this.state.map.terrain,
       elevation: this.state.map.elevation,
-      moveClass: unitDef(e.defId).moveClass,
+      moveClass: def.moveClass,
       occupied: this.blocked,
     };
+    if (def.domain !== 'air') {
+      // Idle friendly units are soft traffic: a fresh route steps around a
+      // formation instead of walking into the back of it, while a corridor
+      // still remains passable when there is no alternative.
+      const soft = new Uint8Array(this.state.map.width * this.state.map.height);
+      for (const other of this.state.entities) {
+        if (other === e || other.kind !== 'unit' || other.hp <= 0 || other.garrisonId) continue;
+        if (unitDef(other.defId).domain !== def.domain) continue;
+        if (this.isHostile(e.owner, other.owner)) continue;
+        // A moving column is not an obstacle to itself; only a unit holding
+        // position is marked as traffic worth routing around.
+        if (other.state === 'moving' || other.path.length > 0) continue;
+        const tx = Math.floor(other.x / TILE_SIZE);
+        const tz = Math.floor(other.z / TILE_SIZE);
+        if (!inBounds(this.state.map.width, this.state.map.height, tx, tz)) continue;
+        soft[tileIndex(this.state.map.width, tx, tz)] = 1;
+      }
+      nav.soft = soft;
+    }
+    return nav;
   }
 
   private moveAlongPath(e: Entity, def: UnitDef, dt: number): void {
@@ -4014,9 +4040,12 @@ export class Game {
       return;
     }
     const desired = Math.atan2(dz, dx);
+    // Avoidance is a heading change, not a sideways teleport: the hull turns
+    // onto the open lane and then drives along its own nose.
+    const steer = this.steerAroundUnits(e, def, desired);
     const turn = def.turnRate * dt;
-    e.facing = turnToward(e.facing, desired, turn);
-    const diff = Math.abs(normalizeAngle(desired - e.facing));
+    e.facing = turnToward(e.facing, steer, turn);
+    const diff = Math.abs(normalizeAngle(steer - e.facing));
     let turnFactor = 0.2 + 0.8 * Math.max(0, Math.cos(diff));
     if (diff > 1.3) turnFactor = 0.16;
     if (def.domain === 'naval') turnFactor = 0.12 + 0.88 * Math.max(0, Math.cos(diff));
@@ -4031,35 +4060,44 @@ export class Game {
     }
     const suppressionFactor = 1 - e.suppression * 0.2;
     const speed = def.speed * TILE_SIZE * Math.max(0.08, turnFactor) * terrainFactor * suppressionFactor;
-    const step = Math.min(d, speed * dt);
-    // Move along the path rather than along the current facing. This prevents
-    // ships and vehicles from cutting corners into impassable terrain while
-    // their visual turning still takes time. A crowded lane is walked around
-    // when there is room, and straight through when there is not.
-    const steer = this.steerAroundUnits(e, def, desired);
-    let nx = e.x + Math.cos(desired) * step;
-    let nz = e.z + Math.sin(desired) * step;
-    if (steer !== desired) {
-      const sx = e.x + Math.cos(steer) * step;
-      const sz = e.z + Math.sin(steer) * step;
-      if (this.canOccupy(e, sx, sz)) {
-        nx = sx;
-        nz = sz;
-      }
-    }
+    // Ground and naval movers travel where the hull points. A vehicle waiting
+    // for its turn therefore pivots instead of sliding sideways, and a track
+    // that has not come round yet covers less ground.
+    const heading = def.domain === 'air' ? desired : e.facing;
+    const alignment = def.domain === 'air' ? 1 : Math.max(0, Math.cos(diff));
+    const step = Math.min(d, speed * dt * alignment);
+    let nx = e.x + Math.cos(heading) * step;
+    let nz = e.z + Math.sin(heading) * step;
     if (this.canOccupy(e, nx, nz)) {
       e.x = nx;
       e.z = nz;
       e.blockedTicks = 0;
     } else if (this.canOccupy(e, nx, e.z)) {
       // Slip along a wall instead of stopping dead against it: a step on one
-      // axis alone clears corners the smoothed path cuts across.
+      // axis alone clears the corners the smoothed path cuts across. It is a
+      // last-resort correction, not a driving lane.
       e.x = nx;
       e.blockedTicks = 0;
     } else if (this.canOccupy(e, e.x, nz)) {
       e.z = nz;
       e.blockedTicks = 0;
     } else {
+      // A stopped neighbour can pin a column while the route ahead is clear.
+      // Step onto the open shoulder before giving up and re-planning.
+      if (e.blockedTicks > 2) {
+        const nudge = Math.max(step, 0.6);
+        for (const side of [1, -1]) {
+          const angle = e.facing + side * Math.PI * 0.25;
+          const sx = e.x + Math.cos(angle) * nudge;
+          const sz = e.z + Math.sin(angle) * nudge;
+          if (this.canOccupy(e, sx, sz) && this.unitClearAt(e, sx, sz)) {
+            e.x = sx;
+            e.z = sz;
+            e.blockedTicks = 0;
+            return;
+          }
+        }
+      }
       // Destination blocked by a new structure: try to re-route.
       if (e.blockedTicks > 8) {
         const repath = this.findPathFor(e, e.destX, e.destZ);
@@ -4178,6 +4216,18 @@ export class Game {
     e.state = 'idle';
   }
 
+  /** Whether a step would put `e` inside another ground unit's footprint. */
+  private unitClearAt(e: Entity, x: number, z: number): boolean {
+    const def = unitDef(e.defId);
+    for (const other of this.state.entities) {
+      if (other === e || other.kind !== 'unit' || other.hp <= 0 || other.garrisonId) continue;
+      if (unitDef(other.defId).domain !== def.domain) continue;
+      const min = (def.radius + unitDef(other.defId).radius) * 0.7;
+      if (dist2(x, z, other.x, other.z) < min * min) return false;
+    }
+    return true;
+  }
+
   private canOccupy(e: Entity, x: number, z: number): boolean {
     if (x < TILE_SIZE * 0.5 || z < TILE_SIZE * 0.5) return false;
     if (x > (this.state.map.width - 0.5) * TILE_SIZE || z > (this.state.map.height - 0.5) * TILE_SIZE) {
@@ -4222,14 +4272,12 @@ export class Game {
         const d2 = dx * dx + dz * dz;
         if (d2 >= minDist * minDist || d2 < 0.0001) continue;
         const d = Math.sqrt(d2);
-        // Within a force, a unit on the move gives way to one holding position,
-        // so traffic threads between idle formations instead of shoving them
-        // aside. Contact with the enemy stays a shared push: that is combat,
-        // not queue discipline.
-        const aMoving = a.state === 'moving';
-        const bMoving = b.state === 'moving';
-        const sameSide = !this.isHostile(a.owner, b.owner);
-        const aShare = !sameSide || aMoving === bMoving ? 0.5 : aMoving ? 1 : 0;
+        // A unit holding position is never shoved aside, by a friend or by the
+        // enemy. The mover yields, or stops short when it has no room, so an
+        // idle defender stays where the commander put it.
+        const aMoving = a.state === 'moving' || a.path.length > 0;
+        const bMoving = b.state === 'moving' || b.path.length > 0;
+        const aShare = aMoving === bMoving ? 0.5 : aMoving ? 1 : 0;
         const push = Math.min(0.35, (minDist - d) / d);
         if (aShare > 0) {
           const ax = a.x - dx * push * aShare;
@@ -4320,25 +4368,56 @@ export class Game {
       const falloff = p.splash > 0 ? 1 - 0.55 * Math.min(1, d / radius) : 1;
       const damage = computeDamage(p.damage * falloff, weapon.multipliers, entityArmour(e));
       if (damage <= 0) continue;
-      this.damageEntity(e, damage, p.owner, p.shooterId);
+      this.damageEntity(e, damage, p.owner, p.shooterId, p.weaponId);
       if (e.kind === 'building' && BUILDINGS[e.defId]?.garrison) {
         this.damageGarrison(e, weapon, p.damage * falloff, p.id, p.owner, p.shooterId, e.id === direct?.id);
       }
       e.suppression = Math.min(1, e.suppression + p.suppression * falloff);
       hitCount++;
     }
+    const surface: ImpactSurface = direct
+      ? this.impactSurface(direct)
+      : this.isWaterPoint(p.x, p.z)
+        ? 'water'
+        : 'ground';
     this.emit(p.splash > 0 ? 'explosion' : 'impact', {
       team: p.owner,
       x: p.x,
+      y: p.y,
       z: p.z,
       text: '',
+      weaponId: p.weaponId,
+      surface,
+      hit: !!direct,
+      targetId: direct?.id ?? 0,
       sound: p.splash > 0 ? 'explosion' : 'impact',
       level: 'info',
     });
     void hitCount;
   }
 
-  private damageEntity(target: Entity, damage: number, attackerOwner: number, shooterId: number): void {
+  private impactSurface(target: Entity): ImpactSurface {
+    if (target.kind === 'building') return 'structure';
+    const def = UNITS[target.defId];
+    if (def?.domain === 'air') return 'air';
+    if (def && def.armour !== 'infantry') return 'armour';
+    return 'ground';
+  }
+
+  private isWaterPoint(x: number, z: number): boolean {
+    const tile = this.tileAt(x, z);
+    if (tile === null) return false;
+    const terrain = this.state.map.terrain[tile];
+    return terrain === Terrain.DeepWater || terrain === Terrain.ShallowWater;
+  }
+
+  private damageEntity(
+    target: Entity,
+    damage: number,
+    attackerOwner: number,
+    shooterId: number,
+    weaponId?: string,
+  ): void {
     if (target.hp <= 0) return;
     // Capture-only objectives are never damaged; even splash leaves them intact.
     if (isIndestructibleStructure(target.defId)) return;
@@ -4369,6 +4448,8 @@ export class Game {
         text: `${name} destroyed`,
         entityId: target.id,
         defId: target.defId,
+        weaponId,
+        facing: target.facing,
         level: this.teamOf(target.owner) === this.teamOf(this.localPlayerId) ? 'critical' : 'info',
         sound: 'explosion',
       });
@@ -4391,6 +4472,8 @@ export class Game {
         text: `${name} destroyed`,
         entityId: target.id,
         defId: target.defId,
+        weaponId,
+        facing: target.facing,
         level: this.teamOf(target.owner) === this.teamOf(this.localPlayerId) ? 'critical' : 'info',
         sound: 'explosion',
       });
@@ -4566,6 +4649,11 @@ export class Game {
       text: string;
       entityId?: number;
       defId?: string;
+      weaponId?: string;
+      surface?: SimEvent['surface'];
+      hit?: boolean;
+      targetId?: number;
+      facing?: number;
       sound?: string;
       code?: SimEventCode;
       level?: SimEvent['level'];
@@ -4582,6 +4670,11 @@ export class Game {
       text: data.text,
       entityId: data.entityId,
       defId: data.defId,
+      weaponId: data.weaponId,
+      surface: data.surface,
+      hit: data.hit,
+      targetId: data.targetId,
+      facing: data.facing,
       sound: data.sound,
       code: data.code,
       level: data.level ?? 'info',
@@ -4691,13 +4784,25 @@ export class Game {
 
   static fromSave(raw: unknown, opts: GameOptions = {}): Game {
     if (!raw || typeof raw !== 'object') throw new SaveFormatError('Save file is not valid JSON object data.');
-    const data = raw as Partial<SaveData> & { state?: Record<string, unknown> };
-    if (data.format !== SAVE_FORMAT) throw new SaveFormatError('This is not a Modern Combined Arms battle save.');
-    if (data.version !== SAVE_FORMAT_VERSION) {
+    const header = raw as { format?: unknown; version?: unknown };
+    if (header.format !== SAVE_FORMAT) throw new SaveFormatError('This is not a Modern Combined Arms battle save.');
+    const version = typeof header.version === 'number' ? header.version : Number.NaN;
+    if (!Number.isFinite(version)) throw new SaveFormatError('Save file has no readable version.');
+    if (version > SAVE_FORMAT_VERSION) {
       throw new SaveFormatError(
-        `Save version ${String(data.version)} is not supported by this build (expected ${SAVE_FORMAT_VERSION}).`,
+        `Save version ${version} was written by a newer build; this build supports up to ${SAVE_FORMAT_VERSION}. Update the game before loading it.`,
       );
     }
+    // Older files are upgraded in place by the migration chain rather than
+    // refused. A version the chain cannot reach still fails with the same
+    // clear message the loader has always given.
+    const migrated = version === SAVE_FORMAT_VERSION ? raw : migrateSave(raw);
+    if (!migrated) {
+      throw new SaveFormatError(
+        `Save version ${version} is not supported by this build (expected ${SAVE_FORMAT_VERSION}).`,
+      );
+    }
+    const data = migrated as unknown as Partial<SaveData> & { state?: Record<string, unknown> };
     if (!data.scenario || !data.state) throw new SaveFormatError('Save file is missing scenario or state data.');
     const savedScenario = data.scenario;
     const savedState = data.state;
@@ -4718,6 +4823,9 @@ export class Game {
     const game = new Game(savedScenario, { ...opts, skipInit: true });
     game.localPlayerId = data.localPlayerId ?? opts.localPlayerId ?? PLAYER;
     const map = savedState.map as unknown as GameState['map'];
+    // A v1 file may predate the ore arrays or lose them in serialisation;
+    // rebuild the runtime map from the embedded scenario rather than crash.
+    const fallbackMap = createRuntimeMap(savedScenario);
     game.state = {
       ...state,
       scenario: savedScenario,
@@ -4727,10 +4835,10 @@ export class Game {
             height: map.height,
             terrain: Uint8Array.from(map.terrain),
             elevation: Uint8Array.from(map.elevation),
-            ore: Uint16Array.from(map.ore),
-            maxOre: Uint16Array.from(map.maxOre),
+            ore: Array.isArray(map.ore) ? Uint16Array.from(map.ore) : fallbackMap.ore,
+            maxOre: Array.isArray(map.maxOre) ? Uint16Array.from(map.maxOre) : fallbackMap.maxOre,
           }
-        : createRuntimeMap(savedScenario),
+        : fallbackMap,
       fog: [0, 1].map((team) =>
         savedState.fog?.[team]
           ? Uint8Array.from(savedState.fog[team])

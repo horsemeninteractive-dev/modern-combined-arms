@@ -73,7 +73,7 @@ describe('garrison entry, capacity and exit', () => {
     }
     expect(
       game.state.events.some(
-        (e) => e.type === 'orderFailed' && /Only riflemen and ATGM teams/.test(e.text),
+        (e) => e.type === 'orderFailed' && /Only infantry can garrison/.test(e.text),
       ),
     ).toBe(true);
   });
