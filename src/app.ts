@@ -34,7 +34,13 @@ import { InputController } from './ui/input';
 import { Editor } from './ui/editor';
 import { Overlay } from './ui/overlay';
 import { openModal, confirmDialog, escapeHtml, closeModal } from './ui/modal';
-import { renderChangelog } from './ui/changelog';
+import {
+  hasUnseenChangelog,
+  markAcknowledged,
+  readAcknowledged,
+  renderChangelog,
+  type KeyValueStore,
+} from './ui/changelog';
 import {
   BUILD_COMMIT,
   VERSION_LINE,
@@ -160,6 +166,8 @@ export class App {
   private introPlayed = false;
   private victoryShown: VictoryState | 'none' = 'none';
   private fpsSamples: number[] = [];
+  /** Build key whose changelog notes this device has acknowledged. */
+  private changelogAck: string | null = null;
 
   constructor(canvas: HTMLCanvasElement, overlayCanvas: HTMLCanvasElement) {
     this.renderer = new Renderer(canvas);
@@ -290,6 +298,8 @@ export class App {
       });
     });
     this.renderVersionStamp();
+    this.changelogAck = readAcknowledged(this.localStore());
+    this.refreshChangelogBadge();
     this.buildMapSelector();
     this.buildNationSelector();
     document.addEventListener('fullscreenchange', () => this.syncFullscreenControls());
@@ -1735,6 +1745,40 @@ export class App {
     });
   }
 
+  private localStore(): KeyValueStore | null {
+    try {
+      return window.localStorage;
+    } catch {
+      // Storage can be blocked outright; the badge still works for this session.
+      return null;
+    }
+  }
+
+  /**
+   * A build is acknowledged by opening the changelog. The badge is created
+   * here rather than shipped in the markup, so a returning player never sees
+   * it flash before the stored marker is read.
+   */
+  private refreshChangelogBadge(): void {
+    const btn = document.getElementById('btn-changelog');
+    if (!btn) return;
+    const unseen = hasUnseenChangelog(currentBuildStamp(), this.changelogAck);
+    btn.classList.toggle('has-new', unseen);
+    btn.setAttribute('aria-label', unseen ? 'Changelog — new notes since your last visit' : 'Changelog');
+    const badge = btn.querySelector<HTMLElement>('.menu-footer-badge');
+    if (!unseen) {
+      badge?.remove();
+      return;
+    }
+    if (!badge) {
+      const tag = document.createElement('span');
+      tag.className = 'menu-footer-badge';
+      tag.textContent = 'NEW';
+      tag.setAttribute('aria-hidden', 'true');
+      btn.appendChild(tag);
+    }
+  }
+
   /** The footer names the build that is actually running, not a typed string. */
   private renderVersionStamp(): void {
     const stamp = document.getElementById('menu-build');
@@ -1744,6 +1788,8 @@ export class App {
   }
 
   openChangelog(): void {
+    this.changelogAck = markAcknowledged(this.localStore(), currentBuildStamp());
+    this.refreshChangelogBadge();
     const resume = this.pauseForModal();
     openModal({
       title: 'Changelog',

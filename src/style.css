@@ -588,6 +588,13 @@ button { cursor: pointer; }
 .menu-footer-link:hover { color: var(--amber-soft); border-color: rgba(224, 163, 74, 0.5); }
 /* Two footer links share one row; the stamp keeps the middle of the footer. */
 .menu-footer-links { display: flex; align-items: center; gap: 14px; }
+/* Unseen changelog notes. Built by the app, never present in the markup. */
+.menu-footer-link.has-new { color: var(--amber-soft); }
+.menu-footer-badge {
+  margin-left: 6px; padding: 1px 4px 0; vertical-align: 1px;
+  border: 1px solid rgba(224, 163, 74, 0.5);
+  font-size: 6.5px; letter-spacing: 0.14em; color: var(--amber-soft);
+}
 
 .menu-grid {
   flex: 1; min-height: 0; position: relative; z-index: 2;

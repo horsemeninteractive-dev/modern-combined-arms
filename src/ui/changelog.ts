@@ -8,9 +8,53 @@
  * every piece of text is escaped before any markup is added.
  */
 import changelogMarkdown from '../../CHANGELOG.md?raw';
+import type { BuildStamp } from '../version';
 import { escapeHtml } from './modal';
 
 export const CHANGELOG_MARKDOWN: string = changelogMarkdown;
+
+/** Device-local marker for the build whose notes the player has opened. */
+export const CHANGELOG_ACK_KEY = 'iron-tide.changelog.v1';
+
+/** The slice of Storage the badge needs; injected so the decision is testable. */
+export interface KeyValueStore {
+  getItem(key: string): string | null;
+  setItem(key: string, value: string): void;
+}
+
+/** Identity of a build; the commit catches changes that share a build number. */
+export function buildKey(stamp: BuildStamp): string {
+  return `${stamp.version}+${stamp.stage}+${stamp.build}+${stamp.commit}`;
+}
+
+/**
+ * Unseen when the device has no marker yet, or the marker names another
+ * build. A first visit therefore advertises the notes once, and opening them
+ * acknowledges the build that is running.
+ */
+export function hasUnseenChangelog(running: BuildStamp, acknowledged: string | null): boolean {
+  return acknowledged !== buildKey(running);
+}
+
+export function readAcknowledged(store: KeyValueStore | null): string | null {
+  if (!store) return null;
+  try {
+    return store.getItem(CHANGELOG_ACK_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Persist the acknowledgement and return the in-memory marker. */
+export function markAcknowledged(store: KeyValueStore | null, running: BuildStamp): string {
+  const key = buildKey(running);
+  try {
+    store?.setItem(CHANGELOG_ACK_KEY, key);
+  } catch {
+    /* Private mode: the badge still clears for this session. */
+  }
+  return key;
+}
 
 /** Escape first, then decorate, so authored text can never inject markup. */
 function inline(text: string): string {
