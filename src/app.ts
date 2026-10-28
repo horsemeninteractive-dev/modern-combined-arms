@@ -41,6 +41,7 @@ import {
   renderChangelog,
   type KeyValueStore,
 } from './ui/changelog';
+import { copyText, diagnosticsText } from './ui/diagnostics';
 import {
   BUILD_COMMIT,
   VERSION_LINE,
@@ -1801,6 +1802,27 @@ export class App {
       actions: [{ label: 'Close', primary: true }],
       onClose: () => this.resumeAfterModal(resume),
     });
+  }
+
+  /** Put the four facts a bug report needs on the clipboard. */
+  async copyDiagnostics(): Promise<void> {
+    const game = this.game;
+    if (!game) {
+      this.notify('Start a battle to collect battle diagnostics.', 'warning');
+      return;
+    }
+    const text = diagnosticsText({
+      mapName: game.state.scenario.meta.name,
+      mapId: game.state.scenario.meta.id,
+      tick: game.state.tick,
+    });
+    const copied = await copyText(text);
+    this.notify(
+      copied
+        ? 'Diagnostics copied to the clipboard.'
+        : 'Clipboard unavailable — the build stamp is on the pause card.',
+      copied ? 'success' : 'warning',
+    );
   }
 
   openValidation(errors: { message: string; x?: number; z?: number }[]): void {

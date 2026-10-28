@@ -355,7 +355,7 @@ export class HUD {
       </section>
       <div class="debug-panel hidden" id="debug-panel"></div>
       <div class="pause-overlay hidden" id="pause-overlay">
-        <div class="pause-card"><span class="eyebrow">SIMULATION HALTED</span><h2>PAUSED</h2><p>Issue orders, inspect the battlefield, then resume.</p><p class="pause-build">${escapeHtml(PAUSE_BUILD)}</p><button class="btn btn-primary" data-act="pause">RESUME</button></div>
+        <div class="pause-card"><span class="eyebrow">SIMULATION HALTED</span><h2>PAUSED</h2><p>Issue orders, inspect the battlefield, then resume.</p><p class="pause-build">${escapeHtml(PAUSE_BUILD)}</p><button class="btn btn-primary" data-act="pause">RESUME</button><button class="btn btn-ghost pause-copy" data-act="copy-diagnostics">COPY DIAGNOSTICS</button></div>
       </div>
       <div id="end-root"></div>
     </div>`;
@@ -392,7 +392,7 @@ export class HUD {
       </section>
       <div class="debug-panel hidden" id="debug-panel"></div>
       <div class="pause-overlay hidden" id="pause-overlay">
-        <div class="pause-card"><span class="eyebrow">SIMULATION HALTED</span><h2>PAUSED</h2><p>Issue orders, inspect the battlefield, then resume.</p><p class="pause-build">${escapeHtml(PAUSE_BUILD)}</p><button class="btn btn-primary" data-act="pause">RESUME</button></div>
+        <div class="pause-card"><span class="eyebrow">SIMULATION HALTED</span><h2>PAUSED</h2><p>Issue orders, inspect the battlefield, then resume.</p><p class="pause-build">${escapeHtml(PAUSE_BUILD)}</p><button class="btn btn-primary" data-act="pause">RESUME</button><button class="btn btn-ghost pause-copy" data-act="copy-diagnostics">COPY DIAGNOSTICS</button></div>
       </div>
       <div id="end-root"></div>
     </div>`;
@@ -464,6 +464,9 @@ export class HUD {
     switch (act) {
       case 'pause':
         this.app.togglePause();
+        break;
+      case 'copy-diagnostics':
+        void this.app.copyDiagnostics();
         break;
       case 'save':
         this.app.openSaveMenu(false);
