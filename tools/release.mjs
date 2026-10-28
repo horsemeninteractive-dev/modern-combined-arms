@@ -39,16 +39,32 @@ function fail(message) {
   process.exit(1);
 }
 
-/** Run a command with inherited output; return its exit status. */
-function run(command, commandArgs) {
-  const result = spawnSync(command, commandArgs, { stdio: 'inherit', shell: true });
+/** Quote a value for a shell command line; the inputs are local config only. */
+function quote(value) {
+  return `"${String(value).replaceAll('"', '')}"`;
+}
+
+/**
+ * npm and npx are shell shims on Windows, so they need `shell: true`. Passing a
+ * finished command line rather than an argument array keeps Node from warning
+ * that it would concatenate the arguments unescaped anyway.
+ */
+function runShell(command) {
+  const result = spawnSync(command, { stdio: 'inherit', shell: true });
   if (result.error) fail(`${command} could not start: ${result.error.message}`);
   return result.status ?? 1;
 }
 
-function capture(command, commandArgs) {
-  const result = spawnSync(command, commandArgs, { encoding: 'utf8', shell: true });
+function captureShell(command) {
+  const result = spawnSync(command, { encoding: 'utf8', shell: true });
   if (result.error) fail(`${command} could not start: ${result.error.message}`);
+  return { status: result.status ?? 1, out: `${result.stdout ?? ''}${result.stderr ?? ''}` };
+}
+
+/** git is a real executable everywhere, so it needs no shell. */
+function git(args) {
+  const result = spawnSync('git', args, { encoding: 'utf8' });
+  if (result.error) fail(`git could not start: ${result.error.message}`);
   return { status: result.status ?? 1, out: `${result.stdout ?? ''}${result.stderr ?? ''}` };
 }
 
@@ -71,7 +87,7 @@ if (!html.includes(`id="menu-build">v${label} \u00b7 BUILD`)) {
 console.log(`  package.json, CHANGELOG.md and the menu footer agree on v${label}`);
 
 step('Checking the working tree');
-const dirty = capture('git', ['status', '--porcelain']).out.trim();
+const dirty = git(['status', '--porcelain']).out.trim();
 if (dirty && !allowDirty) {
   console.error(dirty.split('\n').slice(0, 12).map((line) => `  ${line.trimStart()}`).join('\n'));
   fail('The tree is dirty. Commit the release first, or pass --allow-dirty.');
@@ -80,18 +96,18 @@ console.log(dirty ? '  shipping an uncommitted tree (--allow-dirty)' : '  clean'
 
 if (!skipTests) {
   step('Running the test suite');
-  if (run('npm', ['test']) !== 0) fail('Tests failed. Nothing was deployed.');
+  if (runShell('npm test') !== 0) fail('Tests failed. Nothing was deployed.');
 }
 
 step('Building the production bundle');
-if (run('npm', ['run', 'build']) !== 0) fail('Build failed. Nothing was deployed.');
+if (runShell('npm run build') !== 0) fail('Build failed. Nothing was deployed.');
 
 const builtHtml = readFileSync('dist/index.html', 'utf8');
 const bundle = /assets\/index-[A-Za-z0-9_-]+\.js/.exec(builtHtml)?.[0];
 if (!bundle) fail('dist/index.html references no bundle.');
 const bundleSource = readFileSync(`dist/${bundle}`, 'utf8');
 const stamp = /BUILD (\d+)/.exec(bundleSource)?.[1] ?? '?';
-const commits = capture('git', ['rev-list', '--count', 'HEAD']).out.trim();
+const commits = git(['rev-list', '--count', 'HEAD']).out.trim();
 console.log(`  ${bundle} \u00b7 v${label} \u00b7 BUILD ${stamp} (HEAD is ${commits} commits)`);
 
 if (dryRun) {
@@ -100,9 +116,17 @@ if (dryRun) {
 }
 
 step(`Deploying to Cloudflare Pages \u00b7 ${PROJECT}`);
-const deployArgs = [...WRANGLER, 'pages', 'deploy', 'dist', '--project-name', PROJECT, '--branch', BRANCH];
-if (dirty) deployArgs.push('--commit-dirty=true');
-const deploy = capture('npx', deployArgs);
+const deployCommand = [
+  'npx',
+  ...WRANGLER,
+  'pages deploy dist',
+  `--project-name ${quote(PROJECT)}`,
+  `--branch ${quote(BRANCH)}`,
+  dirty ? '--commit-dirty=true' : '',
+]
+  .filter(Boolean)
+  .join(' ');
+const deploy = captureShell(deployCommand);
 process.stdout.write(deploy.out);
 if (deploy.status !== 0) fail('The upload failed. The previous deployment is still live.');
 const preview = /https:\/\/[a-z0-9]+\.moderncombinedarms\.pages\.dev/.exec(deploy.out)?.[0];
