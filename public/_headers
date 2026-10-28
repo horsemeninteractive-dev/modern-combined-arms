@@ -1,0 +1,13 @@
+# Cloudflare Pages header rules, copied verbatim into the deployment root.
+#
+# Pages resolves MIME types from a fixed extension table, and `.webmanifest` is
+# not in it: the file ships with no Content-Type at all, while Pages also sends
+# `x-content-type-options: nosniff`. Chrome then refuses to read the manifest,
+# so "Install app" never gets the name, icons or colours below it. Declaring the
+# type here is the whole fix; `_headers` is not part of the precached shell.
+
+/manifest.webmanifest
+  Content-Type: application/manifest+json
+
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate
