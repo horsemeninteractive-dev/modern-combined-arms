@@ -35,7 +35,13 @@ import { Editor } from './ui/editor';
 import { Overlay } from './ui/overlay';
 import { openModal, confirmDialog, escapeHtml, closeModal } from './ui/modal';
 import { renderChangelog } from './ui/changelog';
-import { BUILD_COMMIT, VERSION_LINE, versionTitle } from './version';
+import {
+  BUILD_COMMIT,
+  VERSION_LINE,
+  buildStampLabel,
+  currentBuildStamp,
+  versionTitle,
+} from './version';
 import { pickTerrain, terrainVisualHeight, type TerrainHit } from './render/terrainSurface';
 import { constructionGridVisible } from './render/gridVisibility';
 import { contextOrderFor } from './ui/orderIntent';
@@ -1582,6 +1588,9 @@ export class App {
     if (!this.game) return;
     try {
       const data = this.game.toSave();
+      // Provenance for the slot list and support reports. The simulation never
+      // reads this field, so the save format and its hash are unchanged.
+      data.build = currentBuildStamp();
       localStorage.setItem(`${SAVE_PREFIX}${slot}`, JSON.stringify(data));
       this.notify(`Battle saved to slot ${slot}.`, 'success');
       this.audio.play('complete');
@@ -1660,13 +1669,13 @@ export class App {
     const rows = SAVE_SLOTS.map((slot) => {
       const record = this.readSlot(slot);
       const meta = record
-        ? `<small>${escapeHtml(record.name)} · ${escapeHtml(new Date(record.savedAt).toLocaleString())}</small>`
+        ? `<small>${escapeHtml(record.name)} · ${escapeHtml(new Date(record.savedAt).toLocaleString())}</small><small class="slot-build">${escapeHtml(buildStampLabel(record.data.build))}</small>`
         : '<small>Empty slot</small>';
       return `<div class="slot-row"><div><b>SLOT ${slot}</b>${meta}</div><button class="btn btn-ghost" data-slot="${slot}">${record ? (loadMode ? 'Load' : 'Overwrite') : 'Empty'}</button></div>`;
     }).join('');
     openModal({
       title: loadMode ? 'Load battle' : 'Save battle',
-      body: `<div class="save-slots">${rows}</div><p class="modal-note">Saves are stored in this browser with versioned state and scenario data. A failed load leaves the current battle untouched.</p>`,
+      body: `<p class="build-stamp">${escapeHtml(VERSION_LINE)} · COMMIT ${escapeHtml(BUILD_COMMIT)}</p><div class="save-slots">${rows}</div><p class="modal-note">Saves are stored in this browser with versioned state and scenario data, and record the build that wrote them. A failed load leaves the current battle untouched.</p>`,
       actions: [{ label: 'Close' }],
       onClose: () => this.resumeAfterModal(resume),
       onMount: (root) => {
@@ -1740,7 +1749,7 @@ export class App {
       title: 'Changelog',
       wide: true,
       body: `
-        <p class="changelog-stamp">${escapeHtml(VERSION_LINE)} · COMMIT ${escapeHtml(BUILD_COMMIT)}</p>
+        <p class="build-stamp">${escapeHtml(VERSION_LINE)} · COMMIT ${escapeHtml(BUILD_COMMIT)}</p>
         ${renderChangelog()}
         <p class="modal-note">The version and stage are read from package.json at build time; the build number is the repository commit count. This panel renders the same CHANGELOG.md that ships with the source.</p>`,
       actions: [{ label: 'Close', primary: true }],

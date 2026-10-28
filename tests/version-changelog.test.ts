@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import html from '../index.html?raw';
 import app from '../src/app.ts?raw';
+import hud from '../src/ui/hud.ts?raw';
 import {
   APP_STAGE,
   APP_VERSION,
@@ -9,8 +10,12 @@ import {
   BUILD_NUMBER,
   VERSION_LABEL,
   VERSION_LINE,
+  buildStampLabel,
+  currentBuildStamp,
   versionTitle,
 } from '../src/version';
+import { Game } from '../src/sim/game';
+import { createIslandAssault } from '../src/data/scenarios';
 import { CHANGELOG_MARKDOWN, renderChangelog } from '../src/ui/changelog';
 
 const pkg = JSON.parse(
@@ -83,6 +88,37 @@ describe('in-game changelog', () => {
     expect(renderChangelog('- first line\n  continues here')).toBe(
       '<div class="changelog"><ul><li>first line continues here</li></ul></div>',
     );
+  });
+});
+
+describe('build provenance', () => {
+  it('labels a saved build and admits when none was recorded', () => {
+    expect(buildStampLabel(currentBuildStamp())).toBe(`${VERSION_LINE} · ${BUILD_COMMIT}`);
+    expect(buildStampLabel({ version: '0.2.0', stage: 'BETA', build: 12 })).toBe('v0.2.0 BETA · BUILD 12');
+    expect(buildStampLabel(undefined)).toBe('Build not recorded');
+    expect(buildStampLabel({})).toBe('Build not recorded');
+  });
+
+  it('stamps a save without disturbing what the simulation restores', () => {
+    const game = new Game(createIslandAssault(), { enableAI: false });
+    game.advance(30);
+    const plain = game.toSave();
+    // The simulation itself stays free of presentation provenance.
+    expect(plain.build).toBeUndefined();
+
+    const stamped = { ...plain, build: currentBuildStamp() };
+    const restored = Game.fromSave(JSON.parse(JSON.stringify(stamped)));
+    expect(restored.state.tick).toBe(game.state.tick);
+    expect(restored.stateHash()).toBe(game.stateHash());
+  });
+
+  it('surfaces the running build on the pause card, save sheet and changelog', () => {
+    // Both HUD compositions carry the same stamp.
+    expect(hud.match(/class="pause-build"/g)).toHaveLength(2);
+    expect(hud).toContain('PAUSE_BUILD');
+    expect(app).toContain('data.build = currentBuildStamp();');
+    expect(app).toContain('buildStampLabel(record.data.build)');
+    expect(app.match(/class="build-stamp"/g)).toHaveLength(2);
   });
 });
 

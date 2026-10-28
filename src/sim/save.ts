@@ -44,6 +44,18 @@ export interface SerializedGameState {
   commandCount: number;
 }
 
+/**
+ * Which build wrote a save. Presentation provenance only: the simulation
+ * neither reads it nor includes it in the state hash, and it is optional so
+ * saves written before build stamping still load unchanged.
+ */
+export interface SaveBuildStamp {
+  version: string;
+  stage: string;
+  build: number;
+  commit: string;
+}
+
 export interface SaveData {
   format: typeof SAVE_FORMAT;
   version: typeof SAVE_FORMAT_VERSION;
@@ -51,4 +63,6 @@ export interface SaveData {
   scenario: Scenario;
   state: SerializedGameState;
   localPlayerId: number;
+  /** Added by the shell when saving; older saves omit it. */
+  build?: SaveBuildStamp;
 }

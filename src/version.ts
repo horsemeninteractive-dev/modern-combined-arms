@@ -31,3 +31,33 @@ export const VERSION_LINE = `${VERSION_LABEL} · ${BUILD_LABEL}`;
 export function versionTitle(): string {
   return `Irontide Engine · ${VERSION_LINE} · commit ${BUILD_COMMIT}`;
 }
+
+/** A saved battle records the build that wrote it. */
+export interface BuildStamp {
+  version: string;
+  stage: string;
+  build: number;
+  commit: string;
+}
+
+/** The running build, for writing into save metadata and support reports. */
+export function currentBuildStamp(): BuildStamp {
+  return { version: APP_VERSION, stage: APP_STAGE, build: BUILD_NUMBER, commit: BUILD_COMMIT };
+}
+
+/**
+ * One-line provenance for a save slot. Saves written before build stamping
+ * have no stamp at all, and saying so is more useful than guessing.
+ */
+export function buildStampLabel(stamp: Partial<BuildStamp> | null | undefined): string {
+  if (
+    !stamp ||
+    typeof stamp.version !== 'string' ||
+    typeof stamp.stage !== 'string' ||
+    typeof stamp.build !== 'number'
+  ) {
+    return 'Build not recorded';
+  }
+  const commit = typeof stamp.commit === 'string' && stamp.commit ? ` · ${stamp.commit}` : '';
+  return `v${stamp.version} ${stamp.stage} · BUILD ${stamp.build}${commit}`;
+}

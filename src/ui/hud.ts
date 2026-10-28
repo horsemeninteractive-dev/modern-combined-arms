@@ -27,8 +27,11 @@ import { ThumbnailRenderer } from '../render/thumbnails';
 import type { ThumbnailKind, ThumbnailRequest, ThumbnailShape } from '../render/thumbnailFrame';
 import { objectiveMeterState } from './relayMeter';
 import { structureBenefit } from '../sim/infrastructure';
+import { BUILD_COMMIT, VERSION_LINE } from '../version';
 
 const DOMAIN_LABEL: Record<string, string> = { land: 'LAND', air: 'AIR', naval: 'SEA' };
+/** Pause is where a bug report starts, so the exact build stays on screen. */
+const PAUSE_BUILD = `${VERSION_LINE} · COMMIT ${BUILD_COMMIT}`;
 
 interface QueueDragState {
   pointerId: number;
@@ -352,7 +355,7 @@ export class HUD {
       </section>
       <div class="debug-panel hidden" id="debug-panel"></div>
       <div class="pause-overlay hidden" id="pause-overlay">
-        <div class="pause-card"><span class="eyebrow">SIMULATION HALTED</span><h2>PAUSED</h2><p>Issue orders, inspect the battlefield, then resume.</p><button class="btn btn-primary" data-act="pause">RESUME</button></div>
+        <div class="pause-card"><span class="eyebrow">SIMULATION HALTED</span><h2>PAUSED</h2><p>Issue orders, inspect the battlefield, then resume.</p><p class="pause-build">${escapeHtml(PAUSE_BUILD)}</p><button class="btn btn-primary" data-act="pause">RESUME</button></div>
       </div>
       <div id="end-root"></div>
     </div>`;
@@ -389,7 +392,7 @@ export class HUD {
       </section>
       <div class="debug-panel hidden" id="debug-panel"></div>
       <div class="pause-overlay hidden" id="pause-overlay">
-        <div class="pause-card"><span class="eyebrow">SIMULATION HALTED</span><h2>PAUSED</h2><p>Issue orders, inspect the battlefield, then resume.</p><button class="btn btn-primary" data-act="pause">RESUME</button></div>
+        <div class="pause-card"><span class="eyebrow">SIMULATION HALTED</span><h2>PAUSED</h2><p>Issue orders, inspect the battlefield, then resume.</p><p class="pause-build">${escapeHtml(PAUSE_BUILD)}</p><button class="btn btn-primary" data-act="pause">RESUME</button></div>
       </div>
       <div id="end-root"></div>
     </div>`;
