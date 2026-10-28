@@ -36,6 +36,14 @@ export interface WeaponDef {
   stabilised?: boolean;
   /** Anti-air capable weapons can detect and fire at aircraft. */
   antiAir?: boolean;
+  /**
+   * Indirect-fire weapon: the projectile arcs over cover and does not require
+   * line of sight. The target must still be visible to the firing team, so a
+   * spotter or radar is required.
+   */
+  indirect?: boolean;
+  /** Minimum range in tiles. Absent means the weapon can fire at point blank. */
+  minRange?: number;
 }
 
 export interface Cost {
@@ -89,12 +97,34 @@ export interface UnitDef {
   description: string;
   icon: string;
   hotkey?: string;
+  /**
+   * Baseline slot this national variant substitutes, e.g. `tank`. A roster
+   * replacement swaps the slot without changing the facility's production
+   * list, and the UI/AI resolve the variant through this field.
+   */
+  variantOf?: string;
   /** Combat domain used for target-class checks. */
   targetClass: TargetClass;
   /** Where this unit's weapons fire from. Absent units have no weapons. */
   muzzle?: MuzzleHardpoint;
   /** Turret traverse rate in radians per second. Absent means no rotating turret. */
   turretRate?: number;
+  /**
+   * Field repair support. While stationary, the unit restores nearby damaged
+   * friendly mechanical units at the definition's rate, paid for in materials.
+   * Infantry and structures are handled by the medic and engineer instead.
+   */
+  repair?: RepairDef;
+}
+
+/** Passive field-repair envelope for a recovery vehicle. */
+export interface RepairDef {
+  /** Radius in tiles. */
+  radius: number;
+  /** Hit points restored per second to the chosen target. */
+  hpPerSec: number;
+  /** Materials spent per hit point restored. */
+  materialCostPerHp: number;
 }
 
 export interface BuildingDef {
@@ -118,6 +148,8 @@ export interface BuildingDef {
   airfield?: boolean;
   /** Naval build / repair point. Requires navigable water adjacency. */
   shipyard?: boolean;
+  /** Baseline structure slot this national variant substitutes, e.g. `mgNest`. */
+  variantOf?: string;
   /** Headquarters buildings are victory objectives. */
   commandPost?: boolean;
   /** Provides the tactical minimap while operational and powered. */
@@ -126,6 +158,12 @@ export interface BuildingDef {
   reqPerSec?: number;
   /** Passive material income per second while owned and operational. */
   matsPerSec?: number;
+  /**
+   * A lifeline rather than an income stream: this passive income only pays
+   * while the owner has no harvester left, so a base stripped of its hauling
+   * economy can still rebuild instead of sitting at zero income forever.
+   */
+  matsPerSecBackstop?: boolean;
   /**
    * Capturable strategic objective. Combat Engineers capture it through the
    * shared capture order; effects only apply while owned and operational.
@@ -174,15 +212,68 @@ export interface GarrisonDef {
   firingSlots: number;
 }
 
-export interface FactionDef {
+/** A set of registered unit and building definition ids. */
+export interface RosterDef {
+  readonly units: readonly string[];
+  readonly buildings: readonly string[];
+}
+
+/**
+ * National changes applied on top of an alliance baseline.
+ *
+ * Additions are appended in declaration order and must not duplicate an id.
+ * Removals must name an id present in the baseline. A replacement maps a
+ * baseline id to another registered definition with a unique id: it keeps the
+ * baseline slot, which is how a national variant swaps a shared platform
+ * without changing production or save state. Every referenced id is
+ * a full UnitDef or BuildingDef; this model never clones or patches a
+ * definition at runtime.
+ */
+export interface NationRosterModifications {
+  readonly addUnits?: readonly string[];
+  readonly addBuildings?: readonly string[];
+  readonly removeUnits?: readonly string[];
+  readonly removeBuildings?: readonly string[];
+  readonly replaceUnits?: Readonly<Record<string, string>>;
+  readonly replaceBuildings?: Readonly<Record<string, string>>;
+}
+
+/** Shared identity fields for factions, alliances and nations. */
+export interface FactionIdentity {
   id: string;
   name: string;
   shortName: string;
   color: string;
   accent: string;
   blurb: string;
-  units: string[];
-  buildings: string[];
+}
+
+/** One of the two launch alliances; supplies the shared baseline roster. */
+export interface AllianceDef extends FactionIdentity {
+  readonly baseline: RosterDef;
+}
+
+/** One of the six playable launch nations. */
+export interface NationDef extends FactionIdentity {
+  /** Alliance whose baseline this nation inherits. */
+  readonly allianceId: string;
+  /** One-line battlefield identity shown in setup, brief and loading screen. */
+  readonly doctrine: string;
+  /** National additions, exclusions and substitutions; absent means baseline only. */
+  readonly roster?: NationRosterModifications;
+}
+
+/**
+ * Legacy alliance-level preset (`baltic`, `expeditionary`).
+ *
+ * Existing maps and saves use these ids, so they stay valid and resolve to the
+ * same shared baseline as their alliance. New playable identities are the six
+ * nations in `NATION_LIST`; do not add national behaviour here.
+ */
+export interface FactionDef extends FactionIdentity {
+  readonly allianceId: string;
+  readonly units: readonly string[];
+  readonly buildings: readonly string[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -338,6 +429,11 @@ export interface Entity {
   buildTargetId: number;
   /** Building id this infantryman occupies, or 0 when exposed. */
   garrisonId: number;
+  /**
+   * Friendly mechanical unit this recovery vehicle is currently repairing, or
+   * 0. Saved with the entity so a reload resumes the same repair job.
+   */
+  repairTargetId?: number;
   /** AI bookkeeping (serialised so saves remain faithful). */
   aiGroup: number;
   aiRole: string;
@@ -367,7 +463,30 @@ export interface Projectile {
   armourMul: Partial<Record<ArmourClass, number>>;
   suppression: number;
   seed: number;
+  /** Launch point and arc data, present on indirect-fire projectiles. */
+  startX?: number;
+  startY?: number;
+  startZ?: number;
+  /** True for a lobbed shot that follows a visible ballistic arc. */
+  lob?: boolean;
+  /** Peak height of the arc in world units. */
+  arc?: number;
 }
+
+/**
+ * Presentation-neutral transition markers carried by ordinary sim events.
+ * They let the UI identify a specific gameplay moment without parsing prose
+ * or polling state, and they never affect simulation rules.
+ */
+export type SimEventCode =
+  | 'queueFull'
+  | 'productionStarted'
+  | 'productionCancelled'
+  | 'siteLost'
+  | 'powerRestored'
+  | 'baseUnderAttack'
+  | 'forcesUnderAttack'
+  | 'enemyDetected';
 
 export type SimEventType =
   | 'shot'
@@ -402,6 +521,8 @@ export interface SimEvent {
   entityId?: number;
   defId?: string;
   sound?: string;
+  /** Machine-readable transition for presentation services such as the announcer. */
+  code?: SimEventCode;
   /** Alert priority for the UI layer. */
   level?: 'info' | 'warning' | 'critical' | 'success';
 }
@@ -493,6 +614,8 @@ export interface AIControlState {
   lastContactTick: number;
   /** Tick of the last reconnaissance order, to avoid thrashing scouts. */
   lastScoutTick: number;
+  /** Tick of the last reconnaissance-drone sortie, kept separate from the land scout. */
+  lastAirScoutTick?: number;
   /** Construction currently being watched for measurable progress. */
   activeSiteId: number;
   activeSiteProgress: number;

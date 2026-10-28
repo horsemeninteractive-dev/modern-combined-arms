@@ -14,6 +14,12 @@ const ROSTER: BuildingDef[] = [
     vision: 10,
     commandPost: true,
     reqPerSec: 0.4,
+    // A standing headquarters trickles a little material while its owner has
+    // no working drop-off — no refinery, and none affordable — so losing the
+    // whole hauling economy is a severe setback rather than a permanent dead
+    // end.
+    matsPerSec: 1,
+    matsPerSecBackstop: true,
     // Engineering fallback: the HQ trains engineers only while no vehicle
     // factory is operational (see Game.productionStatus).
     produces: 'land',
@@ -21,7 +27,7 @@ const ROSTER: BuildingDef[] = [
     // The headquarters runs its own generator; every other structure draws on it.
     power: 80,
     description:
-      'The battlegroup command element. Loss of the Command Post ends the operation. Provides limited requisition income and can train a replacement Combat Engineer when no Vehicle Factory is operational.',
+      'The battlegroup command element. Loss of the Command Post ends the operation. Provides limited requisition income and, while no working drop-off remains, a small material trickle so a stripped base can recover; it can also train a replacement Combat Engineer when no Vehicle Factory is operational.',
     icon: 'command',
     hotkey: 'H',
   },
@@ -56,9 +62,9 @@ const ROSTER: BuildingDef[] = [
     vision: 7,
     power: -15,
     produces: 'land',
-    productionList: ['engineer', 'harvester', 'recon', 'aa', 'tank'],
+    productionList: ['engineer', 'harvester', 'recon', 'aa', 'tank', 'spg', 'recovery'],
     description:
-      'Builds armoured vehicles, support vehicles and harvesters. Each factory runs its own production queue.',
+      'Builds armoured vehicles, recovery and artillery support, and harvesters. Each factory runs its own production queue.',
     icon: 'factory',
     hotkey: 'V',
   },
@@ -94,10 +100,10 @@ const ROSTER: BuildingDef[] = [
     vision: 9,
     power: -25,
     produces: 'air',
-    productionList: ['fighter'],
+    productionList: ['fighter', 'interceptor', 'uav'],
     airfield: true,
     description:
-      'Produces strike fighters and services them: rearming, refuelling and repairing aircraft that return to base.',
+      'Produces strike fighters, interceptors and reconnaissance drones, and services them: rearming, refuelling and repairing aircraft that return to base.',
     icon: 'airfield',
     hotkey: 'J',
   },
@@ -106,7 +112,9 @@ const ROSTER: BuildingDef[] = [
     name: 'Naval Shipyard',
     shortName: 'SHIPYARD',
     role: 'Naval production / repair',
-    footprint: { w: 5, h: 4 },
+    // Square footprint: the yard turns its slipway toward the water, and a
+    // square keeps the blocked tiles and the art aligned in every direction.
+    footprint: { w: 5, h: 5 },
     hp: 1600,
     armour: 'structure',
     cost: { mats: 1050, req: 150 },
@@ -214,6 +222,26 @@ const ROSTER: BuildingDef[] = [
     hotkey: 'T',
   },
   {
+    id: 'coastalBattery',
+    name: 'Coastal Battery',
+    shortName: 'COASTAL',
+    role: 'Static anti-ship defence',
+    footprint: { w: 2, h: 2 },
+    hp: 700,
+    armour: 'structure',
+    cost: { mats: 480, req: 40 },
+    buildTime: 14,
+    vision: 11,
+    power: -12,
+    weapons: ['coastalMissile'],
+    turretRate: 1.5,
+    requiresWater: true,
+    description:
+      'Shore-based anti-ship missile launcher. Long reach against corvettes and other hulls, but it cannot engage ground forces and needs a buildable coastline with navigable water alongside.',
+    icon: 'coastal',
+    hotkey: 'L',
+  },
+  {
     id: 'relay',
     name: 'Signals Relay',
     shortName: 'RELAY',
@@ -292,6 +320,78 @@ const ROSTER: BuildingDef[] = [
     hotkey: '',
   },
   {
+    id: 'warehouse',
+    name: 'Brick Warehouse',
+    shortName: 'WAREHOUSE',
+    role: 'Garrison strongpoint',
+    footprint: { w: 5, h: 4 },
+    hp: 640,
+    armour: 'structure',
+    cost: { mats: 0, req: 0 },
+    buildTime: 0,
+    vision: 5,
+    authoredOnly: true,
+    garrison: { capacity: 4, protection: 0.45, exposure: 0.55, firingSlots: 2 },
+    description:
+      'Long brick goods store with a loading dock. Four infantry can hold it behind two firing positions and 45% protection: better than a ruin, worse than a purpose-built tenement.',
+    icon: 'warehouse',
+    hotkey: '',
+  },
+  {
+    id: 'officeBlock',
+    name: 'Office Block',
+    shortName: 'OFFICES',
+    role: 'Garrison strongpoint',
+    footprint: { w: 4, h: 5 },
+    hp: 680,
+    armour: 'structure',
+    cost: { mats: 0, req: 0 },
+    buildTime: 0,
+    vision: 7,
+    authoredOnly: true,
+    garrison: { capacity: 5, protection: 0.5, exposure: 0.5, firingSlots: 3 },
+    description:
+      'Concrete office tower with a commanding view of the street. Five occupants, three firing positions and 50% protection, but it is a large target for anti-structure fire.',
+    icon: 'offices',
+    hotkey: '',
+  },
+  {
+    id: 'civicHall',
+    name: 'Civic Hall',
+    shortName: 'CIVIC HALL',
+    role: 'Landmark strongpoint',
+    footprint: { w: 5, h: 5 },
+    hp: 1500,
+    armour: 'structure',
+    cost: { mats: 0, req: 0 },
+    buildTime: 0,
+    vision: 8,
+    authoredOnly: true,
+    garrison: { capacity: 6, protection: 0.6, exposure: 0.4, firingSlots: 3 },
+    description:
+      'The city hall: a domed civic block with a clock tower that anchors the central square. Six infantry can hold it behind three firing positions and 60% protection — the strongest shelter in the district, and the one both commanders will fight over.',
+    icon: 'civic',
+    hotkey: '',
+  },
+  {
+    id: 'foundryWorks',
+    name: 'Foundry Works',
+    shortName: 'FOUNDRY',
+    role: 'Landmark strongpoint',
+    footprint: { w: 5, h: 4 },
+    hp: 1600,
+    armour: 'structure',
+    cost: { mats: 0, req: 0 },
+    buildTime: 0,
+    vision: 6,
+    authoredOnly: true,
+    garrison: { capacity: 5, protection: 0.5, exposure: 0.5, firingSlots: 2 },
+    description:
+      'The works that gave the district its name: a long bay under twin chimneys, with a gantry rail across the yard. Five occupants hold it behind two firing positions and 50% protection, though the high stacks make it easy to find from a distance.',
+    icon: 'foundry',
+    hotkey: '',
+  },
+  {
     id: 'ruin',
     name: 'Ruined House',
     shortName: 'RUIN',
@@ -311,10 +411,46 @@ const ROSTER: BuildingDef[] = [
   },
 ];
 
+/**
+ * National variants, registered but absent from `BUILDING_LIST`. The shared
+ * alliance baseline must not hand every nation another nation's structure; a
+ * nation roster substitutes the slot explicitly.
+ */
+const NATIONAL_BUILDINGS: BuildingDef[] = [
+  {
+    id: 'bunker',
+    name: 'Reinforced Bunker',
+    shortName: 'BUNKER',
+    role: 'Fortified anti-infantry',
+    footprint: { w: 2, h: 2 },
+    hp: 900,
+    armour: 'structure',
+    cost: { mats: 420, req: 0 },
+    buildTime: 14,
+    vision: 10,
+    power: -8,
+    weapons: ['heavyMg'],
+    turretRate: 3.0,
+    variantOf: 'mgNest',
+    description:
+      'Hungarian reinforced machine-gun bunker. Nearly twice the survivability of the shared nest and a little more reach, paid for with a higher price and 14 seconds of construction: fewer positions, held longer.',
+    icon: 'mg',
+    hotkey: 'G',
+  },
+];
+
 export const BUILDINGS: Record<string, BuildingDef> = Object.fromEntries(
-  ROSTER.map((b) => [b.id, b]),
+  [...ROSTER, ...NATIONAL_BUILDINGS].map((b) => [b.id, b]),
 );
 export const BUILDING_LIST = ROSTER;
+
+/** Registered national variants; deliberately excluded from the shared baseline. */
+export const NATIONAL_BUILDING_LIST = NATIONAL_BUILDINGS;
+
+/** Baseline family id for a national variant, or the id itself. */
+export function buildingFamily(id: string): string {
+  return BUILDINGS[id]?.variantOf ?? id;
+}
 
 export function buildingDef(id: string): BuildingDef {
   const def = BUILDINGS[id];
@@ -332,4 +468,6 @@ export function isIndestructibleStructure(defId: string): boolean {
 }
 
 /** Buildings a player can place. Strategic objectives and neutral shelters are authored only. */
-export const BUILDABLE_BY_PLAYER = ROSTER.filter((b) => !b.authoredOnly);
+export const BUILDABLE_BY_PLAYER = [...ROSTER, ...NATIONAL_BUILDINGS].filter(
+  (b) => !b.authoredOnly,
+);

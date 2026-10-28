@@ -3,9 +3,9 @@ import type { Game } from '../sim/game';
 import type { Entity, VictoryState } from '../sim/types';
 import { BUILDINGS, BUILDABLE_BY_PLAYER, isIndestructibleStructure } from '../data/buildings';
 import { UNITS } from '../data/units';
-import { FACTIONS } from '../data/factions';
+import { ALLIANCES, tryIdentityDef } from '../data/factions';
 import { TERRAIN, Terrain, tileIndex, type TerrainId } from '../sim/terrain';
-import { TILE_SIZE } from '../sim/constants';
+import { REPAIR_SUPPRESSION_TICKS, TILE_SIZE } from '../sim/constants';
 import { icon, iconSvg } from './icons';
 import { escapeHtml } from './modal';
 import {
@@ -95,7 +95,7 @@ function stateLabel(e: Entity): string {
 function ownerColor(game: Game, e: Entity): string {
   if (e.owner === -1) return '#8d9d98';
   const p = game.player(e.owner);
-  return p ? FACTIONS[p.factionId]?.color ?? '#d8e2dd' : '#d8e2dd';
+  return p ? tryIdentityDef(p.factionId)?.color ?? '#d8e2dd' : '#d8e2dd';
 }
 
 export class HUD {
@@ -213,12 +213,20 @@ export class HUD {
    */
   private railMarkup(game: Game): string {
     const p = game.player(game.localPlayerId);
-    const faction = p ? FACTIONS[p.factionId] : null;
+    const faction = p ? tryIdentityDef(p.factionId) : undefined;
+    // Registry-backed identity: the rail names the nation the player commands,
+    // and the title carries the alliance so the short label can stay compact.
+    const railName = faction?.shortName || faction?.name || 'TASK FORCE';
+    const railTitle = faction
+      ? `${faction.name} · ${ALLIANCES[faction.allianceId]?.name ?? faction.allianceId}${
+          faction.doctrine ? ` · ${faction.doctrine}` : ''
+        }`
+      : 'Task force';
     return `
       <aside class="hud-rail" aria-label="Command rail">
         <div class="rail-brand">
           <img class="brand-mark" src="/insignia.svg" alt="" aria-hidden="true" width="30" height="30" />
-          <span class="rail-theatre" title="${escapeHtml(faction?.shortName ?? 'TASK FORCE')} · Kestrel Bay">${escapeHtml(faction?.shortName ?? 'TASK FORCE')}</span>
+          <span class="rail-theatre" title="${escapeHtml(railTitle)}">${escapeHtml(railName)}</span>
         </div>
         <div class="rail-stats">
           <div class="rail-stat"><span class="rail-label"><i class="resource-swatch"></i>MATS</span><b id="res-mats">0</b><span class="rail-rate" id="res-mats-rate">+0/m</span></div>
@@ -249,6 +257,7 @@ export class HUD {
     return `
       <header class="mobile-topbar">
         <img class="brand-mark" src="/insignia.svg" alt="" aria-hidden="true" width="26" height="26" />
+        <span class="mobile-nation" title="${escapeHtml(this.identityTitle(game))}">${escapeHtml(this.identityShort(game))}</span>
         <div class="mobile-stats">
           <div class="mobile-stat"><span>MATS</span><b id="res-mats">0</b></div>
           <div class="mobile-stat req"><span>REQ</span><b id="res-req">0</b></div>
@@ -767,7 +776,23 @@ export class HUD {
 
   private teamColor(): string {
     const p = this.app.localPlayer;
-    return p ? FACTIONS[p.factionId]?.color ?? '#d8e2dd' : '#d8e2dd';
+    return p ? tryIdentityDef(p.factionId)?.color ?? '#d8e2dd' : '#d8e2dd';
+  }
+
+  /** Compact, registry-backed nation label for the touch top strip. */
+  private identityShort(game: Game): string {
+    const p = game.player(game.localPlayerId);
+    const identity = p ? tryIdentityDef(p.factionId) : undefined;
+    return identity?.shortName || identity?.name || 'TASK FORCE';
+  }
+
+  private identityTitle(game: Game): string {
+    const p = game.player(game.localPlayerId);
+    const identity = p ? tryIdentityDef(p.factionId) : undefined;
+    if (!identity) return 'Task force';
+    const alliance = ALLIANCES[identity.allianceId];
+    const label = alliance ? `${identity.name} · ${alliance.name}` : identity.name;
+    return identity.doctrine ? `${label} · ${identity.doctrine}` : label;
   }
 
   private thumbMarkup(
@@ -813,7 +838,7 @@ export class HUD {
     // each faction in the battle; a hostile or captured asset uses its own colour.
     const portraitColors = new Set<string>([localColor]);
     for (const player of game.state.players) {
-      portraitColors.add(FACTIONS[player.factionId]?.color ?? '#d8e2dd');
+      portraitColors.add(tryIdentityDef(player.factionId)?.color ?? '#d8e2dd');
     }
     for (const color of portraitColors) {
       for (const defId of Object.keys(UNITS)) {
@@ -962,10 +987,18 @@ export class HUD {
     const controlBlock = objective
       ? `<div class="hp-block"><div class="hp-label"><span>${objective.progress > 0 ? 'CAPTURE' : 'CONTROL'}</span><span>${objective.progress > 0 ? `${Math.round(objective.progress * 100)}%` : escapeHtml(objective.ownerLabel)}</span></div><div class="hp-bar"><i style="width:${objectiveFill * 100}%;background:${objective.progress > 0 ? objective.capturerColor : objective.ownerColor}"></i></div></div>`
       : '';
+    // Repair is suspended while a structure is being hit, so say so where the
+    // player is already looking for the integrity bar instead of leaving a
+    // stalled bar unexplained.
+    const underFire =
+      e.kind === 'building' &&
+      e.hp > 0 &&
+      e.hp < e.maxHp &&
+      game.state.tick - e.lastHitTick < REPAIR_SUPPRESSION_TICKS;
     const integrityBlock =
       e.kind !== 'building' || isIndestructibleStructure(e.defId)
         ? ''
-        : `<div class="hp-block"><div class="hp-label"><span>INTEGRITY</span><span>${Math.ceil(e.hp)}/${Math.ceil(e.maxHp)}</span></div><div class="hp-bar"><i class="${hpClass(frac)}" style="width:${frac * 100}%"></i></div></div>`;
+        : `<div class="hp-block"><div class="hp-label"><span>INTEGRITY</span><span>${Math.ceil(e.hp)}/${Math.ceil(e.maxHp)}</span></div><div class="hp-bar"><i class="${hpClass(frac)}" style="width:${frac * 100}%"></i></div>${underFire ? '<div class="hp-note"><span>UNDER FIRE</span><span>REPAIR SUSPENDED</span></div>' : ''}</div>`;
     const vitalBlock = `${controlBlock}${integrityBlock}`;
     let stats = '';
     if (e.kind === 'unit' && def && 'speed' in def) {
@@ -1051,7 +1084,7 @@ export class HUD {
         <div class="sel-main">
           ${this.thumbMarkup(e.kind, e.defId, ownerColor(game, e), 'portrait', iconName, `sel-icon${isEnemy ? ' enemy' : e.owner === -1 ? ' neutral' : ''}`)}
           <div class="sel-info">
-            <div class="sel-title"><h3>${escapeHtml(def?.name ?? e.defId)}</h3><span>${p ? escapeHtml(FACTIONS[p.factionId]?.shortName ?? p.name) : 'NEUTRAL'}${isOwn ? '' : isEnemy ? ' · HOSTILE' : ''}</span></div>
+            <div class="sel-title"><h3>${escapeHtml(def?.name ?? e.defId)}</h3><span>${p ? escapeHtml(tryIdentityDef(p.factionId)?.shortName || p.name) : 'NEUTRAL'}${isOwn ? '' : isEnemy ? ' · HOSTILE' : ''}</span></div>
             <div class="sel-role">${escapeHtml(roleText)}</div>
           </div>
         </div>
@@ -1262,10 +1295,13 @@ export class HUD {
     }
     const html = facilities.map((f) => {
       const def = BUILDINGS[f.defId];
-      const list = def.productionList ?? [];
+      // The panel shows exactly what the simulation will accept for this
+      // player, so a national roster cannot disagree with the facility list.
+      const list = game.productionEntries(this.app.localPlayerId, f.defId);
       const cards = list.map((id) => {
         const udef = UNITS[id];
         if (!udef) return '';
+        const national = udef.variantOf ? '<span class="u-national">NATIONAL</span>' : '';
         const status = game.productionStatus(this.app.localPlayerId, f.id, id);
         const queued = productionCardState(f.queue, id);
         const reorderable = queued.queued > 0 && f.queue.some((item) => item.defId !== id);
@@ -1285,7 +1321,7 @@ export class HUD {
               ${this.thumbMarkup('unit', id, this.teamColor(), 'card', udef.icon, 'u-thumb')}
               <span class="u-progress" style="--p:${(queued.progress * 100).toFixed(1)}%" aria-hidden="true"></span>
             </span>
-            <span class="u-name">${escapeHtml(udef.shortName)}</span>
+            <span class="u-name">${escapeHtml(udef.shortName)}${national}</span>
             <span class="u-cost"><b>${udef.cost.mats}</b>M${udef.cost.req > 0 ? ` · ${udef.cost.req}R` : ''}</span>
             ${reorderable ? '<span class="u-grip" title="Drag to set production priority" aria-hidden="true"></span>' : ''}
           </button>
@@ -1559,14 +1595,16 @@ export class HUD {
   private buildMarkup(tab: 'base' | 'defence'): string {
     const p = this.app.localPlayer;
     const engineer = this.game?.entitiesOf(this.app.localPlayerId, 'unit').find((e) => UNITS[e.defId]?.canBuild);
+    const roster = this.game?.rosterFor(this.app.localPlayerId);
     const cards = BUILDABLE_BY_PLAYER
       .filter((def) => structureTab(!!def.weapons?.length) === tab)
+      .filter((def) => !roster || roster.buildings.includes(def.id))
       .map((def) => {
         const affordable = p ? p.mats >= def.cost.mats && p.req >= def.cost.req : false;
         return `<button class="build-card" data-build="${def.id}" ${engineer ? '' : 'disabled'} title="${escapeHtml(def.description)}">
           ${def.id === 'powerPlant' ? '<span class="b-flag">GRID FIX</span>' : ''}
           ${this.thumbMarkup('building', def.id, this.teamColor(), 'card', def.icon, 'b-thumb')}
-          <span class="b-copy"><span class="b-name">${escapeHtml(def.name)}</span><span class="b-cost"><b>${def.cost.mats}</b>M${def.cost.req > 0 ? ` · ${def.cost.req}R` : ''} · ${def.buildTime}s${affordable ? '' : ' · INSUFFICIENT'}</span></span>
+          <span class="b-copy"><span class="b-name">${escapeHtml(def.name)}${def.variantOf ? '<span class="u-national">NATIONAL</span>' : ''}</span><span class="b-cost"><b>${def.cost.mats}</b>M${def.cost.req > 0 ? ` · ${def.cost.req}R` : ''} · ${def.buildTime}s${affordable ? '' : ' · INSUFFICIENT'}</span></span>
         </button>`;
       }).join('');
     return `<div class="build-grid">${cards}</div>`;
@@ -1929,14 +1967,17 @@ export class HUD {
     if (!root) return;
     const enemies = game.state.players.filter((q) => q.id !== this.app.localPlayerId);
     const enemyStats = enemies[0]?.stats;
+    // End copy names the two identities actually fighting, not the legacy map.
+    const victorName = tryIdentityDef(p?.factionId ?? '')?.name ?? 'Your force';
+    const enemyName = tryIdentityDef(enemies[0]?.factionId ?? '')?.name ?? 'The enemy';
     root.innerHTML = `
       <div class="end-screen">
         <div class="end-card">
           <span class="result">${result === 'draw' ? 'OPERATION ENDED' : victory ? 'OPERATION COMPLETE' : 'OPERATION FAILED'}</span>
           <h2 class="${victory ? '' : 'defeat'}">${result === 'draw' ? 'Stalemate' : victory ? 'Island Secured' : 'Beachhead Lost'}</h2>
           <p>${victory
-            ? 'The 11th Expeditionary Corps command post is destroyed. Kestrel Bay is under Baltic control — land, air and sea were brought to bear as one force.'
-            : 'Your command post has fallen. The expeditionary corps holds the island; a new plan and a new landing are required.'}</p>
+            ? `${enemyName}'s command post is destroyed. ${victorName} holds the island — land, air and sea were brought to bear as one force.`
+            : `Your command post has fallen. ${enemyName} holds the island; a new plan and a new landing are required.`}</p>
           <div class="end-stats">
             <div><span>MISSION TIME</span><b>${fmtTime(game.state.tick)}</b></div>
             <div><span>UNITS BUILT</span><b>${stats?.unitsBuilt ?? 0}</b></div>
@@ -1974,5 +2015,9 @@ function primaryObjective(game: Game): string {
   );
   if (!enemyHq) return 'Enemy command destroyed — secure the island.';
   if (game.state.scenario.settings.victory === 'annihilation') return 'Destroy all enemy forces.';
-  return 'Destroy the 11th Corps Command Post.';
+  // Name the actual opposing identity: a nation battle must not inherit the
+  // map's legacy callsign in the objective line.
+  const enemy = game.player(enemyHq.owner);
+  const label = enemy ? tryIdentityDef(enemy.factionId)?.name ?? 'enemy' : 'enemy';
+  return `Destroy the ${label} Command Post.`;
 }

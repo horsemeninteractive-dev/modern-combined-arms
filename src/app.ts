@@ -3,7 +3,22 @@ import { Game } from './sim/game';
 import { TICK_MS, TILE_SIZE } from './sim/constants';
 import { BUILDINGS } from './data/buildings';
 import { UNITS } from './data/units';
-import { createIslandAssault } from './data/scenarios';
+import {
+  BUILTIN_SCENARIOS,
+  DEFAULT_SCENARIO_ID,
+  builtinScenario,
+  createIslandAssault,
+  type BuiltinScenario,
+} from './data/scenarios';
+import {
+  ALLIANCE_LIST,
+  NATION_LIST,
+  PLAYABLE_NATION_IDS,
+  defaultOpponentNation,
+  identityAlliance,
+  identityDef,
+  tryIdentityDef,
+} from './data/factions';
 import {
   cloneScenario,
   canLaunch,
@@ -13,16 +28,24 @@ import {
 import type { AIDifficulty, Command, Entity, Stance, VictoryState } from './sim/types';
 import type { SaveData } from './sim/save';
 import { AudioEngine } from './ui/audio';
+import { announcementForEvent } from './ui/announcer';
 import { HUD } from './ui/hud';
 import { InputController } from './ui/input';
 import { Editor } from './ui/editor';
 import { Overlay } from './ui/overlay';
 import { openModal, confirmDialog, escapeHtml, closeModal } from './ui/modal';
+import { renderChangelog } from './ui/changelog';
+import { BUILD_COMMIT, VERSION_LINE, versionTitle } from './version';
 import { pickTerrain, terrainVisualHeight, type TerrainHit } from './render/terrainSurface';
 import { constructionGridVisible } from './render/gridVisibility';
 import { contextOrderFor } from './ui/orderIntent';
+import { briefMapLabels, drawBriefMap } from './ui/mapPreview';
+import { needsLandscape } from './ui/orientation';
+import { enterFullscreen, isFullscreen, toggleFullscreen } from './ui/fullscreen';
 
 export type Screen = 'menu' | 'battle' | 'editor';
+/** Panels inside the main menu shell. */
+export type MenuView = 'skirmish' | 'editor' | 'settings';
 export type CommandMode =
   | 'none'
   | 'move'
@@ -37,12 +60,23 @@ export type CommandMode =
 export interface AppSettings {
   sfx: number;
   ambient: number;
+  /** Menu theme volume. The track streams from /audio/menu-theme.mp3. */
+  music: number;
+  /** Strategic announcer voice volume. */
+  voice: number;
   effects: boolean;
   shake: boolean;
   fogVisual: boolean;
   edgePan: boolean;
   /** Opponent strength for new battles; a loaded save keeps its own. */
   difficulty: AIDifficulty;
+  /** Selected skirmish theatre. */
+  mapId: string;
+  /**
+   * Playable nation the local commander fields in a new skirmish. The opposing
+   * nation is derived from the other alliance, so both sides are always known.
+   */
+  nationId: string;
 }
 
 export interface DragBox {
@@ -55,6 +89,8 @@ export interface DragBox {
 
 const SETTINGS_KEY = 'iron-tide.settings.v1';
 const SAVE_PREFIX = 'iron-tide.save.v1.';
+/** The intro sting plays once per browser session, so reloads land in the menu. */
+
 export const SAVE_SLOTS = [1, 2, 3];
 
 const DIFFICULTY_COPY: Record<AIDifficulty, string> = {
@@ -65,6 +101,12 @@ const DIFFICULTY_COPY: Record<AIDifficulty, string> = {
 
 const DIFFICULTIES = Object.keys(DIFFICULTY_COPY) as AIDifficulty[];
 
+const MENU_VIEWS: MenuView[] = ['skirmish', 'editor', 'settings'];
+
+function isMenuView(value: unknown): value is MenuView {
+  return MENU_VIEWS.includes(value as MenuView);
+}
+
 export class App {
   readonly renderer: Renderer;
   readonly audio = new AudioEngine();
@@ -74,6 +116,8 @@ export class App {
   readonly editor: Editor;
 
   screen: Screen = 'menu';
+  /** null until the player picks a view: the menu opens with nothing selected. */
+  menuView: MenuView | null = null;
   game: Game | null = null;
   selected: number[] = [];
   groups = new Map<number, number[]>();
@@ -93,6 +137,21 @@ export class App {
   private lastEventSeq = 0;
   private accumulator = 0;
   private lastFrame = 0;
+  /** Scenario drawn behind the menu; null when a battle or the editor owns the canvas. */
+  private menuScenario: Scenario | null = null;
+  private menuDrift = 0;
+  private introTimer = 0;
+  private introBeatTimer = 0;
+  /** One-shot downlink fault played when the deck changes. */
+  private glitchTimer = 0;
+  private menuHandoffStarted = false;
+  private briefObserver: ResizeObserver | null = null;
+  /** Built-in theatres, generated once and shared by the backdrop and thumbnails. */
+  private mapCache = new Map<string, Scenario>();
+  /** Set only when this gate paused the battle, so a manual pause survives. */
+  private orientationPaused = false;
+  /** The sting belongs to the launch, not to the menu: it plays once per page. */
+  private introPlayed = false;
   private victoryShown: VictoryState | 'none' = 'none';
   private fpsSamples: number[] = [];
 
@@ -107,6 +166,7 @@ export class App {
     this.installMenu();
     this.installResize();
     this.bindFirstInteraction();
+    this.startMenuBackdrop();
     this.resize();
     this.lastFrame = performance.now();
     requestAnimationFrame(this.frame);
@@ -121,11 +181,15 @@ export class App {
     const defaults: AppSettings = {
       sfx: 0.8,
       ambient: 0.35,
+      music: 0.45,
+      voice: 0.8,
       effects: true,
       shake: true,
       fogVisual: true,
       edgePan: true,
       difficulty: 'veteran',
+      mapId: DEFAULT_SCENARIO_ID,
+      nationId: PLAYABLE_NATION_IDS[0],
     };
     try {
       const raw = localStorage.getItem(SETTINGS_KEY);
@@ -134,7 +198,23 @@ export class App {
       const difficulty = DIFFICULTIES.includes(parsed.difficulty as AIDifficulty)
         ? (parsed.difficulty as AIDifficulty)
         : defaults.difficulty;
-      return { ...defaults, ...parsed, difficulty };
+      const mapId = BUILTIN_SCENARIOS.some((s) => s.id === parsed.mapId)
+        ? (parsed.mapId as string)
+        : defaults.mapId;
+      // Only a playable nation is a valid selection; an older or hand-edited
+      // settings blob must not put an alliance or an unknown id in a player slot.
+      const nationId = PLAYABLE_NATION_IDS.includes(parsed.nationId as string)
+        ? (parsed.nationId as string)
+        : defaults.nationId;
+      return {
+        ...defaults,
+        ...parsed,
+        music: Math.max(0, Math.min(1, Number(parsed.music ?? defaults.music))),
+        voice: Math.max(0, Math.min(1, Number(parsed.voice ?? defaults.voice))),
+        difficulty,
+        mapId,
+        nationId,
+      };
     } catch {
       return defaults;
     }
@@ -145,6 +225,8 @@ export class App {
     this.renderer.settings.shake = this.settings.shake;
     this.renderer.settings.showFog = this.settings.fogVisual;
     this.audio.setVolumes(1, this.settings.sfx, this.settings.ambient);
+    this.audio.setMusicVolume(this.settings.music);
+    this.audio.setVoiceVolume(this.settings.voice);
   }
 
   saveSettings(): void {
@@ -174,10 +256,22 @@ export class App {
         fn();
       });
     };
-    on('btn-deploy', () => void this.startBattle(createIslandAssault()));
+    on('btn-deploy', () => void this.startBattle(this.deployScenario()));
     on('btn-editor', () => this.openEditor());
+    on('btn-editor-autosave', () => this.openEditorAutosave());
     on('btn-load', () => this.openLoadMenu());
     on('btn-briefing', () => this.openBriefing());
+    on('btn-changelog', () => this.openChangelog());
+    document.querySelectorAll<HTMLButtonElement>('[data-menu-view]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const view = btn.dataset.menuView as MenuView;
+        if (!isMenuView(view)) return;
+        this.audio.init();
+        this.audio.play('ui');
+        this.showMenuView(view);
+        this.glitchSwitch();
+      });
+    });
     document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const difficulty = btn.dataset.difficulty as AIDifficulty;
@@ -189,7 +283,335 @@ export class App {
         this.applyDifficultyUi();
       });
     });
+    this.renderVersionStamp();
+    this.buildMapSelector();
+    this.buildNationSelector();
+    document.addEventListener('fullscreenchange', () => this.syncFullscreenControls());
     this.applyDifficultyUi();
+    this.showMenuView(this.menuView);
+    this.renderMenuSettings();
+    this.refreshEditorAutosaveButton();
+    this.installIntro();
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Intro sting                                                         */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * The studio sting plays once per session over a black field, but only after
+   * a deliberate click: browsers refuse to start audio (or fullscreen) without
+   * a gesture, and a silent opening reads as broken. The gate also takes the
+   * app fullscreen. From then on any pointer, key, the skip button, the end of
+   * the clip, a decode error or an autoplay refusal all land in the same place:
+   * the menu, already animating in. A fallback timer makes sure a stalled
+   * download can never hold the game.
+   */
+  private installIntro(): void {
+    const intro = document.getElementById('intro-screen');
+    if (!intro) {
+      this.revealMenu();
+      return;
+    }
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (this.introPlayed || reduced) {
+      intro.classList.add('hidden');
+      this.revealMenu();
+      this.audio.playMenuMusic();
+      return;
+    }
+
+    const gate = document.getElementById('btn-start');
+    if (!gate) {
+      this.beginIntroPlayback();
+      return;
+    }
+    gate.focus({ preventScroll: true });
+    gate.addEventListener(
+      'click',
+      () => {
+        // Audio and fullscreen both need the gesture: start them before any await.
+        this.audio.init();
+        this.audio.play('ui');
+        void enterFullscreen().then(() => this.syncFullscreenControls());
+        intro.classList.add('started');
+        window.setTimeout(() => this.beginIntroPlayback(), 300);
+      },
+      { once: true },
+    );
+  }
+
+  /** Run the sting itself, once the start gate has taken the gesture. */
+  private beginIntroPlayback(): void {
+    const intro = document.getElementById('intro-screen');
+    if (!intro || intro.classList.contains('done')) return;
+    const skip = document.getElementById('btn-skip-intro');
+    skip?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      this.finishIntro();
+    });
+    intro.addEventListener('pointerdown', () => this.finishIntro());
+    window.addEventListener(
+      'keydown',
+      (event) => {
+        if (event.key === 'Escape' || event.key === 'Enter' || event.key === ' ') this.finishIntro();
+      },
+      { once: true },
+    );
+
+    const video = document.getElementById('intro-video') as HTMLVideoElement | null;
+    if (!video) {
+      this.finishIntro();
+      return;
+    }
+    video.addEventListener('ended', () => this.endStudioBeat());
+    video.addEventListener('error', () => this.introFallback());
+    // If metadata never arrives, the sting is missing or unplayable: fall back to
+    // the studio plate, then the engine beat, then the menu.
+    this.introTimer = window.setTimeout(() => this.introFallback(), 12000);
+
+    // The start gate supplied the gesture, so the sting can play with sound.
+    // Set it explicitly: a previous muted autoplay attempt must not persist.
+    video.muted = false;
+    intro.classList.add('playing');
+    const source = video.dataset.src;
+    if (source) video.src = source;
+    video.addEventListener('loadedmetadata', () => {
+      if (Number.isFinite(video.duration) && video.duration > 0) {
+        intro.style.setProperty('--intro-duration', `${video.duration.toFixed(2)}s`);
+      }
+    });
+    const started = video.play();
+    if (started) started.catch(() => this.introFallback());
+  }
+
+  /**
+   * Autoplay can be refused (battery saver, strict policy). Rather than losing
+   * the branding beat entirely, hold a static studio plate for a moment; any
+   * input still takes the player straight to the menu.
+   */
+  private introFallback(): void {
+    const intro = document.getElementById('intro-screen');
+    if (!intro || intro.classList.contains('done')) return;
+    intro.classList.add('blocked');
+    window.clearTimeout(this.introTimer);
+    this.introTimer = window.setTimeout(() => this.endStudioBeat(), 3200);
+  }
+
+  /**
+   * The title sequence has two beats: the studio sting, then the engine plate.
+   * The engine beat always follows the studio beat — played, refused or failed —
+   * and any input during it still takes the player straight to the menu.
+   */
+  private endStudioBeat(): void {
+    const intro = document.getElementById('intro-screen');
+    if (!intro || intro.classList.contains('done') || intro.classList.contains('engine')) return;
+    window.clearTimeout(this.introTimer);
+    intro.classList.add('engine');
+    this.introBeatTimer = window.setTimeout(() => this.startLogoBeat(), 2000);
+  }
+
+  /** Third beat: the game lockup, held before it flies into the menu topbar. */
+  private startLogoBeat(): void {
+    const intro = document.getElementById('intro-screen');
+    if (!intro || intro.classList.contains('done')) return;
+    intro.classList.add('logo');
+    this.introBeatTimer = window.setTimeout(() => this.startMenuHandoff(), 1500);
+  }
+
+  /**
+   * Build the menu underneath the clearing intro, then dock the lockup. The
+   * menu's own logo stays hidden until the flight lands so the two never show
+   * at once.
+   */
+  private startMenuHandoff(): void {
+    const intro = document.getElementById('intro-screen');
+    const menu = document.getElementById('menu-screen');
+    if (!intro || !menu || intro.classList.contains('done')) {
+      this.finishIntro();
+      return;
+    }
+    this.menuHandoffStarted = true;
+    menu.classList.add('handoff');
+    this.revealMenu();
+    intro.classList.add('flying');
+    // Wait out the topbar's entrance so the target rect has settled.
+    this.introBeatTimer = window.setTimeout(() => this.flyLogoToMenu(), 500);
+  }
+
+  /**
+   * Transform the intro emblem onto the menu's own, measured not guessed. The
+   * beats compare marks rather than lockups: the intro carries the mark alone,
+   * so the topbar is where the rule and the words are laid out.
+   */
+  private flyLogoToMenu(): void {
+    const intro = document.getElementById('intro-screen');
+    const logo = document.querySelector<HTMLElement>('.intro-game-logo');
+    const target = document.querySelector<HTMLElement>('.menu-topbar .game-logo');
+    const from = logo?.querySelector<HTMLElement>('.game-logo-mark')?.getBoundingClientRect();
+    const to = target?.querySelector<HTMLElement>('.game-logo-mark')?.getBoundingClientRect();
+    if (!intro || !logo || !from || !to || from.width < 1 || to.width < 1) {
+      this.finishIntro();
+      return;
+    }
+    logo.style.transformOrigin = '0 0';
+    logo.style.transform = `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${(to.width / from.width).toFixed(4)})`;
+    this.introBeatTimer = window.setTimeout(() => this.finishIntro(), 750);
+  }
+
+  private finishIntro(): void {
+    const intro = document.getElementById('intro-screen');
+    if (!intro || intro.classList.contains('done')) return;
+    window.clearTimeout(this.introTimer);
+    window.clearTimeout(this.introBeatTimer);
+    this.introPlayed = true;
+    if (!this.menuHandoffStarted) this.revealMenu();
+    const menu = document.getElementById('menu-screen');
+    menu?.classList.remove('handoff');
+    // The mark has landed: draw the rule and type the lockup in behind it.
+    menu?.classList.add('docked');
+    // The sting is over: let the menu theme take the room.
+    this.audio.playMenuMusic();
+    intro.classList.add('done');
+    window.setTimeout(() => intro.classList.add('hidden'), 700);
+  }
+
+  /** Kick off the staged menu entrance once the sting has cleared the screen. */
+  private revealMenu(): void {
+    const menu = document.getElementById('menu-screen');
+    if (!menu) return;
+    menu.classList.add('ready');
+    menu.classList.remove('replay');
+    // Force a reflow so the entrance animations restart when the sting replays.
+    void menu.offsetWidth;
+    menu.classList.add('replay');
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Menu views                                                          */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * The switch reads as a signal break rather than a cut: the shell tears, the
+   * picture kicks and the new panel's copy comes up line by line. Re-adding the
+   * class restarts it, so tapping the same option twice still feels answered.
+   */
+  private glitchSwitch(): void {
+    const app = document.getElementById('app');
+    if (!app) return;
+    window.clearTimeout(this.glitchTimer);
+    app.classList.remove('glitching');
+    void app.offsetWidth;
+    app.classList.add('glitching');
+    this.glitchTimer = window.setTimeout(() => app.classList.remove('glitching'), 760);
+  }
+
+  private setMenuMode(active: boolean): void {
+    document.getElementById('app')?.classList.toggle('menu-mode', active);
+  }
+
+  showMenuView(view: MenuView | null): void {
+    this.menuView = view;
+    const menu = document.getElementById('menu-screen');
+    if (!menu) return;
+    // An idle deck shows its own panel; `dataset.view` keeps the CSS switch honest.
+    menu.dataset.view = view ?? 'idle';
+    menu.querySelectorAll<HTMLButtonElement>('[data-menu-view]').forEach((btn) => {
+      const active = btn.dataset.menuView === view;
+      btn.classList.toggle('on', active);
+      if (active) btn.setAttribute('aria-current', 'page');
+      else btn.removeAttribute('aria-current');
+    });
+    if (view === 'settings') this.renderMenuSettings();
+    if (view === 'editor') this.refreshEditorAutosaveButton();
+    if (view === 'skirmish') this.paintMapThumbnails();
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Menu battlefield backdrop                                           */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Show the selected theatre behind the menu and let the camera drift across
+   * it, so the shell reads as a game rather than a page over a black canvas.
+   */
+  private startMenuBackdrop(): void {
+    this.setMenuBackdrop(this.selectedScenario());
+  }
+
+  /** Swap the map behind the shell, used both on arrival and on selection. */
+  private setMenuBackdrop(scenario: Scenario): void {
+    // The ground behind the shell is a downlink: `.menu-mode` lets CSS tear it.
+    this.setMenuMode(true);
+    this.menuScenario = scenario;
+    this.menuDrift = 0;
+    this.renderer.setScenario(scenario);
+    this.renderer.settings.grid = false;
+    this.renderer.settings.showFog = false;
+    this.renderer.camera.setScreenLift(0);
+    this.renderer.camera.setZoom(38);
+    this.advanceMenuBackdrop(0);
+    this.paintBriefMap();
+  }
+
+  /**
+   * The mission brief shows the real island, not a sketch: the same scenario
+   * that the battlefield is built from, rasterised, with the callouts pinned to
+   * the two command posts.
+   */
+  private paintBriefMap(): void {
+    const canvas = document.getElementById('brief-map-canvas') as HTMLCanvasElement | null;
+    const scenario = this.menuScenario;
+    if (!canvas || !scenario) return;
+    drawBriefMap(canvas, scenario);
+    // The panel is sized by the stylesheet, so repaint whenever its box moves
+    // (window resize, responsive column) instead of stretching one raster.
+    if (!this.briefObserver && 'ResizeObserver' in window) {
+      this.briefObserver = new ResizeObserver(() => this.paintBriefMap());
+      this.briefObserver.observe(canvas);
+    }
+    for (const label of briefMapLabels(scenario)) {
+      const el = document.getElementById(
+        label.side === 'friend' ? 'brief-label-friend' : 'brief-label-enemy',
+      );
+      if (!el) continue;
+      el.style.left = `${label.x.toFixed(2)}%`;
+      el.style.top = `${label.z.toFixed(2)}%`;
+    }
+  }
+
+  /**
+   * Portrait phones are unplayable: the command deck, production rail and map
+   * need the full width. Show a blocking rotate prompt and hold the battle
+   * while it is up, without overriding a pause the player chose themselves.
+   */
+  private updateOrientationPrompt(): void {
+    const screen = document.getElementById('rotate-screen');
+    if (!screen) return;
+    const show = needsLandscape(window.innerWidth, window.innerHeight, this.renderer.isTouch);
+    // The element's own class is the state, so a stale flag can never leave the
+    // gate up after the device has been turned back.
+    if (show === !screen.classList.contains('hidden')) return;
+    screen.classList.toggle('hidden', !show);
+    document.body.classList.toggle('orientation-locked', show);
+    if (show) {
+      this.orientationPaused = this.pauseForModal();
+    } else {
+      this.resumeAfterModal(this.orientationPaused);
+      this.orientationPaused = false;
+    }
+  }
+
+  private advanceMenuBackdrop(dt: number): void {
+    const scenario = this.menuScenario;
+    if (!scenario) return;
+    this.menuDrift += Math.min(0.05, dt);
+    const t = this.menuDrift;
+    const worldW = scenario.width * TILE_SIZE;
+    const worldH = scenario.height * TILE_SIZE;
+    const cx = worldW * 0.52 + Math.sin(t * 0.055) * worldW * 0.08;
+    const cz = worldH * 0.54 + Math.cos(t * 0.041) * worldH * 0.06;
+    this.renderer.camera.centerOn(cx, cz);
   }
 
   private applyDifficultyUi(): void {
@@ -203,8 +625,179 @@ export class App {
     if (note) note.textContent = DIFFICULTY_COPY[current];
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Theatre selection                                                   */
+  /* ------------------------------------------------------------------ */
+
+  /** Built-in maps are generated once and shared by the shell and the thumbnails. */
+  private scenarioFor(id: string): Scenario {
+    const cached = this.mapCache.get(id);
+    if (cached) return cached;
+    const scenario = builtinScenario(id).create();
+    this.mapCache.set(id, scenario);
+    return scenario;
+  }
+
+  private selectedScenario(): Scenario {
+    return this.scenarioFor(this.settings.mapId);
+  }
+
+  /**
+   * The scenario a skirmish is actually fought on: the selected theatre with
+   * both player slots stamped from the nation registry. The cached backdrop is
+   * never mutated, so changing nations cannot leak into another view.
+   */
+  private deployScenario(): Scenario {
+    const scenario = cloneScenario(this.selectedScenario());
+    const mine = identityDef(this.settings.nationId);
+    const theirs = defaultOpponentNation(mine.id);
+    // The map's callsigns belong to its legacy presets ("Baltic Task Force"),
+    // so a nation deployment also stamps a formation name it actually owns.
+    if (scenario.players[0]) {
+      scenario.players[0].factionId = mine.id;
+      scenario.players[0].name = `${mine.name} Task Force`;
+    }
+    if (scenario.players[1]) {
+      scenario.players[1].factionId = theirs.id;
+      scenario.players[1].name = `${theirs.name} Task Force`;
+    }
+    return scenario;
+  }
+
+  /** Nation picker: one option per playable nation, grouped by alliance. */
+  private buildNationSelector(): void {
+    const select = document.getElementById('nation-select') as HTMLSelectElement | null;
+    if (!select) return;
+    select.innerHTML = '';
+    for (const alliance of ALLIANCE_LIST) {
+      const nations = NATION_LIST.filter((nation) => nation.allianceId === alliance.id);
+      if (nations.length === 0) continue;
+      const group = document.createElement('optgroup');
+      group.label = alliance.name.toUpperCase();
+      for (const nation of nations) {
+        const option = document.createElement('option');
+        option.value = nation.id;
+        option.textContent = nation.name;
+        group.appendChild(option);
+      }
+      select.appendChild(group);
+    }
+    select.value = this.settings.nationId;
+    select.addEventListener('change', () => {
+      if (!PLAYABLE_NATION_IDS.includes(select.value)) {
+        select.value = this.settings.nationId;
+        return;
+      }
+      this.audio.init();
+      this.audio.play('ui');
+      this.settings.nationId = select.value;
+      this.saveSettings();
+      this.applyNationUi();
+    });
+    this.applyNationUi();
+  }
+
+  /**
+   * Every surface that names the two sides reads the same registry records: the
+   * picker note, the mission brief and (through the stamped scenario) the
+   * loading screen and HUD.
+   */
+  private applyNationUi(): void {
+    const identity = identityDef(this.settings.nationId);
+    const alliance = identityAlliance(identity.id);
+    const opponent = defaultOpponentNation(identity.id);
+    const select = document.getElementById('nation-select') as HTMLSelectElement | null;
+    if (select && select.value !== identity.id) select.value = identity.id;
+    const text = (id: string, value: string) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    };
+    text('nation-note', `${identity.name} · ${alliance.name} — ${identity.blurb}`);
+    text('brief-command', identity.name);
+    text('brief-formation', identity.legacy ? 'Alliance task force' : `${identity.name} Task Force`);
+    text('brief-doctrine', identity.doctrine ?? 'Alliance task force');
+    text('brief-opposition', opponent.name);
+    text('brief-alliance', alliance.name);
+    text('brief-label-friend', identity.shortName || identity.name);
+    text('brief-label-enemy', opponent.shortName || opponent.name);
+  }
+
+  private buildMapSelector(): void {
+    const root = document.getElementById('map-cards');
+    if (!root) return;
+    root.innerHTML = '';
+    for (const entry of BUILTIN_SCENARIOS) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'map-card';
+      btn.dataset.mapId = entry.id;
+      btn.setAttribute('role', 'radio');
+      btn.setAttribute('aria-checked', 'false');
+      btn.innerHTML = `
+        <canvas class="map-card-canvas" aria-hidden="true"></canvas>
+        <span class="map-card-text">
+          <b>${escapeHtml(entry.name.replace('Island Assault — ', ''))}</b>
+          <small>${escapeHtml(entry.focus)} · ${entry.width}×${entry.height}</small>
+        </span>`;
+      btn.addEventListener('click', () => {
+        this.audio.init();
+        this.audio.play('ui');
+        this.selectMap(entry.id);
+      });
+      root.appendChild(btn);
+    }
+    this.applyMapUi();
+  }
+
+  private selectMap(id: string): void {
+    if (this.settings.mapId !== id) {
+      this.settings.mapId = id;
+      this.saveSettings();
+      this.setMenuBackdrop(this.selectedScenario());
+    }
+    this.applyMapUi();
+    this.applyNationUi();
+    this.paintMapThumbnails();
+  }
+
+  /** The head, the brief and the selector all describe the selected theatre. */
+  private applyMapUi(): void {
+    const entry = builtinScenario(this.settings.mapId);
+    const scenario = this.selectedScenario();
+    const index = Math.max(0, BUILTIN_SCENARIOS.findIndex((s) => s.id === entry.id));
+    const text = (id: string, value: string) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    };
+    document.querySelectorAll<HTMLButtonElement>('.map-card').forEach((btn) => {
+      const on = btn.dataset.mapId === entry.id;
+      btn.classList.toggle('on', on);
+      btn.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+    text('skirmish-eyebrow', `SKIRMISH · ${entry.focus.toUpperCase()}`);
+    text('skirmish-title', entry.name);
+    text('skirmish-lede', scenario.meta.description || entry.description);
+    text('brief-code', `${entry.focus.toUpperCase()} / 0${index + 1}`);
+    text('brief-size', `${scenario.width} × ${scenario.height} tiles`);
+    text('brief-domains', entry.domains);
+    const canvas = document.getElementById('brief-map-canvas');
+    canvas?.setAttribute('aria-label', `${entry.name} terrain map`);
+    // Command, formation and the map's side labels are nation-driven; see
+    // applyNationUi, which runs after this pass.
+    this.paintBriefMap();
+  }
+
+  private paintMapThumbnails(): void {
+    document.querySelectorAll<HTMLButtonElement>('.map-card').forEach((btn) => {
+      const id = btn.dataset.mapId;
+      const canvas = btn.querySelector('canvas');
+      if (!id || !canvas || canvas.clientWidth < 4) return;
+      drawBriefMap(canvas, this.scenarioFor(id));
+    });
+  }
+
   private showMenu(): void {
-    document.getElementById('menu-screen')?.classList.remove('hidden');
+    document.getElementById('menu-screen')?.classList.remove('hidden', 'handoff');
     document.getElementById('loading-screen')?.classList.add('hidden');
     this.hud.unmount();
     this.screen = 'menu';
@@ -212,19 +805,56 @@ export class App {
     this.paused = false;
     this.overlay.clear();
     this.renderer.setGame(null);
-    this.renderer.camera.setScreenLift(0);
-    this.renderer.camera.setZoom(52);
+    this.audio.stopMatchMusic();
+    this.audio.resetAnnouncer();
+    this.startMenuBackdrop();
     this.applyDifficultyUi();
+    this.applyNationUi();
+    this.showMenuView(this.menuView);
+    this.refreshEditorAutosaveButton();
+    this.revealMenu();
+    this.paintMapThumbnails();
+    this.audio.playMenuMusic();
   }
 
-  private setLoading(active: boolean, title = 'Assembling task force…', hint = 'Building terrain mesh · plotting navigation · briefing AI commander'): void {
+  /**
+   * The loading screen is a screen, not a modal: it fills the viewport over the
+   * chosen map while the task force is assembled, and carries the brief.
+   */
+  private setLoading(active: boolean, scenario?: Scenario): void {
     const screen = document.getElementById('loading-screen');
     if (!screen) return;
+    if (active && scenario) this.fillLoading(scenario);
     screen.classList.toggle('hidden', !active);
-    const t = document.getElementById('loading-title');
-    const h = document.getElementById('loading-hint');
-    if (t) t.textContent = title;
-    if (h) h.textContent = hint;
+  }
+
+  private fillLoading(scenario: Scenario): void {
+    const entry: BuiltinScenario =
+      BUILTIN_SCENARIOS.find((s) => s.id === scenario.meta.id) ?? BUILTIN_SCENARIOS[0];
+    const text = (id: string, value: string) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    };
+    const difficulty = this.settings.difficulty;
+    // The loading screen reads the scenario, not the menu settings, so an
+    // editor launch or a restarted battle names the side it is actually fought as.
+    const command = tryIdentityDef(scenario.players[0]?.factionId ?? '');
+    const opponent = tryIdentityDef(scenario.players[1]?.factionId ?? '');
+    text('loading-title', scenario.meta.name || entry.name);
+    text('loading-lede', scenario.meta.description || entry.description);
+    text('loading-size', `${scenario.width} × ${scenario.height} tiles`);
+    text('loading-command', command?.name ?? scenario.players[0]?.name ?? 'Task force');
+    text('loading-formation', scenario.players[0]?.name ?? 'Task force');
+    text('loading-doctrine', command?.doctrine ?? 'Alliance task force');
+    text('loading-opposition', opponent?.name ?? scenario.players[1]?.name ?? 'Opposing corps');
+    text(
+      'loading-alliance',
+      command ? identityAlliance(command.id).name : 'Unallied force',
+    );
+    text('loading-domains', entry.domains);
+    text('loading-difficulty', difficulty[0].toUpperCase() + difficulty.slice(1));
+    const hint = document.getElementById('loading-hint');
+    if (hint) hint.textContent = 'Building terrain mesh · plotting navigation · briefing AI commander';
   }
 
   /* ------------------------------------------------------------------ */
@@ -240,11 +870,18 @@ export class App {
     }
     if (!canLaunch(scenario)) return;
     this.audio.init();
-    this.setLoading(true);
+    // The menu theme belongs to the deck, not the battlefield. Clear any voice
+    // line or cooldown left by a previous engagement.
+    this.audio.stopMenuMusic();
+    this.audio.stopMatchMusic();
+    this.audio.resetAnnouncer();
+    // The map stays on screen behind the briefing while the battle is built.
+    this.setLoading(true, scenario);
     document.getElementById('menu-screen')?.classList.add('hidden');
     this.hud.unmount();
     this.overlay.clear();
-    await new Promise((resolve) => window.setTimeout(resolve, 180));
+    const shownAt = performance.now();
+    await new Promise((resolve) => window.setTimeout(resolve, 240));
     try {
       const gameScenario = cloneScenario(scenario);
       // A fresh commander each battle: same map, different opening and
@@ -258,10 +895,15 @@ export class App {
         aiDifficulty: this.settings.difficulty,
       });
       this.game = game;
+      // A fast machine would otherwise flash the briefing for a single frame.
+      const elapsed = performance.now() - shownAt;
+      if (elapsed < 780) await new Promise((resolve) => window.setTimeout(resolve, 780 - elapsed));
+      this.menuScenario = null;
       this.renderer.settings.showFog = this.settings.fogVisual && gameScenario.settings.fog;
       this.renderer.setGame(game);
       this.renderer.camera.setBattleZoom();
       this.screen = 'battle';
+      this.setMenuMode(false);
       this.paused = false;
       this.speed = 1;
       this.lastEventSeq = 0;
@@ -275,6 +917,7 @@ export class App {
       this.lastEventSeq = 0;
       this.frameBattleCamera();
       this.setLoading(false);
+      this.audio.startMatchMusic();
       this.notify('Beachhead established. Establish your economy.', 'info');
     } catch (error) {
       this.setLoading(false);
@@ -356,6 +999,7 @@ export class App {
       this.renderer.render();
       this.editor.draw();
     } else {
+      this.advanceMenuBackdrop(dt);
       this.renderer.render();
     }
     requestAnimationFrame(this.frame);
@@ -369,6 +1013,8 @@ export class App {
     for (const ev of events) {
       const local = this.game.localPlayerId;
       const isLocal = ev.team === local;
+      const cue = announcementForEvent(ev, local);
+      if (cue) this.audio.announce(cue);
       if (isLocal && ev.sound) this.audio.play(ev.sound);
       if (isLocal && (ev.level === 'warning' || ev.level === 'critical')) {
         this.hud.log(ev.text, ev.level, ev.tick);
@@ -384,6 +1030,7 @@ export class App {
     const result = this.game.state.victory;
     if (result === 'playing' || this.victoryShown === result) return;
     this.victoryShown = result;
+    this.audio.stopMatchMusic();
     this.selected = [];
     this.mode = 'none';
     this.hud.showEnd(result);
@@ -965,11 +1612,15 @@ export class App {
     try {
       const game = Game.fromSave(record.data, { localPlayerId: record.data.localPlayerId ?? 0, enableAI: true });
       this.game = game;
+      this.audio.stopMatchMusic();
+      this.audio.resetAnnouncer();
+      this.audio.stopMenuMusic();
       document.getElementById('menu-screen')?.classList.add('hidden');
       this.setLoading(false);
       this.renderer.settings.showFog = this.settings.fogVisual && game.state.scenario.settings.fog;
       this.renderer.setGame(game);
       this.screen = 'battle';
+      this.setMenuMode(false);
       this.paused = false;
       this.speed = 1;
       this.selected = [];
@@ -981,6 +1632,8 @@ export class App {
       this.hud.mount(game);
       this.hud.seedLog(game);
       this.centerOnBase();
+      // A save may already be decided; only a live battle gets a soundtrack.
+      if (game.state.victory === 'playing') this.audio.startMatchMusic();
       this.audio.play('complete');
       this.notify(`Loaded ${record.name} from slot ${slot}.`, 'success');
     } catch (error) {
@@ -1073,6 +1726,28 @@ export class App {
     });
   }
 
+  /** The footer names the build that is actually running, not a typed string. */
+  private renderVersionStamp(): void {
+    const stamp = document.getElementById('menu-build');
+    if (!stamp) return;
+    stamp.textContent = `${VERSION_LINE} · IRONTIDE ENGINE`;
+    stamp.title = versionTitle();
+  }
+
+  openChangelog(): void {
+    const resume = this.pauseForModal();
+    openModal({
+      title: 'Changelog',
+      wide: true,
+      body: `
+        <p class="changelog-stamp">${escapeHtml(VERSION_LINE)} · COMMIT ${escapeHtml(BUILD_COMMIT)}</p>
+        ${renderChangelog()}
+        <p class="modal-note">The version and stage are read from package.json at build time; the build number is the repository commit count. This panel renders the same CHANGELOG.md that ships with the source.</p>`,
+      actions: [{ label: 'Close', primary: true }],
+      onClose: () => this.resumeAfterModal(resume),
+    });
+  }
+
   openValidation(errors: { message: string; x?: number; z?: number }[]): void {
     openModal({
       title: 'Scenario validation failed',
@@ -1084,41 +1759,91 @@ export class App {
   }
 
   openSettings(): void {
-    const s = this.settings;
     const resume = this.pauseForModal();
     openModal({
       title: 'Settings',
-      body: `
-        <div class="settings-grid">
-          <div class="setting-row"><div><label>Effects volume</label><small>Weapons, impacts and alerts</small></div><input type="range" min="0" max="1" step="0.05" value="${s.sfx}" data-set="sfx"></div>
-          <div class="setting-row"><div><label>Ambience volume</label><small>Sea, wind and low drone</small></div><input type="range" min="0" max="1" step="0.05" value="${s.ambient}" data-set="ambient"></div>
-          <div class="setting-row"><div><label>Visual effects</label><small>Particles, smoke and tracers</small></div><button class="switch ${s.effects ? 'on' : ''}" data-toggle="effects"></button></div>
-          <div class="setting-row"><div><label>Screen shake</label><small>Explosion camera movement</small></div><button class="switch ${s.shake ? 'on' : ''}" data-toggle="shake"></button></div>
-          <div class="setting-row"><div><label>Fog of war</label><small>Visual fog; gameplay detection is unchanged</small></div><button class="switch ${s.fogVisual ? 'on' : ''}" data-toggle="fogVisual"></button></div>
-          <div class="setting-row"><div><label>Edge panning</label><small>Move camera at screen edges</small></div><button class="switch ${s.edgePan ? 'on' : ''}" data-toggle="edgePan"></button></div>
-        </div>`,
+      body: `<div class="settings-grid">${this.settingsRowsMarkup()}</div>`,
       actions: [{ label: 'Done', primary: true }],
       onClose: () => this.resumeAfterModal(resume),
-      onMount: (root) => {
-        root.querySelectorAll<HTMLInputElement>('[data-set]').forEach((input) => {
-          input.addEventListener('input', () => {
-            const key = input.dataset.set as 'sfx' | 'ambient';
-            this.settings[key] = Number(input.value);
-            this.saveSettings();
-          });
-        });
-        root.querySelectorAll<HTMLButtonElement>('[data-toggle]').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            const key = btn.dataset.toggle as 'effects' | 'shake' | 'fogVisual' | 'edgePan';
-            this.settings[key] = !this.settings[key];
-            btn.classList.toggle('on', this.settings[key]);
-            this.saveSettings();
-            if (key === 'fogVisual' && this.game) {
-              this.renderer.settings.showFog = this.settings.fogVisual && this.game.state.scenario.settings.fog;
-            }
-          });
-        });
-      },
+      onMount: (root) => this.bindSettingsControls(root),
+    });
+  }
+
+  /**
+   * One markup source for the settings rows, shared by the in-battle modal and
+   * the main-menu Settings view so the two can never drift apart.
+   */
+  private settingsRowsMarkup(): string {
+    const s = this.settings;
+    return `
+      <div class="setting-row"><div><label>Effects volume</label><small>Weapons, impacts and alerts</small></div><input type="range" min="0" max="1" step="0.05" value="${s.sfx}" data-set="sfx"></div>
+      <div class="setting-row"><div><label>Announcer volume</label><small>Strategic voice lines</small></div><input type="range" min="0" max="1" step="0.05" value="${s.voice}" data-set="voice"></div>
+      <div class="setting-row"><div><label>Ambience volume</label><small>Sea, wind and low drone</small></div><input type="range" min="0" max="1" step="0.05" value="${s.ambient}" data-set="ambient"></div>
+      <div class="setting-row"><div><label>Music volume</label><small>Menu and battle soundtracks</small></div><input type="range" min="0" max="1" step="0.05" value="${s.music}" data-set="music"></div>
+      <div class="setting-row"><div><label>Visual effects</label><small>Particles, smoke and tracers</small></div><button class="switch ${s.effects ? 'on' : ''}" data-toggle="effects"></button></div>
+      <div class="setting-row"><div><label>Screen shake</label><small>Explosion camera movement</small></div><button class="switch ${s.shake ? 'on' : ''}" data-toggle="shake"></button></div>
+      <div class="setting-row"><div><label>Fog of war</label><small>Visual fog; gameplay detection is unchanged</small></div><button class="switch ${s.fogVisual ? 'on' : ''}" data-toggle="fogVisual"></button></div>
+      <div class="setting-row"><div><label>Edge panning</label><small>Move camera at screen edges</small></div><button class="switch ${s.edgePan ? 'on' : ''}" data-toggle="edgePan"></button></div>
+      <div class="setting-row"><div><label>Fullscreen</label><small>Fill the screen; Esc leaves it</small></div><button class="switch ${isFullscreen() ? 'on' : ''}" data-toggle="fullscreen"></button></div>
+    `;
+  }
+
+  private renderMenuSettings(): void {
+    const grid = document.getElementById('menu-settings-grid');
+    if (!grid) return;
+    grid.innerHTML = this.settingsRowsMarkup();
+    this.bindSettingsControls(grid);
+  }
+
+  private bindSettingsControls(root: HTMLElement): void {
+    root.querySelectorAll<HTMLInputElement>('[data-set]').forEach((input) => {
+      input.addEventListener('input', () => {
+        const key = input.dataset.set as 'sfx' | 'voice' | 'ambient' | 'music';
+        this.settings[key] = Number(input.value);
+        this.saveSettings();
+      });
+    });
+    root.querySelectorAll<HTMLButtonElement>('[data-toggle]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.toggle;
+        if (!key) return;
+        if (key === 'fullscreen') {
+          // Show the intent immediately, then let the document be the judge:
+          // the fullscreenchange handler (or the promise) reconciles the switch.
+          const next = !isFullscreen();
+          btn.classList.toggle('on', next);
+          btn.setAttribute('aria-pressed', next ? 'true' : 'false');
+          void toggleFullscreen().then(() => this.syncFullscreenControls());
+          return;
+        }
+        if (key !== 'effects' && key !== 'shake' && key !== 'fogVisual' && key !== 'edgePan') return;
+        this.settings[key] = !this.settings[key];
+        btn.classList.toggle('on', this.settings[key]);
+        btn.setAttribute('aria-pressed', this.settings[key] ? 'true' : 'false');
+        this.saveSettings();
+        if (key === 'fogVisual') {
+          this.renderer.settings.showFog = this.settings.fogVisual && !!this.game?.state.scenario.settings.fog;
+        }
+      });
+    });
+    // Keep any other copy of the same controls (menu view vs. battle modal) in step.
+    root.querySelectorAll<HTMLButtonElement>('[data-toggle]').forEach((btn) => {
+      const on = btn.dataset.toggle === 'fullscreen' ? isFullscreen() : btn.classList.contains('on');
+      btn.classList.toggle('on', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  /**
+   * Every Fullscreen switch — the menu Settings view and the in-battle modal —
+   * follows the live document state, including leaving with Esc.
+   */
+  private syncFullscreenControls(): void {
+    const on = isFullscreen();
+    document.querySelectorAll<HTMLButtonElement>('[data-toggle="fullscreen"]').forEach((btn) => {
+      btn.classList.toggle('on', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      btn.title = on ? 'Exit fullscreen (Esc)' : 'Enter fullscreen';
     });
   }
 
@@ -1128,9 +1853,13 @@ export class App {
 
   openEditor(scenario?: Scenario): void {
     this.audio.init();
+    this.audio.stopMenuMusic();
+    this.audio.stopMatchMusic();
+    this.menuScenario = null;
     document.getElementById('menu-screen')?.classList.add('hidden');
     this.hud.unmount();
     this.screen = 'editor';
+    this.setMenuMode(false);
     this.game = null;
     this.overlay.clear();
     this.renderer.setGame(null);
@@ -1143,6 +1872,28 @@ export class App {
     this.editor.close();
     this.renderer.settings.showFog = this.settings.fogVisual;
     this.showMenu();
+  }
+
+  /** Resume the last Scenario Forge autosave straight from the main menu. */
+  openEditorAutosave(): void {
+    const scenario = Editor.readAutosave();
+    if (!scenario) {
+      this.notify('No Scenario Forge autosave exists in this browser yet.', 'warning');
+      this.refreshEditorAutosaveButton();
+      return;
+    }
+    this.openEditor(scenario);
+    this.notify('Scenario Forge autosave restored.', 'success');
+  }
+
+  private refreshEditorAutosaveButton(): void {
+    const btn = document.getElementById('btn-editor-autosave') as HTMLButtonElement | null;
+    if (!btn) return;
+    const available = Editor.hasAutosave();
+    btn.disabled = !available;
+    btn.title = available
+      ? 'Continue the last scenario saved by the Scenario Forge'
+      : 'No Scenario Forge autosave exists in this browser yet';
   }
 
   launchEditorScenario(scenario: Scenario): void {
@@ -1251,6 +2002,8 @@ export class App {
         }
       }
     }
+    this.updateOrientationPrompt();
+    if (this.screen === 'menu') this.paintBriefMap();
     this.overlay.resize();
     const maxX = this.overlay.width;
     const maxY = this.overlay.height;

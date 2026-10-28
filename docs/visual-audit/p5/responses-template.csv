@@ -1,0 +1,13 @@
+reviewer,set,stage,sample,answer,confidence,notes
+R1,1,primary,a,,,
+R1,1,primary,b,,,
+R1,1,primary,c,,,
+R1,1,close,a,,,
+R1,1,close,b,,,
+R1,1,close,c,,,
+R1,1,orientation,a,,,
+R1,1,orientation,b,,,
+R1,1,orientation,c,,,
+R1,1,ui,a,,,
+R1,1,ui,b,,,
+R1,1,ui,c,,,

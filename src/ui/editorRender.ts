@@ -1,7 +1,7 @@
 import type { Editor } from './editor';
 import { BUILDINGS } from '../data/buildings';
 import { UNITS } from '../data/units';
-import { FACTIONS } from '../data/factions';
+import { tryIdentityDef } from '../data/factions';
 import { TILE_SIZE } from '../sim/constants';
 import { TERRAIN, inBounds, tileIndex, type TerrainId } from '../sim/terrain';
 import { terrainVisualHeight } from '../render/terrainSurface';
@@ -71,7 +71,7 @@ export function drawEditorOverlay(editor: Editor): void {
 
   // Player starts.
   scenario.players.forEach((player, index) => {
-    const color = FACTIONS[player.factionId]?.color ?? '#d8e2dd';
+    const color = tryIdentityDef(player.factionId)?.color ?? '#d8e2dd';
     const p = project(player.startX + 0.5, player.startZ + 0.5);
     if (!p.visible) return;
     ctx.strokeStyle = color;

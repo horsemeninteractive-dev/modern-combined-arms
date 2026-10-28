@@ -1,6 +1,23 @@
 import './style.css';
 import { App } from './app';
 
+// The bundled stylesheet is live by the time this module body runs, so the
+// inline first-paint plate in index.html can hand the screen over. Doing it
+// here also covers the failure path below: the fault card is always styled.
+document.documentElement.classList.remove('booting');
+
+// The shell worker is only registered for the built app: during development it
+// would pin stale modules and fight the Vite dev server.
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    // updateViaCache none: a new deployment's worker is picked up on the next
+    // visit instead of waiting out an HTTP-cached copy of sw.js.
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch((error: unknown) => {
+      console.warn('MCA: offline shell unavailable', error);
+    });
+  });
+}
+
 function fail(message: string): void {
   const app = document.getElementById('app');
   if (!app) return;

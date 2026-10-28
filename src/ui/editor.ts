@@ -6,13 +6,15 @@ import {
   reachableFrom,
   scenarioToJson,
   validateScenario,
+  waterFacingFor,
   type Scenario,
+  type ScenarioStructure,
   type ValidationIssue,
 } from '../sim/scenario';
 import { createEmptyScenario, createIslandAssault } from '../data/scenarios';
 import { BUILDINGS } from '../data/buildings';
 import { UNITS } from '../data/units';
-import { FACTIONS } from '../data/factions';
+import { ALLIANCE_LIST, FACTIONS, NATION_LIST, tryIdentityDef } from '../data/factions';
 import {
   TERRAIN,
   TERRAIN_ORDER,
@@ -86,6 +88,26 @@ export class Editor {
   /* Open / close                                                        */
   /* ------------------------------------------------------------------ */
 
+  /** Whether this browser holds a Scenario Forge autosave. */
+  static hasAutosave(): boolean {
+    try {
+      return localStorage.getItem(AUTOSAVE_KEY) !== null;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Read the autosaved scenario without opening the forge; null if unusable. */
+  static readAutosave(): Scenario | null {
+    try {
+      const raw = localStorage.getItem(AUTOSAVE_KEY);
+      if (!raw) return null;
+      return parseScenario(JSON.parse(raw));
+    } catch {
+      return null;
+    }
+  }
+
   open(scenario: Scenario): void {
     this.active = true;
     this.load(scenario, false);
@@ -124,6 +146,13 @@ export class Editor {
 
   private load(scenario: Scenario, refresh = true): void {
     this.scenario = scenario;
+    // A yard authored without a facing is turned by the battle from its coast;
+    // resolve that here too so the forge previews the slipway it will deploy.
+    for (const s of scenario.structures) {
+      if (s.facing === undefined && BUILDINGS[s.defId]?.requiresWater) {
+        s.facing = waterFacingFor(scenario, s);
+      }
+    }
     this.issues = [];
     this.reach = null;
     this.hover = null;
@@ -587,7 +616,7 @@ export class Editor {
     const s = this.scenario;
     const players = s.players
       .map(
-        (p) => `<div class="start-row"><span><i class="faction-dot" style="background:${FACTIONS[p.factionId]?.color ?? '#fff'}"></i>${escapeHtml(p.name)}${p.isAI ? ' (AI)' : ''}</span><b id="ed-start-${p.id}">${p.startX}, ${p.startZ}</b></div>`,
+        (p) => `<div class="start-row"><span><i class="faction-dot" data-faction-dot="${p.id}" style="background:${tryIdentityDef(p.factionId)?.color ?? '#fff'}"></i>${escapeHtml(p.name)}${p.isAI ? ' (AI)' : ''}</span><select class="faction-select" id="ed-faction-${p.id}" aria-label="Nation for ${escapeHtml(p.name)}">${this.factionOptions(p.factionId)}</select><b id="ed-start-${p.id}">${p.startX}, ${p.startZ}</b></div>`,
       )
       .join('');
     el.innerHTML = `
@@ -608,6 +637,32 @@ export class Editor {
       <div class="inspector-section"><h4>VALIDATION <span id="ed-issue-count"></span></h4><div class="validation-list" id="ed-validation"></div></div>`;
     this.bindInspector();
     this.renderSummary();
+  }
+
+  /**
+   * Nation and legacy-preset options for a player slot, grouped by alliance.
+   * The current value is always present, even for a legacy preset, so editing
+   * an old scenario cannot silently rewrite its identity.
+   */
+  private factionOptions(current: string): string {
+    const groups = ALLIANCE_LIST.map((alliance) => {
+      const nations = NATION_LIST.filter((nation) => nation.allianceId === alliance.id);
+      if (nations.length === 0) return '';
+      const options = nations
+        .map(
+          (nation) =>
+            `<option value="${nation.id}" ${nation.id === current ? 'selected' : ''}>${escapeHtml(nation.name)}</option>`,
+        )
+        .join('');
+      return `<optgroup label="${escapeHtml(alliance.name.toUpperCase())}">${options}</optgroup>`;
+    }).join('');
+    const presets = Object.values(FACTIONS)
+      .map(
+        (preset) =>
+          `<option value="${preset.id}" ${preset.id === current ? 'selected' : ''}>${escapeHtml(preset.name)} (preset)</option>`,
+      )
+      .join('');
+    return `${groups}<optgroup label="LEGACY PRESETS">${presets}</optgroup>`;
   }
 
   private bindInspector(): void {
@@ -640,6 +695,17 @@ export class Editor {
       this.refreshTerrain(true);
     });
     bind('ed-fog', (v) => (this.scenario.settings.fog = v === '1'));
+    // Nation identity is per player slot and registry-driven; saving the file
+    // writes the same id the editor shows.
+    for (const player of this.scenario.players) {
+      bind(`ed-faction-${player.id}`, (value) => {
+        const identity = tryIdentityDef(value);
+        if (!identity) return;
+        player.factionId = identity.id;
+        const dot = this.root?.querySelector<HTMLElement>(`[data-faction-dot="${player.id}"]`);
+        if (dot) dot.style.background = identity.color;
+      });
+    }
   }
 
   private renderSummary(): void {
@@ -822,7 +888,11 @@ export class Editor {
           this.app.notify('A starting unit is standing on the foundation.', 'warning');
           return;
         }
-        this.scenario.structures.push({ defId: this.structureDef, owner: this.owner, x: tx, z: tz });
+        // A yard turned toward its harbour while authoring keeps the gate, the
+        // berth and the preview pointing the same way in battle.
+        const placed: ScenarioStructure = { defId: this.structureDef, owner: this.owner, x: tx, z: tz };
+        if (bdef.requiresWater) placed.facing = waterFacingFor(this.scenario, placed);
+        this.scenario.structures.push(placed);
       } else {
         const udef = UNITS[this.unitDef];
         const blocked = this.scenario.structures.some((s) => {
@@ -897,10 +967,24 @@ export class Editor {
       }
     }
     if (changed) {
+      if (this.tool === 'paint') this.reorientWaterStructures();
       this.terrainDirty = true;
       const status = this.root?.querySelector('#ed-status');
       if (status) status.textContent = `${this.hoverInfo()} · painting`;
       if (performance.now() - this.lastTerrainRefresh > 140) this.refreshTerrain(false);
+    }
+  }
+
+  /**
+   * Keep authored slipways aimed at the sea when the coastline moves under
+   * them. There is no rotate tool, so a yard's facing is always derived from
+   * the tiles around its footprint rather than authored by hand.
+   */
+  private reorientWaterStructures(): void {
+    for (const s of this.scenario.structures) {
+      if (!BUILDINGS[s.defId]?.requiresWater) continue;
+      const facing = waterFacingFor(this.scenario, s);
+      if (s.facing !== facing) s.facing = facing;
     }
   }
 

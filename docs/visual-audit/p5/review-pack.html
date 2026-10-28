@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MCA silhouette identification — reviewer pack</title>
+<style>
+  :root { color-scheme: dark; --bg:#10150f; --panel:#182016; --ink:#e7eadb; --muted:#a9b29d; --line:#3b4734; --accent:#c8b070; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 "Segoe UI", system-ui, sans-serif; }
+  body { min-height: 100vh; }
+  main { width: min(980px, calc(100vw - 40px)); margin: 0 auto; padding: 28px 0 60px; }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 16px; margin-bottom: 20px; }
+  h1 { font-size: 20px; letter-spacing: .09em; text-transform: uppercase; margin: 0 0 6px; font-weight: 650; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 18px 0; color: var(--muted); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+  .bar strong { color: var(--accent); font-weight: 600; }
+  .frame { display: flex; justify-content: center; background: #0a0e08; border: 1px solid var(--line); padding: 10px; }
+  .frame img { display: block; width: auto; height: auto; max-width: none; image-rendering: auto; }
+  .stage-note { color: var(--muted); font-size: 13px; margin: 12px 0 0; min-height: 38px; }
+  fieldset { border: 1px solid var(--line); background: var(--panel); margin: 18px 0 0; padding: 14px 16px 16px; }
+  legend { padding: 0 8px; color: var(--accent); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; }
+  .choices { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .choice { display: flex; align-items: center; gap: 9px; padding: 12px; border: 1px solid var(--line); background: #121811; cursor: pointer; }
+  .choice input { accent-color: var(--accent); }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
+  label.small { display: block; color: var(--muted); font-size: 12px; margin-bottom: 5px; letter-spacing: .04em; text-transform: uppercase; }
+  input[type=text], textarea, select { width: 100%; background: #0d130c; border: 1px solid var(--line); color: var(--ink); padding: 9px 10px; font: inherit; }
+  textarea { min-height: 54px; resize: vertical; }
+  .actions { display: flex; justify-content: space-between; gap: 12px; margin-top: 18px; }
+  button { border: 1px solid var(--accent); background: transparent; color: var(--accent); font: inherit; letter-spacing: .05em; text-transform: uppercase; padding: 10px 18px; cursor: pointer; }
+  button.primary { background: var(--accent); color: #14180f; font-weight: 650; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  .error { border: 1px solid #8a4a3a; color: #f1b6a4; padding: 16px; background: #211410; }
+  .done { border: 1px solid var(--line); background: var(--panel); padding: 22px; margin-top: 20px; }
+  .done h2 { margin: 0 0 8px; font-size: 18px; letter-spacing: .04em; }
+  .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--muted); }
+  @media (max-width: 720px) { main { width: calc(100vw - 24px); } .choices { grid-template-columns: 1fr; } .row { grid-template-columns: 1fr; } .frame { overflow: auto; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Silhouette identification study</h1>
+    <div class="sub">Modern Combined Arms · Phase 5 review pack · <span id="set-label">set</span></div>
+  </header>
+
+  <div id="app"></div>
+  <div id="error" class="error" hidden></div>
+</main>
+
+<script>
+(() => {
+  const SETS = {
+    1: ['a', 'b', 'c'],
+    2: ['a', 'c', 'b'],
+    3: ['b', 'a', 'c'],
+    4: ['b', 'c', 'a'],
+    5: ['c', 'a', 'b'],
+    6: ['c', 'b', 'a'],
+  };
+  const STAGES = [
+    {
+      id: 'primary',
+      title: 'Stage A · battle zoom',
+      note: 'The unit is shown at the real opening battle zoom. Identify its role from the three options. Do not zoom the page or the image.',
+      file: 'primary-',
+      width: 640,
+      height: 360,
+    },
+    {
+      id: 'close',
+      title: 'Stage B · close inspection',
+      note: 'The same three units are shown closer for inspection only. This stage is scored separately and is not the battle-zoom criterion.',
+      file: 'close-',
+      width: 640,
+      height: 480,
+    },
+    {
+      id: 'orientation',
+      title: 'Stage C · alternate heading',
+      note: 'The same units at battle zoom facing a different way. These are repeated samples, not independent units.',
+      file: 'orientation-',
+      width: 640,
+      height: 360,
+    },
+    {
+      id: 'ui',
+      title: 'Stage D · selection overlay',
+      note: 'The same units at battle zoom with the normal selection ring and health bar. The overlay is a game UI cue, not part of the silhouette.',
+      file: 'ui-',
+      width: 640,
+      height: 360,
+    },
+  ];
+  const CHOICES = [
+    ['rifleman', 'Rifleman'],
+    ['atgm', 'ATGM gunner'],
+    ['tank', 'Main battle tank'],
+  ];
+
+  const setNumber = Number(new URLSearchParams(location.search).get('set') || 1);
+  const app = document.getElementById('app');
+  const error = document.getElementById('error');
+  if (!SETS[setNumber]) {
+    app.hidden = true;
+    error.hidden = false;
+    error.textContent = 'Unknown reviewer set. Use ?set=1 through ?set=6.';
+    return;
+  }
+  document.getElementById('set-label').textContent = `reviewer set ${setNumber}`;
+
+  const steps = [];
+  for (const stage of STAGES) {
+    for (const sample of SETS[setNumber]) {
+      steps.push({ ...stage, sample, key: `${stage.id}-${sample}` });
+    }
+  }
+
+  let index = 0;
+  let reviewer = '';
+  let display = '';
+  const answers = {};
+
+  function choiceMarkup(step) {
+    const existing = answers[step.key]?.answer ?? '';
+    return CHOICES.map(([value, label]) => `
+      <label class="choice">
+        <input type="radio" name="answer" value="${value}" ${existing === value ? 'checked' : ''} />
+        <span>${label}</span>
+      </label>
+    `).join('');
+  }
+
+  function render() {
+    const step = steps[index];
+    const record = answers[step.key] ?? { answer: '', confidence: '2', notes: '' };
+    app.innerHTML = `
+      <div class="bar">
+        <span><strong>${step.title}</strong></span>
+        <span>${String(index + 1).padStart(2, '0')} / ${String(steps.length).padStart(2, '0')}</span>
+      </div>
+      ${index === 0 ? `
+        <div class="row">
+          <div>
+            <label class="small" for="reviewer">Reviewer ID</label>
+            <input id="reviewer" type="text" value="${reviewer}" placeholder="e.g. R1" />
+          </div>
+          <div>
+            <label class="small" for="display">Display used</label>
+            <input id="display" type="text" value="${display}" placeholder="resolution / scaling" />
+          </div>
+        </div>
+        <p class="stage-note">Look at the whole shape and equipment. Choose the role you believe the unit represents. There is no feedback until the coordinator scores the responses.</p>
+      ` : ''}
+      <div class="frame">
+        <img src="${step.file}${step.sample}.png" width="${step.width}" height="${step.height}" alt="Unidentified unit sample" draggable="false" />
+      </div>
+      <p class="stage-note">${step.note}</p>
+      <fieldset>
+        <legend>Identification</legend>
+        <div class="choices">${choiceMarkup(step)}</div>
+        <div class="row">
+          <div>
+            <label class="small" for="confidence">Confidence</label>
+            <select id="confidence">
+              <option value="1" ${record.confidence === '1' ? 'selected' : ''}>1 · low</option>
+              <option value="2" ${record.confidence === '2' ? 'selected' : ''}>2 · medium</option>
+              <option value="3" ${record.confidence === '3' ? 'selected' : ''}>3 · high</option>
+            </select>
+          </div>
+          <div>
+            <label class="small" for="notes">What decided it? (optional)</label>
+            <input id="notes" type="text" value="${escapeAttr(record.notes)}" placeholder="shape, weapon, tracks, etc." />
+          </div>
+        </div>
+      </fieldset>
+      <div class="actions">
+        <button id="back" ${index === 0 ? 'disabled' : ''}>Back</button>
+        <button id="next" class="primary">${index === steps.length - 1 ? 'Finish' : 'Next sample'}</button>
+      </div>
+    `;
+
+    const reviewerEl = document.getElementById('reviewer');
+    const displayEl = document.getElementById('display');
+    if (reviewerEl) reviewerEl.addEventListener('input', (e) => { reviewer = e.target.value; });
+    if (displayEl) displayEl.addEventListener('input', (e) => { display = e.target.value; });
+
+    document.querySelectorAll('input[name=answer]').forEach((el) => {
+      el.addEventListener('change', () => { record.answer = el.value; });
+    });
+    document.getElementById('confidence').addEventListener('change', (e) => { record.confidence = e.target.value; });
+    document.getElementById('notes').addEventListener('input', (e) => { record.notes = e.target.value; });
+
+    document.getElementById('back').addEventListener('click', () => {
+      if (index > 0) { index--; render(); }
+    });
+    document.getElementById('next').addEventListener('click', () => {
+      const selected = document.querySelector('input[name=answer]:checked');
+      if (!selected) {
+        alert('Choose one of the three roles before continuing.');
+        return;
+      }
+      answers[step.key] = {
+        stage: step.id,
+        sample: step.sample,
+        answer: selected.value,
+        confidence: document.getElementById('confidence').value,
+        notes: document.getElementById('notes').value.trim(),
+      };
+      if (!reviewer.trim()) reviewer = `unlabelled-${setNumber}`;
+      if (index === steps.length - 1) finish();
+      else { index++; render(); }
+    });
+    window.scrollTo(0, 0);
+  }
+
+  function finish() {
+    const payload = {
+      instrument: 'MCA Phase 5 silhouette identification',
+      set: setNumber,
+      reviewer: reviewer.trim() || `unlabelled-${setNumber}`,
+      display: display.trim(),
+      recordedAt: new Date().toISOString(),
+      source: '1920x1080 viewport, DPR 1 (browser 0.9 scale), battle camera zoom 36, 1:1 crops',
+      responses: steps.map((step) => answers[step.key]),
+    };
+    app.innerHTML = `
+      <div class="done">
+        <h2>Responses captured</h2>
+        <p>Hand this file to the study coordinator. Do not compare answers with other reviewers until all six sets are complete.</p>
+        <p class="mono" id="file-name"></p>
+        <div class="actions">
+          <button class="primary" id="download">Download response JSON</button>
+          <button id="reset">Start over</button>
+        </div>
+      </div>
+    `;
+    const safeSet = String(setNumber);
+    const safeReviewer = payload.reviewer.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-|-$/g, '') || 'reviewer';
+    const name = `p5-${safeSet}-${safeReviewer}.json`;
+    document.getElementById('file-name').textContent = name;
+    document.getElementById('download').addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = name;
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+    document.getElementById('reset').addEventListener('click', () => location.reload());
+  }
+
+  function escapeAttr(value) {
+    return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>

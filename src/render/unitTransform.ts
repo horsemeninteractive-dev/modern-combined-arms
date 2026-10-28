@@ -1,5 +1,12 @@
 import { rotateLocalOffset } from '../core/math';
-import type { Vec3 } from './math';
+import {
+  multiply,
+  rotationY,
+  rotationZ,
+  scaling,
+  translation,
+  type Vec3,
+} from './math';
 
 /**
  * Model matrix for a turret sitting on a unit body.
@@ -58,20 +65,45 @@ export function turretModelMatrix(
   offset: Vec3,
   uniform: number,
   scaleY: number,
+  pitch = 0,
+  pivot: Vec3 = [0, 0, 0],
 ): Float32Array {
   const mount = rotateLocalOffset(offset[0], offset[2], facing);
   const yaw = -turretFacing;
   const ct = Math.cos(yaw);
   const st = Math.sin(yaw);
   const m = new Float32Array(16);
-  m[0] = ct * uniform;
-  m[2] = -st * uniform;
-  m[5] = scaleY;
-  m[8] = st * uniform;
-  m[10] = ct * uniform;
-  m[12] = x + mount.x * uniform;
-  m[13] = y + offset[1] * scaleY;
-  m[14] = z + mount.z * uniform;
-  m[15] = 1;
-  return m;
+  if (pitch === 0) {
+    m[0] = ct * uniform;
+    m[2] = -st * uniform;
+    m[5] = scaleY;
+    m[8] = st * uniform;
+    m[10] = ct * uniform;
+    m[12] = x + mount.x * uniform;
+    m[13] = y + offset[1] * scaleY;
+    m[14] = z + mount.z * uniform;
+    m[15] = 1;
+    return m;
+  }
+  // T(mount) * Ry(yaw) * T(pivot) * Rz(pitch) * T(-pivot) * S.
+  // The pivot is expressed in the same mesh-local units as the turret geometry,
+  // so the launcher hinges at its cradle instead of at the unit origin.
+  const base = translation(
+    x + mount.x * uniform,
+    y + offset[1] * scaleY,
+    z + mount.z * uniform,
+  );
+  const pivotM = translation(pivot[0] * uniform, pivot[1] * scaleY, pivot[2] * uniform);
+  const invPivot = translation(-pivot[0] * uniform, -pivot[1] * scaleY, -pivot[2] * uniform);
+  const model = multiply(
+    base,
+    multiply(
+      rotationY(yaw),
+      multiply(
+        pivotM,
+        multiply(rotationZ(pitch), multiply(invPivot, scaling(uniform, scaleY, uniform))),
+      ),
+    ),
+  );
+  return model;
 }

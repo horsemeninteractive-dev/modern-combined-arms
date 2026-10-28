@@ -291,7 +291,11 @@ describe('skirmish AI', () => {
     expect(yard).toBeDefined();
     expect(yard!.construction).toBe(false);
 
-    for (let i = 0; i < 20 * 180; i++) {
+    // The developed base has other priorities after the yard completes, so the
+    // first hull waits for the next bank rather than appearing immediately.
+    // Kestrel Bay's corrected ground mix shifts that spending order; 420 s
+    // still covers the queue, build time and the AI's slower economy cadence.
+    for (let i = 0; i < 20 * 420; i++) {
       game.tick();
       if (game.entitiesOf(1, 'unit').some((e) => e.defId === 'corvette')) break;
     }
@@ -336,8 +340,13 @@ describe('skirmish AI', () => {
     // A passive player loses this map well before the air branch is affordable,
     // so hold the landing Command Post together: the horizon we measure here is
     // the AI's build order at its normal income, not the player's survival.
+    //
+    // The horizon is ten minutes rather than six because the commander now
+    // executes the waves it announces instead of leaving them at base: same
+    // income, but the bank it used to idle in now pays for units and static
+    // defence. Shipyard at 5:00, airfield at 7:00, both on the same income.
     const commandPost = game.entitiesOf(0, 'building').find((e) => e.defId === 'commandPost')!;
-    for (let i = 0; i < 20 * 360 && game.state.victory === 'playing'; i++) {
+    for (let i = 0; i < 20 * 600 && game.state.victory === 'playing'; i++) {
       commandPost.hp = commandPost.maxHp;
       game.tick();
     }

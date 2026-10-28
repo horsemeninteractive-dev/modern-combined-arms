@@ -2868,3 +2868,151 @@ Limitations and gaps:
 - `tools/ai-matchups.ts` is a development harness run through `npx tsx`; it is
   outside `tsconfig.json`'s include list, so it is not part of the typecheck or
   the shipped build.
+
+## 36. Shared combined-arms baseline roster — 2026-10-26
+
+Scope: Phase 2 of `docs/FACTION_ROSTER_AUDIT.md`. Adds indirect fire, field
+recovery, air superiority, reconnaissance aviation and coastal defence to the
+shared baseline; see `docs/PHASE_2_ROSTER.md` for the roster and the intended
+counter relationships. No national content, faction gating, upgrade tree or
+balance pass.
+
+New definition ids: `spg`, `recovery`, `interceptor`, `uav`, `coastalBattery`,
+with weapons `howitzer`, `airMissile` and `coastalMissile`.
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Typecheck | `npx tsc --noEmit` | clean, exit 0 |
+| Full suite | `npx vitest run` | **36 files / 378 tests passed**, 77.9 s (ladder 77.0 s) |
+| Production build | `npm run build` | 59 modules, JS 433.77 kB / gzip 128.09 kB |
+
+Ladder after the roster change, same arena and seeds as §35:
+
+| Pairing | Margin | Wins–losses | Reading |
+| --- | --- | --- | --- |
+| Recruit vs Veteran | **−41,847** | 4–12 | Recruit still clearly weaker |
+| Elite vs Recruit | **+87,061** | 14–2 | Elite dominates |
+| Elite vs Veteran | **+42,100** | 11–5 | Elite still ahead |
+
+The ordering is unchanged and every `tests/ai-matchups.test.ts` threshold still
+holds without editing it, so the added roles did not flatten commander
+differences. The margins moved because both commanders now buy different
+hardware, not because any difficulty rule changed.
+
+Determinism and compatibility: `tests/determinism-save.test.ts` passed
+(two-run state hash, batch-size invariance, save round-trip), as did
+`tests/scenario.test.ts` and `tests/maps.test.ts`, so legacy
+`baltic`/`expeditionary` maps and existing saves load unchanged. No save-format
+bump: `repairTargetId` and the lobbed-shell flag are optional fields.
+
+Gaps: the new roles were exercised by scripted fixtures and the AI ladder, not
+by a human match. Mechanised transport/IFV, attack helicopters and a second
+naval hull remain unimplemented, as recorded in `docs/PHASE_2_ROSTER.md`.
+
+## 37. Nation selection and nation-aware match setup — 2026-10-26
+
+Scope: Phase 3. Identity plumbing only; all six nations still resolve to the
+shared Phase 2 baseline. See `docs/PHASE_3_NATIONS.md`.
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Typecheck | `npx tsc --noEmit` | clean, exit 0 |
+| Focused suite | `npx vitest run tests/nation-setup.test.ts` | 16 passed |
+| Full suite | `npx vitest run` | **37 files / 394 tests passed**, 83.8 s (ladder 82.8 s) |
+| Production build | `npm run build` | 60 modules, JS 441.46 kB / gzip 130.37 kB |
+
+The Phase 2 reference point was 36 files / 378 tests; the 16 new tests are the
+nation suite, and no existing test was edited or weakened.
+
+Behaviour and compatibility:
+
+- `resolveRoster` is now the production and construction gate for human, AI and
+  HUD paths (`Game.rosterFor` / `canProduce` / `canBuild`). A deterministic
+  30-second battle as `lithuania`/`russia` hashes exactly the same as
+  `baltic`/`expeditionary`, so the shared baseline is untouched.
+- `tests/determinism-save.test.ts`, `tests/scenario.test.ts`,
+  `tests/maps.test.ts` and `tests/factions.test.ts` pass unchanged. Saves keep
+  their identity with no schema or version change; an unknown saved faction now
+  throws `SaveFormatError` instead of resolving a fallback roster.
+- The AI difficulty ladder is unchanged: Recruit vs Veteran −41,847 (4–12),
+  Elite vs Recruit +87,061 (14–2), Elite vs Veteran +42,100 (11–5). This is
+  evidence that the identity plumbing did not alter decisions or balance.
+
+Browser check (Chromium, dev server): Poland selected in the skirmish picker;
+brief and loading screen showed Poland / Poland Task Force / Russia / Defender
+Coalition; the deployed rail read `POLAND · Defender Coalition` with the
+objective naming Russia; save slot 1 held `players[0].factionId === 'poland'`
+and `scenario.players` `poland`/`russia`; loading that slot restored the rail,
+title and objective. Editor autosave preserved a player changed to Hungary, and
+the faction selector listed all six nations plus both legacy presets.
+
+Limitations: the preview browser reports a touch portrait viewport, so its
+orientation gate holds the battle paused; producing units and advancing a fight
+were not exercised there. Those paths are covered by the focused suite
+(`productionStatus` from every nation, a produced `spg`, roster rejection of an
+invalid facility request, AI using the same calls). A human match with each of
+the six nations has not been played.
+
+## 38. National specialisations — 2026-10-26
+
+Scope: Phase 4. Six playable nations now substitute one baseline slot each
+through the Phase 1–3 roster contract. No simulation subsystem, save format,
+production path or alliance baseline was replaced. See
+`docs/PHASE_4_NATIONS.md` for the design matrix and counterplay.
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Typecheck | `npx tsc --noEmit` | clean, exit 0 |
+| Focused suite | `npx vitest run tests/national-specialisations.test.ts` | 18 passed |
+| Full suite | `npx vitest run` | **38 files / 412 tests passed**, 87.9 s (ladder 86.8 s) |
+| Production build | `npm run build` | 60 modules, JS 449.00 kB / gzip 132.28 kB |
+
+The Phase 3 reference point was 37 files / 394 tests. The new focused file adds
+18 tests and no existing assertion was changed, removed or relaxed.
+
+Substitutions: Lithuania `recon`→`pathfinder`; Poland `tank`→`spearhead`; UK
+`spg`→`mlrs`; Russia `spg`→`heavyHowitzer`; Belarus `uav`→`deepReconUAV`;
+Hungary `mgNest`→`bunker`. New weapon ids are `spearheadGun`, `mlrsRocket` and
+`heavyShell`; all variants declare `variantOf`, are absent from the shared
+`UNIT_LIST`/`BUILDING_LIST`, and are reached only through a nation's resolved
+roster.
+
+Focused evidence:
+
+- Roster resolution: every nation contains its variant and not the slot,
+  other nations and both legacy presets do not inherit it, and variant
+  production facilities overlap their slots. Registry integrity runs at load.
+- Production and construction: the owning nation's facility lists and accepts
+  the variant, a direct request for the replaced baseline is rejected, and a
+  real Hungary placement builds a `bunker` while Lithuania gets a roster error.
+- Simulation: Pathfinder sees a 15-tile target the shared recon cannot; MLRS
+  damages a 16-tile structure, cannot damage a target inside its six-tile dead
+  zone, and outranges the shared howitzer; the heavy howitzer fires at a range
+  beyond the shared gun; the deep recon UAV sees a 26-tile target the shared
+  UAV cannot.
+- AI: 60–150 second matches buy `spearhead`, `deepReconUAV`, `mlrs` and
+  `bunker` in place of their baseline slots. Demand is written in slots and
+  resolved by `unitIdFor`/`buildingIdFor`; counts are family-keyed, so a
+  `bunker` answers the `mgNest` question and is not repeatedly requested.
+- Persistence and determinism: a Poland battle round-trips with the same
+  roster, `spearhead` units and state hash; two identical Russia-vs-UK battles
+  hash identically. No save-version bump.
+
+Browser check (Chromium, 1280×800, dev server): United Kingdom selected in
+skirmish; brief named the UK task force and doctrine; a Vehicle Factory was
+built, the LAND panel showed `MLRS` with the `NATIONAL` badge instead of `SPG`,
+and the HUD card produced the MLRS into the simulation. At 844×390 the badge
+stayed inside the production rail with no horizontal page overflow; the console
+had no errors.
+
+The AI difficulty ladder is unchanged because it uses the legacy alliance
+presets: Recruit vs Veteran −41,847 (4–12), Elite vs Recruit +87,061 (14–2),
+Elite vs Veteran +42,100 (11–5). It is not a national-matchup measurement.
+
+Limitations: values are provisional and have no human win-rate sample. The AI
+buys the correct variant but does not adopt a nation-specific composition or
+tactic beyond the shared weights. Watch the bunker's 900 HP for 420 materials,
+the Spearhead's efficiency, MLRS reach without counter-battery fire, and the
+Pathfinder's cheap 16-tile vision. Signature abilities, national upgrades and
+national additions/exclusions are deferred; there is no research tree to hang
+them on yet.

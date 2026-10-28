@@ -1,6 +1,6 @@
 import type { Game } from '../sim/game';
 import type { Entity } from '../sim/types';
-import { FACTIONS } from '../data/factions';
+import { tryIdentityDef } from '../data/factions';
 
 export const RELAY_NEUTRAL_COLOR = '#8d9d98';
 
@@ -21,13 +21,13 @@ export interface RelayMeterState {
 function factionLabel(game: Game, owner: number): string {
   const p = game.player(owner);
   if (!p) return 'NEUTRAL';
-  return (FACTIONS[p.factionId]?.shortName ?? p.name).toUpperCase();
+  return (tryIdentityDef(p.factionId)?.shortName || p.name).toUpperCase();
 }
 
 function factionColor(game: Game, owner: number): string {
   const p = game.player(owner);
   if (!p) return RELAY_NEUTRAL_COLOR;
-  return FACTIONS[p.factionId]?.color ?? RELAY_NEUTRAL_COLOR;
+  return tryIdentityDef(p.factionId)?.color ?? RELAY_NEUTRAL_COLOR;
 }
 
 /**

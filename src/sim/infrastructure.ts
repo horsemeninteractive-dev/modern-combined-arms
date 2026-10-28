@@ -8,7 +8,10 @@ import type { BuildingDef } from './types';
 export function structureBenefit(def: BuildingDef): string {
   const parts: string[] = [];
   if ((def.reqPerSec ?? 0) > 0) parts.push(`+${trim(def.reqPerSec!)} requisition/s`);
-  if ((def.matsPerSec ?? 0) > 0) parts.push(`+${trim(def.matsPerSec!)} materials/s`);
+  if ((def.matsPerSec ?? 0) > 0) {
+    const suffix = def.matsPerSecBackstop ? ' (when no harvester)' : '';
+    parts.push(`+${trim(def.matsPerSec!)} materials/s${suffix}`);
+  }
   if ((def.scanRadius ?? 0) > 0) parts.push(`${def.scanRadius}-tile scan`);
   return parts.join(' · ');
 }

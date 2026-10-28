@@ -1,10 +1,12 @@
 import type { App } from '../app';
 import { BUILDINGS, isIndestructibleStructure } from '../data/buildings';
 import { UNITS } from '../data/units';
-import { FACTIONS } from '../data/factions';
+import { tryIdentityDef } from '../data/factions';
 import { TILE_SIZE } from '../sim/constants';
 import type { Entity, GameState } from '../sim/types';
 import { terrainVisualHeight } from '../render/terrainSurface';
+import { AIR_UNIT_ALTITUDE, unitBannerHeight } from '../render/unitMeshes';
+import { buildingBannerAnchor, buildingBannerPoints } from '../render/buildingMeshes';
 import { relayMeterState } from './relayMeter';
 
 const BLUE = '#52c5e6';
@@ -293,7 +295,8 @@ export class Overlay {
     if (!def) return;
     const color = e.owner === app.localPlayerId ? BLUE : e.owner === -1 ? NEUTRAL : RED;
     if (e.kind === 'unit') {
-      const altitude = UNITS[e.defId]?.domain === 'air' ? 13 : 0;
+      const altitude =
+        UNITS[e.defId]?.domain === 'air' && !e.aircraft?.landed ? AIR_UNIT_ALTITUDE : 0;
       const p = camera.worldToScreen(e.x, terrainVisualHeight(game.state.scenario, e.x, e.z) + altitude + 0.15, e.z);
       if (!p.visible) return;
       const scale = camera.width / (camera.halfW * 2);
@@ -345,9 +348,51 @@ export class Overlay {
     const ctx = this.ctx;
     const def = e.kind === 'unit' ? UNITS[e.defId] : BUILDINGS[e.defId];
     if (!def) return;
-    const altitude = e.kind === 'unit' && UNITS[e.defId]?.domain === 'air' ? 13 : 0;
-    const worldH = e.kind === 'building' ? (BUILDINGS[e.defId]?.footprint.h ?? 2) * TILE_SIZE * 0.45 : 5;
-    const p = camera.worldToScreen(e.x, terrainVisualHeight(game.state.scenario, e.x, e.z) + altitude + worldH, e.z);
+    const altitude =
+      e.kind === 'unit' && UNITS[e.defId]?.domain === 'air' && !e.aircraft?.landed
+        ? AIR_UNIT_ALTITUDE
+        : 0;
+    // Structures anchor above the highest projected point of their top band.
+    // A single world height cannot guarantee that after rotation: the local
+    // top can swing toward the camera while a lower central roof projects
+    // higher on screen. Project every top-band point, then centre the bar on
+    // that screen edge. Units keep their own banner contract untouched.
+    let p: { x: number; y: number; visible: boolean };
+    if (e.kind === 'building') {
+      const anchor = buildingBannerAnchor(e.defId);
+      const c = Math.cos(e.facing);
+      const s = Math.sin(e.facing);
+      const center = camera.worldToScreen(
+        e.x,
+        terrainVisualHeight(game.state.scenario, e.x, e.z) + anchor.y,
+        e.z,
+      );
+      let topScreenY = Infinity;
+      let anyVisible = false;
+      for (const point of buildingBannerPoints(e.defId)) {
+        const px = e.x + c * point.x - s * point.z;
+        const pz = e.z + s * point.x + c * point.z;
+        const projected = camera.worldToScreen(
+          px,
+          terrainVisualHeight(game.state.scenario, px, pz) + point.y,
+          pz,
+        );
+        if (!projected.visible) continue;
+        anyVisible = true;
+        topScreenY = Math.min(topScreenY, projected.y);
+      }
+      p = {
+        x: center.x,
+        y: Number.isFinite(topScreenY) ? topScreenY - 2 : center.y,
+        visible: anyVisible || center.visible,
+      };
+    } else {
+      p = camera.worldToScreen(
+        e.x,
+        terrainVisualHeight(game.state.scenario, e.x, e.z) + altitude + unitBannerHeight(e.defId),
+        e.z,
+      );
+    }
     if (!p.visible) return;
     const width = e.kind === 'building' ? Math.min(58, 16 + (BUILDINGS[e.defId]?.footprint.w ?? 2) * 7) : selected ? 30 : 24;
     const frac = Math.max(0, Math.min(1, e.hp / e.maxHp));
@@ -358,7 +403,12 @@ export class Overlay {
     ctx.fillRect(x - 1, y - 1, width + 2, 6);
     ctx.fillStyle = color;
     ctx.fillRect(x, y, width * frac, 4);
-    const team = e.owner === -1 ? NEUTRAL : app.game?.player(e.owner)?.factionId === 'expeditionary' ? RED : BLUE;
+    const team =
+      e.owner === -1
+        ? NEUTRAL
+        : game.teamOf(e.owner) === game.teamOf(app.localPlayerId)
+          ? BLUE
+          : RED;
     ctx.fillStyle = team;
     ctx.fillRect(x - 1, y - 1, 2, 6);
     if (selected && e.suppression > 0.2) {
@@ -377,7 +427,7 @@ export class Overlay {
     const x = app.pointer.x - rect.left + 16;
     const y = app.pointer.y - rect.top + 16;
     const p = game.player(e.owner);
-    const faction = p ? FACTIONS[p.factionId]?.shortName ?? p.name : 'NEUTRAL';
+    const faction = p ? tryIdentityDef(p.factionId)?.shortName || p.name : 'NEUTRAL';
     const title = def.name;
     // A charted structure outside vision reports no live integrity: the player
     // only remembers that it is there.

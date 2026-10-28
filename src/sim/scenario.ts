@@ -12,8 +12,9 @@ import {
 } from './terrain';
 import type { MoveClass } from './types';
 import { BUILDINGS } from '../data/buildings';
+import { dist2 } from '../core/math';
 import { UNITS } from '../data/units';
-import { FACTIONS } from '../data/factions';
+import { identityLabel, isKnownFactionId } from '../data/factions';
 
 export interface ScenarioTile {
   t: number;
@@ -39,6 +40,12 @@ export interface ScenarioStructure {
   /** Top-left tile of the footprint. */
   x: number;
   z: number;
+  /**
+   * Yaw in radians. Absent means 0, and a water-dependent structure without it
+   * is turned toward its harbour when the battle starts. The editor writes it
+   * so an authored coastline keeps its slipway facing.
+   */
+  facing?: number;
 }
 
 export interface ScenarioUnit {
@@ -193,7 +200,7 @@ export function parseScenario(raw: unknown): Scenario {
   const players: ScenarioPlayer[] = playersRaw.map((p, i) => {
     const pr = p as Record<string, unknown>;
     const factionId = asString(pr.factionId, `players[${i}].factionId`);
-    if (!FACTIONS[factionId]) fail(`players[${i}].factionId`, 'known faction');
+    if (!isKnownFactionId(factionId)) fail(`players[${i}].factionId`, 'known faction');
     return {
       id: asNumber(pr.id, `players[${i}].id`, 0, 7),
       name: asString(pr.name, `players[${i}].name`),
@@ -214,6 +221,11 @@ export function parseScenario(raw: unknown): Scenario {
         owner: asNumber(sr.owner, `structures[${i}].owner`, -1, 7),
         x: asNumber(sr.x, `structures[${i}].x`, 0, width - 1),
         z: asNumber(sr.z, `structures[${i}].z`, 0, height - 1),
+        // Authored orientation (yards face their harbour) survives a reload.
+        facing:
+          sr.facing === undefined
+            ? undefined
+            : asNumber(sr.facing, `structures[${i}].facing`, -Math.PI, Math.PI),
       };
     },
   );
@@ -351,6 +363,66 @@ export function structureTiles(s: ScenarioStructure): Array<{ x: number; z: numb
     }
   }
   return out;
+}
+
+/**
+ * Yaw that turns a water-dependent structure's slipway (its local +Z, where the
+ * gate is built) toward the sea. The face with the most navigable water wins;
+ * ties resolve +Z, +X, -Z, -X so a placement always looks the same.
+ */
+export function waterFacingFor(scenario: Scenario, s: ScenarioStructure): number {
+  const def = BUILDINGS[s.defId];
+  if (!def) return 0;
+  const { w, h } = def.footprint;
+  const faces: Array<{ dx: number; dz: number; facing: number; count: number }> = [
+    { dx: 0, dz: 1, facing: 0, count: 0 },
+    { dx: 1, dz: 0, facing: -Math.PI / 2, count: 0 },
+    { dx: 0, dz: -1, facing: Math.PI, count: 0 },
+    { dx: -1, dz: 0, facing: Math.PI / 2, count: 0 },
+  ];
+  const isWater = (x: number, z: number): boolean => {
+    if (!inBounds(scenario.width, scenario.height, x, z)) return false;
+    return isNavigable(scenario.tiles[tileIndex(scenario.width, x, z)].t);
+  };
+  for (const f of faces) {
+    if (f.dx === 0) {
+      const z = f.dz > 0 ? s.z + h : s.z - 1;
+      for (let x = s.x; x < s.x + w; x++) if (isWater(x, z)) f.count++;
+    } else {
+      const x = f.dx > 0 ? s.x + w : s.x - 1;
+      for (let z = s.z; z < s.z + h; z++) if (isWater(x, z)) f.count++;
+    }
+  }
+  let best = faces[0];
+  for (const f of faces) if (f.count > best.count) best = f;
+  if (best.count > 0) return best.facing;
+  // Water can be diagonal to the footprint (a yard on a spit or a pier corner).
+  // No face sees it, so aim the gate at the nearest water tile rather than
+  // leaving the slipway pointing inland.
+  return facingTowardNearestWater(scenario, s);
+}
+
+/**
+ * Facing that points the slipway at the nearest navigable tile when none of the
+ * four footprint faces touch water. Falls back to +Z when the structure has no
+ * water in its 8-neighbourhood at all (i.e. an incomplete placement).
+ */
+function facingTowardNearestWater(scenario: Scenario, s: ScenarioStructure): number {
+  const def = BUILDINGS[s.defId];
+  if (!def) return 0;
+  const water = adjacentWater(scenario, s);
+  if (water.length === 0) return 0;
+  const cx = s.x + def.footprint.w / 2;
+  const cz = s.z + def.footprint.h / 2;
+  const best = [...water].sort((a, b) => {
+    const da = dist2(a.x + 0.5, a.z + 0.5, cx, cz);
+    const db = dist2(b.x + 0.5, b.z + 0.5, cx, cz);
+    return da - db || a.z - b.z || a.x - b.x;
+  })[0];
+  const dx = best.x + 0.5 - cx;
+  const dz = best.z + 0.5 - cz;
+  if (Math.abs(dx) > Math.abs(dz)) return dx > 0 ? -Math.PI / 2 : Math.PI / 2;
+  return dz >= 0 ? 0 : Math.PI;
 }
 
 /** Adjacent water tiles (8-neighbourhood) around a building footprint. */
@@ -838,6 +910,6 @@ export function victoryDescription(scenario: Scenario, playerId = PLAYER): strin
   }
   const enemy = scenario.players.find((p) => p.id !== playerId && p.team !== scenario.players[playerId]?.team);
   return enemy
-    ? `Destroy the ${FACTIONS[enemy.factionId]?.shortName ?? 'enemy'} Command Post.`
+    ? `Destroy the ${identityLabel(enemy.factionId) || 'enemy'} Command Post.`
     : 'Destroy the enemy Command Post.';
 }

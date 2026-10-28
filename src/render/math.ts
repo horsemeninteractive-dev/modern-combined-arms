@@ -50,6 +50,18 @@ export function rotationY(angle: number): Float32Array {
   return m;
 }
 
+/** Rotation about local +Z: positive pitch raises local +X toward +Y. */
+export function rotationZ(angle: number): Float32Array {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  const m = identity();
+  m[0] = c;
+  m[1] = s;
+  m[4] = -s;
+  m[5] = c;
+  return m;
+}
+
 export function modelMatrix(
   x: number,
   y: number,

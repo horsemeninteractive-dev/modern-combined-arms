@@ -1,5 +1,6 @@
 import type { MeshBuffers } from './gl';
 import type { Vec3 } from './math';
+import { MATERIAL } from './materials';
 
 export type Color = Vec3;
 
@@ -29,12 +30,77 @@ export function shade(c: Color, f: number): Color {
   return [Math.min(1, c[0] * f), Math.min(1, c[1] * f), Math.min(1, c[2] * f)];
 }
 
+/**
+ * Every existing builder already supplies a palette colour, so the material id
+ * can be inferred from that colour rather than threaded through hundreds of
+ * box/cylinder calls. Shades of a palette colour have the same chromaticity, so
+ * normalising by the max channel keeps a dark concrete plinth reading as
+ * concrete instead of falling into the metal or track family.
+ *
+ * Builders that need a different answer (roads, rock props, ore) set
+ * `MeshBuilder.material` explicitly before adding geometry.
+ */
+const MATERIAL_ANCHORS: ReadonlyArray<readonly [number, Color]> = [
+  [MATERIAL.painted, PALETTE.hull],
+  [MATERIAL.painted, PALETTE.hullDark],
+  [MATERIAL.painted, PALETTE.hullLight],
+  [MATERIAL.painted, PALETTE.olive],
+  [MATERIAL.painted, PALETTE.oliveDark],
+  [MATERIAL.painted, PALETTE.amber],
+  [MATERIAL.painted, PALETTE.warning],
+  [MATERIAL.painted, PALETTE.red],
+  [MATERIAL.painted, PALETTE.white],
+  [MATERIAL.bareMetal, PALETTE.metal],
+  [MATERIAL.bareMetal, PALETTE.darkMetal],
+  [MATERIAL.concrete, PALETTE.concrete],
+  [MATERIAL.concrete, PALETTE.concreteDark],
+  [MATERIAL.glass, PALETTE.glass],
+  [MATERIAL.glass, PALETTE.glassDark],
+  [MATERIAL.canvas, PALETTE.canvas],
+  [MATERIAL.canvas, PALETTE.sandbag],
+  [MATERIAL.track, PALETTE.track],
+  [MATERIAL.track, PALETTE.rubber],
+];
+
+function chromaticity(c: Color): Color {
+  const max = Math.max(c[0], c[1], c[2], 0.0001);
+  return [c[0] / max, c[1] / max, c[2] / max];
+}
+
+export function materialForColor(color: Color): number {
+  const max = Math.max(color[0], color[1], color[2]);
+  // Tracks and tyres are the only surfaces this dark; a shaded concrete edge
+  // still has a much higher absolute value.
+  if (max < 0.135) return MATERIAL.track;
+  const c = chromaticity(color);
+  let best: number = MATERIAL.painted;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const [id, anchor] of MATERIAL_ANCHORS) {
+    const a = chromaticity(anchor);
+    const distance =
+      (c[0] - a[0]) ** 2 + (c[1] - a[1]) ** 2 + (c[2] - a[2]) ** 2 +
+      ((max - Math.max(anchor[0], anchor[1], anchor[2])) ** 2) * 0.12;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = id;
+    }
+  }
+  return best;
+}
+
 export class MeshBuilder {
   positions: number[] = [];
   normals: number[] = [];
   colors: number[] = [];
   teamMask: number[] = [];
+  materials: number[] = [];
+  /** Override automatic colour inference for the next faces, or null to infer. */
+  material: number | null = null;
   indices: number[] = [];
+
+  private pushMaterial(color: Color): void {
+    this.materials.push(this.material ?? materialForColor(color));
+  }
 
   addQuad(
     a: Vec3,
@@ -63,6 +129,7 @@ export class MeshBuilder {
       this.normals.push(nx, ny, nz);
       this.colors.push(color[0], color[1], color[2]);
       this.teamMask.push(team);
+      this.pushMaterial(color);
     }
     this.indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
   }
@@ -87,6 +154,7 @@ export class MeshBuilder {
       this.normals.push(nx, ny, nz);
       this.colors.push(color[0], color[1], color[2]);
       this.teamMask.push(team);
+      this.pushMaterial(color);
     }
     this.indices.push(base, base + 1, base + 2);
   }
@@ -289,6 +357,7 @@ export class MeshBuilder {
       normals: new Float32Array(this.normals),
       colors: new Float32Array(this.colors),
       teamMask: new Float32Array(this.teamMask),
+      materials: new Float32Array(this.materials),
       indices:
         count > 65535 ? new Uint32Array(this.indices) : new Uint16Array(this.indices),
     };
@@ -301,6 +370,7 @@ export class MeshBuilder {
 
 export function buildTreeMesh(): MeshBuffers {
   const b = new MeshBuilder();
+  b.material = MATERIAL.canvas;
   b.cylinder(0, 1.1, 0, 0.22, 2.2, 6, [0.22, 0.16, 0.1]);
   b.cone(0, 1.8, 0, 1.9, 4.4, 7, [0.12, 0.24, 0.14]);
   b.cone(0, 3.4, 0, 1.45, 3.4, 7, [0.16, 0.3, 0.17]);
@@ -308,16 +378,56 @@ export function buildTreeMesh(): MeshBuffers {
   return b.build();
 }
 
+/**
+ * A faceted monolith with irregular shoulder and apex rings. The old prop was a
+ * sphere plus two boxes: its silhouette stayed round no matter what material it
+ * wore, which is why ridge cover read as cartoon boulders. Flat faces give the
+ * material shader edges to catch and read as stone at battle zoom.
+ */
+function addAngularStone(
+  b: MeshBuilder,
+  cx: number,
+  cz: number,
+  radius: number,
+  height: number,
+  sides: number,
+  phase: number,
+  color: Color,
+): void {
+  const bottom: Vec3[] = [];
+  const shoulder: Vec3[] = [];
+  for (let i = 0; i < sides; i++) {
+    const a = phase + (i / sides) * Math.PI * 2;
+    const r0 = radius * (0.82 + 0.18 * Math.sin(i * 2.7 + phase * 3.1));
+    const r1 = radius * (0.52 + 0.16 * Math.sin(i * 1.9 + phase * 5.3));
+    bottom.push([cx + Math.cos(a) * r0, 0, cz + Math.sin(a) * r0]);
+    shoulder.push([
+      cx + Math.cos(a + 0.26) * r1,
+      height * (0.48 + 0.2 * Math.sin(i * 3.1 + phase)),
+      cz + Math.sin(a + 0.26) * r1,
+    ]);
+  }
+  const apex: Vec3 = [cx + radius * 0.16, height, cz - radius * 0.12];
+  for (let i = 0; i < sides; i++) {
+    const j = (i + 1) % sides;
+    b.addTriangle(bottom[i], shoulder[i], shoulder[j], shade(color, 0.8));
+    b.addTriangle(bottom[i], shoulder[j], bottom[j], shade(color, 0.68));
+    b.addTriangle(shoulder[i], apex, shoulder[j], shade(color, 1.02 + (i % 2) * 0.06));
+  }
+}
+
 export function buildRockMesh(): MeshBuffers {
   const b = new MeshBuilder();
-  b.sphere(0, 0.7, 0, 1.4, 4, 6, [0.37, 0.36, 0.33]);
-  b.boxRot(0.8, 0.5, 0.2, 1.4, 1.1, 1.3, 0.5, [0.3, 0.3, 0.28]);
-  b.boxRot(-0.6, 0.4, -0.5, 1.0, 0.8, 1.1, -0.3, [0.42, 0.4, 0.36]);
+  b.material = MATERIAL.rock;
+  addAngularStone(b, 0, 0, 1.42, 1.55, 7, 0.35, [0.38, 0.37, 0.34]);
+  addAngularStone(b, 1.0, 0.36, 0.78, 0.95, 5, 1.6, [0.31, 0.31, 0.29]);
+  addAngularStone(b, -0.92, -0.42, 0.62, 0.7, 5, 2.9, [0.43, 0.41, 0.37]);
   return b.build();
 }
 
 export function buildOreMesh(): MeshBuffers {
   const b = new MeshBuilder();
+  b.material = MATERIAL.bareMetal;
   b.cone(0, 0, 0.2, 0.55, 1.9, 5, PALETTE.amber);
   b.cone(0.55, 0, -0.3, 0.4, 1.4, 5, [0.95, 0.66, 0.24]);
   b.cone(-0.5, 0, 0.45, 0.42, 1.2, 5, [0.76, 0.45, 0.1]);

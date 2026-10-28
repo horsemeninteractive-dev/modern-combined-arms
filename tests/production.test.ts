@@ -83,7 +83,8 @@ describe('production queue priority', () => {
     expect(factory.queue[0]).toBe(engineerItem);
     expect(factory.queue[2]).toBe(tankItem);
     expect(tankItem.remaining).toBe(tankRemaining);
-    expect(player.mats).toBe(materials);
+    // Reordering is free; only the headquarters trickle moved the bank.
+    expect(player.mats).toBeCloseTo(materials + game.passiveMatsRate(0) / 20, 6);
   });
 
   it('rejects foreign or missing targets and leaves the queue untouched', () => {

@@ -218,7 +218,11 @@ describe('production and economy', () => {
     game.enqueueCommand({ type: 'produce', team: 0, buildingId: barracks.id, defId: 'rifle' });
     game.tick();
     expect(barracks.queue).toHaveLength(1);
-    expect(game.player(0)!.mats).toBe(matsBefore - 130);
+    // The cost is taken up front; one tick of the headquarters trickle lands too.
+    expect(game.player(0)!.mats).toBeCloseTo(
+      matsBefore - 130 + game.passiveMatsRate(0) / 20,
+      6,
+    );
     game.advance(20 * 8);
     expect(barracks.queue).toHaveLength(0);
     expect(game.player(0)!.stats.unitsBuilt).toBe(unitsBefore + 1);
@@ -242,6 +246,10 @@ describe('production and economy', () => {
     game.enqueueCommand({ type: 'cancelProduction', team: 0, buildingId: barracks.id, index: 0 });
     game.tick();
     expect(barracks.queue).toHaveLength(0);
-    expect(game.player(0)!.mats).toBe(before);
+    // Full refund across two ticks, plus two ticks of the headquarters trickle.
+    expect(game.player(0)!.mats).toBeCloseTo(
+      before + (2 * game.passiveMatsRate(0)) / 20,
+      6,
+    );
   });
 });

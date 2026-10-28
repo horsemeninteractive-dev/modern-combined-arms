@@ -1,0 +1,179 @@
+import { describe, expect, it } from 'vitest';
+import { unitBannerHeight, unitStyle, unitVisualScale } from '../src/render/unitMeshes';
+import { UNITS } from '../src/data/units';
+
+function bounds(part: { positions: ArrayLike<number> }): {
+  maxX: number;
+  minX: number;
+  maxY: number;
+  minY: number;
+  maxZ: number;
+  minZ: number;
+} {
+  const p = part.positions;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (let i = 0; i < p.length; i += 3) {
+    minX = Math.min(minX, p[i]);
+    maxX = Math.max(maxX, p[i]);
+    minY = Math.min(minY, p[i + 1]);
+    maxY = Math.max(maxY, p[i + 1]);
+    minZ = Math.min(minZ, p[i + 2]);
+    maxZ = Math.max(maxZ, p[i + 2]);
+  }
+  return { minX, maxX, minY, maxY, minZ, maxZ };
+}
+
+/** Average Y of the vertices on the part's forwardmost X plane. */
+function tipHeight(part: { positions: ArrayLike<number> }): number {
+  const b = bounds(part);
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i < part.positions.length; i += 3) {
+    if (Math.abs(part.positions[i] - b.maxX) < 0.001) {
+      sum += part.positions[i + 1];
+      count++;
+    }
+  }
+  return sum / count;
+}
+
+describe('completed unit roster visual pass', () => {
+  it('authors every land, air and naval unit at a coherent non-inflated scale', () => {
+    for (const id of Object.keys(UNITS)) {
+      const scale = unitVisualScale(id);
+      expect(scale, id).toBeGreaterThanOrEqual(0.4);
+      expect(scale, id).toBeLessThanOrEqual(1);
+    }
+    // The corvette is the only remaining presentation multiplier: its hull is
+    // authored around a shipyard slip, not a 2 m soldier.
+    expect(unitVisualScale('corvette')).toBe(0.7);
+    for (const id of [
+      'engineer',
+      'spearhead',
+      'aa',
+      'recovery',
+      'harvester',
+      'fighter',
+      'interceptor',
+      'uav',
+      'deepReconUAV',
+    ]) {
+      expect(unitVisualScale(id), id).toBe(1);
+    }
+  });
+
+  it('clears every reworked roof with a custom banner anchor', () => {
+    for (const id of [
+      'engineer',
+      'spearhead',
+      'aa',
+      'recovery',
+      'harvester',
+      'fighter',
+      'interceptor',
+      'uav',
+      'deepReconUAV',
+      'corvette',
+    ]) {
+      const bodyTop = bounds(unitStyle(id)!.body).maxY * unitVisualScale(id);
+      expect(unitBannerHeight(id), `${id} still uses the legacy 5-unit anchor`).not.toBe(5);
+      expect(unitBannerHeight(id), `${id} anchor is inside the model`).toBeGreaterThan(bodyTop + 0.05);
+    }
+    expect(unitBannerHeight('recovery')).toBeGreaterThan(unitBannerHeight('tank'));
+    expect(unitBannerHeight('harvester')).toBeGreaterThan(unitBannerHeight('recovery'));
+    expect(unitBannerHeight('corvette')).toBeGreaterThan(unitBannerHeight('tank'));
+  });
+
+  it('places the AA missile pack on the authored forward and height hardpoint', () => {
+    const aa = unitStyle('aa')!;
+    const turret = aa.turret!;
+    const b = bounds(turret);
+    expect((aa.turretOffset[0] + b.maxX) * unitVisualScale('aa')).toBeCloseTo(
+      UNITS.aa.muzzle!.forward,
+      2,
+    );
+    expect((aa.turretOffset[1] + tipHeight(turret)) * unitVisualScale('aa')).toBeCloseTo(
+      UNITS.aa.muzzle!.height,
+      2,
+    );
+    expect(aa.body.teamMask.some((v) => v >= 0.5)).toBe(true);
+    expect(turret.teamMask.some((v) => v >= 0.5)).toBe(true);
+  });
+
+  it('keeps the Spearhead gun on the MBT-class hardpoint and hull', () => {
+    const spearhead = unitStyle('spearhead')!;
+    const tank = unitStyle('tank')!;
+    // Sharing a genuine hull component is deliberate; the turret is unique.
+    expect(spearhead.body).toBe(tank.body);
+    expect(spearhead.turret).not.toBe(tank.turret);
+    const turret = spearhead.turret!;
+    const b = bounds(turret);
+    expect((spearhead.turretOffset[0] + b.maxX) * unitVisualScale('spearhead')).toBeCloseTo(
+      UNITS.spearhead.muzzle!.forward,
+      1,
+    );
+    expect((spearhead.turretOffset[1] + tipHeight(turret)) * unitVisualScale('spearhead')).toBeCloseTo(
+      UNITS.spearhead.muzzle!.height,
+      1,
+    );
+    expect(turret.teamMask.some((v) => v >= 0.5)).toBe(true);
+  });
+
+  it('lands the corvette deck gun on its authored hardpoint', () => {
+    const ship = unitStyle('corvette')!;
+    const turret = ship.turret!;
+    const b = bounds(turret);
+    const scale = unitVisualScale('corvette');
+    expect((ship.turretOffset[0] + b.maxX) * scale).toBeCloseTo(UNITS.corvette.muzzle!.forward, 1);
+    expect((ship.turretOffset[1] + tipHeight(turret)) * scale).toBeCloseTo(
+      UNITS.corvette.muzzle!.height,
+      1,
+    );
+    expect(ship.body.teamMask.some((v) => v >= 0.5)).toBe(true);
+    expect(turret.teamMask.some((v) => v >= 0.5)).toBe(true);
+  });
+
+  it('gives the support and air units role-specific geometry and ownership marks', () => {
+    const engineer = unitStyle('engineer')!;
+    const recovery = unitStyle('recovery')!;
+    expect(engineer.turret).toBeUndefined();
+    expect(recovery.turret).toBeUndefined();
+    // The crane and blade extend well beyond the cab envelope.
+    expect(bounds(engineer.body).maxX).toBeGreaterThan(2.1);
+    expect(bounds(engineer.body).maxY).toBeGreaterThan(2.2);
+    expect(bounds(recovery.body).maxY).toBeGreaterThan(2.5);
+
+    const fighter = unitStyle('fighter')!;
+    const interceptor = unitStyle('interceptor')!;
+    const uav = unitStyle('uav')!;
+    const deep = unitStyle('deepReconUAV')!;
+    expect(fighter.body).not.toBe(interceptor.body);
+    expect(uav.body).not.toBe(deep.body);
+    // Swept strike wings are wider than the interceptor's delta and the
+    // baseline drone's straight wing.
+    const span = (id: string): number => {
+      const b = bounds(unitStyle(id)!.body);
+      return (b.maxZ - b.minZ) * unitVisualScale(id);
+    };
+    expect(span('fighter')).toBeGreaterThan(span('interceptor'));
+    expect(span('deepReconUAV')).toBeGreaterThan(span('uav'));
+    for (const id of ['engineer', 'recovery', 'fighter', 'interceptor', 'uav', 'deepReconUAV']) {
+      expect(unitStyle(id)!.body.teamMask.some((v) => v >= 0.5), id).toBe(true);
+    }
+  });
+
+  it('keeps the harvester cargo inside its new hopper', () => {
+    const body = bounds(unitStyle('harvester')!.body);
+    const load = bounds(unitStyle('harvester')!.load!);
+    const scale = unitVisualScale('harvester');
+    expect(load.minX * scale).toBeGreaterThan(body.minX * scale);
+    expect(load.maxX * scale).toBeLessThan(body.maxX * scale);
+    expect(load.minZ * scale).toBeGreaterThan(body.minZ * scale);
+    expect(load.maxZ * scale).toBeLessThan(body.maxZ * scale);
+  });
+});

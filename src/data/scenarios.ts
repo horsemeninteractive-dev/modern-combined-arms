@@ -6,6 +6,7 @@ import {
 import { Terrain, inBounds, tileIndex, type TerrainId } from '../sim/terrain';
 import { reachableFrom, type Scenario, type ScenarioTile } from '../sim/scenario';
 import { defaultSettings } from '../sim/scenario';
+import { createFoundryDistrict, createKestrelStraits, createRustValley } from './maps';
 
 const W = 96;
 const H = 72;
@@ -93,10 +94,26 @@ export function createIslandAssault(): Scenario {
       }
     }
   }
+  // A beach is land that touches water, not land that touches other land.
+  // Keeping this test separate from the shallow-margin pass above is what
+  // preserves the interior grass, forest belt and ridge approach.
+  const waterNeighbour = (x: number, z: number): boolean => {
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dz === 0) continue;
+        const nx = x + dx;
+        const nz = z + dz;
+        if (!inBounds(W, H, nx, nz)) continue;
+        const t = get(nx, nz).t as TerrainId;
+        if (t === Terrain.DeepWater || t === Terrain.ShallowWater) return true;
+      }
+    }
+    return false;
+  };
   for (let z = 0; z < H; z++) {
     for (let x = 0; x < W; x++) {
       const tile = get(x, z);
-      if ((tile.t === Terrain.Grass || tile.t === Terrain.Rock) && landNeighbour(x, z)) {
+      if ((tile.t === Terrain.Grass || tile.t === Terrain.Rock) && waterNeighbour(x, z)) {
         tile.t = Terrain.Sand;
       }
     }
@@ -112,12 +129,6 @@ export function createIslandAssault(): Scenario {
       if (z < 21 && !core) continue;
       if (edge && rand() < 0.28) continue;
       set(x, z, Terrain.Rock, core ? 3 : 2);
-    }
-  }
-  // The pass itself: a mountain road.
-  for (let z = 33; z <= 38; z++) {
-    for (let x = 47; x <= 59; x++) {
-      set(x, z, Terrain.Road, 2);
     }
   }
 
@@ -154,7 +165,9 @@ export function createIslandAssault(): Scenario {
     }
   }
 
-  // Roads.
+  // Roads. One highway links the beachhead to the plateau through the village
+  // and the ridge pass; a forest track and a southern shore road give the flanks
+  // real alternatives, with short spurs to the objectives and ore fields.
   const road = (x0: number, z0: number, x1: number, z1: number) => {
     let x = x0;
     let z = z0;
@@ -169,17 +182,37 @@ export function createIslandAssault(): Scenario {
       }
     }
   };
-  road(27, 36, 47, 36);
-  road(47, 36, 71, 32);
-  road(71, 32, 77, 29);
-  road(19, 38, 15, 38);
-  road(53, 36, 53, 33);
-  road(53, 33, 66, 26);
-  road(66, 26, 77, 24);
-  road(77, 30, 84, 37);
-  road(76, 34, 71, 40);
-  road(66, 26, 60, 18);
-  road(30, 34, 36, 24);
+  const route = (points: Array<[number, number]>) => {
+    for (let i = 1; i < points.length; i++) {
+      road(points[i - 1][0], points[i - 1][1], points[i][0], points[i][1]);
+    }
+  };
+
+  // Coastal highway: port → beachhead → village → pass → eastern plateau base.
+  route([[14, 38], [24, 38], [38, 37], [47, 36]]);
+  // The pass itself, a two-lane mountain road through the only gap in the ridge.
+  route([[47, 35], [59, 35]]);
+  route([[47, 36], [59, 36]]);
+  route([[59, 36], [64, 37], [70, 37], [76, 35], [80, 32]]);
+  // Beachhead spur past the command post, then the coastal track north.
+  route([[24, 38], [21, 38], [21, 36], [15, 36], [15, 32]]);
+  // Village high street, north of the depot, joining the highway at the west end
+  // and running up the ridge face to the forest track at its east end.
+  route([[38, 37], [38, 27], [44, 27], [47, 27]]);
+  route([[47, 27], [46, 24], [45, 20], [44, 17]]);
+  // Depot and relay access off the high street.
+  route([[44, 27], [44, 29]]);
+  // Forest track: the long northern flank around the ridge, back to the plateau.
+  route([[44, 17], [47, 17], [50, 15], [56, 15], [61, 16], [66, 19], [70, 21], [74, 22], [79, 22], [82, 26], [82, 29], [80, 32]]);
+  // Northern ore field access off the forest track.
+  route([[79, 22], [82, 21]]);
+  // Coastal flank: the beachhead's southern track around the forest screens
+  // and back up to the village, an alternative to the highway through it.
+  route([[15, 38], [15, 43], [20, 45], [27, 46], [34, 46], [41, 45], [46, 43], [47, 39], [47, 37]]);
+  // Signal relay access at the eastern end of the highway.
+  route([[70, 37], [69, 40]]);
+  // Base spur onto the expeditionary command post apron.
+  route([[80, 32], [78, 30], [76, 28]]);
 
   // Ore fields. Keep them clear of roads, urban tiles and buildings.
   const oreField = (cx: number, cz: number, rx: number, rz: number, amount: number) => {
@@ -316,14 +349,73 @@ export function createIslandAssault(): Scenario {
   return scenario;
 }
 
-export const BUILTIN_SCENARIOS = [
+export interface BuiltinScenario {
+  id: string;
+  name: string;
+  description: string;
+  /** One-word theatre tag shown in the map selector. */
+  focus: string;
+  /** Domains the map actually supports, for the briefing. */
+  domains: string;
+  /** Authored footprint, available without generating the tiles. */
+  width: number;
+  height: number;
+  create: () => Scenario;
+}
+
+/**
+ * The skirmish theatre list. The three symmetric maps live in `maps.ts`; every
+ * entry is playable from both sides on identical ground.
+ */
+export const BUILTIN_SCENARIOS: BuiltinScenario[] = [
   {
     id: 'island-assault',
     name: 'Island Assault — Kestrel Bay',
     description: 'The vertical-slice island battle: beachhead, ridge, bay and enemy base.',
+    focus: 'Combined',
+    domains: 'Ground · Air · Naval',
+    width: 96,
+    height: 72,
     create: createIslandAssault,
   },
+  {
+    id: 'rust-valley',
+    name: 'Rust Valley',
+    description: 'Landlocked armour country split by a central massif and two wide passes.',
+    focus: 'Armour',
+    domains: 'Ground · Air',
+    width: 112,
+    height: 80,
+    create: createRustValley,
+  },
+  {
+    id: 'kestrel-straits',
+    name: 'Kestrel Straits',
+    description: 'Two coasts across a deep strait, with two contested islands between them.',
+    focus: 'Naval',
+    domains: 'Ground · Air · Naval',
+    width: 88,
+    height: 64,
+    create: createKestrelStraits,
+  },
+  {
+    id: 'foundry-district',
+    name: 'Foundry District',
+    description:
+      'Two field bases on the open outskirts, facing off across a dense city core of warehouses, offices and tenements.',
+    focus: 'Urban',
+    domains: 'Ground · Air',
+    width: 104,
+    height: 76,
+    create: createFoundryDistrict,
+  },
 ];
+
+export const DEFAULT_SCENARIO_ID = BUILTIN_SCENARIOS[0].id;
+
+export function builtinScenario(id: string): BuiltinScenario {
+  return BUILTIN_SCENARIOS.find((s) => s.id === id) ?? BUILTIN_SCENARIOS[0];
+}
 
 export function createEmptyScenario(width = 64, height = 48): Scenario {
   const tiles: ScenarioTile[] = new Array(width * height);

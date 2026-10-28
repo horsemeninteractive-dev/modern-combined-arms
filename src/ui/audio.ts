@@ -1,6 +1,12 @@
+import { Announcer, type AnnouncementId } from './announcer';
+import { MatchMusic } from './matchMusic';
+
 /**
- * All audio is synthesised at runtime, so the slice ships with no external
- * asset dependency. Critical events always have a visual equivalent in the HUD.
+ * Weapons, UI and ambience are synthesised at runtime. The menu theme, match
+ * soundtrack and strategic voice lines are authored assets. Music streams
+ * through a media channel per context, and voice uses one dedicated channel so
+ * the announcer can interrupt a lower-priority line without touching the Web
+ * Audio graph.
  */
 export class AudioEngine {
   private ctx: AudioContext | null = null;
@@ -10,10 +16,55 @@ export class AudioEngine {
   private noiseBuffer: AudioBuffer | null = null;
   private started = false;
   private lastPlayed = new Map<string, number>();
+  private music: HTMLAudioElement | null = null;
+  private musicWanted = false;
+  private musicFade: number | null = null;
+  private musicRetryBound = false;
+  private voiceElement: HTMLAudioElement | null = null;
+  private matchElement: HTMLAudioElement | null = null;
+  private matchHandlers: { onEnded: () => void; onError: () => void } | null = null;
+  private matchFade: number | null = null;
+  private matchDucked = false;
+  private matchRetryHandler: (() => void) | null = null;
+  private readonly matchMusic: MatchMusic;
+  readonly announcer: Announcer;
   masterVolume = 0.7;
   sfxVolume = 0.8;
   ambientVolume = 0.35;
+  musicVolume = 0.45;
+  voiceVolume = 0.8;
   muted = false;
+
+  constructor() {
+    this.announcer = new Announcer({
+      play: (src, done) => this.playVoice(src, done),
+      stop: () => this.stopVoice(),
+    });
+    this.matchMusic = new MatchMusic({
+      playTrack: (src, handlers) => this.playMatchTrack(src, handlers),
+      stop: () => this.stopMatchTrack(),
+    });
+  }
+
+  /** Begin the match soundtrack exactly once. */
+  startMatchMusic(): void {
+    this.matchMusic.start();
+  }
+
+  /** Stop and release the match soundtrack; safe to call repeatedly. */
+  stopMatchMusic(): void {
+    this.matchMusic.stop();
+    this.clearMatchRetry();
+    this.matchDucked = false;
+    if (this.matchFade !== null) {
+      clearInterval(this.matchFade);
+      this.matchFade = null;
+    }
+  }
+
+  get currentMatchTrack(): string | null {
+    return this.matchMusic.currentTrack;
+  }
 
   init(): void {
     if (this.started) {
@@ -85,6 +136,93 @@ export class AudioEngine {
     drone2.start();
   }
 
+  /**
+   * Menu theme. This one is an authored track rather than synthesis: it is
+   * streamed through an audio element, looped, and faded with the Music volume
+   * setting. Browsers refuse playback until a gesture, so a refusal waits for
+   * the next click or key instead of dropping the theme for the session.
+   */
+  playMenuMusic(): void {
+    this.musicWanted = true;
+    if (this.muted) return;
+    const el = this.music ?? this.createMusic();
+    if (!el) return;
+    if (!el.paused) {
+      this.fadeMusic(this.musicVolume, 0.25);
+      return;
+    }
+    el.volume = 0;
+    const started = el.play();
+    if (!started) return;
+    started
+      .then(() => this.fadeMusic(this.musicVolume, 1.4))
+      .catch(() => this.retryMusicOnGesture());
+  }
+
+  stopMenuMusic(): void {
+    this.musicWanted = false;
+    if (!this.music) return;
+    this.fadeMusic(0, 0.7);
+  }
+
+  setMusicVolume(volume: number): void {
+    this.musicVolume = Math.max(0, Math.min(1, volume));
+    if (this.matchFade !== null) {
+      clearInterval(this.matchFade);
+      this.matchFade = null;
+    }
+    this.applyMatchVolume();
+    const el = this.music;
+    if (!el) return;
+    // Turning the slider back up after silence should bring the theme back.
+    if (this.musicWanted && el.paused && this.musicVolume > 0.001) {
+      this.playMenuMusic();
+    } else if (!el.paused) {
+      this.fadeMusic(this.musicVolume, 0.25);
+    }
+  }
+
+  private createMusic(): HTMLAudioElement | null {
+    if (typeof Audio === 'undefined') return null;
+    const el = new Audio('/audio/menu-theme.mp3');
+    el.loop = true;
+    el.preload = 'none';
+    el.volume = 0;
+    this.music = el;
+    return el;
+  }
+
+  private fadeMusic(target: number, seconds: number): void {
+    const el = this.music;
+    if (!el) return;
+    if (this.musicFade !== null) clearInterval(this.musicFade);
+    const from = el.volume;
+    const steps = Math.max(1, Math.round(seconds * 25));
+    let step = 0;
+    this.musicFade = setInterval(() => {
+      step++;
+      const k = Math.min(1, step / steps);
+      el.volume = Math.max(0, Math.min(1, from + (target - from) * k));
+      if (k < 1) return;
+      if (this.musicFade !== null) clearInterval(this.musicFade);
+      this.musicFade = null;
+      if (target <= 0.001) el.pause();
+    }, 40);
+  }
+
+  private retryMusicOnGesture(): void {
+    if (this.musicRetryBound) return;
+    this.musicRetryBound = true;
+    const retry = (): void => {
+      window.removeEventListener('pointerdown', retry);
+      window.removeEventListener('keydown', retry);
+      this.musicRetryBound = false;
+      if (this.musicWanted) this.playMenuMusic();
+    };
+    window.addEventListener('pointerdown', retry, { once: true });
+    window.addEventListener('keydown', retry, { once: true });
+  }
+
   setVolumes(master: number, sfx: number, ambient: number): void {
     this.masterVolume = master;
     this.sfxVolume = sfx;
@@ -92,11 +230,257 @@ export class AudioEngine {
     if (this.master && this.ctx) this.master.gain.setTargetAtTime(this.muted ? 0 : master, this.ctx.currentTime, 0.05);
     if (this.sfx && this.ctx) this.sfx.gain.setTargetAtTime(sfx, this.ctx.currentTime, 0.05);
     if (this.ambient && this.ctx) this.ambient.gain.setTargetAtTime(ambient * 0.4, this.ctx.currentTime, 0.05);
+    this.syncVoiceVolume();
+  }
+
+  setVoiceVolume(volume: number): void {
+    this.voiceVolume = Math.max(0, Math.min(1, volume));
+    if (this.voiceVolume <= 0.001) {
+      this.stopVoice();
+      this.announcer.reset();
+      return;
+    }
+    this.syncVoiceVolume();
   }
 
   setMuted(muted: boolean): void {
     this.muted = muted;
     if (this.master && this.ctx) this.master.gain.setTargetAtTime(muted ? 0 : this.masterVolume, this.ctx.currentTime, 0.05);
+    if (muted) {
+      this.stopVoice();
+      this.announcer.reset();
+      this.fadeMusic(0, 0.15);
+    } else {
+      this.syncVoiceVolume();
+      if (this.musicWanted) this.playMenuMusic();
+    }
+    this.applyMatchVolume();
+  }
+
+  /** The announcer respects master mute/volume and its own persisted volume. */
+  announce(id: AnnouncementId): void {
+    if (!this.started || this.muted || this.voiceVolume <= 0.001) return;
+    this.announcer.announce(id);
+  }
+
+  /** Battle teardown/restart: drop any stale line and clear cooldown state. */
+  resetAnnouncer(): void {
+    this.announcer.reset();
+    this.stopVoice();
+  }
+
+  private syncVoiceVolume(): void {
+    if (this.voiceElement) {
+      this.voiceElement.volume = Math.max(0, Math.min(1, this.masterVolume * this.voiceVolume));
+    }
+  }
+
+  private playVoice(src: string, done: () => void): void {
+    if (!this.started || this.muted || this.voiceVolume <= 0.001 || typeof Audio === 'undefined') {
+      done();
+      return;
+    }
+    // One voice channel only. The announcer has already stopped the previous
+    // line when it chose to interrupt, but pause here as a defensive measure.
+    this.voiceElement?.pause();
+    // Duck the soundtrack while a command-level line is speaking. The music
+    // keeps its position; only its volume moves.
+    this.duckMatchMusic(true);
+    let el: HTMLAudioElement;
+    try {
+      el = new Audio(src);
+    } catch {
+      this.duckMatchMusic(false);
+      done();
+      return;
+    }
+    el.preload = 'auto';
+    el.volume = Math.max(0, Math.min(1, this.masterVolume * this.voiceVolume));
+    this.voiceElement = el;
+    let settled = false;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      el.removeEventListener('ended', finish);
+      el.removeEventListener('error', finish);
+      if (this.voiceElement === el) this.voiceElement = null;
+      this.duckMatchMusic(false);
+      done();
+    };
+    el.addEventListener('ended', finish);
+    el.addEventListener('error', finish);
+    try {
+      const started = el.play();
+      if (started && typeof started.catch === 'function') started.catch(finish);
+    } catch {
+      finish();
+    }
+  }
+
+  private stopVoice(): void {
+    const el = this.voiceElement;
+    this.voiceElement = null;
+    this.duckMatchMusic(false);
+    if (!el) return;
+    el.pause();
+    try {
+      el.currentTime = 0;
+    } catch {
+      /* A failed media element may reject seeking; pausing is sufficient. */
+    }
+  }
+
+  private matchVolume(): number {
+    if (this.muted) return 0;
+    return Math.max(0, Math.min(1, this.musicVolume * (this.matchDucked ? 0.32 : 1)));
+  }
+
+  private applyMatchVolume(): void {
+    // An explicit volume/mute change supersedes any in-flight duck fade.
+    if (this.matchFade !== null) {
+      clearInterval(this.matchFade);
+      this.matchFade = null;
+    }
+    if (this.matchElement) this.matchElement.volume = this.matchVolume();
+  }
+
+  private duckMatchMusic(ducked: boolean): void {
+    if (this.matchDucked === ducked) return;
+    this.matchDucked = ducked;
+    if (this.matchElement) this.fadeMatchVolume(this.matchVolume(), 0.18);
+  }
+
+  private fadeMatchVolume(target: number, seconds: number): void {
+    const el = this.matchElement;
+    if (!el) return;
+    if (this.matchFade !== null) {
+      clearInterval(this.matchFade);
+      this.matchFade = null;
+    }
+    const from = el.volume;
+    if (seconds <= 0 || Math.abs(from - target) < 0.001) {
+      el.volume = target;
+      return;
+    }
+    const steps = Math.max(1, Math.round(seconds * 25));
+    let step = 0;
+    this.matchFade = setInterval(() => {
+      step++;
+      const k = Math.min(1, step / steps);
+      el.volume = Math.max(0, Math.min(1, from + (target - from) * k));
+      if (k < 1) return;
+      if (this.matchFade !== null) clearInterval(this.matchFade);
+      this.matchFade = null;
+    }, 40);
+  }
+
+  private playMatchTrack(
+    src: string,
+    handlers: { onEnded: () => void; onError: () => void },
+  ): void {
+    if (typeof Audio === 'undefined') {
+      handlers.onError();
+      return;
+    }
+    const el = this.matchElement ?? (this.matchElement = new Audio());
+    this.clearMatchRetry();
+    this.matchHandlers = handlers;
+    if (this.matchFade !== null) {
+      clearInterval(this.matchFade);
+      this.matchFade = null;
+    }
+    el.pause();
+    el.onended = null;
+    el.onerror = null;
+    el.loop = false;
+    el.preload = 'auto';
+    el.src = src;
+    el.volume = this.matchVolume();
+    el.onended = (): void => {
+      if (this.matchElement !== el || this.matchHandlers !== handlers) return;
+      this.matchHandlers = null;
+      handlers.onEnded();
+    };
+    el.onerror = (): void => {
+      if (this.matchElement !== el || this.matchHandlers !== handlers) return;
+      this.matchHandlers = null;
+      handlers.onError();
+    };
+    try {
+      const started = el.play();
+      if (started && typeof started.catch === 'function') {
+        started.catch((error: unknown) => {
+          if (this.matchHandlers !== handlers) return;
+          const name = (error as { name?: string } | null)?.name;
+          // A policy rejection is recoverable after a gesture and is not a bad
+          // file. Do not skip the track or retry it in a loop.
+          if (name === 'NotAllowedError') {
+            this.armMatchRetry();
+            return;
+          }
+          if (name === 'AbortError') return;
+          this.matchHandlers = null;
+          handlers.onError();
+        });
+      }
+    } catch {
+      this.matchHandlers = null;
+      handlers.onError();
+    }
+  }
+
+  private stopMatchTrack(): void {
+    const el = this.matchElement;
+    this.matchHandlers = null;
+    if (!el) return;
+    el.onended = null;
+    el.onerror = null;
+    el.pause();
+    el.removeAttribute('src');
+    el.load();
+  }
+
+  private armMatchRetry(): void {
+    if (typeof window === 'undefined' || this.matchRetryHandler) return;
+    const retry = (): void => {
+      this.clearMatchRetry();
+      this.retryMatchPlayback();
+    };
+    this.matchRetryHandler = retry;
+    window.addEventListener('pointerdown', retry, { once: true });
+    window.addEventListener('keydown', retry, { once: true });
+  }
+
+  private clearMatchRetry(): void {
+    const retry = this.matchRetryHandler;
+    if (!retry) return;
+    this.matchRetryHandler = null;
+    window.removeEventListener('pointerdown', retry);
+    window.removeEventListener('keydown', retry);
+  }
+
+  private retryMatchPlayback(): void {
+    const el = this.matchElement;
+    const handlers = this.matchHandlers;
+    if (!el || !handlers || !this.matchMusic.running) return;
+    try {
+      const started = el.play();
+      if (started && typeof started.catch === 'function') {
+        started.catch((error: unknown) => {
+          if (this.matchHandlers !== handlers) return;
+          const name = (error as { name?: string } | null)?.name;
+          if (name === 'NotAllowedError') {
+            this.armMatchRetry();
+          } else if (name !== 'AbortError') {
+            this.matchHandlers = null;
+            handlers.onError();
+          }
+        });
+      }
+    } catch {
+      this.matchHandlers = null;
+      handlers.onError();
+    }
   }
 
   private tone(freq: number, duration: number, type: OscillatorType, gain: number, slideTo?: number, delay = 0): void {
@@ -222,6 +606,13 @@ export class AudioEngine {
   }
 
   dispose(): void {
+    this.musicWanted = false;
+    this.music?.pause();
+    if (this.musicFade !== null) clearInterval(this.musicFade);
+    this.musicFade = null;
+    this.music = null;
+    this.announcer.reset();
+    this.stopVoice();
     void this.ctx?.close();
     this.ctx = null;
     this.started = false;

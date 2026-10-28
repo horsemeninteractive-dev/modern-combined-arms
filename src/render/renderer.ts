@@ -1,12 +1,25 @@
 import { HARVESTER_CAPACITY, TILE_SIZE } from '../sim/constants';
 import { BUILDINGS } from '../data/buildings';
 import { UNITS } from '../data/units';
-import { FACTIONS } from '../data/factions';
+import { NATION_LIST, tryIdentityDef } from '../data/factions';
 import { footprintCenter } from '../sim/map';
 import type { Scenario } from '../sim/scenario';
+import type { Entity } from '../sim/types';
 import type { Game } from '../sim/game';
 import { Camera } from './camera';
-import { StaticMesh, InstancedMesh, createProgram, type PropInstance, type MeshBuffers } from './gl';
+import {
+  StaticMesh,
+  FlagMesh,
+  InstancedMesh,
+  bindTextureUnit,
+  MESH_FLAG_TEXTURE_UNIT,
+  MESH_FOG_TEXTURE_UNIT,
+  MESH_MATERIAL_TEXTURE_UNIT,
+  PROP_MATERIAL_TEXTURE_UNIT,
+  createProgram,
+  type PropInstance,
+  type MeshBuffers,
+} from './gl';
 import {
   MESH_FS,
   MESH_VS,
@@ -18,8 +31,26 @@ import {
   WATER_VS,
 } from './shaders';
 import { buildingStyle, FALLBACK_BUILDING } from './buildingMeshes';
-import { unitStyle, unitVisualScale, unitShadowRadius, FALLBACK_STYLE, type EntityStyle } from './unitMeshes';
+import {
+  allianceFlagColor,
+  buildFlagRig,
+  flagMountFor,
+  flagNationForFaction,
+  flagOwnerForBuilding,
+  flagTextureUrl,
+  flagWindYaw,
+  type FlagNation,
+} from './flags';
+import {
+  AIR_UNIT_ALTITUDE,
+  unitStyle,
+  unitVisualScale,
+  unitShadowRadius,
+  FALLBACK_STYLE,
+  type EntityStyle,
+} from './unitMeshes';
 import { buildOreMesh, buildRockMesh, buildTreeMesh } from './geometry';
+import { materialLut } from './materials';
 import {
   buildPropInstances,
   buildRoadDetails,
@@ -34,10 +65,10 @@ import { ParticleGpu, type GpuParticle } from './particleGpu';
 import { ShadowGpu, type GpuShadow } from './shadowGpu';
 import { hexToRgb, type Vec3 } from './math';
 import { limbModelMatrix, turretModelMatrix } from './unitTransform';
+import { rotateLocalOffset } from '../core/math';
 
 const NEAR = 1;
 const FAR = 3000;
-const AIRCRAFT_ALTITUDE = 13;
 
 interface VisualEntity {
   x: number;
@@ -49,6 +80,22 @@ interface VisualEntity {
   /** Infantry walk cycle phase in radians and 0..1 blend. */
   gait: number;
   pace: number;
+  /** 0 stowed .. 1 deployed, visual-only launcher elevation. */
+  elevation: number;
+  /** 0 closed .. 1 fully raised, for a production building's shutter. */
+  door: number;
+  /** Seconds the shutter stays up after the last unit rolled out. */
+  doorHold: number;
+  /** Production queue length seen last tick, to detect a finished unit. */
+  doorQueue: number;
+  /**
+   * Seconds left of a unit's drive out of its factory bay. Set when a unit
+   * first appears beside a producer, so it is drawn at the doorway and eases
+   * out to the apron instead of popping into the open.
+   */
+  emerge: number;
+  /** 0..1 share of the cruise altitude reached, so a fighter climbs out of its hangar. */
+  emergeAlt: number;
 }
 
 interface MeshProgram {
@@ -78,8 +125,8 @@ function uniformMap(gl: WebGL2RenderingContext, program: WebGLProgram, names: st
 function makeTerrainGpu(gl: WebGL2RenderingContext, data: TerrainGeometry): TerrainGpu {
   const vao = gl.createVertexArray()!;
   gl.bindVertexArray(vao);
-  const interleaved = new Float32Array((data.positions.length / 3) * 11);
-  for (let i = 0, v = 0; i < data.positions.length; i += 3, v += 11) {
+  const interleaved = new Float32Array((data.positions.length / 3) * 15);
+  for (let i = 0, v = 0; i < data.positions.length; i += 3, v += 15) {
     interleaved[v] = data.positions[i];
     interleaved[v + 1] = data.positions[i + 1];
     interleaved[v + 2] = data.positions[i + 2];
@@ -91,11 +138,15 @@ function makeTerrainGpu(gl: WebGL2RenderingContext, data: TerrainGeometry): Terr
     interleaved[v + 8] = data.colors[i + 2];
     interleaved[v + 9] = data.uvs[(i / 3) * 2];
     interleaved[v + 10] = data.uvs[(i / 3) * 2 + 1];
+    interleaved[v + 11] = data.grounds[(i / 3) * 4];
+    interleaved[v + 12] = data.grounds[(i / 3) * 4 + 1];
+    interleaved[v + 13] = data.grounds[(i / 3) * 4 + 2];
+    interleaved[v + 14] = data.grounds[(i / 3) * 4 + 3];
   }
   const vbo = gl.createBuffer()!;
   gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
   gl.bufferData(gl.ARRAY_BUFFER, interleaved, gl.STATIC_DRAW);
-  const stride = 11 * 4;
+  const stride = 15 * 4;
   gl.enableVertexAttribArray(0);
   gl.vertexAttribPointer(0, 3, gl.FLOAT, false, stride, 0);
   gl.enableVertexAttribArray(1);
@@ -104,6 +155,8 @@ function makeTerrainGpu(gl: WebGL2RenderingContext, data: TerrainGeometry): Terr
   gl.vertexAttribPointer(2, 3, gl.FLOAT, false, stride, 6 * 4);
   gl.enableVertexAttribArray(3);
   gl.vertexAttribPointer(3, 2, gl.FLOAT, false, stride, 9 * 4);
+  gl.enableVertexAttribArray(4);
+  gl.vertexAttribPointer(4, 4, gl.FLOAT, false, stride, 11 * 4);
   const ibo = gl.createBuffer()!;
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data.indices, gl.STATIC_DRAW);
@@ -145,13 +198,32 @@ export class Renderer {
   private lastOreRefresh = 0;
   private buildingMeshes = new Map<
     string,
-    { body: StaticMesh; garrisoned: StaticMesh | null; turret: StaticMesh | null; turretOffset: Vec3 }
+    {
+      body: StaticMesh;
+      garrisoned: StaticMesh | null;
+      turret: StaticMesh | null;
+      turretOffset: Vec3;
+      door: StaticMesh | null;
+      doorOffset: Vec3;
+      doorRetract: number;
+      rotor: StaticMesh | null;
+      rotorOffset: Vec3;
+      rotorRate: number;
+      /** Local roof corner where the pole and its two flags stand. */
+      flagMount: Vec3;
+    }
   >();
+  private flagMeshes = new Map<string, FlagMesh>();
+  private flagTextures = new Map<string, WebGLTexture>();
+  private whiteTexture!: WebGLTexture;
+  private materialTexture!: WebGLTexture;
   private unitMeshes = new Map<string, {
     body: StaticMesh;
     turret: StaticMesh | null;
     leg: StaticMesh | null;
     load: StaticMesh | null;
+    launcherPivot?: Vec3;
+    launcherElevation?: number;
   }>();
   private visuals = new Map<number, VisualEntity>();
   private trailTimers = new Map<number, number>();
@@ -178,10 +250,11 @@ export class Renderer {
     this.meshProgram.u = uniformMap(gl, this.meshProgram.program, [
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
       'uModel', 'uTeamColor', 'uSun', 'uTint', 'uAmbient', 'uAlpha', 'uFlash',
+      'uFogTex', 'uFlagTex', 'uMatLut', 'uUseFog', 'uWorldSize', 'uTime',
     ]);
     this.terrainProgram.u = uniformMap(gl, this.terrainProgram.program, [
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
-      'uSun', 'uAmbient', 'uFogTex', 'uUseFog', 'uTime', 'uGrid',
+      'uSun', 'uAmbient', 'uFogTex', 'uShoreTex', 'uUseFog', 'uTime', 'uGrid',
     ]);
     this.waterProgram.u = uniformMap(gl, this.waterProgram.program, [
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
@@ -189,7 +262,7 @@ export class Renderer {
     ]);
     this.propProgram.u = uniformMap(gl, this.propProgram.program, [
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
-      'uSun', 'uAmbient', 'uEmissive', 'uFogTex', 'uUseFog', 'uWorldSize',
+      'uSun', 'uAmbient', 'uEmissive', 'uFogTex', 'uMatLut', 'uUseFog', 'uWorldSize',
     ]);
     this.particleGpu = new ParticleGpu(gl);
     this.shadowGpu = new ShadowGpu(gl);
@@ -208,6 +281,8 @@ export class Renderer {
           turret: style.turret ? new StaticMesh(gl, style.turret) : null,
           leg: style.infantry ? new StaticMesh(gl, style.infantry.leg) : null,
           load: style.load ? new StaticMesh(gl, style.load) : null,
+          launcherPivot: style.launcherPivot,
+          launcherElevation: style.launcherElevation,
         });
       }
     }
@@ -219,8 +294,26 @@ export class Renderer {
         garrisoned: style?.garrisoned ? new StaticMesh(gl, style.garrisoned) : null,
         turret: style?.turret ? new StaticMesh(gl, style.turret) : null,
         turretOffset: style?.turretOffset ?? [0, 0, 0],
+        door: style?.door ? new StaticMesh(gl, style.door.mesh) : null,
+        doorOffset: style?.door?.offset ?? [0, 0, 0],
+        doorRetract: style?.door?.retract ?? 0,
+        rotor: style?.rotor ? new StaticMesh(gl, style.rotor.mesh) : null,
+        rotorOffset: style?.rotor?.offset ?? [0, 0, 0],
+        rotorRate: style?.rotor?.rate ?? 0,
+        flagMount: (() => {
+          const mount = flagMountFor(BUILDINGS[id]?.footprint ?? { w: 2, h: 2 }, body, id);
+          return [mount.x, mount.y, mount.z] as Vec3;
+        })(),
       });
     }
+    for (const nation of NATION_LIST) {
+      const flagNation = flagNationForFaction(nation.id);
+      if (!flagNation) continue;
+      this.flagMeshes.set(flagNation, new FlagMesh(gl, buildFlagRig(flagNation)));
+      this.loadFlagTexture(flagNation);
+    }
+    this.whiteTexture = this.createWhiteTexture();
+    this.materialTexture = this.createMaterialTexture();
 
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
@@ -242,6 +335,81 @@ export class Renderer {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.bindTexture(gl.TEXTURE_2D, null);
     return tex;
+  }
+
+  /** White fallback keeps the flag sampler valid for ordinary mesh draws. */
+  private createWhiteTexture(): WebGLTexture {
+    const gl = this.gl;
+    const tex = this.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      1,
+      1,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      new Uint8Array([255, 255, 255, 255]),
+    );
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    return tex;
+  }
+
+  /**
+   * A 8x1 property LUT. Nearest filtering is intentional: material ids are
+   * categorical, and interpolation would invent blends no builder authored.
+   */
+  private createMaterialTexture(): WebGLTexture {
+    const gl = this.gl;
+    const tex = this.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      8,
+      1,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      materialLut(),
+    );
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    return tex;
+  }
+
+  /**
+   * Real national flag imagery is rasterised from `public/flags` into a texture
+   * once, at renderer construction. The flag rig draws the alliance cloth as a
+   * solid colour and samples this texture only for the national cloth.
+   */
+  private loadFlagTexture(nation: FlagNation): void {
+    const gl = this.gl;
+    const texture = this.createTexture();
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = Math.max(1, Math.round((256 * image.height) / image.width));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        gl.deleteTexture(texture);
+        return;
+      }
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      this.flagTextures.set(nation, texture);
+    };
+    image.onerror = () => gl.deleteTexture(texture);
+    image.src = flagTextureUrl(nation);
   }
 
   resize(): void {
@@ -282,7 +450,9 @@ export class Renderer {
     this.oreMesh.setInstances(this.oreInstances);
     this.rebuildPropShadows();
     this.shoreData = buildShoreTexture(scenario);
-    this.uploadTexture(this.shoreTexture, scenario.width, scenario.height, this.shoreData);
+    // The coast field packs land and water distance into separate channels; the
+    // old single-channel upload would silently discard the transition band.
+    this.uploadTexture(this.shoreTexture, scenario.width, scenario.height, this.shoreData, true);
     this.fogData = new Uint8Array(scenario.width * scenario.height).fill(255);
     this.uploadTexture(this.fogTexture, scenario.width, scenario.height, this.fogData);
     this.lastFogTick = -999;
@@ -363,11 +533,21 @@ export class Renderer {
     this.waterVao = vao;
   }
 
-  private uploadTexture(texture: WebGLTexture, width: number, height: number, data: Uint8Array): void {
+  private uploadTexture(
+    texture: WebGLTexture,
+    width: number,
+    height: number,
+    data: Uint8Array,
+    rgba = false,
+  ): void {
     const gl = this.gl;
     gl.bindTexture(gl.TEXTURE_2D, texture);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, width, height, 0, gl.RED, gl.UNSIGNED_BYTE, data);
+    if (rgba) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    } else {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, width, height, 0, gl.RED, gl.UNSIGNED_BYTE, data);
+    }
     gl.bindTexture(gl.TEXTURE_2D, null);
   }
 
@@ -440,8 +620,39 @@ export class Renderer {
       seen.add(e.id);
       let v = this.visuals.get(e.id);
       if (!v) {
-        v = { x: e.x, z: e.z, facing: e.facing, turret: e.turretFacing, trailTimer: 0, damageTimer: 0, gait: 0, pace: 0 };
+        v = {
+          x: e.x,
+          z: e.z,
+          facing: e.facing,
+          turret: e.turretFacing,
+          trailTimer: 0,
+          damageTimer: 0,
+          gait: 0,
+          pace: 0,
+          elevation: 0,
+          door: 0,
+          doorHold: 0,
+          doorQueue: 0,
+          emerge: 0,
+          emergeAlt: 1,
+        };
         this.visuals.set(e.id, v);
+        this.startEmergence(game, e, v);
+      }
+      // The shutter stays shut while a vehicle is being assembled and only
+      // rolls up as that job is finishing, holds open while the unit drives
+      // out, then drops again. A site still under construction never opens it.
+      const rig = e.kind === 'building' ? this.buildingMeshes.get(e.defId) : null;
+      if (rig?.door) {
+        const head = e.queue[0];
+        const opening = !e.construction && !!head && head.remaining <= 0.55;
+        const queued = e.construction ? 0 : e.queue.length;
+        if (queued < v.doorQueue) v.doorHold = 1.8;
+        v.doorQueue = queued;
+        v.doorHold = Math.max(0, v.doorHold - dt);
+        const target = opening || v.doorHold > 0 ? 1 : 0;
+        v.door += (target - v.door) * (1 - Math.exp(-dt * 9));
+        if (v.door < 0.002) v.door = 0;
       }
       const udef = e.kind === 'unit' ? UNITS[e.defId] : undefined;
       const walking =
@@ -451,15 +662,29 @@ export class Renderer {
         e.path.length > 0;
       v.pace += ((walking ? 1 : 0) - v.pace) * (1 - Math.exp(-dt * 9));
       if (v.pace > 0.02) v.gait += dt * 8.5 * v.pace;
+      const deployed =
+        e.kind === 'unit' &&
+        e.defId === 'mlrs' &&
+        (e.aimTargetId !== 0 || e.state === 'attacking')
+          ? 1
+          : 0;
+      v.elevation += (deployed - v.elevation) * (1 - Math.exp(-dt * 4.2));
+      if (v.elevation < 0.002) v.elevation = 0;
+      // Aircraft leave the hangar on the ground and climb away.
+      if (v.emergeAlt < 1) v.emergeAlt = Math.min(1, v.emergeAlt + dt / 1.3);
       const teleport = Math.abs(e.x - v.x) + Math.abs(e.z - v.z) > 40;
+      // A unit leaving its bay eases out slowly enough to be seen driving.
+      const ease = v.emerge > 0 ? 1 - Math.exp(-dt * 4.5) : k;
+      if (v.emerge > 0) v.emerge = Math.max(0, v.emerge - dt);
       if (teleport) {
         v.x = e.x;
         v.z = e.z;
         v.facing = e.facing;
         v.turret = e.turretFacing;
+        v.emerge = 0;
       } else {
-        v.x += (e.x - v.x) * k;
-        v.z += (e.z - v.z) * k;
+        v.x += (e.x - v.x) * ease;
+        v.z += (e.z - v.z) * ease;
         const facingDiff = normalizeDiff(e.facing - v.facing);
         v.facing += facingDiff * k;
         const turretDiff = normalizeDiff(e.turretFacing - v.turret);
@@ -469,6 +694,62 @@ export class Renderer {
     for (const id of [...this.visuals.keys()]) {
       if (!seen.has(id)) this.visuals.delete(id);
     }
+  }
+
+  /**
+   * A produced unit is created on the apron outside its facility. Start its
+   * visual at the bay doorway instead and ease it out, so the first thing the
+   * player sees is a vehicle driving out of an open shutter rather than one
+   * appearing beside the wall.
+   */
+  private startEmergence(game: Game, e: Entity, v: VisualEntity): void {
+    if (e.kind !== 'unit' || e.garrisonId) return;
+    const def = UNITS[e.defId];
+    if (!def) return;
+    let source: Entity | null = null;
+    let bestDist = Infinity;
+    for (const b of game.state.entities) {
+      if (b.kind !== 'building' || b.owner !== e.owner || b.hp <= 0 || b.construction) continue;
+      const rig = this.buildingMeshes.get(b.defId);
+      if (!rig?.door) continue;
+      const d = Math.hypot(b.x - e.x, b.z - e.z);
+      if (d > TILE_SIZE * 4.5 || d >= bestDist) continue;
+      source = b;
+      bestDist = d;
+    }
+    if (!source) return;
+    const rig = this.buildingMeshes.get(source.defId);
+    if (!rig?.door) return;
+    // Only a shutter that is already rolling up means a unit just came out of
+    // that bay; a unit merely placed beside a factory at battle start stays put.
+    const shutter = this.visuals.get(source.id);
+    if (!shutter || (shutter.door < 0.05 && shutter.doorHold <= 0)) return;
+    if (def.domain === 'naval') {
+      // A hull is launched from the basin, not a door in one fixed wall: start
+      // it partway out of the dock on the line to its berth, so it sails clear
+      // whichever side the water happens to be on.
+      v.x = source.x + (e.x - source.x) * 0.45;
+      v.z = source.z + (e.z - source.z) * 0.45;
+    } else {
+      // The doorway plane sits inside the footprint, on the far side of the
+      // wall from the tile the simulation actually spawned on, rotated with the
+      // building (a yard's gate faces its harbour, not always +Z).
+      const mount = rotateLocalOffset(rig.doorOffset[0], rig.doorOffset[2], source.facing);
+      v.x = source.x + mount.x;
+      v.z = source.z + mount.z;
+    }
+    // Head out of the opening, then let the normal smoothing turn the unit
+    // onto its real heading.
+    const dx = e.x - v.x;
+    const dz = e.z - v.z;
+    const heading = Math.hypot(dx, dz) > 0.01 ? Math.atan2(dz, dx) : Math.PI / 2;
+    v.facing = heading;
+    v.turret = heading;
+    // Hulls and aircraft need longer to clear the opening than a truck.
+    v.emerge = def.domain === 'land' ? 0.9 : 1.4;
+    if (def.domain === 'air') v.emergeAlt = 0.12;
+    const door = this.visuals.get(source.id);
+    if (door) door.doorHold = Math.max(door.doorHold, v.emerge + 0.6);
   }
 
   private emitAmbientEffects(dt: number, game: Game): void {
@@ -488,7 +769,8 @@ export class Renderer {
         v.trailTimer -= dt;
         if (moved && v.trailTimer <= 0) {
           if (def.domain === 'air' && !e.aircraft?.landed) {
-            this.particles.jetTrail(v.x, AIRCRAFT_ALTITUDE - 0.1, v.z);
+            const trailHeight = 0.3 + (AIR_UNIT_ALTITUDE - 0.4) * v.emergeAlt;
+            this.particles.jetTrail(v.x, trailHeight, v.z);
             v.trailTimer = 0.05;
           } else if (def.domain === 'naval') {
             this.particles.wake(v.x, 0.2, v.z, v.facing);
@@ -507,7 +789,7 @@ export class Renderer {
         if (v.damageTimer <= 0) {
           const y =
             (def?.domain === 'air' && !e.aircraft?.landed
-              ? AIRCRAFT_ALTITUDE
+              ? AIR_UNIT_ALTITUDE
               : tileWorldHeight(this.scenario!, v.x, v.z) + (e.kind === 'building' ? 3.5 : 1.3));
           this.particles.damageSmoke(v.x, y, v.z, hpRatio < 0.25);
           v.damageTimer = 0.65;
@@ -556,7 +838,7 @@ export class Renderer {
           // The simulation reports the real muzzle height; only fall back to
           // the old per-domain guess for legacy events.
           const y = ev.y ?? (shooter?.kind === 'unit' && UNITS[shooter.defId]?.domain === 'air'
-            ? AIRCRAFT_ALTITUDE
+            ? AIR_UNIT_ALTITUDE
             : groundY + (shooter?.kind === 'building' ? 3.2 : 1.5));
           this.particles.muzzle(ev.x, y, ev.z, !!shooter && (shooter.defId === 'tank' || shooter.defId === 'corvette'));
           break;
@@ -613,14 +895,14 @@ export class Renderer {
   private teamColorOf(game: Game, owner: number): [number, number, number] {
     if (owner < 0) return [0.55, 0.6, 0.58];
     const player = game.player(owner);
-    const faction = player ? FACTIONS[player.factionId] : undefined;
+    const faction = player ? tryIdentityDef(player.factionId) : undefined;
     return hexToRgb(faction?.color ?? '#7a8b80');
   }
 
   private teamColorScenario(owner: number): [number, number, number] {
     if (!this.scenario || owner < 0) return [0.55, 0.6, 0.58];
     const p = this.scenario.players.find((pl) => pl.id === owner);
-    const faction = p ? FACTIONS[p.factionId] : undefined;
+    const faction = p ? tryIdentityDef(p.factionId) : undefined;
     return hexToRgb(faction?.color ?? '#7a8b80');
   }
 
@@ -657,6 +939,19 @@ export class Renderer {
     gl.uniform2f(u.uHalf, this.camera.halfW, this.camera.halfH);
     gl.uniform1f(u.uNear, NEAR);
     gl.uniform1f(u.uFar, FAR);
+    gl.uniform1f(u.uTime ?? null, this.time);
+  }
+
+  /** Bind the national flag texture, or the white fallback for ordinary meshes. */
+  private bindFlagTexture(nation?: string): boolean {
+    const texture = nation ? this.flagTextures.get(nation) : undefined;
+    bindTextureUnit(
+      this.gl,
+      MESH_FLAG_TEXTURE_UNIT,
+      texture ?? this.whiteTexture,
+      this.meshProgram.u.uFlagTex ?? null,
+    );
+    return !!texture;
   }
 
   private drawTerrain(): void {
@@ -673,6 +968,10 @@ export class Renderer {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.fogTexture);
     gl.uniform1i(p.u.uFogTex, 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.shoreTexture);
+    gl.uniform1i(p.u.uShoreTex, 1);
+    gl.activeTexture(gl.TEXTURE0);
     gl.bindVertexArray(this.terrainGpu.vao);
     gl.drawElements(gl.TRIANGLES, this.terrainGpu.count, gl.UNSIGNED_INT, 0);
     gl.bindVertexArray(null);
@@ -688,8 +987,18 @@ export class Renderer {
       gl.uniform3f(mp.u.uTint, 1, 1, 1);
       gl.uniform1f(mp.u.uAlpha, 1);
       gl.uniform1f(mp.u.uFlash, 0);
+      // Roads carry the same fog as the ground they are painted on: full in
+      // vision, dimmed where the team has charted the ground, dark elsewhere.
+      gl.uniform1f(mp.u.uUseFog, this.game && this.settings.showFog ? 1 : 0);
+      gl.uniform2f(mp.u.uWorldSize, this.scenario.width * TILE_SIZE, this.scenario.height * TILE_SIZE);
+      // The mesh shader also samples the flag texture, so fog cannot share unit
+      // 0 with it: binding both there made roads read the white fallback as fog
+      // and render at full brightness across ground nobody had seen.
+      bindTextureUnit(gl, MESH_FOG_TEXTURE_UNIT, this.fogTexture, mp.u.uFogTex);
+      bindTextureUnit(gl, MESH_MATERIAL_TEXTURE_UNIT, this.materialTexture, mp.u.uMatLut ?? null);
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      this.bindFlagTexture();
       this.roadMesh.draw();
       gl.disable(gl.BLEND);
     }
@@ -730,6 +1039,7 @@ export class Renderer {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.fogTexture);
     gl.uniform1i(p.u.uFogTex, 0);
+    bindTextureUnit(gl, PROP_MATERIAL_TEXTURE_UNIT, this.materialTexture, p.u.uMatLut ?? null);
     gl.uniform1f(p.u.uEmissive, 0);
     this.treesMesh.draw(this.treeInstances.length);
     this.rocksMesh.draw(this.rockInstances.length);
@@ -775,7 +1085,7 @@ export class Renderer {
         const z = v?.z ?? e.z;
         if (def?.domain === 'air' && !e.aircraft?.landed) {
           const [rx, rz] = unitShadowRadius(e.defId);
-          const offset = this.airShadowOffset(AIRCRAFT_ALTITUDE);
+          const offset = this.airShadowOffset(AIR_UNIT_ALTITUDE);
           const sx = x + offset.x;
           const sz = z + offset.z;
           shadows.push({
@@ -840,7 +1150,7 @@ export class Renderer {
         const z = (u.z + 0.5) * TILE_SIZE;
         const [rx, rz] = unitShadowRadius(u.defId);
         if (def.domain === 'air') {
-          const offset = this.airShadowOffset(9);
+          const offset = this.airShadowOffset(AIR_UNIT_ALTITUDE);
           const sx = x + offset.x;
           const sz = z + offset.z;
           shadows.push({
@@ -925,21 +1235,24 @@ export class Renderer {
     gl.uniform3fv(mp.u.uSun, this.sun);
     gl.uniform1f(mp.u.uAmbient, this.ambient);
     gl.uniform3f(mp.u.uTint, 1, 1, 1);
+    // Entities carry their own charting alpha; the shader fog is for roads.
+    gl.uniform1f(mp.u.uUseFog, 0);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    bindTextureUnit(gl, MESH_MATERIAL_TEXTURE_UNIT, this.materialTexture, mp.u.uMatLut ?? null);
     for (const s of this.scenario.structures) {
       const def = BUILDINGS[s.defId];
       if (!def) continue;
       const center = footprintCenter(s.defId, s.x, s.z);
       const y = tileWorldHeight(this.scenario, center.x, center.z);
-      this.drawStaticMesh(def.id, true, s.owner, center.x, y, center.z, 0, 0, 1, 0, false);
+      this.drawStaticMesh(def.id, true, s.owner, center.x, y, center.z, s.facing ?? 0, 0, 1, 0, false);
     }
     for (const u of this.scenario.units) {
       const def = UNITS[u.defId];
       if (!def) continue;
       const x = (u.x + 0.5) * TILE_SIZE;
       const z = (u.z + 0.5) * TILE_SIZE;
-      const y = def.domain === 'air' ? 9 : tileWorldHeight(this.scenario, x, z);
+      const y = def.domain === 'air' ? AIR_UNIT_ALTITUDE : tileWorldHeight(this.scenario, x, z);
       this.drawStaticMesh(def.id, false, u.owner, x, y, z, -0.6, -0.6, 1, 0, false);
     }
     gl.disable(gl.BLEND);
@@ -972,16 +1285,39 @@ export class Renderer {
     gl.uniform3fv(mp.u.uTeamColor, team);
     gl.uniform1f(mp.u.uAlpha, alpha);
     gl.uniform1f(mp.u.uFlash, flash);
+    this.bindFlagTexture();
     if (construction) {
       gl.enable(gl.BLEND);
       gl.depthMask(true);
     }
     body.draw();
     if (building && buildingRig?.turret) {
-      const tm = turretModelMatrix(x, y, z, facing, turret, buildingRig.turretOffset, 1, 1);
+      const tm = turretModelMatrix(x, y, z, facing, turret, buildingRig.turretOffset, 1, vertical);
       gl.uniformMatrix4fv(mp.u.uModel, false, tm);
       buildingRig.turret.draw();
       gl.uniformMatrix4fv(mp.u.uModel, false, model);
+    }
+    // Previews and prop passes show every part at rest: no clock, no queue.
+    if (building && buildingRig) {
+      this.drawBuildingParts(buildingRig, x, y, z, 0, 0, vertical, facing);
+      if (!construction && owner >= 0) {
+        const factionId = this.scenario?.players.find((p) => p.id === owner)?.factionId;
+        const flagNation = factionId ? flagNationForFaction(factionId) : undefined;
+        if (flagNation) {
+          this.drawBuildingFlags(
+            buildingRig,
+            flagNation,
+            allianceFlagColor(factionId),
+            x,
+            y,
+            z,
+            facing,
+            alpha,
+            vertical,
+            false,
+          );
+        }
+      }
     }
     if (!building && style?.infantry) {
       const legMesh = this.unitMeshes.get(defId)?.leg;
@@ -1013,8 +1349,12 @@ export class Renderer {
     gl.uniform3fv(mp.u.uSun, this.sun);
     gl.uniform1f(mp.u.uAmbient, this.ambient);
     gl.uniform3f(mp.u.uTint, 1, 1, 1);
+    // Entities carry their own charting alpha; the shader fog is for roads.
+    gl.uniform1f(mp.u.uUseFog, 0);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    this.bindFlagTexture();
+    bindTextureUnit(gl, MESH_MATERIAL_TEXTURE_UNIT, this.materialTexture, mp.u.uMatLut ?? null);
     const team = game.teamOf(game.localPlayerId);
     for (const e of game.state.entities) {
       if (e.hp <= 0) continue;
@@ -1032,11 +1372,16 @@ export class Renderer {
       const turret = remembered ? e.facing : v?.turret ?? e.turretFacing;
       const def = BUILDINGS[e.defId] ? null : UNITS[e.defId];
       const isAir = def?.domain === 'air';
+      const groundY = tileWorldHeight(this.scenario!, x, z);
+      const alt = v?.emergeAlt ?? 1;
       const y = isAir
         ? e.aircraft?.landed
-          ? tileWorldHeight(this.scenario!, x, z) + 0.25
-          : AIRCRAFT_ALTITUDE + Math.sin(this.time * 1.7 + e.id) * 0.16
-        : tileWorldHeight(this.scenario!, x, z) + (def?.domain === 'naval' ? 0.12 : 0);
+          ? groundY + 0.25
+          : groundY +
+            0.25 +
+            (AIR_UNIT_ALTITUDE - groundY - 0.25) * alt +
+            Math.sin(this.time * 1.7 + e.id) * 0.16 * alt
+        : groundY + (def?.domain === 'naval' ? 0.12 : 0);
       const bob = def?.domain === 'naval' ? Math.sin(this.time * 1.2 + e.id * 0.7) * 0.06 : 0;
       const flash = !remembered && game.state.tick - e.lastHitTick < 3 ? 0.75 : 0;
       // An occupied shelter switches to its garrisoned model and takes the trim
@@ -1051,6 +1396,11 @@ export class Renderer {
       const progress = construction ? 0.25 + e.buildProgress * 0.75 : 1;
       const liveAlpha = construction ? 0.72 : e.hp / e.maxHp < 0.25 ? 0.94 : 1;
       const alpha = remembered ? 0.5 : liveAlpha;
+      // Moving parts are frozen on a remembered silhouette: the shape that was
+      // charted is all the team can know, not what it is doing now.
+      const rig = e.kind === 'building' ? this.buildingMeshes.get(e.defId) : null;
+      const doorOpen = rig?.door && !remembered ? v?.door ?? 0 : 0;
+      const rotorAngle = rig?.rotor && !remembered ? this.time * rig.rotorRate + e.id * 0.9 : 0;
       this.drawEntityMesh(
         e.kind,
         e.defId,
@@ -1065,8 +1415,11 @@ export class Renderer {
         flash,
         construction,
         e.harvester ? Math.min(1, e.harvester.ore / HARVESTER_CAPACITY) : 0,
-        { gait: v?.gait ?? 0, pace: v?.pace ?? 0 },
+        { gait: v?.gait ?? 0, pace: v?.pace ?? 0, elevation: v?.elevation ?? 0 },
         garrisonOwner,
+        doorOpen,
+        rotorAngle,
+        remembered,
       );
     }
     gl.disable(gl.BLEND);
@@ -1086,8 +1439,11 @@ export class Renderer {
     flash: number,
     construction: boolean,
     loadFill: number,
-    anim: { gait: number; pace: number } | null = null,
+    anim: { gait: number; pace: number; elevation?: number } | null = null,
     garrisonOwner: number | null = null,
+    doorOpen = 0,
+    rotorAngle = 0,
+    remembered = false,
   ): void {
     const mp = this.meshProgram;
     const gl = this.gl;
@@ -1096,7 +1452,7 @@ export class Renderer {
       const rig = this.buildingMeshes.get(defId);
       if (!rig) return;
       const occupied = garrisonOwner !== null && rig.garrisoned ? rig.garrisoned : rig.body;
-      const model = modelFor(x, y, z, 0, 1, verticalScale);
+      const model = modelFor(x, y, z, -facing, 1, verticalScale);
       gl.uniformMatrix4fv(mp.u.uModel, false, model);
       gl.uniform3fv(
         mp.u.uTeamColor,
@@ -1106,17 +1462,39 @@ export class Renderer {
       gl.uniform1f(mp.u.uFlash, flash);
       occupied.draw();
       if (rig.turret) {
+        // Mount height and mesh both follow the construction squash, so a gun
+        // sits on the revetment that exists instead of hovering over it.
         gl.uniformMatrix4fv(
           mp.u.uModel,
           false,
-          turretModelMatrix(x, y, z, 0, turretFacing, rig.turretOffset, 1, 1),
+          turretModelMatrix(x, y, z, facing, turretFacing, rig.turretOffset, 1, verticalScale),
         );
         rig.turret.draw();
+      }
+      this.drawBuildingParts(rig, x, y, z, doorOpen, rotorAngle, verticalScale, facing);
+      const flagOwner = flagOwnerForBuilding(owner, garrisonOwner);
+      if (!construction && flagOwner >= 0) {
+        const factionId = this.game?.player(flagOwner)?.factionId;
+        const flagNation = factionId ? flagNationForFaction(factionId) : undefined;
+        if (flagNation) {
+          this.drawBuildingFlags(
+            rig,
+            flagNation,
+            allianceFlagColor(factionId),
+            x,
+            y,
+            z,
+            facing,
+            alpha,
+            verticalScale,
+            remembered,
+          );
+        }
       }
       if (construction) {
         // A simple scaffold cage outline effect: draw the mesh again with a
         // team-tinted translucent pass at full height.
-        gl.uniformMatrix4fv(mp.u.uModel, false, modelFor(x, y, z, 0, 1, 1));
+        gl.uniformMatrix4fv(mp.u.uModel, false, modelFor(x, y, z, -facing, 1, 1));
         gl.uniform1f(mp.u.uAlpha, 0.1);
         gl.uniform1f(mp.u.uFlash, 0.15);
         occupied.draw();
@@ -1164,10 +1542,128 @@ export class Renderer {
     }
     if (style.turret) {
       const offset = this.turretOffset(defId);
-      const tm = turretModelMatrix(x, y, z, facing, turretFacing, offset, vs, vs);
+      const pitch = (style.launcherElevation ?? 0) * (anim?.elevation ?? 0);
+      const tm = turretModelMatrix(
+        x,
+        y,
+        z,
+        facing,
+        turretFacing,
+        offset,
+        vs,
+        vs,
+        pitch,
+        style.launcherPivot,
+      );
       gl.uniformMatrix4fv(mp.u.uModel, false, tm);
       style.turret.draw();
     }
+  }
+
+  /**
+   * Animated building parts. The mast parts sweep about their own mount and the
+   * shutter rides straight up out of its bay; both are drawn after the body so
+   * they never need a second pass.
+   *
+   * `verticalScale` has to be applied here as well as to the body: a structure
+   * under construction is drawn short, and parts pinned at their finished
+   * height would hang in the air above the half-built shell.
+   */
+  private drawBuildingParts(
+    rig: {
+      door: StaticMesh | null;
+      doorOffset: Vec3;
+      doorRetract: number;
+      rotor: StaticMesh | null;
+      rotorOffset: Vec3;
+    },
+    x: number,
+    y: number,
+    z: number,
+    doorOpen: number,
+    rotorAngle: number,
+    verticalScale: number,
+    facing: number,
+  ): void {
+    const gl = this.gl;
+    const mp = this.meshProgram;
+    if (rig.rotor) {
+      const mount = rotateLocalOffset(rig.rotorOffset[0], rig.rotorOffset[2], facing);
+      gl.uniformMatrix4fv(
+        mp.u.uModel,
+        false,
+        modelFor(
+          x + mount.x,
+          y + rig.rotorOffset[1] * verticalScale,
+          z + mount.z,
+          rotorAngle - facing,
+          1,
+          verticalScale,
+        ),
+      );
+      rig.rotor.draw();
+    }
+    if (rig.door) {
+      // Scaled about its top edge, so the shutter rolls up into the bay head.
+      const height = Math.max(0.05, 1 - doorOpen * rig.doorRetract) * verticalScale;
+      const mount = rotateLocalOffset(rig.doorOffset[0], rig.doorOffset[2], facing);
+      gl.uniformMatrix4fv(
+        mp.u.uModel,
+        false,
+        modelFor(
+          x + mount.x,
+          y + rig.doorOffset[1] * verticalScale,
+          z + mount.z,
+          -facing,
+          1,
+          height,
+        ),
+      );
+      rig.door.draw();
+    }
+  }
+
+  /**
+   * Draw the pole, alliance colour and real national flag. The rig is separate
+   * from the building so the cloth can wave every frame without rebuilding the
+   * structure. Remembered silhouettes show the colours but hold the cloth
+   * still, matching the frozen rotors and shutters elsewhere.
+   */
+  private drawBuildingFlags(
+    rig: { flagMount: Vec3 },
+    flagNation: string,
+    factionColor: Vec3,
+    x: number,
+    y: number,
+    z: number,
+    facing: number,
+    alpha: number,
+    verticalScale: number,
+    remembered: boolean,
+  ): void {
+    const mesh = this.flagMeshes.get(flagNation);
+    if (!mesh || !this.bindFlagTexture(flagNation)) return;
+    const gl = this.gl;
+    const mp = this.meshProgram;
+    const mount = rotateLocalOffset(rig.flagMount[0], rig.flagMount[2], facing);
+    gl.uniformMatrix4fv(
+      mp.u.uModel,
+      false,
+      modelFor(
+        x + mount.x,
+        y + rig.flagMount[1] * verticalScale,
+        z + mount.z,
+        flagWindYaw(),
+        1,
+        1,
+      ),
+    );
+    gl.uniform3fv(mp.u.uTeamColor, factionColor);
+    gl.uniform1f(mp.u.uAlpha, alpha);
+    gl.uniform1f(mp.u.uFlash, 0);
+    gl.uniform1f(mp.u.uTime, remembered ? 0 : this.time);
+    mesh.draw();
+    gl.uniform1f(mp.u.uTime, this.time);
   }
 
   private turretOffset(defId: string): Vec3 {

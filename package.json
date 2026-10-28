@@ -2,11 +2,12 @@
   "name": "iron-tide",
   "private": true,
   "version": "0.1.0",
+  "releaseStage": "BETA",
   "type": "module",
   "description": "MCA: Modern Combined Arms — combined-arms RTS vertical slice",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && node tools/build-sw.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

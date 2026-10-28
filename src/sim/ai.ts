@@ -1,10 +1,39 @@
 import type { Game } from './game';
-import { BUILDINGS } from '../data/buildings';
-import { UNITS } from '../data/units';
-import { TILE_SIZE } from './constants';
+import { BUILDINGS, buildingFamily } from '../data/buildings';
+import { UNITS, unitFamily } from '../data/units';
+import { REPAIR_SUPPRESSION_TICKS, TILE_SIZE } from './constants';
 import { dist } from '../core/math';
 import { Terrain, canStandOn, tileIndex } from './terrain';
-import type { AIControlState, AIDifficulty, AIStrategy, Entity, PlayerState } from './types';
+import { canWeaponTarget, entityWeapons } from './combat';
+import type {
+  AIControlState,
+  AIDifficulty,
+  AIStrategy,
+  BuildingDef,
+  Entity,
+  PlayerState,
+} from './types';
+
+/**
+ * Whether an entity may influence the strategic score of a construction site.
+ *
+ * Crowding is a planning signal, so it has to come from knowledge the commander
+ * actually has: its own force, its allies, authored map objects, and enemies the
+ * team has really seen — currently or, for a structure that cannot move, when it
+ * was charted. A remembered unit contact is deliberately not counted: it is a
+ * stale position, and a tank that has driven away must not keep its old site
+ * reserved. Physical placement is a separate question and stays authoritative in
+ * `placementStatus`, which reads the real world.
+ */
+export function knownForCrowding(game: Game, aiId: number, e: Entity): boolean {
+  if (e.owner < 0) return true;
+  if (e.owner === aiId) return true;
+  const team = game.teamOf(aiId);
+  if (game.teamOf(e.owner) === team) return true;
+  // `isKnownTo` is the Phase 12 boundary itself: seen now, or a structure this
+  // team has charted. Unit contacts are stale by design and stay excluded.
+  return game.isKnownTo(team, e.id);
+}
 
 export interface ScoutedForceMix {
   /** Armed land vehicles, including light scouts and AA carriers. */
@@ -350,6 +379,18 @@ interface BuildOption {
   essential: boolean;
 }
 
+interface UnitDemand {
+  defId: string;
+  priority: number;
+  deficit: number;
+  /**
+   * Material price to hold back for a planned support arm. Only a demand that
+   * carries this field can pause general production while it saves, and only
+   * once the bank is already most of the way there.
+   */
+  saveFor?: number;
+}
+
 interface AIContext {
   game: Game;
   aiId: number;
@@ -374,6 +415,19 @@ interface AIContext {
   hasWater: boolean;
   combat: Entity[];
   enemyAir: number;
+  enemyNaval: number;
+  /**
+   * Every own hauler is standing in `seek` with an empty hopper while a
+   * completed drop-off exists: nothing the commander owns is turning ore into
+   * materials right now. Derived from own units only — the same hauler state the
+   * HUD shows — so it adds no knowledge the commander does not already have.
+   *
+   * This is evidence of idle hauling, not proof that the map is exhausted. The
+   * income history must also have been zero for three seconds, so the one-tick
+   * `seek` after an unload cannot fire it. It is used only to withhold
+   * *expansion* demands; it never cancels an order or pauses combat production.
+   */
+  haulingIdle: boolean;
 }
 
 /**
@@ -387,9 +441,21 @@ interface AIContext {
  * differently, and the same seed replays exactly because the AI's random
  * stream is part of saved state.
  */
+export interface AIControllerOptions {
+  /**
+   * Stand an assault wave off any blocked destination before ordering it. On by
+   * default; the diagnostic tools turn it off to reconstruct the pre-Phase-11
+   * aim inside the same build, so an A/B comparison holds every other variable
+   * fixed. It is not a gameplay setting and is not saved.
+   */
+  resolveApproach?: boolean;
+}
+
 export class AIController {
   private claimed = new Set<number>();
   private waterCache: boolean | null = null;
+
+  constructor(private readonly options: AIControllerOptions = {}) {}
 
   update(game: Game, ownerId?: number, controlState?: AIControlState): void {
     this.claimed.clear();
@@ -423,11 +489,18 @@ export class AIController {
     const baseX = hq?.x ?? (scenarioPlayer ? (scenarioPlayer.startX + 0.5) * TILE_SIZE : 0);
     const baseZ = hq?.z ?? (scenarioPlayer ? (scenarioPlayer.startZ + 0.5) * TILE_SIZE : 0);
 
+    // Counts are keyed by baseline family, so a national variant answers the
+    // same question as the shared unit it replaced ("how many tanks do I have?").
     const counts = new Map<string, number>();
-    for (const b of complete) counts.set(b.defId, (counts.get(b.defId) ?? 0) + 1);
+    for (const b of complete) {
+      const family = buildingFamily(b.defId);
+      counts.set(family, (counts.get(family) ?? 0) + 1);
+    }
     const unitCounts = new Map<string, number>();
     for (const u of own) {
-      if (u.kind === 'unit') unitCounts.set(u.defId, (unitCounts.get(u.defId) ?? 0) + 1);
+      if (u.kind !== 'unit') continue;
+      const family = unitFamily(u.defId);
+      unitCounts.set(family, (unitCounts.get(family) ?? 0) + 1);
     }
 
     const visible = game
@@ -444,9 +517,44 @@ export class AIController {
 
     const combat = own.filter((e) => {
       if (e.kind !== 'unit' || e.hp <= 0) return false;
-      if (e.defId === 'harvester' || e.defId === 'engineer' || e.defId === 'medic') return false;
+      const family = unitFamily(e.defId);
+      if (
+        family === 'harvester' ||
+        family === 'engineer' ||
+        family === 'medic' ||
+        family === 'recovery'
+      ) {
+        return false;
+      }
       return (UNITS[e.defId]?.weapons.length ?? 0) > 0;
     });
+
+    // The harvester already scans for a reachable deposit every time it seeks;
+    // this reads only the result on the commander's own units. A completed
+    // drop-off plus a hauler used to be treated as a working economy even when
+    // every hauler was idling on an empty map, which let the planner spend on
+    // more haulers and saturation refineries that could never produce. No new
+    // state is stored: this is recomputed from the same phase the HUD shows.
+    const haulers = own.filter(
+      (e) => e.kind === 'unit' && e.hp > 0 && unitFamily(e.defId) === 'harvester',
+    );
+    const hasDropOff = complete.some((b) => BUILDINGS[b.defId]?.refinery);
+    // Confirm with the HUD's existing income history before calling hauling
+    // idle: a hauler is in `seek` for one tick after every unload, and acting on
+    // that transition would let a momentary post-unload state choose a different
+    // production item. Six samples are three seconds at the 0.5 s sample rate —
+    // short enough to react to a real stop, long enough to span the unload
+    // transition and the controller's think cadence. The history is existing
+    // player telemetry, not new state, and it also covers a captured depot.
+    const noRecentIncome = ai.incomeHistory.slice(-6).every((v) => v === 0);
+    const haulingIdle =
+      hasDropOff &&
+      haulers.length > 0 &&
+      noRecentIncome &&
+      haulers.every((e) => {
+        const h = e.harvester;
+        return !!h && h.phase === 'seek' && h.ore === 0;
+      });
 
     const ctx: AIContext = {
       game,
@@ -472,6 +580,8 @@ export class AIController {
       hasWater: this.waterCache,
       combat,
       enemyAir: known.filter((e) => UNITS[e.defId]?.domain === 'air').length,
+      enemyNaval: known.filter((e) => UNITS[e.defId]?.domain === 'naval').length,
+      haulingIdle,
     };
 
     this.updateTarget(ctx);
@@ -480,6 +590,7 @@ export class AIController {
     this.manageGarrison(ctx);
     this.defend(ctx);
     this.scout(ctx);
+    this.scoutAir(ctx);
     const budget = this.manageConstruction(ctx);
     this.manageProduction(ctx, budget);
     this.manageNaval(ctx);
@@ -610,16 +721,23 @@ export class AIController {
     );
     ctx.st.phase = 'defend';
     let ordered = 0;
-    const targetDomain = UNITS[target.defId]?.domain;
     for (const unit of ctx.own) {
       if (unit.kind !== 'unit' || !this.free(unit)) continue;
-      if (unit.defId === 'harvester' || unit.defId === 'engineer' || unit.defId === 'medic') continue;
-      if (UNITS[unit.defId]?.weapons.length === 0) continue;
-      if (dist(unit.x, unit.z, ctx.baseX, ctx.baseZ) > 60 * TILE_SIZE) continue;
-      // Ground units cannot answer aircraft; leave that to AA and fighters.
-      if (targetDomain === 'air' && unit.defId !== 'aa' && UNITS[unit.defId]?.domain !== 'air') {
+      const family = unitFamily(unit.defId);
+      if (
+        family === 'harvester' ||
+        family === 'engineer' ||
+        family === 'medic' ||
+        family === 'recovery'
+      ) {
         continue;
       }
+      const weapons = entityWeapons(unit);
+      if (weapons.length === 0) continue;
+      // Only a unit whose actual weapon can engage this target answers it:
+      // ground guns ignore aircraft and interceptors ignore tanks.
+      if (!weapons.some((weapon) => canWeaponTarget(weapon, target))) continue;
+      if (dist(unit.x, unit.z, ctx.baseX, ctx.baseZ) > 60 * TILE_SIZE) continue;
       if (unit.order?.type === 'attack' && unit.order.targetId === target.id) continue;
       if (
         this.order(ctx, unit, {
@@ -636,16 +754,27 @@ export class AIController {
   }
 
   private scout(ctx: AIContext): void {
-    const recon = ctx.own.find((e) => e.kind === 'unit' && e.defId === 'recon' && this.free(e));
+    const reconId = ctx.game.unitIdFor(ctx.aiId, 'recon');
+    const recon = ctx.own.find((e) => e.kind === 'unit' && e.defId === reconId);
     if (!recon) return;
+    // An unarmed scout is flown differently from an armed one: it keeps the
+    // edge of the army's reach instead of ranging alone, and a nearby combat
+    // unit walks the same route. Its optics are unchanged; only its exposure is.
+    const unarmed = (UNITS[recon.defId]?.weapons.length ?? 1) === 0;
+    // Breaking contact is checked every think, including while a patrol order
+    // is still running, so a sighting does not have to wait out the patrol.
+    if (unarmed && this.withdrawScout(ctx, recon)) return;
+    if (!this.free(recon)) return;
     const tick = ctx.game.state.tick;
     // A fresh report does not need a new patrol every second.
     if (tick - (ctx.st.lastScoutTick ?? 0) < 20 * 6) return;
     let point: { x: number; z: number } | null = null;
     if (ctx.st.targetKnown) {
       // Sweep around the last contact to keep it fresh without walking into it.
+      // An unarmed hull stops inside its own optics rather than inside the
+      // range of whatever is holding the position.
       const angle = this.random(ctx) * Math.PI * 2;
-      const radius = (10 + this.random(ctx) * 8) * TILE_SIZE;
+      const radius = (unarmed ? 11 + this.random(ctx) * 4 : 10 + this.random(ctx) * 8) * TILE_SIZE;
       point = {
         x: ctx.st.targetBaseX + Math.cos(angle) * radius,
         z: ctx.st.targetBaseZ + Math.sin(angle) * radius,
@@ -654,6 +783,10 @@ export class AIController {
     }
     if (!point) point = this.chooseScoutPoint(ctx);
     if (!point) return;
+    if (unarmed) {
+      point = this.screenPoint(ctx, point);
+      this.escortScout(ctx, recon, point);
+    }
     if (
       this.order(ctx, recon, {
         type: 'move',
@@ -670,6 +803,160 @@ export class AIController {
     }
   }
 
+  /**
+   * The reconnaissance drone is a second, independent scout. It can cross
+   * terrain the wheeled scout cannot, and its long optics make it the natural
+   * spotter for artillery. It is deliberately sent to different ground than
+   * the land scout rather than trailing it.
+   */
+  private scoutAir(ctx: AIContext): void {
+    const uavId = ctx.game.unitIdFor(ctx.aiId, 'uav');
+    const uav = ctx.own.find(
+      (e) => e.kind === 'unit' && e.defId === uavId && e.hp > 0 && this.free(e),
+    );
+    if (!uav) return;
+    const tick = ctx.game.state.tick;
+    if (tick - (ctx.st.lastAirScoutTick ?? 0) < 20 * 9) return;
+    let point: { x: number; z: number } | null = null;
+    if (ctx.st.targetKnown) {
+      // Orbit at the edge of the drone's own optics rather than close over the
+      // position: a recon aircraft survives by seeing further than the air
+      // defence shoots, and a deep-recon airframe earns its larger orbit.
+      const angle = this.random(ctx) * Math.PI * 2;
+      const standoff = Math.max(12, (UNITS[uav.defId]?.vision ?? 20) * 0.8);
+      const radius = (standoff + this.random(ctx) * 4) * TILE_SIZE;
+      point = {
+        x: ctx.st.targetBaseX + Math.cos(angle) * radius,
+        z: ctx.st.targetBaseZ + Math.sin(angle) * radius,
+      };
+    }
+    point ??= this.chooseScoutPoint(ctx);
+    if (!point) return;
+    if (
+      this.order(ctx, uav, {
+        type: 'move',
+        team: ctx.aiId,
+        ids: [uav.id],
+        x: point.x,
+        z: point.z,
+      })
+    ) {
+      ctx.st.lastAirScoutTick = tick;
+      ctx.st.lastDecision = 'drone reconnaissance sortie';
+    }
+  }
+
+  /**
+   * An unarmed scout that has seen an armed enemy inside its reaction distance
+   * breaks contact instead of finishing the patrol. The order is issued even
+   * while the patrol order is still running: withdrawing is the one case where
+   * a fresh order is worth more than a completed route.
+   */
+  private withdrawScout(ctx: AIContext, scout: Entity): boolean {
+    let threat: Entity | undefined;
+    let threatRange = 12 * TILE_SIZE;
+    for (const enemy of ctx.visible) {
+      if (enemy.owner < 0 || enemy.kind !== 'unit' || enemy.hp <= 0) continue;
+      if (entityWeapons(enemy).length === 0) continue;
+      const d = dist(scout.x, scout.z, enemy.x, enemy.z);
+      if (d < threatRange) {
+        threatRange = d;
+        threat = enemy;
+      }
+    }
+    if (!threat) return false;
+    // Only a friendly combat unit physically beside the scout makes standing
+    // worthwhile: it can return fire immediately. Armour merely in the same
+    // postcode does not stop the scout being the closest target.
+    const covered = ctx.combat.some(
+      (unit) =>
+        unit.id !== scout.id && dist(unit.x, unit.z, scout.x, scout.z) <= 6 * TILE_SIZE,
+    );
+    if (covered) return false;
+    const dx = scout.x - threat.x;
+    const dz = scout.z - threat.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const x = scout.x + (dx / len) * 9 * TILE_SIZE;
+    const z = scout.z + (dz / len) * 9 * TILE_SIZE;
+    ctx.game.enqueueCommand({
+      type: 'move',
+      team: ctx.aiId,
+      ids: [scout.id],
+      x,
+      z,
+    });
+    ctx.st.lastDecision = `unarmed scout withdrawing from ${threat.defId}`;
+    return true;
+  }
+
+  /**
+   * Pull an unarmed scout's patrol point back to the edge of the nearest
+   * friendly ground combat unit: close enough that the armour can answer what
+   * the optics find, far enough that the scout still looks past the line.
+   */
+  private screenPoint(ctx: AIContext, point: { x: number; z: number }): { x: number; z: number } {
+    let anchorX = ctx.baseX;
+    let anchorZ = ctx.baseZ;
+    let lead = 24 * TILE_SIZE;
+    let best = Number.POSITIVE_INFINITY;
+    for (const unit of ctx.combat) {
+      if (UNITS[unit.defId]?.domain !== 'land') continue;
+      const d = dist(unit.x, unit.z, point.x, point.z);
+      if (d < best) {
+        best = d;
+        anchorX = unit.x;
+        anchorZ = unit.z;
+        lead = 9 * TILE_SIZE;
+      }
+    }
+    if (best <= lead) return point;
+    const dx = point.x - anchorX;
+    const dz = point.z - anchorZ;
+    const len = Math.hypot(dx, dz) || 1;
+    // Walk back toward the anchor until the point is ground the scout can use;
+    // if the whole approach is blocked the original point is kept so scouting
+    // never stops entirely.
+    for (let back = lead; back >= 4 * TILE_SIZE; back -= 2 * TILE_SIZE) {
+      const x = anchorX + (dx / len) * back;
+      const z = anchorZ + (dz / len) * back;
+      if (this.standable(ctx, x, z)) return { x, z };
+    }
+    return point;
+  }
+
+  /**
+   * Walk one nearby combat unit along the unarmed scout's route. The enemy
+   * engages the escort instead of the optics, so the report arrives with a unit
+   * that can survive being found.
+   */
+  private escortScout(ctx: AIContext, scout: Entity, point: { x: number; z: number }): void {
+    if (ctx.threats.length > 0) return;
+    let escort: Entity | undefined;
+    let best = 22 * TILE_SIZE;
+    for (const unit of ctx.combat) {
+      if (unit.id === scout.id || !this.free(unit)) continue;
+      if (UNITS[unit.defId]?.domain !== 'land') continue;
+      const d = dist(unit.x, unit.z, scout.x, scout.z);
+      if (d < best) {
+        best = d;
+        escort = unit;
+      }
+    }
+    if (!escort) return;
+    if (
+      this.order(ctx, escort, {
+        type: 'move',
+        team: ctx.aiId,
+        ids: [escort.id],
+        x: point.x,
+        z: point.z,
+        attackMove: true,
+      })
+    ) {
+      ctx.st.lastDecision = `${escort.defId} escorting the ${UNITS[scout.defId]?.shortName ?? 'scout'}`;
+    }
+  }
+
   private standable(ctx: AIContext, x: number, z: number): boolean {
     const map = ctx.game.state.map;
     const tx = Math.floor(x / TILE_SIZE);
@@ -677,6 +964,26 @@ export class AIController {
     if (tx < 1 || tz < 1 || tx >= map.width - 1 || tz >= map.height - 1) return false;
     const idx = tileIndex(map.width, tx, tz);
     return canStandOn(map.width, map.height, map.terrain, idx, 'wheeled');
+  }
+
+  /**
+   * Open ground beside the remembered contact that this group can be ordered
+   * to. A remembered structure reports its own centre, which the command layer
+   * refuses, so the aim walks back toward the base until the formation fits.
+   * `null` means nothing on that line is usable: hold rather than announce a
+   * wave that cannot move.
+   */
+  private approachPoint(ctx: AIContext, ids: number[]): { x: number; z: number } | null {
+    const x = ctx.st.targetBaseX;
+    const z = ctx.st.targetBaseZ;
+    if (this.options.resolveApproach === false) return { x, z };
+    return ctx.game.groupApproach(ctx.aiId, ids, x, z, ctx.baseX, ctx.baseZ);
+  }
+
+  private tileLabel(ctx: AIContext): string {
+    const tx = Math.round(ctx.st.targetBaseX / TILE_SIZE);
+    const tz = Math.round(ctx.st.targetBaseZ / TILE_SIZE);
+    return `${tx},${tz}`;
   }
 
   private chooseScoutPoint(ctx: AIContext): { x: number; z: number } | null {
@@ -714,7 +1021,11 @@ export class AIController {
 
   private buildOptions(ctx: AIContext): BuildOption[] {
     const options: BuildOption[] = [];
-    const add = (defId: string, score: number, reason: string, essential = false): void => {
+    const add = (slotId: string, score: number, reason: string, essential = false): void => {
+      // Build the actual structure this nation fields for the slot. A roster
+      // that excludes it returns undefined, so the option simply disappears.
+      const defId = ctx.game.buildingIdFor(ctx.aiId, slotId);
+      if (!defId) return;
       options.push({ defId, score, reason, essential });
     };
     const counts = ctx.counts;
@@ -745,7 +1056,10 @@ export class AIController {
     }
 
     if (!refinery) add('refinery', opening.refinery + jitter(), 'material drop-off', true);
-    else {
+    else if (!ctx.haulingIdle) {
+      // Another drop-off only shortens round trips while a deposit is actually
+      // being worked. With every hauler idle it would raise the hauler target
+      // and buy more of them, so the demand is withheld until hauling resumes.
       const saturation = harvesters / Math.max(1, refinery);
       if (refinery < 3 && saturation >= 1.75 && bank > 550) {
         add('refinery', 58 + ctx.profile.economy * 30 + jitter(), 'saturated harvester round trips');
@@ -783,12 +1097,28 @@ export class AIController {
     }
 
     if (!airfield) {
+      // An airfield is the only way to field the roster's reconnaissance drone.
+      // A long-range eye is worth a structure the shared jet alone does not
+      // justify once the base is complete; how much depends on the optics the
+      // roster actually fields, so a nation without a drone slot earns nothing.
+      const coreReady =
+        (counts.get('factory') ?? 0) > 0 &&
+        (counts.get('refinery') ?? 0) > 0 &&
+        (counts.get('barracks') ?? 0) > 0;
+      const droneId = ctx.game.unitIdFor(ctx.aiId, 'uav');
+      const droneReach = droneId ? (UNITS[droneId]?.vision ?? 0) : 0;
+      const reconWorth = coreReady && droneReach >= 20 ? 44 + (droneReach - 20) * 2 : 0;
       const score =
         (ctx.strategy === 'air' ? 148 : ctx.profile.tech > 0.58 ? 52 + ctx.profile.tech * 50 : 0) +
         opening.air +
+        reconWorth +
         (ctx.enemyAir > 0 ? 24 : 0);
       if (score > 0) {
-        add('airfield', score + jitter(), 'air operations', false);
+        add(
+          'airfield',
+          score + jitter(),
+          reconWorth > 0 ? 'reconnaissance aviation' : 'air operations',
+        );
       }
     }
     if (!shipyard && ctx.hasWater) {
@@ -802,6 +1132,13 @@ export class AIController {
       if (ctx.enemyAir > 0) add('samBattery', 178 + jitter(), 'hostile air contact');
       else if (bank > 2800 && ctx.profile.tech > 0.55) add('samBattery', 38 + jitter(), 'air defence hedge');
     }
+    if (
+      ctx.hasWater &&
+      (counts.get('coastalBattery') ?? 0) === 0 &&
+      ctx.enemyNaval > 0
+    ) {
+      add('coastalBattery', 164 + jitter(), 'hostile naval contact');
+    }
     if ((counts.get('radar') ?? 0) === 0 && bank > 1400 && ctx.profile.economy > 0.55) {
       // Vision is an economy: a radar keeps contacts fresh so the army is not
       // repeatedly sent at stale coordinates.
@@ -809,6 +1146,70 @@ export class AIController {
     }
 
     return options.sort((a, b) => b.score - a.score || a.defId.localeCompare(b.defId));
+  }
+
+  /**
+   * Materials production must leave alone while it waits for an essential
+   * structure. Normally that is the shortfall to the price, so ordinary play
+   * keeps its army. With no drop-off at all the economy is dead until one
+   * stands, so the whole price is held back: every material the base still has
+   * — or still trickles in — belongs to the building that restores income.
+   */
+  private savingReserve(ctx: AIContext, def: BuildingDef): number {
+    const refineryId = ctx.game.buildingIdFor(ctx.aiId, 'refinery');
+    // A refinery already under construction counts: income is on its way, so
+    // ordinary production continues. Only a base with none at all — and none
+    // being built — holds the whole price back.
+    const anyDropOff =
+      refineryId === undefined ||
+      ctx.buildings.some((b) => b.hp > 0 && b.defId === refineryId);
+    if (!anyDropOff && def.id === refineryId) return def.cost.mats;
+    return Math.max(0, def.cost.mats - ctx.player.mats);
+  }
+
+  /**
+   * The engineer is the only unit that restores construction, and construction
+   * is the only route back into income once the last drop-off is gone. Without
+   * one the commander cannot spend on anything that recovers the base, so the
+   * whole price is held back until the replacement is affordable — the same
+   * rule the drop-off uses, one level up. The reserve releases the moment an
+   * engineer exists or is queued, when no facility can train it, or when the
+   * bank already covers it (the engineer is the first demand, so it then buys
+   * itself). It never runs beside the drop-off reserve: that one requires an
+   * engineer, this one requires the absence of an engineer.
+   *
+   * It is gated on a *broken* economy, not merely a missing engineer: a base
+   * with a completed drop-off and a hauler still earns, so buying the engineer
+   * costs seconds and the army should not pause. The states held for are the
+   * ones where the one-per-second lifeline is the only income left: no drop-off
+   * (or only an unfinished site, which itself needs the engineer), or a
+   * drop-off with no hauler to feed it.
+   */
+  private engineerReserve(ctx: AIContext): number {
+    if (ctx.engineer) return 0;
+    const refineries = ctx.counts.get('refinery') ?? 0;
+    const haulers = ctx.unitCounts.get('harvester') ?? 0;
+    if (refineries > 0 && haulers > 0) return 0;
+    const engineerId = ctx.game.unitIdFor(ctx.aiId, 'engineer');
+    const def = engineerId ? UNITS[engineerId] : undefined;
+    if (!engineerId || !def) return 0;
+    // A replacement already in a queue is the recovery, not a reason to stop.
+    if ((this.queuedCounts(ctx).get(engineerId) ?? 0) > 0) return 0;
+    // `productionStatus` folds affordability into `ok`, which is exactly the
+    // state this reserve exists for, so ask the roster and the facility only.
+    // The command post hands the engineer slot back while a factory stands.
+    const facility = ctx.complete.some((b) => {
+      if (!ctx.game.productionEntries(ctx.aiId, b.defId).includes(engineerId)) return false;
+      if (b.defId === 'commandPost' && ctx.complete.some((o) => o.defId === 'factory')) {
+        return false;
+      }
+      return true;
+    });
+    if (!facility) return 0;
+    // Without the requisition there is no legal purchase to hold for; spending
+    // it on the army is strictly better than freezing production forever.
+    if (ctx.player.req < def.cost.req) return 0;
+    return def.cost.mats;
   }
 
   private manageConstruction(ctx: AIContext): { mats: number; req: number } {
@@ -838,14 +1239,13 @@ export class AIController {
       return !!def && ctx.player.mats >= def.cost.mats && ctx.player.req >= def.cost.req;
     });
     const top = options[0];
-
     if (affordable.length === 0) {
       // Nothing can be built. Put the engineer to work patching the base while
       // the bank recovers instead of idling next to a damaged structure.
       if (this.repairStructures(ctx)) return { mats: ctx.player.mats, req: ctx.player.req };
       if (top?.essential) {
         const def = BUILDINGS[top.defId];
-        const reserve = def ? Math.max(0, def.cost.mats - ctx.player.mats) : 0;
+        const reserve = def ? this.savingReserve(ctx, def) : 0;
         ctx.st.lastDecision = `saving for ${top.defId} — ${top.reason}`;
         return {
           mats: Math.max(0, ctx.player.mats - reserve),
@@ -860,7 +1260,7 @@ export class AIController {
     if (top?.essential && !affordable.some((o) => o.defId === top.defId)) {
       if (this.repairStructures(ctx)) return { mats: ctx.player.mats, req: ctx.player.req };
       const def = BUILDINGS[top.defId];
-      const reserve = def ? Math.max(0, def.cost.mats - ctx.player.mats) : 0;
+      const reserve = def ? this.savingReserve(ctx, def) : 0;
       ctx.st.lastDecision = `saving for ${top.defId} — ${top.reason}`;
       return {
         mats: Math.max(0, ctx.player.mats - reserve),
@@ -901,6 +1301,10 @@ export class AIController {
       .filter(
         (b) =>
           b.hp < b.maxHp * threshold &&
+          // A crew cannot work under shellfire, so an engineer sent to an
+          // actively bombarded structure would simply stand there. Let it build
+          // or repair something else until the firing lapses.
+          ctx.game.state.tick - b.lastHitTick >= REPAIR_SUPPRESSION_TICKS &&
           dist(b.x, b.z, engineer.x, engineer.z) < 70 * TILE_SIZE,
       )
       .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
@@ -1002,10 +1406,12 @@ export class AIController {
           }
           if (def.shipyard) score += 4;
           if (def.airfield) score += 3;
-          // Avoid crowding the same approach with units and structures.
+          // Avoid crowding the same approach with units and structures the
+          // commander knows about. Hidden enemies must not push a site away.
           let crowd = 0;
           for (const e of ctx.game.state.entities) {
             if (e.hp <= 0) continue;
+            if (!knownForCrowding(ctx.game, ctx.aiId, e)) continue;
             if (dist(wx, wz, e.x, e.z) < (Math.max(def.footprint.w, def.footprint.h) * TILE_SIZE) / 2 + 3 * TILE_SIZE) {
               crowd++;
             }
@@ -1033,18 +1439,29 @@ export class AIController {
     return queued;
   }
 
-  private desiredUnits(ctx: AIContext): Array<{ defId: string; priority: number; deficit: number }> {
+  private desiredUnits(ctx: AIContext): UnitDemand[] {
     const queued = this.queuedCounts(ctx);
-    const current = (defId: string): number => (ctx.unitCounts.get(defId) ?? 0) + (queued.get(defId) ?? 0);
-    const entries: Array<{ defId: string; priority: number; deficit: number }> = [];
-    const need = (defId: string, target: number, priority: number): void => {
-      const count = current(defId);
-      if (count < target) entries.push({ defId, priority, deficit: (target - count) / Math.max(1, target) });
+    const entries: UnitDemand[] = [];
+    // Demand is written against baseline slots. Resolution turns a slot into the
+    // nation's actual unit, so a replacement is bought instead of the excluded
+    // baseline id, and an excluded ability is simply not requested.
+    const need = (slotId: string, target: number, priority: number, saveFor?: number): void => {
+      const defId = ctx.game.unitIdFor(ctx.aiId, slotId);
+      if (!defId) return;
+      const count = (ctx.unitCounts.get(slotId) ?? 0) + (queued.get(defId) ?? 0);
+      if (count < target) {
+        entries.push({
+          defId,
+          priority,
+          deficit: (target - count) / Math.max(1, target),
+          saveFor,
+        });
+      }
     };
 
     const refineries = ctx.counts.get('refinery') ?? 0;
     if (!ctx.engineer) need('engineer', 1, 240);
-    if (refineries > 0) {
+    if (refineries > 0 && !ctx.haulingIdle) {
       // Economy difficulty is a crewing decision, not a resource multiplier:
       // a recruit keeps one hauler per refinery, elite saturates the drop-offs.
       const haulerTarget =
@@ -1057,14 +1474,67 @@ export class AIController {
     }
 
     // Scouting is a requirement while the enemy is missing, not a fixed two.
-    const reconTarget = ctx.st.targetKnown ? 1 : 3;
+    // An unarmed scout is not a screen: three of them range into the open and
+    // die one at a time, so the unarmed substitution is bought as a single
+    // protected eye instead of a triad of free kills.
+    const reconId = ctx.game.unitIdFor(ctx.aiId, 'recon');
+    const reconUnarmed = reconId !== undefined && (UNITS[reconId]?.weapons.length ?? 0) === 0;
+    const reconTarget = ctx.st.targetKnown ? 1 : reconUnarmed ? 1 : 3;
     need('recon', reconTarget, 168);
 
     if (ctx.enemyAir > 0) need('aa', Math.min(3, 1 + ctx.enemyAir), 152);
-    if ((ctx.counts.get('airfield') ?? 0) > 0) need('fighter', 1, 142);
+    if ((ctx.counts.get('airfield') ?? 0) > 0) {
+      need('fighter', 1, 142);
+      // The drone is the cheapest way to keep the map lit and to spot for
+      // artillery. It is a planned purchase once the field army exists, and the
+      // bank is only held for it when the price is already most of the way
+      // saved — a drone shot down while the army is short of tanks is not
+      // replaced by starving the army.
+      const uavPrice = UNITS[ctx.game.unitIdFor(ctx.aiId, 'uav') ?? '']?.cost.mats;
+      const dronePlanned =
+        ctx.st.desiredArmy >= 6 && ctx.threats.length === 0 && (ctx.unitCounts.get('harvester') ?? 0) >= 2;
+      need('uav', 1, dronePlanned ? 106 : 78, dronePlanned ? uavPrice : undefined);
+      // Interceptors are a counter, not a blind opening purchase. Build them
+      // once hostile air has actually been seen or remembered.
+      if (ctx.enemyAir > 0) need('interceptor', Math.min(2, 1 + ctx.enemyAir), 148);
+    }
     if ((ctx.counts.get('shipyard') ?? 0) > 0) need('corvette', 1, 136);
     if ((ctx.counts.get('barracks') ?? 0) > 0 && (ctx.unitCounts.get('rifle') ?? 0) >= 4) {
       need('medic', 1, 84);
+    }
+    // Field recovery is a response to attrition, not an opening purchase. A
+    // commander buys it after an actual vehicle has been damaged, so the bay is
+    // not spent before there is anything to recover.
+    if ((ctx.counts.get('factory') ?? 0) > 0) {
+      const damagedVehicle = ctx.own.some((e) => {
+        if (e.kind !== 'unit' || e.hp <= 0 || e.hp >= e.maxHp * 0.8) return false;
+        const def = UNITS[e.defId];
+        return def?.domain === 'land' && def.armour !== 'infantry';
+      });
+      if (damagedVehicle) need('recovery', 1, 72);
+      // Indirect fire is planned, not only discovered. A battery is worth
+      // having before an enemy bunker is in sight — but only once a field army
+      // exists to escort it, the refineries are crewed and the base is quiet.
+      // Seeing a fortified position makes it urgent instead of planned.
+      const fortified = ctx.known.some((e) => {
+        if (e.kind !== 'building') return false;
+        const def = BUILDINGS[e.defId];
+        return !!def?.garrison || (def?.weapons?.length ?? 0) > 0;
+      });
+      const coreForce =
+        (ctx.unitCounts.get('tank') ?? 0) +
+        (ctx.unitCounts.get('atgm') ?? 0) +
+        (ctx.unitCounts.get('rifle') ?? 0);
+      // A battery is a formation asset: it joins a field army of real size,
+      // not a fixed share of whatever wave the commander is currently planning.
+      // The absolute gate keeps a cautious, large-army commander from being the
+      // last to receive fire support.
+      const armyFormed = coreForce >= 6;
+      const economyCrewed = (ctx.unitCounts.get('harvester') ?? 0) >= 2;
+      const quietBase = ctx.threats.length === 0;
+      const spgPrice = UNITS[ctx.game.unitIdFor(ctx.aiId, 'spg') ?? '']?.cost.mats;
+      if (fortified) need('spg', 1, 128, spgPrice);
+      else if (armyFormed && economyCrewed && quietBase) need('spg', 1, 112, spgPrice);
     }
 
     const enemyMilitary = ctx.known.filter(
@@ -1096,6 +1566,42 @@ export class AIController {
 
   private manageProduction(ctx: AIContext, budget: { mats: number; req: number }): void {
     const desired = this.desiredUnits(ctx);
+    // With no engineer the base cannot build its way out of a dead economy, so
+    // every material below the replacement's price belongs to it, not the army.
+    // The reserve is zero whenever the engineer exists, is queued, or cannot be
+    // produced, so healthy bases and unrecoverable ones keep their old spending.
+    const engineerReserve = this.engineerReserve(ctx);
+    if (engineerReserve > 0 && budget.mats < engineerReserve) {
+      ctx.st.lastDecision = `holding ${Math.ceil(engineerReserve - budget.mats)} mats for a replacement engineer`;
+      return;
+    }
+    // A planned support arm may hold the bank for a few seconds, but only when
+    // the army's own line demands are already met and the price is nearly in
+    // hand. Saving 500 for a howitzer while three tanks are missing is how a
+    // commander loses the field and then the base: those deficits buy first.
+    const saving = desired.find((item) => (item.saveFor ?? 0) > 0);
+    if (saving) {
+      const coreDeficit = desired
+        .filter(
+          (item) =>
+            item.defId !== saving.defId &&
+            (item.defId === 'tank' || item.defId === 'atgm' || item.defId === 'rifle'),
+        )
+        .reduce((n, item) => n + item.deficit, 0);
+      const def = UNITS[saving.defId];
+      const price = saving.saveFor ?? 0;
+      if (
+        def &&
+        coreDeficit <= 2 &&
+        budget.mats < def.cost.mats &&
+        budget.mats >= price * 0.85 &&
+        budget.req >= def.cost.req &&
+        (ctx.unitCounts.get('harvester') ?? 0) > 0
+      ) {
+        ctx.st.lastDecision = `holding ${Math.round(def.cost.mats - budget.mats)} mats for ${def.name}`;
+        return;
+      }
+    }
     for (const item of desired) {
       const def = UNITS[item.defId];
       if (!def) continue;
@@ -1124,33 +1630,38 @@ export class AIController {
   }
 
   private manageAir(ctx: AIContext): void {
-    const fighter = ctx.own.find(
-      (e) => e.kind === 'unit' && e.defId === 'fighter' && e.hp > 0 && this.free(e),
-    );
-    if (!fighter || fighter.aircraft?.returningHome) return;
-    const landed = fighter.aircraft?.landed ?? false;
-    if (!landed && fighter.ammo <= 0) return;
-    const target = this.visibleTargets(ctx, [
-      (e) => e.kind === 'building',
-      (e) => e.defId === 'tank',
-      (e) => e.defId === 'harvester',
-      (e) => UNITS[e.defId]?.domain === 'air',
-    ]).sort(
-      (a, b) =>
-        this.contactValue(this.toKnown(a), ctx.baseX, ctx.baseZ) -
-        this.contactValue(this.toKnown(b), ctx.baseX, ctx.baseZ) ||
-        a.id - b.id,
-    )[0];
-    if (!target) return;
-    if (
-      this.order(ctx, fighter, {
-        type: 'attack',
-        team: ctx.aiId,
-        ids: [fighter.id],
-        targetId: target.id,
-      })
-    ) {
-      ctx.st.lastDecision = `fighter sortie against ${target.defId}`;
+    for (const plane of ctx.own) {
+      if (plane.kind !== 'unit' || plane.hp <= 0) continue;
+      const def = UNITS[plane.defId];
+      if (def?.domain !== 'air' || def.weapons.length === 0) continue;
+      if (!this.free(plane) || plane.aircraft?.returningHome) continue;
+      const landed = plane.aircraft?.landed ?? false;
+      if (!landed && plane.maxAmmo > 0 && plane.ammo <= 0) continue;
+      const weapons = entityWeapons(plane);
+      const target = this.visibleTargets(ctx, [
+        (e) => e.kind === 'building',
+        (e) => unitFamily(e.defId) === 'tank',
+        (e) => unitFamily(e.defId) === 'harvester',
+        (e) => !!UNITS[e.defId],
+      ])
+        .filter((e) => weapons.some((weapon) => canWeaponTarget(weapon, e)))
+        .sort(
+          (a, b) =>
+            this.contactValue(this.toKnown(a), ctx.baseX, ctx.baseZ) -
+            this.contactValue(this.toKnown(b), ctx.baseX, ctx.baseZ) ||
+            a.id - b.id,
+        )[0];
+      if (!target) continue;
+      if (
+        this.order(ctx, plane, {
+          type: 'attack',
+          team: ctx.aiId,
+          ids: [plane.id],
+          targetId: target.id,
+        })
+      ) {
+        ctx.st.lastDecision = `${def.name} sortie against ${target.defId}`;
+      }
     }
   }
 
@@ -1194,6 +1705,11 @@ export class AIController {
         !e.construction &&
         !!BUILDINGS[e.defId]?.capturable &&
         e.owner !== ctx.aiId &&
+        // A structure the enemy built has to be found before it can be walked
+        // to. Authored objectives (`owner -1`) are part of the map itself —
+        // they are counted on the objective line whether or not they are in
+        // sight — so those stay eligible without a scouting report.
+        (e.owner < 0 || ctx.game.isKnownTo(ctx.team, e.id)) &&
         dist(engineer.x, engineer.z, e.x, e.z) < 48 * TILE_SIZE,
     );
     if (candidates.length === 0) return;
@@ -1390,13 +1906,22 @@ export class AIController {
     const committed = ready.length >= gate || (overdue && ready.length >= 4);
     if (committed && tick - ctx.st.lastWaveTick >= cooldown) {
       const ids = ready.map((e) => e.id);
+      const point = this.approachPoint(ctx, ids);
+      if (!point) {
+        // The remembered point has no reachable ground beside it. Holding is
+        // the honest outcome: a wave that cannot be ordered is not a wave, and
+        // counting it would both hide the failure and start the cooldown.
+        ctx.st.phase = 'build';
+        ctx.st.lastDecision = `no approach to ${this.tileLabel(ctx)} — holding ${ids.length} units`;
+        return;
+      }
       for (const unit of ready) this.claim(unit);
       ctx.game.enqueueCommand({
         type: 'move',
         team: ctx.aiId,
         ids,
-        x: ctx.st.targetBaseX,
-        z: ctx.st.targetBaseZ,
+        x: point.x,
+        z: point.z,
         attackMove: true,
       });
       ctx.st.attackWave++;
@@ -1412,13 +1937,19 @@ export class AIController {
       tick - ctx.st.lastWaveTick > 20 * 15
     ) {
       const ids = ready.map((e) => e.id);
+      const point = this.approachPoint(ctx, ids);
+      if (!point) {
+        ctx.st.phase = 'pressure';
+        ctx.st.lastDecision = `no approach to ${this.tileLabel(ctx)} — regrouping`;
+        return;
+      }
       for (const unit of ready) this.claim(unit);
       ctx.game.enqueueCommand({
         type: 'move',
         team: ctx.aiId,
         ids,
-        x: ctx.st.targetBaseX,
-        z: ctx.st.targetBaseZ,
+        x: point.x,
+        z: point.z,
         attackMove: true,
       });
       ctx.st.lastWaveTick = tick;

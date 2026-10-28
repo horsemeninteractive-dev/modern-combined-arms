@@ -156,6 +156,98 @@ describe('combat engineer repair orders', () => {
     expect(restored.stateHash()).toBe(game.stateHash());
   });
 
+  it('makes no progress while the structure is under fire, then resumes', () => {
+    const { game, engineer, barracks } = repairFixture();
+    const start = barracks.hp;
+    game.enqueueCommand({ type: 'repair', team: 0, ids: [engineer.id], targetId: barracks.id });
+    // Quiet approach and a couple of seconds of work.
+    game.advance(20 * 2);
+    const working = barracks.hp;
+    expect(working).toBeGreaterThan(start);
+
+    // Sustained shelling: every tick counts as a fresh hit, so the crew can
+    // make no progress at all despite holding the order.
+    for (let i = 0; i < 20 * 3; i++) {
+      barracks.lastHitTick = game.state.tick;
+      game.advance(1);
+    }
+    expect(engineer.order?.type).toBe('repair');
+    expect(barracks.hp).toBeCloseTo(working, 5);
+
+    // The firing stops; one second later the same order resumes by itself.
+    game.advance(20 + 20 * 2);
+    expect(barracks.hp).toBeGreaterThan(working);
+  });
+
+  it('keeps suppression out of the default game while the Phase 9 control can disable it', () => {
+    // The experiment-only option must not leak into normal play: a game built the
+    // way the shell builds one suspends repair under fire.
+    const shipped = repairFixture();
+    shipped.game.enqueueCommand({
+      type: 'repair',
+      team: 0,
+      ids: [shipped.engineer.id],
+      targetId: shipped.barracks.id,
+    });
+    for (let i = 0; i < 20 * 3; i++) {
+      shipped.barracks.lastHitTick = shipped.game.state.tick;
+      shipped.game.advance(1);
+    }
+    const suppressed = shipped.barracks.hp;
+
+    // The same fixture with the replication control reproduces the pre-Phase-8
+    // engine: repair progresses through the shelling.
+    const control = new Game(
+      islandWith({ structures: [{ defId: 'barracks', owner: 0, x: 24, z: 34 }] }),
+      { enableAI: false, repairSuppression: false },
+    );
+    const controlEngineer = find(control, 'engineer');
+    const controlBarracks = find(control, 'barracks', 0, 'building');
+    controlEngineer.x = controlBarracks.x - 10;
+    controlEngineer.z = controlBarracks.z;
+    controlBarracks.hp = controlBarracks.maxHp * 0.4;
+    control.enqueueCommand({
+      type: 'repair',
+      team: 0,
+      ids: [controlEngineer.id],
+      targetId: controlBarracks.id,
+    });
+    const controlStart = controlBarracks.hp;
+    for (let i = 0; i < 20 * 3; i++) {
+      controlBarracks.lastHitTick = control.state.tick;
+      control.advance(1);
+    }
+
+    expect(suppressed).toBeCloseTo(shipped.barracks.maxHp * 0.4, 5);
+    expect(controlBarracks.hp).toBeGreaterThan(controlStart + 20);
+
+    // A save does not carry the switch: loading restores the shipped rule.
+    const loaded = Game.fromSave(JSON.parse(JSON.stringify(control.toSave())), {
+      enableAI: false,
+    });
+    const loadedBarracks = loaded.state.entities.find(
+      (e) => e.defId === 'barracks' && e.owner === 0 && e.kind === 'building',
+    )!;
+    const loadedEngineer = loaded.state.entities.find(
+      (e) => e.defId === 'engineer' && e.owner === 0 && e.kind === 'unit',
+    )!;
+    loadedBarracks.hp = loadedBarracks.maxHp * 0.4;
+    loadedEngineer.x = loadedBarracks.x - 10;
+    loadedEngineer.z = loadedBarracks.z;
+    loaded.enqueueCommand({
+      type: 'repair',
+      team: 0,
+      ids: [loadedEngineer.id],
+      targetId: loadedBarracks.id,
+    });
+    const loadedStart = loadedBarracks.hp;
+    for (let i = 0; i < 20 * 2; i++) {
+      loadedBarracks.lastHitTick = loaded.state.tick;
+      loaded.advance(1);
+    }
+    expect(loadedBarracks.hp).toBeCloseTo(loadedStart, 5);
+  });
+
   it('captures a hostile relay from a right-click capture order', () => {
     const game = new Game(islandWith({}), { enableAI: false });
     const engineer = find(game, 'engineer');
@@ -207,7 +299,10 @@ describe('field medic', () => {
     expect(UNITS.medic.producedBy).toContain('barracks');
     expect(game.productionStatus(0, barracks.id, 'medic').ok).toBe(true);
     expect(unitStyle('medic')?.infantry).toBeDefined();
-    expect(unitVisualScale('medic')).toBeGreaterThan(1.2);
+    // The medic shares the rifleman's authored human silhouette; the old
+    // 1.2 visual multiplier was an arbitrary inflation, not a physical scale.
+    expect(unitVisualScale('medic')).toBe(1);
+    expect(unitVisualScale('medic')).toBe(unitVisualScale('rifle'));
   });
 
   it('slowly heals one nearby wounded infantryman at a time', () => {

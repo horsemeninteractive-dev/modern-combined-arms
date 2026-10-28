@@ -3,6 +3,7 @@ import {
   HARVESTER_CAPACITY,
   MAX_QUEUE,
   PLAYER,
+  REPAIR_SUPPRESSION_TICKS,
   TICK_RATE,
   TILE_SIZE,
   VISION_INTERVAL,
@@ -30,10 +31,23 @@ import { findPath, nearestWalkable, type NavGrid } from './pathfinding';
 import {
   adjacentWater,
   checkPlacement,
+  waterFacingFor,
   type Scenario,
   type ScenarioStructure,
 } from './scenario';
 import { createRuntimeMap, footprintCenter, stampFootprint } from './map';
+
+/**
+ * What one replacement drop-off costs. A base with no refinery and less than
+ * this in the bank cannot buy its way back into the hauling economy, which is
+ * the state the headquarters lifeline exists for.
+ */
+const REFINERY_REPLACEMENT_COST = Math.min(
+  ...Object.values(BUILDINGS)
+    .filter((def) => def.refinery)
+    .map((def) => def.cost.mats),
+);
+
 import {
   canWeaponTarget,
   computeDamage,
@@ -45,6 +59,14 @@ import {
   hasLineOfSight,
   usesPrimaryAmmo,
 } from './combat';
+import {
+  buildingSlotId,
+  productionEntries as rosterProductionEntries,
+  resolveRoster,
+  rosterIncludes,
+  unitSlotId,
+} from '../data/roster';
+import { tryIdentityDef } from '../data/factions';
 import { AIController, initialAIState } from './ai';
 import { structureBenefit } from './infrastructure';
 import {
@@ -60,6 +82,7 @@ import type {
   PowerStatus,
   Projectile,
   SimEvent,
+  SimEventCode,
   SimEventType,
   UnitDef,
   VictoryState,
@@ -84,6 +107,14 @@ export interface GameOptions {
   aiSeed?: number;
   /** Selected opponent strength for a new battle; saves keep their own. */
   aiDifficulty?: AIDifficulty;
+  /**
+   * Experiment-only switch for the Phase 9 replication: disables the rule that
+   * suspends engineer repair while a structure is under fire. Production code
+   * never sets it, so the shipped default is the Phase 8 behaviour. Not saved
+   * and never read from a scenario, so it cannot change a normal match or a
+   * save file.
+   */
+  repairSuppression?: boolean;
 }
 
 export class SaveFormatError extends Error {
@@ -137,11 +168,16 @@ export class Game {
   private lastMatsSample: number[] = [];
   /** Last grid state announced per owner; presentation-only, never saved. */
   private gridBrownout = new Map<number, boolean>();
+  /** Coalesces under-attack alerts; presentation-only and never saved. */
+  private lastAttackNotice = new Map<'base' | 'forces', number>();
   /** Not serialised; used for diagnostics and renderer consumption. */
   eventsSince = 0;
+  /** Whether incoming fire suspends engineer repair (Phase 8 rule; always true in play). */
+  private readonly repairSuppression: boolean;
 
   constructor(scenario: Scenario, opts: GameOptions = {}) {
     this.localPlayerId = opts.localPlayerId ?? PLAYER;
+    this.repairSuppression = opts.repairSuppression !== false;
     this.state = {
       scenario,
       map: createRuntimeMap(scenario),
@@ -287,6 +323,7 @@ export class Game {
       captureProgress: 0,
       healTargetId: 0,
       buildTargetId: 0,
+      repairTargetId: 0,
       garrisonId: 0,
       aiGroup: 0,
       aiRole: '',
@@ -364,19 +401,26 @@ export class Game {
     const center = footprintCenter(s.defId, s.x, s.z);
     const hp = construction ? Math.round(def.hp * 0.2) : def.hp;
     const e = this.baseEntity('building', s.defId, s.owner, center.x, center.z, hp);
-    e.facing = 0;
-    e.turretFacing = 0;
+    // A yard turns its slipway toward its harbour so the gate, the berth and
+    // the hulls all agree. Authored facing wins; otherwise it is read off the
+    // coastline, which is deterministic for a given map and position.
+    const facing = s.facing ?? (def.requiresWater ? waterFacingFor(this.state.scenario, s) : 0);
+    e.facing = facing;
+    e.turretFacing = facing;
     e.ammo = 0;
     e.maxAmmo = 0;
     e.buildProgress = construction ? 0 : 1;
     e.construction = construction;
     e.state = construction ? 'constructing' : 'idle';
-    e.rallyX = center.x;
-    e.rallyZ = center.z + (def.footprint.h / 2 + 2) * TILE_SIZE;
+    // Default rally directly in front of the gate, which is local +Z rotated
+    // by the structure's facing.
+    const frontReach = (def.footprint.h / 2 + 2) * TILE_SIZE;
+    e.rallyX = center.x - Math.sin(facing) * frontReach;
+    e.rallyZ = center.z + Math.cos(facing) * frontReach;
     if (def.produces === 'naval') {
       // Hulls can only gather on open water, so a new yard rallies into the sea
-      // beside it instead of onto the beach behind it.
-      const water = this.adjacentRallyWater(s);
+      // beside its gate instead of onto the beach behind it.
+      const water = this.adjacentRallyWater(s, facing);
       if (water) {
         e.rallyX = water.x;
         e.rallyZ = water.z;
@@ -403,13 +447,18 @@ export class Game {
    * Nearest navigable tile beside a naval structure, used to seed its rally
    * point. Deterministic: distance first, then tile order, so saves replay it.
    */
-  private adjacentRallyWater(s: ScenarioStructure): { x: number; z: number } | null {
+  private adjacentRallyWater(
+    s: ScenarioStructure,
+    facing: number,
+  ): { x: number; z: number } | null {
     const def = BUILDINGS[s.defId];
     if (!def) return null;
     const water = adjacentWater(this.state.scenario, s);
     if (water.length === 0) return null;
-    const cx = (s.x + def.footprint.w / 2 + 0.5) * TILE_SIZE;
-    const cz = (s.z + def.footprint.h / 2 + 2) * TILE_SIZE;
+    const center = footprintCenter(s.defId, s.x, s.z);
+    const reach = (Math.max(def.footprint.w, def.footprint.h) / 2 + 2) * TILE_SIZE;
+    const cx = center.x - Math.sin(facing) * reach;
+    const cz = center.z + Math.cos(facing) * reach;
     const best = [...water].sort((a, b) => {
       const da = dist2((a.x + 0.5) * TILE_SIZE, (a.z + 0.5) * TILE_SIZE, cx, cz);
       const db = dist2((b.x + 0.5) * TILE_SIZE, (b.z + 0.5) * TILE_SIZE, cx, cz);
@@ -429,6 +478,42 @@ export class Game {
 
   player(id: number): PlayerState | undefined {
     return this.state.players.find((p) => p.id === id);
+  }
+
+  /**
+   * The content a player may field, resolved from the player's faction or
+   * nation id. Rosters are frozen and cached, so this is safe to call from a
+   * render pass; it is also the single membership rule the simulation uses.
+   */
+  rosterFor(owner: number) {
+    const p = this.player(owner);
+    if (!p) throw new Error(`No player ${owner} to resolve a roster for.`);
+    return resolveRoster(p.factionId);
+  }
+
+  /** Whether the player's resolved roster contains a unit definition. */
+  canProduce(owner: number, defId: string): boolean {
+    return rosterIncludes(this.rosterFor(owner), 'unit', defId);
+  }
+
+  /** Whether the player's resolved roster contains a structure definition. */
+  canBuild(owner: number, defId: string): boolean {
+    return rosterIncludes(this.rosterFor(owner), 'building', defId);
+  }
+
+  /** Actual unit in a baseline slot for this player (national variant or base). */
+  unitIdFor(owner: number, slotId: string): string | undefined {
+    return unitSlotId(this.rosterFor(owner), slotId);
+  }
+
+  /** Actual structure in a baseline slot for this player. */
+  buildingIdFor(owner: number, slotId: string): string | undefined {
+    return buildingSlotId(this.rosterFor(owner), slotId);
+  }
+
+  /** Production cards a facility should show for this player. */
+  productionEntries(owner: number, buildingId: string): string[] {
+    return rosterProductionEntries(this.rosterFor(owner), buildingId);
   }
 
   entitiesOf(owner: number, kind?: Entity['kind']): Entity[] {
@@ -654,6 +739,159 @@ export class Game {
     }
   }
 
+  /**
+   * Whether `commandMove` would accept this destination for the whole group.
+   *
+   * The command layer refuses the order outright when any unit's formation slot
+   * is a tile it cannot stand on, or a tile inside a structure. The AI needs
+   * that same test before it counts a wave as launched: a remembered contact
+   * reports a building's centre, which is a blocked tile, so an order aimed
+   * there is refused and nothing moves.
+   */
+  canOrderMove(owner: number, ids: number[], x: number, z: number): boolean {
+    const entities = this.ownedEntities(owner, ids).filter(
+      (e) => e.kind === 'unit' && !e.garrisonId,
+    );
+    if (entities.length === 0) return false;
+    const destinations = this.formationPoints(entities, x, z);
+    for (let i = 0; i < entities.length; i++) {
+      const e = entities[i];
+      const def = unitDef(e.defId);
+      // Aircraft fly anywhere; a harvester sent at a refinery is redirected to
+      // offload instead of being refused.
+      if (def.domain === 'air' || e.harvester) continue;
+      const dest = destinations[i];
+      const destTile = this.tileAt(dest.x, dest.z);
+      if (destTile === null) return false;
+      if (
+        !canStandOn(
+          this.state.map.width,
+          this.state.map.height,
+          this.state.map.terrain,
+          destTile,
+          def.moveClass,
+        ) ||
+        this.blocked[destTile]
+      ) {
+        return false;
+      }
+    }
+    // Tile tests are cheap and reject most of the walk; only a slot that
+    // survives them is worth an actual route search.
+    for (let i = 0; i < entities.length; i++) {
+      const e = entities[i];
+      if (unitDef(e.defId).domain === 'air' || e.harvester) continue;
+      const dest = destinations[i];
+      if (!this.findPathFor(e, dest.x, dest.z)) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Structures this team may treat as walls: what it can see, what it has
+   * charted and remembers, and the structures it holds a live contact for.
+   * Fog is per team and structures never move, so this is exactly the occupancy
+   * the commander is entitled to plan around.
+   */
+  private knownBlockage(team: number): Uint8Array {
+    const mask = new Uint8Array(this.state.map.width * this.state.map.height);
+    const stamp = (defId: string, wx: number, wz: number): void => {
+      const def = BUILDINGS[defId];
+      if (!def) return;
+      const tx = Math.round(wx / TILE_SIZE - def.footprint.w / 2);
+      const tz = Math.round(wz / TILE_SIZE - def.footprint.h / 2);
+      stampFootprint(mask, this.state.map, defId, tx, tz, 1);
+    };
+    for (const e of this.state.entities) {
+      if (e.kind !== 'building' || e.hp <= 0) continue;
+      if (!this.isKnownTo(team, e.id)) continue;
+      stamp(e.defId, e.x, e.z);
+    }
+    // A contact is memory too: the team saw this structure and knows where it
+    // stands, even if it has not been charted as a silhouette.
+    for (const c of this.state.contacts) {
+      if (c.team !== team || c.kind !== 'building') continue;
+      stamp(c.defId, c.x, c.z);
+    }
+    return mask;
+  }
+
+  /**
+   * Whether every unit's formation slot is terrain it can stand on and is not
+   * inside a structure the team knows about. This is the aim test, and it uses
+   * nothing but knowledge the team has earned.
+   */
+  private aimIsOpen(
+    owner: number,
+    ids: number[],
+    x: number,
+    z: number,
+    knownBlocked: Uint8Array,
+  ): boolean {
+    const entities = this.ownedEntities(owner, ids).filter(
+      (e) => e.kind === 'unit' && !e.garrisonId,
+    );
+    if (entities.length === 0) return false;
+    const destinations = this.formationPoints(entities, x, z);
+    for (let i = 0; i < entities.length; i++) {
+      const e = entities[i];
+      const def = unitDef(e.defId);
+      if (def.domain === 'air') continue;
+      const dest = destinations[i];
+      const destTile = this.tileAt(dest.x, dest.z);
+      if (destTile === null) return false;
+      if (
+        !canStandOn(
+          this.state.map.width,
+          this.state.map.height,
+          this.state.map.terrain,
+          destTile,
+          def.moveClass,
+        )
+      ) {
+        return false;
+      }
+      if (knownBlocked[destTile]) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Nearest point to `x,z`, walking toward `towardX,towardZ`, that stands the
+   * group clear of the structures its team knows about. Structure centres are
+   * blocked, so an assault wave aimed at one has to be stood off onto the open
+   * ground beside it.
+   *
+   * The walk reads no hidden occupancy: a building the team has never seen
+   * cannot steer the aim onto a different tile. It can still make the world
+   * refuse the chosen point, which is why the result is validated against the
+   * real command layer at the end — a refusal is physics, and the caller is told
+   * that nothing was launched rather than being given another destination.
+   */
+  groupApproach(
+    owner: number,
+    ids: number[],
+    x: number,
+    z: number,
+    towardX: number,
+    towardZ: number,
+    maxTiles = 10,
+  ): { x: number; z: number } | null {
+    const knownBlocked = this.knownBlockage(this.teamOf(owner));
+    const dx = towardX - x;
+    const dz = towardZ - z;
+    const len = Math.hypot(dx, dz) || 1;
+    const stepX = (dx / len) * TILE_SIZE;
+    const stepZ = (dz / len) * TILE_SIZE;
+    for (let step = 0; step <= maxTiles; step++) {
+      const px = x + stepX * step;
+      const pz = z + stepZ * step;
+      if (!this.aimIsOpen(owner, ids, px, pz, knownBlocked)) continue;
+      return this.canOrderMove(owner, ids, px, pz) ? { x: px, z: pz } : null;
+    }
+    return null;
+  }
+
   private formationPoints(entities: Entity[], x: number, z: number): Array<{ x: number; z: number }> {
     const n = entities.length;
     if (n === 1) return [{ x, z }];
@@ -770,7 +1008,7 @@ export class Game {
       }
       e.path = [];
       e.pathIndex = 0;
-      if (e.defId === 'fighter' && e.aircraft?.landed) {
+      if (UNITS[e.defId]?.domain === 'air' && e.aircraft?.landed) {
         e.aircraft.landed = false;
         e.aircraft.returningHome = false;
       }
@@ -984,11 +1222,14 @@ export class Game {
       // within working range of the structure centre.
       this.walkEngineerToSite(e, target);
     }
+    const underFire = this.state.tick - target.lastHitTick < REPAIR_SUPPRESSION_TICKS;
     this.emit('orderAck', {
       team: owner,
       x: target.x,
       z: target.z,
-      text: 'Engineer en route to repair structure',
+      text: underFire
+        ? 'Engineer en route — repair suspended under fire'
+        : 'Engineer en route to repair structure',
       entityId: target.id,
       level: 'info',
     });
@@ -1605,7 +1846,12 @@ export class Game {
     const bdef = BUILDINGS[b.defId];
     if (!bdef?.produces) return { ok: false, reason: 'This facility does not produce units.' };
     if (!def) return { ok: false, reason: 'Unknown unit type.' };
-    if (!bdef.productionList?.includes(defId) || !def.producedBy.includes(b.defId)) {
+    if (!this.canProduce(owner, defId)) {
+      return { ok: false, reason: `${def.name} is not in ${p.name}'s roster.` };
+    }
+    // Resolve the facility's baseline slots through the roster so a national
+    // variant keeps its family's production slot without a parallel list.
+    if (!this.productionEntries(owner, b.defId).includes(defId)) {
       return { ok: false, reason: `${bdef.name} cannot produce ${def.name}.` };
     }
     // Engineers are a factory unit, with the command post as a fallback so a
@@ -1676,6 +1922,7 @@ export class Game {
         text: status.reason,
         level: 'warning',
         sound: 'denied',
+        code: status.reason === 'Production queue is full.' ? 'queueFull' : undefined,
       });
       return;
     }
@@ -1684,6 +1931,9 @@ export class Game {
     const def = unitDef(defId);
     p.mats -= def.cost.mats;
     p.req -= def.cost.req;
+    // Only the empty-to-active transition is a production start. Appending to
+    // an existing queue must not replay the announcement for every item.
+    const startingProduction = bt.queue.length === 0;
     bt.queue.push({ defId, remaining: def.buildTime, total: def.buildTime });
     this.emit('orderAck', {
       team: owner,
@@ -1693,6 +1943,7 @@ export class Game {
       entityId: bt.id,
       level: 'info',
       sound: 'queue',
+      code: startingProduction ? 'productionStarted' : undefined,
     });
   }
 
@@ -1714,6 +1965,9 @@ export class Game {
       z: b.z,
       text: `${def.name} production cancelled — resources refunded`,
       level: 'info',
+      // Cancelling the active item is a genuine production interruption;
+      // removing a later queue item is only a quiet edit.
+      code: queueIndex === 0 ? 'productionCancelled' : undefined,
     });
   }
 
@@ -1773,6 +2027,13 @@ export class Game {
     }
     const p = this.player(owner);
     if (!p) return { ok: false, code: 'player', reason: 'Unknown player.' };
+    if (!this.canBuild(owner, defId)) {
+      return {
+        ok: false,
+        code: 'roster',
+        reason: `${def.name} is not in ${p.name}'s roster.`,
+      };
+    }
     if (defId === 'commandPost') {
       const existing = this.state.entities.some(
         (e) => e.owner === owner && e.defId === 'commandPost' && e.hp > 0,
@@ -1812,7 +2073,7 @@ export class Game {
         return {
           ok: false,
           code: 'water-access',
-          reason: 'Shipyard needs a usable stretch of navigable water alongside.',
+          reason: `${def.name} needs a usable stretch of navigable water alongside.`,
         };
       }
     }
@@ -2089,15 +2350,14 @@ export class Game {
     for (const p of this.state.players) {
       if (p.defeated) continue;
       let reqRate = 0;
-      let matsRate = 0;
       let relayCount = 0;
       for (const e of this.state.entities) {
         if (e.owner !== p.id || e.kind !== 'building' || e.construction || e.hp <= 0) continue;
         const def = BUILDINGS[e.defId];
         reqRate += def?.reqPerSec ?? 0;
-        matsRate += def?.matsPerSec ?? 0;
         if (e.defId === 'relay') relayCount++;
       }
+      const matsRate = this.passiveMatsFor(p.id);
       p.relayCount = relayCount;
       p.req = Math.min(99999, p.req + reqRate * dt);
       if (matsRate > 0) {
@@ -2164,14 +2424,42 @@ export class Game {
     return Math.round(rate * 10) / 10;
   }
 
-  /** Passive material income from captured facilities, in mats per second. */
-  passiveMatsRate(playerId: number): number {
+  /**
+   * Passive material income, in mats per second. Lifeline sources (the
+   * headquarters trickle) only pay while the owner has no working hauling
+   * economy, so ordinary hauling is never double-counted.
+   */
+  private passiveMatsFor(playerId: number): number {
+    const player = this.player(playerId);
+    let harvesters = 0;
+    let refineries = 0;
+    for (const e of this.state.entities) {
+      if (e.owner !== playerId || e.hp <= 0) continue;
+      if (e.kind === 'unit' && e.defId === 'harvester') harvesters++;
+      else if (e.kind === 'building' && BUILDINGS[e.defId]?.refinery) refineries++;
+    }
+    // The lifeline covers a base with no working hauling economy. A hauler with
+    // nowhere to tip is not hauling — all refineries were lost — and that used
+    // to be a permanent dead end: no income to buy the replacement. The bank
+    // test keeps the trickle off while a drop-off is already affordable, so an
+    // ordinary opening or a well-funded rebuild is never subsidised.
+    const hauling =
+      harvesters > 0 &&
+      (refineries > 0 || (player?.mats ?? 0) >= REFINERY_REPLACEMENT_COST);
     let rate = 0;
     for (const e of this.state.entities) {
       if (e.owner !== playerId || e.kind !== 'building' || e.construction || e.hp <= 0) continue;
-      rate += BUILDINGS[e.defId]?.matsPerSec ?? 0;
+      const def = BUILDINGS[e.defId];
+      if (!def?.matsPerSec) continue;
+      if (def.matsPerSecBackstop && hauling) continue;
+      rate += def.matsPerSec;
     }
-    return Math.round(rate * 100) / 100;
+    return rate;
+  }
+
+  /** Passive material income from captured facilities, in mats per second. */
+  passiveMatsRate(playerId: number): number {
+    return Math.round(this.passiveMatsFor(playerId) * 100) / 100;
   }
 
   /**
@@ -2339,6 +2627,7 @@ export class Game {
           : 'Grid balanced — production and construction at full speed.',
         level: status.brownout ? 'warning' : 'success',
         sound: status.brownout ? 'alert' : 'complete',
+        code: status.brownout ? undefined : 'powerRestored',
       });
     }
   }
@@ -2414,6 +2703,22 @@ export class Game {
     };
     const centerTileX = origin.x + Math.floor(bdef.footprint.w / 2);
     const centerTileZ = origin.z + Math.floor(bdef.footprint.h / 2);
+    // The apron tile centred on the front face, which is where the factory
+    // shutter is. A vehicle that appears there reads as driving out of the bay
+    // and then follows its rally order, instead of popping in beside the wall.
+    const apronZ = origin.z + bdef.footprint.h;
+    if (inBounds(this.state.map.width, this.state.map.height, centerTileX, apronZ)) {
+      const idx = tileIndex(this.state.map.width, centerTileX, apronZ);
+      const x = (centerTileX + 0.5) * TILE_SIZE;
+      const z = (apronZ + 0.5) * TILE_SIZE;
+      if (
+        !this.blocked[idx] &&
+        canStandOn(this.state.map.width, this.state.map.height, this.state.map.terrain, idx, def.moveClass) &&
+        this.isSpawnClear(x, z, def.radius)
+      ) {
+        return this.spawnUnit(building.owner, defId, x, z);
+      }
+    }
     for (let radius = bdef.footprint.w; radius <= bdef.footprint.w + 6; radius++) {
       const candidates: Array<{ tx: number; tz: number }> = [];
       for (let dz = -radius; dz <= radius; dz++) {
@@ -2481,7 +2786,7 @@ export class Game {
         this.stampVision(fog, e.x, e.z, vision);
       }
     }
-    for (let team = 0; team < 2; team++) this.refreshVisibleEntities(team);
+    for (let team = 0; team < 2; team++) this.refreshVisibleEntities(team, initial);
     this.cleanContacts();
   }
 
@@ -2504,7 +2809,7 @@ export class Game {
     }
   }
 
-  private refreshVisibleEntities(team: number): void {
+  private refreshVisibleEntities(team: number, initial = false): void {
     const previous = this.visible[team] ?? new Set<number>();
     const set = new Set<number>();
     const fog = this.state.fog[team];
@@ -2526,6 +2831,7 @@ export class Game {
     }
     let radarContacts = 0;
     let radarSource: { x: number; z: number; owner: number } | null = null;
+    let newHostile: Entity | null = null;
     for (const e of this.state.entities) {
       if (e.hp <= 0) continue;
       if (e.owner >= 0 && this.teamOf(e.owner) === team) {
@@ -2544,7 +2850,9 @@ export class Game {
       const idx = tileIndex(map.width, tx, tz);
       const fogValue = this.state.scenario.settings.fog ? fog[idx] : 2;
       if (fogValue !== 2 && !radar) continue;
-      if (!radar && e.kind === 'unit' && e.defId !== 'fighter') {
+      // Aircraft are large, noisy and above the canopy: forest concealment
+      // applies to ground units, not to any airframe.
+      if (!radar && e.kind === 'unit' && UNITS[e.defId]?.domain !== 'air') {
         const terrain = this.state.map.terrain[idx] as TerrainId;
         const concealment = TERRAIN[terrain].concealment;
         if (concealment > 0.5) {
@@ -2561,6 +2869,20 @@ export class Game {
         }
       }
       set.add(e.id);
+      // A newly visible hostile is a genuine detection. The event is emitted
+      // only for the local team and only after visibility, fog and concealment
+      // have already approved the sighting, so it cannot reveal hidden units.
+      if (
+        !initial &&
+        team === this.teamOf(this.localPlayerId) &&
+        e.kind === 'unit' &&
+        e.owner >= 0 &&
+        this.isHostile(e.owner, this.localPlayerId) &&
+        !previous.has(e.id) &&
+        !newHostile
+      ) {
+        newHostile = e;
+      }
       // Structures never move, so a building that has been seen once is kept
       // as a remembered silhouette after it drops out of vision.
       if (e.kind === 'building' && this.teamOf(e.owner) !== team) this.chartBuilding(team, e.id);
@@ -2573,6 +2895,17 @@ export class Game {
       }
     }
     this.visible[team] = set;
+    if (newHostile) {
+      this.emit('notice', {
+        team: this.localPlayerId,
+        x: newHostile.x,
+        z: newHostile.z,
+        text: `Enemy detected — ${entityName(newHostile)}`,
+        entityId: newHostile.id,
+        level: 'info',
+        code: 'enemyDetected',
+      });
+    }
     if (radarContacts > 0 && radarSource) {
       const owner = this.state.players.find((p) => p.team === team)?.id;
       if (owner !== undefined) {
@@ -2682,9 +3015,11 @@ export class Game {
   /* ------------------------------------------------------------------ */
 
   private updateUnits(dt: number): void {
-    // Built lazily on the first medic tick so battles without medics pay no
-    // extra scan. The list is shared by every medic in this tick only.
+    // Built lazily on the first support tick so battles without medics or
+    // recovery vehicles pay no extra scan. Each list is shared by every
+    // support unit in this tick only.
     let wounded: Entity[] | null = null;
+    let repairable: Entity[] | null = null;
     for (const e of [...this.state.entities].sort((a, b) => a.id - b.id)) {
       if (e.kind !== 'unit' || e.hp <= 0) continue;
       if (e.garrisonId) continue;
@@ -2713,6 +3048,16 @@ export class Game {
             unitDef(t.defId).armour === 'infantry',
         );
         this.updateMedic(e, dt, wounded);
+      }
+      if (def.repair) {
+        repairable ??= this.state.entities
+          .filter((t) => {
+            if (t.kind !== 'unit' || t.hp <= 0 || t.hp >= t.maxHp) return false;
+            const tdef = unitDef(t.defId);
+            return tdef.domain === 'land' && tdef.armour !== 'infantry';
+          })
+          .sort((a, b) => a.id - b.id);
+        this.updateRecovery(e, def, dt, repairable);
       }
       const weapons = entityWeapons(e);
       if (weapons.length > 0) this.updateAutoEngagement(e, dt, weapons);
@@ -2826,7 +3171,9 @@ export class Game {
         team: e.owner,
         x: e.x,
         z: e.z,
-        text: lowFuel ? 'Fighter low on fuel — returning to airfield' : 'Fighter out of missiles — returning to airfield',
+        text: lowFuel
+          ? `${def.name} low on fuel — returning to airfield`
+          : `${def.name} out of ordnance — returning to airfield`,
         level: 'warning',
         entityId: e.id,
         sound: 'alert',
@@ -3090,8 +3437,15 @@ export class Game {
         return;
       }
       const range = weapon.range * TILE_SIZE + 3;
+      const minimum = (weapon.minRange ?? 0) * TILE_SIZE;
       const d = dist(e.x, e.z, target.x, target.z);
-      if (d <= range && (def.domain === 'air' || hasLineOfSight(this.state.map, e.x, e.z, target.x, target.z))) {
+      const spotted = !weapon.indirect || this.isVisibleTo(this.teamOf(e.owner), target.id);
+      if (
+        d <= range &&
+        d >= minimum &&
+        spotted &&
+        (def.domain === 'air' || weapon.indirect || hasLineOfSight(this.state.map, e.x, e.z, target.x, target.z))
+      ) {
         e.path = [];
         if (def.domain === 'air') {
           // Aircraft orbit their target rather than stopping.
@@ -3099,6 +3453,11 @@ export class Game {
         }
         e.state = 'attacking';
         this.tryFire(e, target, weapon, weapons);
+      } else if (d < minimum) {
+        // A howitzer cannot depress its barrel into its own minimum range.
+        // Hold position rather than chasing a target it cannot shoot.
+        e.path = [];
+        e.state = 'idle';
       } else {
         if (def.domain === 'air') {
           if (e.fuel > 0) {
@@ -3143,6 +3502,17 @@ export class Game {
       if (dist(e.x, e.z, target.x, target.z) <= ENGINEER_WORK_RANGE) {
         e.path = [];
         e.state = 'repairing';
+        // Shelling stops work. The crew keeps the detail but makes no progress
+        // until the structure has been quiet for a second; the order is kept so
+        // it resumes by itself instead of the commander having to re-issue it.
+        // `repairSuppression: false` exists only so the Phase 9 replication can
+        // run the pre-Phase-8 behaviour on this exact tree; play never sets it.
+        if (
+          this.repairSuppression &&
+          this.state.tick - target.lastHitTick < REPAIR_SUPPRESSION_TICKS
+        ) {
+          return;
+        }
         target.hp = Math.min(
           target.maxHp,
           target.hp + target.maxHp * ENGINEER_REPAIR_RATE * dt,
@@ -3173,6 +3543,10 @@ export class Game {
         e.state = 'capturing';
         e.captureProgress += 1 / (TICKS_PER_SECOND * 5);
         if (e.captureProgress >= 1) {
+          const previousOwner = target.owner;
+          const lostByLocal =
+            previousOwner === this.localPlayerId &&
+            this.isHostile(e.owner, previousOwner);
           target.owner = e.owner;
           target.aiRole = 'captured';
           e.captureProgress = 0;
@@ -3185,10 +3559,13 @@ export class Game {
             team: e.owner,
             x: target.x,
             z: target.z,
-            text: this.captureText(target.defId),
+            text: lostByLocal
+              ? `${buildingDef(target.defId).name} lost`
+              : this.captureText(target.defId),
             entityId: target.id,
-            level: 'success',
-            sound: 'capture',
+            level: lostByLocal ? 'critical' : 'success',
+            sound: lostByLocal ? undefined : 'capture',
+            code: lostByLocal ? 'siteLost' : undefined,
           });
         }
       } else {
@@ -3229,19 +3606,28 @@ export class Game {
       // Occupants are represented by their shelter; the structure is the
       // engageable target and its envelope resolves occupant casualties.
       if (target.kind === 'unit' && target.garrisonId) continue;
+      const d = dist(e.x, e.z, target.x, target.z);
       let usable = false;
       let weaponRange = 0;
+      let ignoresCover = false;
       for (const w of weapons) {
         if (!canWeaponTarget(w, target)) continue;
         if (usesPrimaryAmmo(e, w) && e.ammo <= 0) continue;
+        if (d < (w.minRange ?? 0) * TILE_SIZE) continue;
         usable = true;
         weaponRange = Math.max(weaponRange, w.range);
+        if (w.indirect) ignoresCover = true;
       }
       if (!usable) continue;
-      const d = dist(e.x, e.z, target.x, target.z);
       if (d > weaponRange * TILE_SIZE + 4) continue;
       const shooterDef = UNITS[e.defId];
-      if (shooterDef?.domain !== 'air' && !hasLineOfSight(this.state.map, e.x, e.z, target.x, target.z)) continue;
+      if (
+        shooterDef?.domain !== 'air' &&
+        !ignoresCover &&
+        !hasLineOfSight(this.state.map, e.x, e.z, target.x, target.z)
+      ) {
+        continue;
+      }
       const score = d + (entityTargetClass(target) === 'air' ? -6 : 0);
       if (score < bestScore) {
         bestScore = score;
@@ -3301,7 +3687,7 @@ export class Game {
   private updateAutoEngagement(e: Entity, dt: number, weapons: WeaponDef[]): void {
     void dt;
     if (e.cooldown > 0) return;
-    if (e.kind === 'unit' && e.defId === 'fighter') {
+    if (e.kind === 'unit' && UNITS[e.defId]?.domain === 'air') {
       // Aircraft only auto-engage when explicitly ordered; prevents suicide runs.
       if (e.order?.type !== 'attack') return;
     }
@@ -3325,15 +3711,22 @@ export class Game {
   private tryFire(e: Entity, target: Entity, weapon: WeaponDef, weapons: WeaponDef[]): void {
     if (e.cooldown > 0) return;
     const shooterDef = UNITS[e.defId];
+    const d = dist(e.x, e.z, target.x, target.z);
+    if (d > weapon.range * TILE_SIZE + 4) return;
+    if (d < (weapon.minRange ?? 0) * TILE_SIZE) return;
+    if (weapon.indirect && e.state === 'moving') return;
+    // Indirect fire arcs over cover, but the firing team still needs a spotter
+    // to know where the target is. Reconnaissance therefore enables artillery
+    // instead of being cosmetic.
+    if (weapon.indirect && !this.isVisibleTo(this.teamOf(e.owner), target.id)) return;
     if (
+      !weapon.indirect &&
       e.kind !== 'building' &&
       shooterDef?.domain !== 'air' &&
       !hasLineOfSight(this.state.map, e.x, e.z, target.x, target.z)
     ) {
       return;
     }
-    const d = dist(e.x, e.z, target.x, target.z);
-    if (d > weapon.range * TILE_SIZE + 4) return;
     if (usesPrimaryAmmo(e, weapon)) {
       if (e.ammo <= 0) return;
       e.ammo--;
@@ -3352,6 +3745,8 @@ export class Game {
     const start = this.muzzlePoint(e);
     const targetHeight =
       entityTargetClass(target) === 'air' ? AIRCRAFT_ALTITUDE : this.heightAt(target.x, target.z) + 1.3;
+    const lob = weapon.indirect === true;
+    const shotDistance = Math.hypot(target.x - start.x, target.z - start.z);
     const projectile: Projectile = {
       id: this.state.nextProjectileId++,
       owner: e.owner,
@@ -3363,7 +3758,9 @@ export class Game {
       tx: target.x + Math.cos(scatterAngle) * spread,
       ty: targetHeight,
       tz: target.z + Math.sin(scatterAngle) * spread,
-      targetId: hit ? target.id : 0,
+      // A lobbed shell lands where it was aimed; it does not follow a moving
+      // target, so the splash radius is what does the work.
+      targetId: hit && !lob ? target.id : 0,
       speed: weapon.speed,
       splash: weapon.splash ?? 0,
       kind: weapon.projectile,
@@ -3372,6 +3769,11 @@ export class Game {
       armourMul: weapon.multipliers,
       suppression: weapon.suppression,
       seed: this.rng.int(0, 0xffff),
+      startX: start.x,
+      startY: start.y,
+      startZ: start.z,
+      lob,
+      arc: lob ? Math.min(12, 3.5 + (shotDistance / TILE_SIZE) * 0.3) : undefined,
     };
     this.state.projectiles.push(projectile);
     this.emit('shot', {
@@ -3433,6 +3835,66 @@ export class Game {
     }
     const desired = valid ? angleTo(e.x, e.z, target!.x, target!.z) : e.facing;
     e.turretFacing = turnToward(e.turretFacing, desired, def.turretRate * dt);
+  }
+
+  /**
+   * A recovery vehicle patches one damaged friendly vehicle at a time while
+   * standing still. It never chases a customer: the commander positions it, and
+   * moving or taking another order ends the job. Repairs are paid for in
+   * materials, so a field repair is cheaper than losing the hull but not free.
+   */
+  private updateRecovery(e: Entity, def: UnitDef, dt: number, repairable: Entity[]): void {
+    const cfg = def.repair;
+    if (!cfg) return;
+    const busy = !!e.order || e.path.length > 0 || e.state === 'moving';
+    if (busy) {
+      e.repairTargetId = 0;
+      if (e.state === 'repairing') e.state = 'idle';
+      return;
+    }
+    const usable = (t: Entity | undefined): t is Entity => {
+      if (!t || t.id === e.id || t.kind !== 'unit' || t.hp <= 0 || t.hp >= t.maxHp) return false;
+      if (t.owner !== e.owner) return false;
+      const tdef = unitDef(t.defId);
+      return (
+        tdef.domain === 'land' &&
+        tdef.armour !== 'infantry' &&
+        dist(e.x, e.z, t.x, t.z) <= cfg.radius * TILE_SIZE
+      );
+    };
+    let target = e.repairTargetId ? this.getEntity(e.repairTargetId) : undefined;
+    if (!usable(target)) {
+      target = undefined;
+      let bestScore = Infinity;
+      for (const t of repairable) {
+        if (!usable(t)) continue;
+        const score = (t.hp / t.maxHp) * 10000 + dist(e.x, e.z, t.x, t.z);
+        if (score < bestScore) {
+          bestScore = score;
+          target = t;
+        }
+      }
+    }
+    if (!target) {
+      e.repairTargetId = 0;
+      if (e.state === 'repairing') e.state = 'idle';
+      return;
+    }
+    const player = this.player(e.owner);
+    if (!player) return;
+    const wanted = Math.min(cfg.hpPerSec * dt, target.maxHp - target.hp);
+    const affordable =
+      cfg.materialCostPerHp > 0 ? player.mats / cfg.materialCostPerHp : wanted;
+    const amount = Math.min(wanted, affordable);
+    if (amount <= 0) {
+      e.repairTargetId = 0;
+      if (e.state === 'repairing') e.state = 'idle';
+      return;
+    }
+    e.repairTargetId = target.id;
+    e.state = 'repairing';
+    target.hp = Math.min(target.maxHp, target.hp + amount);
+    player.mats = Math.max(0, player.mats - amount * cfg.materialCostPerHp);
   }
 
   /**
@@ -3804,6 +4266,19 @@ export class Game {
         p.ty =
           entityTargetClass(target) === 'air' ? AIRCRAFT_ALTITUDE : this.heightAt(target.x, target.z) + 1.3;
       }
+      if (
+        p.lob &&
+        p.startX !== undefined &&
+        p.startY !== undefined &&
+        p.startZ !== undefined
+      ) {
+        // Presentation and collision both read this height. The horizontal
+        // path stays deterministic; only the vertical arc is added.
+        const total = Math.hypot(p.tx - p.startX, p.tz - p.startZ);
+        const remaining = Math.hypot(p.tx - p.x, p.tz - p.z);
+        const t = total > 0 ? Math.max(0, Math.min(1, 1 - remaining / total)) : 1;
+        p.y = p.startY + (p.ty - p.startY) * t + Math.sin(Math.PI * t) * (p.arc ?? 0);
+      }
       const dx = p.tx - p.x;
       const dy = p.ty - p.y;
       const dz = p.tz - p.z;
@@ -3871,6 +4346,7 @@ export class Game {
     target.lastHitTick = this.state.tick;
     if (target.hp > 0) {
       this.expelFromCollapsingShelter(target);
+      this.noteUnderAttack(target, attackerOwner);
       return;
     }
     target.hp = 0;
@@ -3927,6 +4403,34 @@ export class Game {
     if (shooter) shooter.kills++;
     target.path = [];
     target.queue = [];
+  }
+
+  /**
+   * One voice alert per category per ten seconds, for the local player only.
+   * This is a presentation coalescer, not simulation state: it is never saved
+   * and cannot change damage, targeting, AI or the deterministic hash.
+   */
+  private noteUnderAttack(target: Entity, attackerOwner: number): void {
+    if (target.owner < 0) return;
+    if (this.teamOf(target.owner) !== this.teamOf(this.localPlayerId)) return;
+    if (!this.isHostile(attackerOwner, target.owner)) return;
+    const kind: 'base' | 'forces' = target.kind === 'building' ? 'base' : 'forces';
+    const last = this.lastAttackNotice.get(kind) ?? -Infinity;
+    if (this.state.tick - last < 10 * TICK_RATE) return;
+    this.lastAttackNotice.set(kind, this.state.tick);
+    this.emit('alert', {
+      team: this.localPlayerId,
+      x: target.x,
+      z: target.z,
+      text:
+        kind === 'base'
+          ? `${entityName(target)} under attack`
+          : 'Forces under attack',
+      entityId: target.id,
+      level: 'warning',
+      sound: 'alert',
+      code: kind === 'base' ? 'baseUnderAttack' : 'forcesUnderAttack',
+    });
   }
 
   private cleanup(): void {
@@ -4063,6 +4567,7 @@ export class Game {
       entityId?: number;
       defId?: string;
       sound?: string;
+      code?: SimEventCode;
       level?: SimEvent['level'];
     },
   ): void {
@@ -4078,6 +4583,7 @@ export class Game {
       entityId: data.entityId,
       defId: data.defId,
       sound: data.sound,
+      code: data.code,
       level: data.level ?? 'info',
     };
     this.state.events.push(ev);
@@ -4202,6 +4708,13 @@ export class Game {
     if (state.entities.some((e) => !UNITS[e.defId] && !BUILDINGS[e.defId])) {
       throw new SaveFormatError('Save file references content that is not installed.');
     }
+    // A save stores the nation or preset by id; an unknown id must fail here
+    // rather than resolving to a fallback roster mid-battle.
+    for (const p of state.players) {
+      if (!p || typeof p.factionId !== 'string' || !tryIdentityDef(p.factionId)) {
+        throw new SaveFormatError('Save file references an unknown faction or nation.');
+      }
+    }
     const game = new Game(savedScenario, { ...opts, skipInit: true });
     game.localPlayerId = data.localPlayerId ?? opts.localPlayerId ?? PLAYER;
     const map = savedState.map as unknown as GameState['map'];
@@ -4285,6 +4798,9 @@ export class Game {
           e.queue.length,
           e.buildProgress.toFixed(2),
           e.suppression.toFixed(2),
+          // Repair progress now depends on how recently a structure was hit, so
+          // the hash has to cover it for save/load comparisons to be faithful.
+          e.lastHitTick,
           e.healTargetId,
           e.garrisonId,
           e.captureTargetId,

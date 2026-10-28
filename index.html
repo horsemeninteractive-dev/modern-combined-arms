@@ -1,13 +1,57 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="booting">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#0b1114" />
+    <meta
+      name="description"
+      content="Modern Combined Arms: a combined-arms real-time strategy slice. Author an island, deploy, and fight across land, air and sea."
+    />
     <link rel="icon" type="image/svg+xml" href="/insignia.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/icon-180.png" />
+    <meta name="application-name" content="MCA" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="MCA" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>MCA: Modern Combined Arms</title>
+    <style>
+      /*
+       * First-paint plate. The game's stylesheet arrives with the module bundle
+       * (Vite injects it from JavaScript in development), so the browser paints
+       * this markup before any of it applies. Without this block the unstyled
+       * menu flashes on a white page. The mark holds the screen until main.ts
+       * has the real styles live, then removes `booting`.
+       */
+      html { background: #04070a; color-scheme: dark; }
+      html.booting,
+      html.booting body { margin: 0; height: 100%; overflow: hidden; }
+      html.booting #app { position: fixed; inset: 0; visibility: hidden; }
+      .boot-plate {
+        position: fixed; inset: 0; z-index: 100;
+        display: grid; place-items: center; background: #04070a;
+      }
+      .boot-plate img { width: clamp(54px, 8vw, 84px); height: auto; animation: boot-pulse 1.7s ease-in-out infinite; }
+      @keyframes boot-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.92; } }
+      html:not(.booting) .boot-plate { display: none; }
+    </style>
+    <noscript>
+      <style>
+        .boot-plate img { display: none; }
+        .boot-plate::after {
+          content: 'Modern Combined Arms needs JavaScript enabled to run.';
+          max-width: 32ch; text-align: center; color: #8d9d98;
+          font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace;
+        }
+      </style>
+    </noscript>
   </head>
   <body>
+    <div class="boot-plate" aria-hidden="true">
+      <img src="/insignia.svg" alt="" width="84" height="84" />
+    </div>
     <div id="app">
       <div id="stage">
         <canvas id="gl" aria-label="Battlefield"></canvas>
@@ -15,92 +59,266 @@
         <div id="hud-root"></div>
       </div>
 
-      <section id="menu-screen" class="screen menu-screen">
-        <div class="menu-backdrop"></div>
-        <header class="menu-header">
+      <section id="intro-screen" class="intro-screen" aria-label="Studio logo">
+        <div class="intro-grid" aria-hidden="true"></div>
+        <div class="intro-gate" id="intro-gate">
+          <button id="btn-start" class="intro-start" type="button">
+            <span class="intro-start-kicker">MCA PROJECT</span>
+            <span class="intro-start-title">Click to begin</span>
+            <span class="intro-start-note">Sound on · enters fullscreen</span>
+          </button>
+        </div>
+        <div class="intro-frame">
+          <span class="intro-bracket tl" aria-hidden="true"></span>
+          <span class="intro-bracket tr" aria-hidden="true"></span>
+          <span class="intro-bracket bl" aria-hidden="true"></span>
+          <span class="intro-bracket br" aria-hidden="true"></span>
+          <video
+            id="intro-video"
+            class="intro-video"
+            data-src="/studio-logo.mp4"
+            playsinline
+            preload="none"
+            aria-hidden="true"
+          ></video>
+        </div>
+        <div class="intro-fallback" aria-hidden="true">
+          <img src="/insignia.svg" alt="" />
+          <span>MCA PROJECT</span>
+          <small>COMBINED-ARMS COMMAND · 2037</small>
+        </div>
+        <div class="intro-engine" aria-hidden="true">
+          <img class="intro-engine-mark" src="/irontide-mark.svg" alt="" width="104" height="104" />
+          <span class="intro-engine-name">Irontide</span>
+          <span class="intro-engine-rule"></span>
+          <span class="intro-engine-sub">ENGINE · SIMULATION CORE 0.1</span>
+        </div>
+        <div class="intro-logo" aria-hidden="true">
+          <div class="game-logo intro-game-logo">
+            <img class="game-logo-mark" src="/insignia.svg" alt="" width="64" height="64" />
+            <span class="game-logo-full">
+              <b><i>M</i>odern</b>
+              <b><i>C</i>ombined</b>
+              <b><i>A</i>rms</b>
+            </span>
+          </div>
+          <p class="intro-logo-sub">COMBINED-ARMS COMMAND · 2037</p>
+        </div>
+        <div class="intro-meta">
+          <span class="intro-stamp">MCA PROJECT</span>
+          <span class="intro-stamp dim">COMBINED-ARMS COMMAND · 2037</span>
+        </div>
+        <div class="intro-progress" aria-hidden="true"><i></i></div>
+        <button id="btn-skip-intro" class="intro-skip" type="button">
+          SKIP <span aria-hidden="true">››</span>
+        </button>
+      </section>
+
+      <section id="menu-screen" class="screen menu-screen" data-view="idle">
+        <div class="menu-atmos" aria-hidden="true"></div>
+        <div class="menu-crt" aria-hidden="true"></div>
+
+        <header class="menu-topbar">
           <div class="brand-lockup">
             <h1 class="game-logo" aria-label="MCA: Modern Combined Arms">
               <img class="game-logo-mark" src="/insignia.svg" alt="" aria-hidden="true" width="64" height="64" />
-              <span class="game-logo-full" aria-hidden="true"><b>Modern</b><b>Combined Arms</b></span>
+              <span class="game-logo-full" aria-hidden="true">
+                <b><i>M</i>odern</b>
+                <b><i>C</i>ombined</b>
+                <b><i>A</i>rms</b>
+              </span>
             </h1>
-            <p class="game-tagline">COMBINED-ARMS COMMAND · 2037</p>
           </div>
-          <div class="menu-status">
-            <span class="status-dot"></span>
-            <span>TACTICAL BUILD 0.1 · VERTICAL SLICE</span>
-          </div>
+          <p class="game-tagline">COMBINED-ARMS COMMAND · 2037</p>
         </header>
-        <div class="menu-body">
-          <div class="menu-copy">
-            <p class="eyebrow">OPERATION KESTREL</p>
-            <h2>The island is the<br /><em>whole battlefield.</em></h2>
-            <p class="lede">
-              Establish a beachhead on Kestrel Island. Break the ridge, contest the relays,
-              and coordinate land, air and naval power to destroy the 11th Expeditionary Corps.
-            </p>
-            <div class="menu-difficulty">
-              <span class="menu-difficulty-label" id="difficulty-label">OPPOSING COMMANDER</span>
-              <div class="difficulty-options" role="group" aria-labelledby="difficulty-label">
-                <button type="button" class="difficulty-btn" data-difficulty="recruit" aria-pressed="false">RECRUIT</button>
-                <button type="button" class="difficulty-btn" data-difficulty="veteran" aria-pressed="true">VETERAN</button>
-                <button type="button" class="difficulty-btn" data-difficulty="elite" aria-pressed="false">ELITE</button>
+
+        <div class="menu-grid">
+          <nav class="menu-nav" aria-label="Main menu">
+            <p class="menu-nav-head" aria-hidden="true">MAIN MENU</p>
+            <button type="button" class="menu-nav-item" data-menu-view="skirmish">
+              <span class="menu-nav-index">01</span>
+              <span class="menu-nav-text"><b>Skirmish</b><small>Kestrel Bay · land, air, sea</small></span>
+              <span class="menu-nav-go" aria-hidden="true">›</span>
+            </button>
+            <button type="button" class="menu-nav-item" data-menu-view="editor">
+              <span class="menu-nav-index">02</span>
+              <span class="menu-nav-text"><b>Map Editor</b><small>Scenario Forge</small></span>
+              <span class="menu-nav-go" aria-hidden="true">›</span>
+            </button>
+            <button type="button" class="menu-nav-item" data-menu-view="settings">
+              <span class="menu-nav-index">03</span>
+              <span class="menu-nav-text"><b>Settings</b><small>Audio · visuals · interface</small></span>
+              <span class="menu-nav-go" aria-hidden="true">›</span>
+            </button>
+            <div class="menu-nav-rule" aria-hidden="true"></div>
+            <button id="btn-load" type="button" class="menu-nav-item menu-nav-quiet">
+              <span class="menu-nav-index">04</span>
+              <span class="menu-nav-text"><b>Load Battle</b><small>Saved deployments</small></span>
+              <span class="menu-nav-go" aria-hidden="true">›</span>
+            </button>
+          </nav>
+
+          <div class="menu-stage">
+            <section class="menu-view menu-idle" data-menu-panel="idle" aria-label="Command deck">
+              <div class="menu-view-head">
+                <p class="eyebrow">COMMAND DECK</p>
+                <h2>Awaiting <em>orders</em></h2>
+                <p class="lede">
+                  Pick a deployment from the main menu: a skirmish on Kestrel Bay, the scenario
+                  forge, or system settings.
+                </p>
               </div>
-              <p class="difficulty-note" id="difficulty-note">Veteran — balanced expansion, production and attack timing.</p>
-            </div>
-            <div class="menu-actions">
-              <button id="btn-deploy" class="btn btn-primary btn-large">
-                <span class="btn-kicker">DEPLOY</span>
-                <span>Island Assault — Kestrel Bay</span>
-              </button>
-              <button id="btn-editor" class="btn btn-ghost">Scenario Editor</button>
-              <button id="btn-load" class="btn btn-ghost">Load Battle</button>
-              <button id="btn-briefing" class="btn btn-ghost">Briefing &amp; Controls</button>
-            </div>
-            <div class="menu-meta">
-              <span>LAND · AIR · SEA</span>
-              <span>DETERMINISTIC SIMULATION</span>
-              <span>EDITOR-TO-BATTLE</span>
-            </div>
+            </section>
+
+            <section class="menu-view" data-menu-panel="skirmish" aria-label="Skirmish">
+              <div class="menu-view-head">
+                <p class="eyebrow" id="skirmish-eyebrow">SKIRMISH · OPERATION KESTREL</p>
+                <h2 id="skirmish-title">Island Assault — Kestrel Bay</h2>
+                <p class="lede" id="skirmish-lede">
+                  Establish a beachhead, break the ridge and take the 11th Expeditionary Corps' command post.
+                </p>
+              </div>
+              <div class="map-select">
+                <span class="menu-difficulty-label" id="map-select-label">THEATRE</span>
+                <div class="map-cards" id="map-cards" role="radiogroup" aria-labelledby="map-select-label"></div>
+              </div>
+              <div class="menu-nation">
+                <div class="nation-field">
+                  <label class="menu-difficulty-label" for="nation-select">YOUR NATION</label>
+                  <select id="nation-select" class="nation-select" aria-describedby="nation-note"></select>
+                </div>
+                <p class="nation-note" id="nation-note">Lithuania · Defender Coalition — front-line defender in the opening Baltic crisis.</p>
+              </div>
+              <div class="menu-columns">
+                <div class="menu-column">
+                  <div class="menu-difficulty">
+                    <span class="menu-difficulty-label" id="difficulty-label">OPPOSING COMMANDER</span>
+                    <div class="difficulty-options" role="group" aria-labelledby="difficulty-label">
+                      <button type="button" class="difficulty-btn" data-difficulty="recruit" aria-pressed="false">RECRUIT</button>
+                      <button type="button" class="difficulty-btn" data-difficulty="veteran" aria-pressed="true">VETERAN</button>
+                      <button type="button" class="difficulty-btn" data-difficulty="elite" aria-pressed="false">ELITE</button>
+                    </div>
+                    <p class="difficulty-note" id="difficulty-note">Veteran — balanced expansion, production and attack timing.</p>
+                  </div>
+                  <div class="menu-actions">
+                    <button id="btn-deploy" class="btn btn-primary btn-large">
+                      <span class="btn-kicker">DEPLOY</span>
+                      <span>Begin skirmish</span>
+                    </button>
+                  </div>
+                </div>
+                <aside class="menu-brief">
+                  <div class="brief-head">
+                    <span>MISSION BRIEF</span><span class="mono" id="brief-code">KESTREL / 01</span>
+                  </div>
+                  <div class="brief-map" id="brief-map">
+                    <canvas id="brief-map-canvas" aria-label="Theatre terrain map"></canvas>
+                    <span class="map-city blue" id="brief-label-friend">BEACHHEAD</span>
+                    <span class="map-city red" id="brief-label-enemy">11TH CORPS</span>
+                  </div>
+                  <div class="brief-rows">
+                    <div><span>COMMAND</span><b id="brief-command">Lithuania</b></div>
+                    <div><span>FORMATION</span><b id="brief-formation">Baltic Task Force</b></div>
+                    <div><span>DOCTRINE</span><b id="brief-doctrine">Reconnaissance screen</b></div>
+                    <div><span>OPPOSITION</span><b id="brief-opposition">Russia</b></div>
+                    <div><span>ALLIANCE</span><b id="brief-alliance">Defender Coalition</b></div>
+                    <div><span>THEATRE</span><b id="brief-size">96 × 72 tiles</b></div>
+                    <div><span>DOMAINS</span><b id="brief-domains">Ground · Air · Naval</b></div>
+                  </div>
+                </aside>
+              </div>
+            </section>
+
+            <section class="menu-view" data-menu-panel="editor" aria-label="Map Editor">
+              <div class="menu-view-head">
+                <p class="eyebrow">TOOLS · SCENARIO FORGE</p>
+                <h2>Scenario <em>Forge</em></h2>
+                <p class="lede">
+                  Paint terrain, place forces and objectives, validate the layout and deploy straight into battle.
+                </p>
+              </div>
+              <ul class="menu-points">
+                <li><b>Terrain</b><span>Beach, open ground, forest, ridge, road, rubble and navigable water with brush sizes and elevation tools.</span></li>
+                <li><b>Forces</b><span>Command posts, production, defences, start positions and the full unit roster for both commanders.</span></li>
+                <li><b>Mission</b><span>Victory conditions, weather, time of day, fog and objective text, validated before a single unit lands.</span></li>
+              </ul>
+              <div class="menu-actions">
+                <button id="btn-editor" class="btn btn-primary btn-large">
+                  <span class="btn-kicker">OPEN</span>
+                  <span>Scenario Forge</span>
+                </button>
+                <button id="btn-editor-autosave" class="btn btn-ghost">Continue autosave</button>
+              </div>
+            </section>
+
+            <section class="menu-view" data-menu-panel="settings" aria-label="Settings">
+              <div class="menu-view-head">
+                <p class="eyebrow">SYSTEM</p>
+                <h2>Settings</h2>
+                <p class="lede">
+                  Audio, effects and interface options. Changes apply immediately and are stored on
+                  this device.
+                </p>
+              </div>
+              <div class="menu-settings" id="menu-settings-grid"></div>
+            </section>
           </div>
-          <aside class="menu-brief">
-            <div class="brief-head">
-              <span>MISSION BRIEF</span><span class="mono">KESTREL / 01</span>
-            </div>
-            <div class="brief-map" id="brief-map">
-              <span class="map-city blue">BEACHHEAD</span>
-              <span class="map-city red">11TH CORPS</span>
-              <span class="map-ridge">RIDGE</span>
-              <span class="map-bay">KESTREL BAY</span>
-            </div>
-            <div class="brief-rows">
-              <div><span>COMMAND</span><b>Baltic Task Force</b></div>
-              <div><span>OPPOSITION</span><b>11th Expeditionary Corps</b></div>
-              <div><span>OBJECTIVE</span><b>Destroy enemy command post</b></div>
-              <div><span>DOMAINS</span><b>Ground · Air · Naval</b></div>
-            </div>
-            <p class="brief-note">
-              A limited beachhead, two contested signals relays, and a deep-water flank.
-              Victory requires breaking the ridge line — or finding a smarter way around it.
-            </p>
-          </aside>
         </div>
+
         <footer class="menu-footer">
-          <span>© 2037 MCA PROJECT · FICTIONAL SCENARIO</span>
-          <span>M/KB · TOUCH · GAMEPAD</span>
+          <span>© 2026 MCA PROJECT · HORSEMEN INTERACTIVE</span>
+          <span class="menu-footer-mid" id="menu-build">v0.1.0 BETA · BUILD 0 · IRONTIDE ENGINE</span>
+          <div class="menu-footer-links">
+            <button id="btn-changelog" class="menu-footer-link" type="button">Changelog</button>
+            <button id="btn-briefing" class="menu-footer-link" type="button">Briefing &amp; Controls</button>
+          </div>
         </footer>
       </section>
 
-      <div id="loading-screen" class="screen loading-screen hidden">
-        <div class="loading-card">
-          <span class="eyebrow">PREPARING BATTLEFIELD</span>
-          <h3 id="loading-title">Assembling task force…</h3>
+      <div id="loading-screen" class="screen loading-screen hidden" aria-live="polite">
+        <div class="loading-scrim" aria-hidden="true"></div>
+        <div class="loading-shell">
+          <p class="eyebrow">PREPARING BATTLEFIELD</p>
+          <h2 id="loading-title">Island Assault — Kestrel Bay</h2>
+          <p class="loading-lede" id="loading-lede">
+            A Baltic task force holds a narrow beachhead while the expeditionary corps holds the ridge.
+          </p>
+          <div class="loading-facts">
+            <div><span>THEATRE</span><b id="loading-size">96 × 72 tiles</b></div>
+            <div><span>COMMAND</span><b id="loading-command">Lithuania</b></div>
+            <div><span>FORMATION</span><b id="loading-formation">Baltic Task Force</b></div>
+            <div><span>DOCTRINE</span><b id="loading-doctrine">Reconnaissance screen</b></div>
+            <div><span>ALLIANCE</span><b id="loading-alliance">Defender Coalition</b></div>
+            <div><span>OPPOSITION</span><b id="loading-opposition">Russia</b></div>
+            <div><span>DOMAINS</span><b id="loading-domains">Ground · Air · Naval</b></div>
+            <div><span>OPPOSING COMMANDER</span><b id="loading-difficulty">Veteran</b></div>
+          </div>
           <div class="loading-bar"><i></i></div>
-          <p id="loading-hint">Building terrain mesh · plotting navigation · briefing AI commander</p>
+          <p class="loading-hint" id="loading-hint">Building terrain mesh · plotting navigation · briefing AI commander</p>
         </div>
       </div>
 
       <div id="toast-root" class="toast-root" aria-live="polite"></div>
       <div id="modal-root" class="modal-root hidden"></div>
+
+      <section
+        id="rotate-screen"
+        class="rotate-screen hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="rotate-title"
+        aria-describedby="rotate-copy"
+      >
+        <div class="rotate-card">
+          <div class="rotate-device" aria-hidden="true"><span class="rotate-phone"></span></div>
+          <p class="eyebrow">ORIENTATION REQUIRED</p>
+          <h2 id="rotate-title">Rotate your device</h2>
+          <p class="rotate-copy" id="rotate-copy">
+            Modern Combined Arms is fought in landscape. Turn your device sideways to deploy.
+          </p>
+          <p class="rotate-note">TOUCH CONTROLS · LANDSCAPE ONLY</p>
+        </div>
+      </section>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

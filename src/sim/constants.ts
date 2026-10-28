@@ -10,6 +10,14 @@ export const MAP_FORMAT_VERSION = 1;
 export const SAVE_FORMAT = 'iron-tide-save';
 export const SAVE_FORMAT_VERSION = 1;
 
+/**
+ * A structure hit within this many ticks cannot be repaired: the crew can patch
+ * a wall between bombardments, not during one. One second lets a single gun's
+ * reload leave a workable gap while two attackers firing out of phase keep the
+ * site suppressed.
+ */
+export const REPAIR_SUPPRESSION_TICKS = 20;
+
 /** Height of one elevation level in world units. */
 export const ELEVATION_HEIGHT = 1.15;
 
@@ -23,7 +31,7 @@ export const MAX_QUEUE = 5;
 export const MAX_SELECTION = 48;
 
 /** Cache invalidation / refresh cadences, in ticks. */
-export const VISION_INTERVAL = 10; // 0.5s
+export const  VISION_INTERVAL = 10; // 0.5s
 export const INCOME_WINDOW = 20 * 60; // 60s of income history
 
 export const STARTING_MATS = 2600;

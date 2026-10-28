@@ -1,4 +1,5 @@
-import { createProgram, StaticMesh, type MeshBuffers } from './gl';
+import { createProgram, StaticMesh, bindTextureUnit, MESH_MATERIAL_TEXTURE_UNIT, type MeshBuffers } from './gl';
+import { materialLut } from './materials';
 import { MESH_FS, MESH_VS } from './shaders';
 import { buildingMesh, FALLBACK_BUILDING } from './buildingMeshes';
 import { unitStyle, unitVisualScale, FALLBACK_STYLE } from './unitMeshes';
@@ -28,6 +29,7 @@ const UNIFORM_NAMES = [
   'uAmbient',
   'uAlpha',
   'uFlash',
+  'uMatLut',
 ] as const;
 type UniformName = (typeof UNIFORM_NAMES)[number];
 
@@ -116,6 +118,7 @@ export class ThumbnailRenderer {
   private program: WebGLProgram | null = null;
   private uniforms: Partial<Record<UniformName, WebGLUniformLocation | null>> = {};
   private meshes = new Map<string, StaticMesh>();
+  private materialTexture: WebGLTexture | null = null;
   private cache = new Map<string, string>();
   private failed = new Set<string>();
   private pending = new Set<string>();
@@ -147,6 +150,16 @@ export class ThumbnailRenderer {
     for (const name of UNIFORM_NAMES) {
       this.uniforms[name] = gl.getUniformLocation(this.program, name);
     }
+    // The shared mesh shader samples a categorical material LUT. The battle
+    // renderer owns its own copy; this off-screen context needs one too.
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 8, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, materialLut());
+    this.materialTexture = texture;
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
     gl.disable(gl.CULL_FACE);
@@ -271,6 +284,9 @@ export class ThumbnailRenderer {
       gl.uniform1f(u.uAlpha ?? null, 1);
       gl.uniform1f(u.uFlash ?? null, 0);
       gl.uniform3fv(u.uTeamColor ?? null, this.teamRgb(request.color));
+      if (this.materialTexture) {
+        bindTextureUnit(gl, MESH_MATERIAL_TEXTURE_UNIT, this.materialTexture, u.uMatLut ?? null);
+      }
 
       for (const part of parts) {
         const mesh = this.mesh(request.kind, request.defId, part.slot, part.mesh);
