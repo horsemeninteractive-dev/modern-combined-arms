@@ -52,7 +52,23 @@ hashed assets load from cache when the host is unreachable.
 
 The worker is registered only in production builds, so `npm run dev` never pins
 stale modules. Regenerate the icons with `node tools/make-icons.mjs` after
-editing the mark in [public/irontide-mark.svg](public/irontide-mark.svg).
+editing [public/insignia.svg](public/insignia.svg).
+
+## Release it
+
+`npm run release` is the whole release. It checks that `package.json`, the
+`## [x.y.z BETA]` heading in [CHANGELOG.md](CHANGELOG.md) and the `#menu-build`
+footer in [index.html](index.html) agree on the version, refuses a dirty tree
+(the build stamp is the commit count), runs the test suite, builds, uploads
+`dist/` to the `moderncombinedarms` Pages project, and then waits until the live
+site is serving the new bundle.
+
+So the order is: bump the version in those three places, write the notes,
+commit, then `npm run release`. The upload needs Cloudflare credentials once
+(`npx wrangler login`); `--dry-run` stops before the upload, `--skip-tests`
+skips the suite, and `--allow-dirty` ships an uncommitted tree under the
+previous commit's build number. `PAGES_PROJECT`, `PAGES_BRANCH` and `PAGES_URL`
+override the project, branch and verification URL.
 
 ## What is in the slice
 
