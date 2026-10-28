@@ -45,7 +45,7 @@ function fogCoverage(game, camera) {
   return { visible, charted, hidden, tiles: visible + charted + hidden };
 }
 
-function measureFrame(gl, renderer, drawCalls) {
+export function measureFrame(gl, renderer, drawCalls) {
   const names = ['drawElements', 'drawArrays', 'drawElementsInstanced', 'drawArraysInstanced'];
   const saved = {};
   const stats = { drawCalls: 0, triangles: 0, lines: 0 };

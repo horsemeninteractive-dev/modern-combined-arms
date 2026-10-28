@@ -1,5 +1,6 @@
 import { Announcer, type AnnouncementId } from './announcer';
 import { MatchMusic } from './matchMusic';
+import { UnitVoice, type UnitVoiceCue } from './unitVoice';
 
 /**
  * Weapons, UI and ambience are synthesised at runtime. The menu theme, match
@@ -18,11 +19,15 @@ export class AudioEngine {
   private noiseBuffer: AudioBuffer | null = null;
   private started = false;
   private lastPlayed = new Map<string, number>();
+  /** Per-cue stereo bus; null means the cue is centred straight into sfx. */
+  private cueBus: AudioNode | null = null;
+  private cueCleanup = new Set<ReturnType<typeof setTimeout>>();
   private music: HTMLAudioElement | null = null;
   private musicWanted = false;
   private musicFade: number | null = null;
   private musicRetryBound = false;
   private voiceElement: HTMLAudioElement | null = null;
+  private unitVoiceElement: HTMLAudioElement | null = null;
   private matchElement: HTMLAudioElement | null = null;
   private matchHandlers: { onEnded: () => void; onError: () => void } | null = null;
   private matchFade: number | null = null;
@@ -30,17 +35,23 @@ export class AudioEngine {
   private matchRetryHandler: (() => void) | null = null;
   private readonly matchMusic: MatchMusic;
   readonly announcer: Announcer;
+  readonly unitBarks: UnitVoice;
   masterVolume = 0.7;
   sfxVolume = 0.8;
   ambientVolume = 0.35;
   musicVolume = 0.45;
   voiceVolume = 0.8;
+  unitVoiceVolume = 0.7;
   muted = false;
 
   constructor() {
     this.announcer = new Announcer({
       play: (src, done) => this.playVoice(src, done),
       stop: () => this.stopVoice(),
+    });
+    this.unitBarks = new UnitVoice({
+      play: (src, done) => this.playUnitVoice(src, done),
+      stop: () => this.stopUnitVoiceElement(),
     });
     this.matchMusic = new MatchMusic({
       playTrack: (src, handlers) => this.playMatchTrack(src, handlers),
@@ -233,6 +244,17 @@ export class AudioEngine {
     if (this.sfx && this.ctx) this.sfx.gain.setTargetAtTime(sfx, this.ctx.currentTime, 0.05);
     if (this.ambient && this.ctx) this.ambient.gain.setTargetAtTime(ambient * 0.4, this.ctx.currentTime, 0.05);
     this.syncVoiceVolume();
+    this.syncUnitVoiceVolume();
+  }
+
+  setUnitVoiceVolume(volume: number): void {
+    this.unitVoiceVolume = Math.max(0, Math.min(1, volume));
+    if (this.unitVoiceVolume <= 0.001) {
+      this.stopUnitVoiceElement();
+      this.unitBarks.reset();
+      return;
+    }
+    this.syncUnitVoiceVolume();
   }
 
   setVoiceVolume(volume: number): void {
@@ -251,6 +273,8 @@ export class AudioEngine {
     if (muted) {
       this.stopVoice();
       this.announcer.reset();
+      this.stopUnitVoiceElement();
+      this.unitBarks.reset();
       this.fadeMusic(0, 0.15);
     } else {
       this.syncVoiceVolume();
@@ -265,10 +289,22 @@ export class AudioEngine {
     this.announcer.announce(id);
   }
 
+  /**
+   * Unit barks share one channel with the announcer but have their own volume.
+   * They are presentation-only and never run while a command-level line is up.
+   */
+  speakUnit(cue: UnitVoiceCue, defId: string): void {
+    if (!this.started || this.muted || this.unitVoiceVolume <= 0.001) return;
+    if (this.voiceElement || this.announcer.currentId) return;
+    this.unitBarks.speak(defId, cue);
+  }
+
   /** Battle teardown/restart: drop any stale line and clear cooldown state. */
   resetAnnouncer(): void {
     this.announcer.reset();
     this.stopVoice();
+    this.unitBarks.reset();
+    this.stopUnitVoiceElement();
   }
 
   private syncVoiceVolume(): void {
@@ -277,13 +313,76 @@ export class AudioEngine {
     }
   }
 
+  private syncUnitVoiceVolume(): void {
+    if (this.unitVoiceElement) {
+      this.unitVoiceElement.volume = Math.max(
+        0,
+        Math.min(1, this.masterVolume * this.unitVoiceVolume),
+      );
+    }
+  }
+
+  private playUnitVoice(src: string, done: () => void): void {
+    if (!this.started || this.muted || this.unitVoiceVolume <= 0.001 || typeof Audio === 'undefined') {
+      done();
+      return;
+    }
+    // The announcer owns the single voice channel while it speaks.
+    if (this.voiceElement || this.announcer.currentId) {
+      done();
+      return;
+    }
+    let el: HTMLAudioElement;
+    try {
+      el = new Audio(src);
+    } catch {
+      done();
+      return;
+    }
+    el.preload = 'auto';
+    el.volume = Math.max(0, Math.min(1, this.masterVolume * this.unitVoiceVolume));
+    this.unitVoiceElement = el;
+    let settled = false;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      el.removeEventListener('ended', finish);
+      el.removeEventListener('error', finish);
+      if (this.unitVoiceElement === el) this.unitVoiceElement = null;
+      done();
+    };
+    el.addEventListener('ended', finish);
+    el.addEventListener('error', finish);
+    try {
+      const started = el.play();
+      if (started && typeof started.catch === 'function') started.catch(finish);
+    } catch {
+      finish();
+    }
+  }
+
+  private stopUnitVoiceElement(): void {
+    const el = this.unitVoiceElement;
+    this.unitVoiceElement = null;
+    if (!el) return;
+    el.pause();
+    try {
+      el.currentTime = 0;
+    } catch {
+      /* A failed media element may reject seeking; pausing is sufficient. */
+    }
+  }
+
   private playVoice(src: string, done: () => void): void {
     if (!this.started || this.muted || this.voiceVolume <= 0.001 || typeof Audio === 'undefined') {
       done();
       return;
     }
-    // One voice channel only. The announcer has already stopped the previous
-    // line when it chose to interrupt, but pause here as a defensive measure.
+    // One voice channel only. A command-level line pre-empts unit barks; the
+    // bark channel's stop also pauses its media element.
+    this.unitBarks.stop();
+    // The announcer has already stopped the previous line when it chose to
+    // interrupt, but pause here as a defensive measure.
     this.voiceElement?.pause();
     // Duck the soundtrack while a command-level line is speaking. The music
     // keeps its position; only its volume moves.
@@ -486,7 +585,8 @@ export class AudioEngine {
   }
 
   private tone(freq: number, duration: number, type: OscillatorType, gain: number, slideTo?: number, delay = 0): void {
-    if (!this.ctx || !this.sfx) return;
+    const out = this.cueBus ?? this.sfx;
+    if (!this.ctx || !out) return;
     const ctx = this.ctx;
     const t = ctx.currentTime + delay;
     const osc = ctx.createOscillator();
@@ -497,13 +597,14 @@ export class AudioEngine {
     g.gain.setValueAtTime(gain * this.playGain, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + duration);
     osc.connect(g);
-    g.connect(this.sfx);
+    g.connect(out);
     osc.start(t);
     osc.stop(t + duration + 0.02);
   }
 
   private noise(duration: number, gain: number, lowpass: number, delay = 0): void {
-    if (!this.ctx || !this.sfx || !this.noiseBuffer) return;
+    const out = this.cueBus ?? this.sfx;
+    if (!this.ctx || !out || !this.noiseBuffer) return;
     const ctx = this.ctx;
     const t = ctx.currentTime + delay;
     const src = ctx.createBufferSource();
@@ -518,12 +619,16 @@ export class AudioEngine {
     g.gain.exponentialRampToValueAtTime(0.001, t + duration);
     src.connect(filter);
     filter.connect(g);
-    g.connect(this.sfx);
+    g.connect(out);
     src.start(t);
     src.stop(t + duration + 0.03);
   }
 
-  play(name: string, gain = 1): void {
+  /**
+   * One synthesised cue. `pan` is the stereo position in -1..1; the path stays
+   * through the existing sfx/master gains, so mute and volume are unchanged.
+   */
+  play(name: string, gain = 1, pan = 0): void {
     if (!this.started || this.muted) return;
     const now = performance.now();
     const last = this.lastPlayed.get(name) ?? 0;
@@ -531,6 +636,47 @@ export class AudioEngine {
     if (now - last < minGap) return;
     this.lastPlayed.set(name, now);
     this.playGain = gain < 0 ? 0 : gain > 1 ? 1 : gain;
+    this.cueBus = this.createCueBus(pan);
+    try {
+      this.emitCue(name);
+    } finally {
+      this.cueBus = null;
+      this.playGain = 1;
+    }
+  }
+
+  /**
+   * A StereoPannerNode per positioned cue. Its sources are short, so the node
+   * is disconnected after they have finished rather than accumulating in the
+   * graph for the life of the match. Centred and unsupported cues use the
+   * direct sfx path and allocate nothing.
+   */
+  private createCueBus(pan: number): AudioNode | null {
+    const ctx = this.ctx;
+    const sfx = this.sfx;
+    if (!ctx || !sfx || !Number.isFinite(pan) || Math.abs(pan) < 0.01) return null;
+    if (typeof ctx.createStereoPanner !== 'function') return null;
+    try {
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = Math.max(-1, Math.min(1, pan));
+      panner.connect(sfx);
+      const timer = setTimeout(() => {
+        this.cueCleanup.delete(timer);
+        try {
+          panner.disconnect();
+        } catch {
+          /* The context may already be closed; nothing is left to release. */
+        }
+      }, 1500);
+      this.cueCleanup.add(timer);
+      return panner;
+    } catch {
+      // A context without pan support still gets the mono cue.
+      return null;
+    }
+  }
+
+  private emitCue(name: string): void {
     switch (name) {
       case 'rifle':
         this.noise(0.07, 0.14, 2600);
@@ -606,17 +752,21 @@ export class AudioEngine {
       default:
         this.tone(600, 0.04, 'triangle', 0.02);
     }
-    this.playGain = 1;
   }
 
   dispose(): void {
     this.musicWanted = false;
+    for (const timer of this.cueCleanup) clearTimeout(timer);
+    this.cueCleanup.clear();
+    this.cueBus = null;
     this.music?.pause();
     if (this.musicFade !== null) clearInterval(this.musicFade);
     this.musicFade = null;
     this.music = null;
     this.announcer.reset();
     this.stopVoice();
+    this.unitBarks.reset();
+    this.stopUnitVoiceElement();
     void this.ctx?.close();
     this.ctx = null;
     this.started = false;

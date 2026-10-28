@@ -12,15 +12,23 @@ export interface GpuShadow {
   rz: number;
   rotation: number;
   alpha: number;
+  /**
+   * Optional ground colour. Contact shadows leave this unset and use the dark
+   * default; a foot unit's presence pool sets its alliance colour instead.
+   */
+  color?: [number, number, number];
 }
 
-/** 7 floats: centre xyz, radii xy, rotation, alpha. */
-const STRIDE = 7;
+/** 10 floats: centre xyz, radii xy, rotation, alpha, colour rgb. */
+const STRIDE = 10;
+/** The old uniform colour, kept as the per-instance default. */
+const SHADOW_COLOR: [number, number, number] = [0.025, 0.032, 0.028];
 const ATTRIBUTES = [
   { location: 1, size: 3, offset: 0 },
   { location: 2, size: 2, offset: 3 },
   { location: 3, size: 1, offset: 5 },
   { location: 4, size: 1, offset: 6 },
+  { location: 5, size: 3, offset: 7 },
 ];
 
 /**
@@ -75,7 +83,7 @@ export class ShadowGpu {
     }
     gl.bindVertexArray(null);
 
-    for (const name of ['uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar', 'uColor', 'uOpacity']) {
+    for (const name of ['uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar', 'uOpacity']) {
       this.u[name] = gl.getUniformLocation(this.program, name);
     }
   }
@@ -98,6 +106,10 @@ export class ShadowGpu {
       data[o + 4] = s.rz;
       data[o + 5] = s.rotation;
       data[o + 6] = s.alpha;
+      const color = s.color ?? SHADOW_COLOR;
+      data[o + 7] = color[0];
+      data[o + 8] = color[1];
+      data[o + 9] = color[2];
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, this.instanceBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, data.subarray(0, shadows.length * STRIDE), gl.DYNAMIC_DRAW);
@@ -110,7 +122,6 @@ export class ShadowGpu {
     gl.uniform2f(this.u.uHalf, camera.halfW, camera.halfH);
     gl.uniform1f(this.u.uNear, 1);
     gl.uniform1f(this.u.uFar, 3000);
-    gl.uniform3f(this.u.uColor, 0.025, 0.032, 0.028);
     gl.uniform1f(this.u.uOpacity, opacity);
 
     gl.enable(gl.BLEND);

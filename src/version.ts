@@ -18,7 +18,7 @@ export const APP_STAGE: string = typeof __MCA_STAGE__ === 'string' ? __MCA_STAGE
 export const BUILD_NUMBER: number = typeof __MCA_BUILD__ === 'number' ? __MCA_BUILD__ : 0;
 export const BUILD_COMMIT: string = typeof __MCA_COMMIT__ === 'string' ? __MCA_COMMIT__ : 'dev';
 
-/** `v0.1.1 BETA` — the product version without the build. */
+/** `v0.1.2 BETA` — the product version without the build. */
 export const VERSION_LABEL = `v${APP_VERSION} ${APP_STAGE}`;
 
 /** `BUILD 4` — the commit count, for the menu footer and support reports. */

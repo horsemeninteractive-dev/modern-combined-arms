@@ -5,6 +5,18 @@ import { UNITS } from '../data/units';
 import { WEAPONS } from '../data/weapons';
 import type { ArmourClass, Entity, RuntimeMap, TargetClass, WeaponDef } from './types';
 
+/**
+ * Whether a weapon can meaningfully hurt a target. A rifle technically can
+ * scratch concrete through its 0.08 structure multiplier, but an order that
+ * walks a rifle squad into a building is a suicide run, not an attack, so the
+ * order handler has to distinguish a real weapon answer from a peashooter.
+ */
+export function weaponCanHurt(weapon: WeaponDef, target: Entity): boolean {
+  if (!canWeaponTarget(weapon, target)) return false;
+  const mul = weapon.multipliers[entityArmour(target)] ?? 1;
+  return weapon.damage * mul >= 1.5;
+}
+
 export function entityArmour(e: Entity): ArmourClass {
   if (e.kind === 'building') return BUILDINGS[e.defId]?.armour ?? 'structure';
   return UNITS[e.defId]?.armour ?? 'light';

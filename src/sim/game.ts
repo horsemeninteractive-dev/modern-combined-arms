@@ -50,6 +50,7 @@ const REFINERY_REPLACEMENT_COST = Math.min(
 
 import {
   canWeaponTarget,
+  weaponCanHurt,
   computeDamage,
   entityArmour,
   entityName,
@@ -733,11 +734,21 @@ export class Game {
           failed === entities.length
             ? 'No route to that location for the selected force.'
             : `${failed} unit${failed === 1 ? '' : 's'} cannot reach that location.`,
+        // The local commander's first ordered unit answers the refusal.
+        defId: entities[0]?.defId,
         level: 'warning',
         sound: 'denied',
       });
     } else {
-      this.emit('orderAck', { team: owner, x, z, text: attackMove ? 'Attack-move ordered' : 'Moving', level: 'info' });
+      this.emit('orderAck', {
+        team: owner,
+        x,
+        z,
+        text: attackMove ? 'Attack-move ordered' : 'Moving',
+        code: 'moveOrder',
+        defId: entities[0]?.defId,
+        level: 'info',
+      });
     }
   }
 
@@ -927,6 +938,7 @@ export class Game {
   }
 
   private commandAttack(owner: number, ids: number[], targetId: number): void {
+    const orderedDefId = this.ownedEntities(owner, ids)[0]?.defId;
     const target = this.getEntity(targetId);
     if (!target || target.hp <= 0) {
       this.emit('orderFailed', {
@@ -934,6 +946,7 @@ export class Game {
         x: 0,
         z: 0,
         text: 'Target no longer exists.',
+        defId: orderedDefId,
         level: 'warning',
         sound: 'denied',
       });
@@ -945,6 +958,7 @@ export class Game {
         x: target.x,
         z: target.z,
         text: `${buildingDef(target.defId).name} cannot be destroyed — capture it with a Combat Engineer.`,
+        defId: orderedDefId,
         level: 'warning',
         sound: 'denied',
       });
@@ -956,6 +970,7 @@ export class Game {
         x: target.x,
         z: target.z,
         text: 'That infantry is inside a building — engage the structure or clear its occupants.',
+        defId: orderedDefId,
         level: 'warning',
         sound: 'denied',
       });
@@ -967,6 +982,7 @@ export class Game {
         x: target.x,
         z: target.z,
         text: 'That is a friendly unit.',
+        defId: orderedDefId,
         level: 'warning',
         sound: 'denied',
       });
@@ -980,24 +996,29 @@ export class Game {
         (e.kind === 'building' && !e.construction && entityWeapons(e).length > 0),
     );
     let capable = 0;
+    let firstCapable: Entity | null = null;
     for (const e of entities) {
       this.releaseBuildTarget(e);
       const weapons = entityWeapons(e);
       const usable = weapons.some(
-        (w) => canWeaponTarget(w, target) && (!usesPrimaryAmmo(e, w) || e.ammo > 0),
+        (w) => weaponCanHurt(w, target) && (!usesPrimaryAmmo(e, w) || e.ammo > 0),
       );
       if (!usable) {
-        if (e.kind === 'building') continue;
-        e.order = { type: 'move', x: target.x, z: target.z };
-        const path = this.findPathFor(e, target.x, target.z);
-        if (path) {
-          e.path = path;
-          e.pathIndex = 0;
-          e.state = 'moving';
-        }
+        // A unit that cannot damage this target holds its ground. Walking it
+        // toward the target used to turn an unarmed medic or an anti-infantry
+        // rifle squad into a suicide run against a structure; normal automatic
+        // engagement can still answer anything it is actually able to fight.
+        e.order = null;
+        e.path = [];
+        e.pathIndex = 0;
+        e.state = 'idle';
+        e.targetId = 0;
+        e.aimTargetId = 0;
+        e.blockedTicks = 0;
         continue;
       }
       capable++;
+      firstCapable ??= e;
       e.order = { type: 'attack', targetId: target.id };
       e.targetId = target.id;
       e.aimTargetId = target.id;
@@ -1021,6 +1042,7 @@ export class Game {
         x: target.x,
         z: target.z,
         text: 'Selected forces cannot attack that target.',
+        defId: entities[0]?.defId,
         level: 'warning',
         sound: 'denied',
       });
@@ -1031,6 +1053,8 @@ export class Game {
         z: target.z,
         text: `Attacking ${entityName(target)}`,
         entityId: target.id,
+        code: 'attackOrder',
+        defId: firstCapable?.defId ?? entities[0]?.defId,
         level: 'info',
       });
     }
@@ -1179,9 +1203,10 @@ export class Game {
   }
 
   /**
-   * A structure an engineer may work on: the team's own, or a neutral shelter
-   * its infantry are holding. The second case is what lets a squad patch the
-   * tenement it is fighting from instead of watching it crumble around them.
+   * A structure an engineer may work on: the team's own, or a neutral shelter.
+   * A neutral shelter is repairable whether or not infantry are inside it, so
+   * an engineer can prepare a position before occupying it. A shelter held by
+   * hostile infantry is not a repair job; it has to be cleared first.
    */
   private isRepairableBy(owner: number, target: Entity): boolean {
     if (target.kind !== 'building' || target.hp <= 0 || target.construction || target.hp >= target.maxHp) {
@@ -1189,7 +1214,8 @@ export class Game {
     }
     if (target.owner === owner) return true;
     if (!BUILDINGS[target.defId]?.garrison) return false;
-    return this.garrisonOccupants(target.id).some((unit) => unit.owner === owner);
+    if (target.owner !== -1) return false;
+    return !this.garrisonOccupants(target.id).some((unit) => this.isHostile(owner, unit.owner));
   }
 
   private commandRepair(owner: number, ids: number[], targetId: number): void {
@@ -1199,7 +1225,7 @@ export class Game {
         team: owner,
         x: target?.x ?? 0,
         z: target?.z ?? 0,
-        text: 'Only a damaged friendly structure, or a shelter your infantry hold, can be repaired.',
+        text: 'Only a damaged friendly structure or neutral shelter can be repaired.',
         level: 'warning',
         sound: 'denied',
       });
@@ -3990,13 +4016,14 @@ export class Game {
         if (other === e || other.kind !== 'unit' || other.hp <= 0 || other.garrisonId) continue;
         if (unitDef(other.defId).domain !== def.domain) continue;
         if (this.isHostile(e.owner, other.owner)) continue;
-        // A moving column is not an obstacle to itself; only a unit holding
-        // position is marked as traffic worth routing around.
-        if (other.state === 'moving' || other.path.length > 0) continue;
+        // A moving unit is lighter traffic than one holding position, but it
+        // is still traffic: a repath should prefer a clear lane over a column
+        // that is itself waiting on the unit ahead.
+        const moving = other.state === 'moving' || other.path.length > 0;
         const tx = Math.floor(other.x / TILE_SIZE);
         const tz = Math.floor(other.z / TILE_SIZE);
         if (!inBounds(this.state.map.width, this.state.map.height, tx, tz)) continue;
-        soft[tileIndex(this.state.map.width, tx, tz)] = 1;
+        soft[tileIndex(this.state.map.width, tx, tz)] = moving ? 2 : 1;
       }
       nav.soft = soft;
     }
@@ -4027,7 +4054,25 @@ export class Game {
         ? Math.max(0.9, def.radius * 0.25)
         : Math.max(2.5, def.radius * 0.4)
       : 1.2;
-    if (d <= arrivalRadius) {
+    // A traveller pushed off its line (traffic, a nudge, a shoulder step) can
+    // end up abeam of its next waypoint. Turning back to touch it costs a
+    // U-turn and re-enters the traffic it just avoided, so a waypoint counts as
+    // reached once it is behind the unit along the route—except the last one,
+    // where the destination itself is what has to be reached.
+    let passed = false;
+    if (!lastStep) {
+      // The route direction comes from the neighbours, because the first
+      // waypoint has no previous point and the last has no next one.
+      const prev = e.pathIndex > 0 ? e.path[e.pathIndex - 1] : null;
+      const next = e.path[e.pathIndex + 1] ?? null;
+      const routeX = (next ?? target).x - (prev ?? target).x;
+      const routeZ = (next ?? target).z - (prev ?? target).z;
+      const routeLen = Math.hypot(routeX, routeZ);
+      if (routeLen > 0.001) {
+        passed = ((e.x - target.x) * routeX + (e.z - target.z) * routeZ) / routeLen > 0;
+      }
+    }
+    if (d <= arrivalRadius || passed) {
       e.pathIndex++;
       if (e.pathIndex >= e.path.length) {
         if (def.domain === 'air' && e.order?.type === 'return') {
@@ -4085,9 +4130,16 @@ export class Game {
       // A stopped neighbour can pin a column while the route ahead is clear.
       // Step onto the open shoulder before giving up and re-planning.
       if (e.blockedTicks > 2) {
-        const nudge = Math.max(step, 0.6);
-        for (const side of [1, -1]) {
-          const angle = e.facing + side * Math.PI * 0.25;
+        const nudge = Math.max(step * 1.35, 1.0);
+        // Try a full shoulder step first, then the diagonal. A unit pinned
+        // directly ahead is usually too close for a 45-degree step to clear
+        // its footprint, which is what made a follower look stuck.
+        for (const angle of [
+          e.facing + Math.PI * 0.5,
+          e.facing - Math.PI * 0.5,
+          e.facing + Math.PI * 0.25,
+          e.facing - Math.PI * 0.25,
+        ]) {
           const sx = e.x + Math.cos(angle) * nudge;
           const sz = e.z + Math.sin(angle) * nudge;
           if (this.canOccupy(e, sx, sz) && this.unitClearAt(e, sx, sz)) {
@@ -4130,47 +4182,103 @@ export class Game {
   }
 
   /**
-   * Cheap local avoidance for ground movers: if another unit sits in the lane
-   * ahead, bias the heading to one side rather than walking into it. Purely
-   * geometric and tie-broken by entity id, so replays stay bit-identical.
+   * Local avoidance for ground movers. A unit in the lane is treated as a
+   * point to pass rather than a direction to swerve: the mover aims at a flank
+   * of the obstacle, just ahead of it, and holds that aim until it is properly
+   * past. A momentary heading bias used to saw back and forth behind a slower
+   * friendly, so a fast scout could ride a hauler's bumper indefinitely.
+   * Purely geometric and tie-broken by entity id, so replays stay bit-identical.
    */
   private steerAroundUnits(e: Entity, def: UnitDef, desired: number): number {
     if (def.domain === 'air') return desired;
     const fx = Math.cos(desired);
     const fz = Math.sin(desired);
-    let bestLateral: number | null = null;
+    let bestLateral = 0;
     let bestLane = 1;
     let bestAhead = Infinity;
+    let bestOther: Entity | null = null;
+    let bestOd: UnitDef | null = null;
+    let bestHeadOn = false;
+    let bestMoving = false;
     for (const other of this.state.entities) {
       if (other === e || other.kind !== 'unit' || other.hp <= 0 || other.garrisonId) continue;
       const od = unitDef(other.defId);
       if (od.domain !== def.domain) continue;
       // Hostiles are targets, not traffic: swerving around them would break off
-      // every engagement. Nor does a moving column need to dodge itself.
+      // every engagement.
       if (this.isHostile(e.owner, other.owner)) continue;
-      if (other.state === 'moving') continue;
+      const otherMoving = other.state === 'moving' || other.path.length > 0;
+      const headOn = otherMoving && Math.cos(normalizeAngle(other.facing - desired)) < -0.2;
       const dx = other.x - e.x;
       const dz = other.z - e.z;
+      if (otherMoving) {
+        const otherSpeed = unitDef(other.defId).speed;
+        // Give a same-speed or faster column room, but only once there is room
+        // to leave: a follower right up against the leader's tail has to steer
+        // out, not keep pushing into it. Without the gap test an infantry
+        // column walked through itself, and without the overtake a fast scout
+        // could ride the back bumper of a hauler indefinitely.
+        const gap = dx * fx + dz * fz;
+        if (!headOn && otherSpeed >= def.speed && gap > (def.radius + od.radius) * 1.4) continue;
+      }
       // Only the last couple of metres of the lane: this is about not walking
       // into someone standing still, not about re-planning the route.
-      const reach = (def.radius + od.radius) * 2.4;
+      const reach = (def.radius + od.radius) * 3.6;
       const ahead = dx * fx + dz * fz;
-      if (ahead <= 0 || ahead > reach) continue;
+      // Keep steering until the obstacle is properly behind the nose:
+      // dropping it the instant its centre fell behind the mover let a passing
+      // vehicle cut back in and clip the unit it was overtaking.
+      const behind = headOn ? 0 : formationRadius(def) + formationRadius(od) * 0.5;
+      if (ahead <= -behind || ahead > reach) continue;
       const lateral = -dx * fz + dz * fx;
-      const lane = (def.radius + od.radius) * 1.15;
-      if (Math.abs(lateral) >= lane) continue;
+      const lane = (def.radius + od.radius) * 1.3;
+      // Abreast of an obstacle, accept a wider corridor: the passing line is
+      // deliberately outside the lane, and re-grabbing the obstacle from there
+      // is what produced the oscillation.
+      if (Math.abs(lateral) >= (ahead > 0 ? lane : lane * 2)) continue;
       if (ahead < bestAhead) {
         bestAhead = ahead;
         bestLateral = lateral;
         bestLane = lane;
+        bestOther = other;
+        bestOd = od;
+        bestHeadOn = headOn;
+        bestMoving = otherMoving;
       }
     }
-    if (bestLateral === null) return desired;
+    if (bestOther === null || bestOd === null) return desired;
     // Steer to the roomier side, and harder the more squarely the obstacle sits
     // in the lane.
-    const side = bestLateral === 0 ? (e.id % 2 === 0 ? 1 : -1) : bestLateral > 0 ? -1 : 1;
-    const centrality = 1 - Math.min(1, Math.abs(bestLateral) / bestLane);
-    return desired + side * (0.4 + 0.7 * centrality);
+    if (bestHeadOn) {
+      const side = bestLateral === 0 ? (e.id % 2 === 0 ? 1 : -1) : bestLateral > 0 ? -1 : 1;
+      const centrality = 1 - Math.min(1, Math.abs(bestLateral) / bestLane);
+      return desired + side * (0.4 + 0.7 * centrality);
+    }
+    // Overtake: work in the lane's frame, not ours. A moving obstacle carries
+    // the reference axis, so the chosen side cannot flip mid-manoeuvre (the
+    // mover's bearing to its waypoint swings while it changes lane, which used
+    // to send it across the bow of the unit it was passing). A parked obstacle
+    // has no useful heading of its own, so the lane is our direction of travel.
+    const ax = bestMoving ? Math.cos(bestOther.facing) : fx;
+    const az = bestMoving ? Math.sin(bestOther.facing) : fz;
+    const beside = -(e.x - bestOther.x) * az + (e.z - bestOther.z) * ax;
+    let side = Math.abs(beside) < 0.4 ? (e.id % 2 === 0 ? 1 : -1) : beside > 0 ? 1 : -1;
+    const clearance = (bestOd.radius + def.radius) * 1.3;
+    const flankX = bestOther.x - az * side * clearance;
+    const flankZ = bestOther.z + ax * side * clearance;
+    if (!this.canOccupy(e, flankX, flankZ)) {
+      // That shoulder is a wall: try the other one before giving up on passing.
+      side = -side;
+    }
+    // Aim along the lane, angled by exactly what is needed to reach the flank
+    // line before the obstacle. Aiming at a fixed point beside or beyond the
+    // obstacle made the approach too shallow from a distance, so the mover
+    // arrived before it had shifted a hull's width and then pushed into it.
+    const laneAngle = Math.atan2(az, ax);
+    if (bestAhead <= 0) return laneAngle;
+    const error = Math.abs(beside) >= clearance ? 0 : side * clearance - beside;
+    const angle = Math.atan2(error, Math.max(bestAhead, 2));
+    return laneAngle + Math.max(-0.9, Math.min(0.9, angle));
   }
 
   private arrive(e: Entity): void {
@@ -4222,7 +4330,7 @@ export class Game {
     for (const other of this.state.entities) {
       if (other === e || other.kind !== 'unit' || other.hp <= 0 || other.garrisonId) continue;
       if (unitDef(other.defId).domain !== def.domain) continue;
-      const min = (def.radius + unitDef(other.defId).radius) * 0.7;
+      const min = (formationRadius(def) + formationRadius(unitDef(other.defId))) * 0.7;
       if (dist2(x, z, other.x, other.z) < min * min) return false;
     }
     return true;
@@ -4266,7 +4374,7 @@ export class Game {
         const db = unitDef(b.defId);
         if (db.domain === 'air') continue;
         if (da.domain !== db.domain) continue;
-        const minDist = (da.radius + db.radius) * 0.78;
+        const minDist = (formationRadius(da) + formationRadius(db)) * 0.78;
         const dx = b.x - a.x;
         const dz = b.z - a.z;
         const d2 = dx * dx + dz * dz;
@@ -4928,6 +5036,16 @@ export class Game {
 }
 
 const TICKS_PER_SECOND = TICK_RATE;
+
+/**
+ * Spacing footprint used by local avoidance and separation. An infantry marker
+ * is one figure on screen standing in for a fire team, so its spacing radius is
+ * deliberately smaller than the gameplay radius used for structures and
+ * picking; at the full radius a section barged through gaps like a truck.
+ */
+function formationRadius(def: UnitDef): number {
+  return def.armour === 'infantry' ? def.radius * 0.62 : def.radius;
+}
 
 function blockedSnapshot(blocked: Uint8Array): Uint8Array {
   const snapshot = new Uint8Array(blocked.length);

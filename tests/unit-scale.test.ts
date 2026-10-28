@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   unitBannerHeight,
+  unitGroundMarker,
   unitShadowRadius,
   unitStyle,
   unitVisualScale,
@@ -230,6 +231,23 @@ describe('unit visual scale', () => {
       expect(style.turretOffset?.[1]).toBeGreaterThan(1);
       // The gun geometry is not duplicated into the fixed body.
       expect(style.body.positions.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('marks foot units with a bounded ground pool and leaves vehicles plain', () => {
+    for (const id of ['rifle', 'atgm', 'medic']) {
+      const marker = unitGroundMarker(id);
+      expect(marker, id).not.toBeNull();
+      expect(marker!.rx).toBeGreaterThan(0);
+      expect(marker!.rz).toBeGreaterThan(0);
+      expect(marker!.alpha).toBeGreaterThan(0);
+      expect(marker!.alpha).toBeLessThanOrEqual(0.5);
+      // A presence cue, not a second shadow: it stays near the unit's own
+      // contact footprint instead of growing into an area marker.
+      expect(marker!.rx).toBeLessThan(unitShadowRadius(id)[0] * 2);
+    }
+    for (const id of ['tank', 'spg', 'recon', 'harvester', 'corvette']) {
+      expect(unitGroundMarker(id), id).toBeNull();
     }
   });
 

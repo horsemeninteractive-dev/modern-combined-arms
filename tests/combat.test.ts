@@ -109,6 +109,27 @@ describe('land combat', () => {
     expect(Math.abs(normalizeAngle(rifle.facing - (expected + Math.PI)))).toBeLessThan(0.01);
   });
 
+  it('holds a unit that cannot damage the attack target instead of walking it in', () => {
+    const game = newGame();
+    const rifle = unit(game, 'rifle', 0);
+    const target = building(game, 'barracks', 1);
+    rifle.x = target.x - 20 * TILE_SIZE;
+    rifle.z = target.z;
+    rifle.order = null;
+    rifle.path = [];
+    const startX = rifle.x;
+    const startZ = rifle.z;
+
+    game.enqueueCommand({ type: 'attack', team: 0, ids: [rifle.id], targetId: target.id });
+    game.advance(20 * 4);
+
+    expect(rifle.order).toBeNull();
+    expect(rifle.state).toBe('idle');
+    expect(rifle.x).toBeCloseTo(startX, 5);
+    expect(rifle.z).toBeCloseTo(startZ, 5);
+    expect(game.state.events.some((e) => e.type === 'orderFailed')).toBe(true);
+  });
+
   it('destroys structures under sustained fire', () => {
     const game = newGame();
     const target = building(game, 'barracks', 1);

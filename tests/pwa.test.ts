@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import manifestRaw from '../public/manifest.webmanifest?raw';
 import swRaw from '../public/sw.js?raw';
 import html from '../index.html?raw';
@@ -51,6 +52,24 @@ describe('installable app', () => {
     // Host assets are served with Vary: Origin, which would otherwise miss the
     // precached copy on a module or navigation request.
     expect(swRaw).toContain('ignoreVary: true');
+  });
+
+  it('publishes a 1200×630 social card with an absolute hero URL', () => {
+    const origin = 'https://moderncombinedarms.pages.dev';
+    // Crawlers do not resolve relative OG image URLs, so these must be absolute.
+    expect(html).toContain(`property="og:image"\n      content="${origin}/og-mca.jpg"`);
+    expect(html).toContain(`property="og:url" content="${origin}/"`);
+    expect(html).toContain('property="og:image:width" content="1200"');
+    expect(html).toContain('property="og:image:height" content="630"');
+    expect(html).toContain('name="twitter:card" content="summary_large_image"');
+    expect(html).toContain(`name="twitter:image" content="${origin}/og-mca.jpg"`);
+    expect(html).toContain(`<link rel="canonical" href="${origin}/" />`);
+
+    const hero = readFileSync(new URL('../public/og-mca.jpg', import.meta.url));
+    expect(hero.length).toBeGreaterThan(20_000);
+    // JPEG SOI, so the card is a real image rather than a placeholder path.
+    expect(hero[0]).toBe(0xff);
+    expect(hero[1]).toBe(0xd8);
   });
 
   it('plays the engine plate after the studio sting', () => {

@@ -80,7 +80,10 @@ describe('national counterplay', () => {
       scenario.units.push({ defId: 'heavyHowitzer', owner: 0, x: 15, z: 24 });
       const game = gameFor(scenario);
       const target = findBuilding(game, defId, 1);
-      game.advance(20 * 25);
+      // Both structures take the same fire. Under the doubled structure
+      // durability the nest falls at about 45 s and the bunker at about 75 s,
+      // so 50 s is the window that still separates them.
+      game.advance(20 * 50);
       return { game, target };
     };
     const bunker = make('bunker');

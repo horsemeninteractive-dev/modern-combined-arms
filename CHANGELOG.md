@@ -8,6 +8,56 @@ The release version and stage come from `package.json`; the build number shown
 in the menu is the repository commit count at build time. The same file is
 rendered in game from **Changelog** in the main-menu footer.
 
+## [0.1.2 BETA] — 2026-10-28
+
+Battlefield-control, readability and audio follow-up to 0.1.1. This update makes
+a base survivable against a rush, stops attack orders that walk unarmed units
+into concrete, untangles friendly traffic, gives every unit type a radio voice,
+and gives the build a proper install icon and link preview.
+
+### Base defence and orders
+
+- Structure hit points are up by half across the roster. A six-tank rush on a Command Post now takes about 42 s instead of 23 s, and a lone tank needs about 92 s to level a Barracks, so a defender has time to answer.
+- Units that cannot meaningfully hurt a structure — rifle squads, medics and other light weapons — now hold their ground instead of advancing into it when ordered to attack. The order is refused with a message, and the ordering unit answers with its refusal voice line.
+- Engineers can repair a garrisonable building whether friendly infantry hold it or it is empty, including an unclaimed shelter, so a position can be prepared before it is occupied. A shelter held by hostile infantry still has to be cleared first.
+- A ground unit with a friendly in its lane now commits to a flank line and passes instead of oscillating behind the blocker. Overtaking keeps the obstacle's lane as its reference so the chosen side cannot flip mid-manoeuvre, a waypoint already driven past counts as reached, and infantry keep a shoulder-width spacing rather than a vehicle-sized one.
+
+### Combat presentation
+
+- Foot units now wear a team-tinted helmet cover and stand on a soft alliance-coloured presence pool that reuses the existing contact-shadow batch. Infantry presence, facing and ownership are scannable at battle zoom without scaling the bodies or adding a draw call; vehicles get no pool, and markers are only drawn for units the local team can see.
+- Own-team projectiles and missile trails are no longer fog-culled per tile. Friendly fire events and audio were always shown, so the player's own artillery no longer disappears mid-flight over unseen ground. Hostile projectiles still obey gameplay fog, and the visual fog toggle remains outside the rule.
+- Wrecks now burn and smoke as they settle, then stop within about half a minute so an old battlefield does not turn into a permanent bonfire. Emission uses the same gameplay-vision query as the hull and stays inside the existing 24-wreck cap.
+- Tracer chains were tuned for continuity: small-arms, cannon and missile tracers are longer, wider and drawn in up to eight segments, and impact and explosion scale were raised a step per class so a tank shell still reads against massed rifle fire.
+- The camera can now be zoomed in to 14 — roughly three and a half tiles above and below the focus — to inspect a facade or a hull without the isometric pitch collapsing into a head-on view. Battle zoom is unchanged.
+
+### Audio
+
+- Combat sound is now stereo-panned from the camera's view: a shot left of the listener arrives on the left, a shot to the right on the right, with distance attenuation, mute, effects volume, voice priority and duplicate-cue gaps all preserved. Hidden enemy fire stays silent under gameplay fog regardless of the visual fog toggle, and an off-screen event is clamped so it cannot swing misleadingly across the field.
+- Added a **Unit responses** volume, independent of the strategic announcer.
+
+### Unit voices
+
+- Every unit type now answers selection, movement and attack orders with its own radio-processed line, plus a separate refusal for orders it cannot carry out. All 19 types are cast, including the national substitutions; lines are trimmed, band-limited, compressed and mixed with radio noise and squelch so they sit under the battlefield.
+- One bark channel with per-cue cooldowns and a global gap keeps a twenty-unit box selection to a single voice, and an announcer line still pre-empts a bark. Barks are presentation only: no combat, damage, vision, save or objective rule reads them.
+- `docs/unit-voice-audition.html` plays the whole set for review.
+
+### Identity and sharing
+
+- The install icon set is rasterised from the MCA insignia instead of the Irontide engine mark, and the same mark serves the favicon and the maskable icon.
+- Added Open Graph and Twitter card metadata plus a 1200 × 630 battlefield hero, so a pasted link previews a base under assault rather than a blank card.
+
+### Documentation and verification
+
+- Added the Phase 3 combat-feedback report and the Phase 4 battlefield-readability report with matched before/after captures.
+- Added the unit voice set documentation and a human playtest protocol for visual recognition, spatial audio and battlefield awareness.
+- Regression coverage extended for stereo panning, unit voice policy, structure durability, attack-order refusal, engineer repair of empty shelters, closer camera limits, infantry ground markers and the social/PWA card.
+
+### Known gaps
+
+- Human recognition, listening and awareness tests are still outstanding. The protocol and capture set exist, but no independent participant has run them.
+- Unit voices are cast per unit type, not per nation. Kokoro has no Lithuanian, Polish, Russian or Belarusian voice, so the national variants use distinct English casts and the baseline units sound the same in both alliances.
+- Persistent rubble and scorch marks were evaluated and deliberately not implemented; wrecks, collapse and burning hulks already mark the battlefield.
+
 ## [0.1.1 BETA] — 2026-10-28
 
 Build-identity, control, durability and presentation release. This update

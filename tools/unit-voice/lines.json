@@ -1,0 +1,233 @@
+{
+  "preset": "field",
+  "units": {
+    "engineer": {
+      "name": "Combat Engineer",
+      "role": "Construction / capture",
+      "voice": "bm_george",
+      "speed": 1.0,
+      "cues": {
+        "select": "Engineer, standing by.",
+        "move": "Moving out.",
+        "attack": "Unarmed, cannot engage.",
+        "unableToComply": "Cannot comply."
+      }
+    },
+    "rifle": {
+      "name": "Rifleman",
+      "role": "Infantry",
+      "voice": "am_echo",
+      "speed": 1.08,
+      "cues": {
+        "select": "Rifle squad, ready.",
+        "move": "On the way.",
+        "attack": "Target acquired.",
+        "unableToComply": "Negative, unable."
+      }
+    },
+    "atgm": {
+      "name": "ATGM Gunner",
+      "role": "Anti-armour",
+      "voice": "am_michael",
+      "speed": 1.04,
+      "cues": {
+        "select": "Missile team, ready.",
+        "move": "Missile team moving.",
+        "attack": "Tank in sight.",
+        "unableToComply": "No shot."
+      }
+    },
+    "medic": {
+      "name": "Field Medic",
+      "role": "Infantry support",
+      "voice": "bf_emma",
+      "speed": 1.1,
+      "cues": {
+        "select": "Medic, ready.",
+        "move": "Medic moving up.",
+        "attack": "Unarmed, cannot engage.",
+        "unableToComply": "Cannot comply."
+      }
+    },
+    "tank": {
+      "name": "Main Battle Tank",
+      "role": "Armour",
+      "voice": "am_onyx",
+      "speed": 0.98,
+      "cues": {
+        "select": "Main battle tank, ready.",
+        "move": "Rolling out.",
+        "attack": "Target acquired.",
+        "unableToComply": "Negative."
+      }
+    },
+    "spg": {
+      "name": "Self-Propelled Howitzer",
+      "role": "Indirect fire",
+      "voice": "am_eric",
+      "speed": 0.95,
+      "cues": {
+        "select": "Gun battery, ready.",
+        "move": "Gun battery moving.",
+        "attack": "Fire mission.",
+        "unableToComply": "Cannot fire."
+      }
+    },
+    "recon": {
+      "name": "Recon Vehicle",
+      "role": "Reconnaissance",
+      "voice": "am_liam",
+      "speed": 1.06,
+      "cues": {
+        "select": "Scout vehicle, ready.",
+        "move": "Scout vehicle moving out.",
+        "attack": "Target acquired.",
+        "unableToComply": "Negative."
+      }
+    },
+    "aa": {
+      "name": "AA Vehicle",
+      "role": "Air defence",
+      "voice": "bf_alice",
+      "speed": 1.0,
+      "cues": {
+        "select": "Air defence, ready.",
+        "move": "Air defence moving.",
+        "attack": "Target acquired.",
+        "unableToComply": "No target."
+      }
+    },
+    "recovery": {
+      "name": "Field Recovery Vehicle",
+      "role": "Repair / recovery",
+      "voice": "bm_fable",
+      "speed": 0.98,
+      "cues": {
+        "select": "Recovery, standing by.",
+        "move": "Recovery moving.",
+        "attack": "Unarmed, cannot engage.",
+        "unableToComply": "Cannot comply."
+      }
+    },
+    "harvester": {
+      "name": "Harvester",
+      "role": "Economy",
+      "voice": "am_puck",
+      "speed": 0.96,
+      "cues": {
+        "select": "Harvester, ready.",
+        "move": "Harvester moving.",
+        "attack": "Unarmed, cannot engage.",
+        "unableToComply": "Negative."
+      }
+    },
+    "fighter": {
+      "name": "Strike Fighter",
+      "role": "Strike aircraft",
+      "voice": "bf_lily",
+      "speed": 1.12,
+      "cues": {
+        "select": "Strike flight, ready.",
+        "move": "Course set.",
+        "attack": "Missiles armed.",
+        "unableToComply": "Unable."
+      }
+    },
+    "interceptor": {
+      "name": "Interceptor",
+      "role": "Air superiority",
+      "voice": "af_nova",
+      "speed": 1.12,
+      "cues": {
+        "select": "Air cover, ready.",
+        "move": "Course set.",
+        "attack": "Target locked.",
+        "unableToComply": "Unable."
+      }
+    },
+    "uav": {
+      "name": "Recon UAV",
+      "role": "Reconnaissance aviation",
+      "voice": "af_sky",
+      "speed": 1.1,
+      "cues": {
+        "select": "Drone, on station.",
+        "move": "Climbing to station.",
+        "attack": "Unarmed, cannot engage.",
+        "unableToComply": "Unable."
+      }
+    },
+    "corvette": {
+      "name": "Missile Corvette",
+      "role": "Naval combatant",
+      "voice": "bm_lewis",
+      "speed": 1.0,
+      "cues": {
+        "select": "Warship, standing by.",
+        "move": "Under way.",
+        "attack": "Target acquired.",
+        "unableToComply": "Unable."
+      }
+    },
+    "pathfinder": {
+      "name": "Pathfinder Recon Team",
+      "role": "Reconnaissance",
+      "voice": "bf_isabella",
+      "speed": 1.06,
+      "cues": {
+        "select": "Scout team, ready.",
+        "move": "Scout team moving.",
+        "attack": "Unarmed, cannot engage.",
+        "unableToComply": "Negative."
+      }
+    },
+    "spearhead": {
+      "name": "Spearhead MBT",
+      "role": "Armour",
+      "voice": "am_fenrir",
+      "speed": 0.98,
+      "cues": {
+        "select": "Main battle tank, ready.",
+        "move": "Tank rolling.",
+        "attack": "Target acquired.",
+        "unableToComply": "Negative."
+      }
+    },
+    "mlrs": {
+      "name": "Rocket Battery",
+      "role": "Indirect fire",
+      "voice": "bm_daniel",
+      "speed": 0.96,
+      "cues": {
+        "select": "Rocket battery, standing by.",
+        "move": "Rocket battery moving.",
+        "attack": "Fire mission.",
+        "unableToComply": "Cannot fire."
+      }
+    },
+    "heavyHowitzer": {
+      "name": "Heavy Howitzer",
+      "role": "Indirect fire",
+      "voice": "am_adam",
+      "speed": 0.94,
+      "cues": {
+        "select": "Heavy guns, ready.",
+        "move": "Heavy battery moving.",
+        "attack": "Fire mission.",
+        "unableToComply": "Cannot fire."
+      }
+    },
+    "deepReconUAV": {
+      "name": "Deep Recon UAV",
+      "role": "Reconnaissance aviation",
+      "voice": "af_sarah",
+      "speed": 1.08,
+      "cues": {
+        "select": "Recon drone, on station.",
+        "move": "Drone moving to station.",
+        "attack": "Unarmed, cannot engage.",
+        "unableToComply": "Unable."
+      }
+    }
+  }
+}

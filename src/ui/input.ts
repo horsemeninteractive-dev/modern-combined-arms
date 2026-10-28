@@ -291,8 +291,10 @@ export class InputController {
     }
     if (app.mode === 'repair') {
       const target = app.pickAt(clientX, clientY);
-      if (!isRepairTarget(target, app.localPlayerId)) {
-        app.notify('Select a damaged friendly structure.', 'warning');
+      const occupants =
+        target && app.game ? app.game.garrisonOccupants(target.id) : [];
+      if (!isRepairTarget(target, app.localPlayerId, occupants)) {
+        app.notify('Select a damaged friendly or neutral structure.', 'warning');
         app.audio.play('denied');
         return;
       }

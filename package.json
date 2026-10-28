@@ -1,7 +1,7 @@
 {
   "name": "iron-tide",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "releaseStage": "BETA",
   "type": "module",
   "description": "MCA: Modern Combined Arms — combined-arms RTS vertical slice",

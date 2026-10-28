@@ -4,10 +4,15 @@ import { Game } from '../src/sim/game';
 import { TILE_SIZE } from '../src/sim/constants';
 import { ParticleSystem } from '../src/render/particles';
 import {
+  eventVisibleToLocal,
+  MAX_VISUAL_WRECKS,
+  pointVisibleToLocal,
+  projectileVisibleToLocal,
   sampleProjectile,
   staticMuzzleAnchor,
   weaponFxClass,
   weaponFxProfile,
+  WreckStore,
 } from '../src/render/combatFx';
 import { islandWith } from './helpers';
 
@@ -29,6 +34,22 @@ describe('combat presentation profiles', () => {
     expect(atgm.muzzleSmoke).toBeGreaterThan(tank.muzzleSmoke);
     expect(atgm.trailSmoke).toBe(true);
     expect(rifle.trailSmoke).toBe(false);
+  });
+
+  it('overlaps tracer tail dots so a shot reads as a streak', () => {
+    for (const id of ['rifle', 'atgm', 'tankGun', 'howitzer', 'samVehicle', 'missing-weapon']) {
+      const profile = weaponFxProfile(id);
+      const gap = profile.tracerLength / profile.tracerSegments - profile.tracerWidth * 2;
+      // A gap wider than ~1 px at battle zoom turns the tail into flying dots.
+      expect(gap, id).toBeLessThan(0.1);
+    }
+  });
+
+  it('makes a direct hit at least as prominent as a near miss', () => {
+    for (const id of ['tankGun', 'atgm', 'samVehicle', 'howitzer']) {
+      const profile = weaponFxProfile(id);
+      expect(profile.explosionScale, id).toBeGreaterThanOrEqual(profile.impactScale);
+    }
   });
 
   it('falls back safely for a weapon this build does not know', () => {
@@ -77,6 +98,60 @@ describe('static weapon muzzle anchors', () => {
   });
 });
 
+describe('combat visibility gate', () => {
+  const shot = (game: Game, team: number, tx: number, tz: number) => {
+    game.emit('shot', {
+      team,
+      x: tx * TILE_SIZE,
+      z: tz * TILE_SIZE,
+      text: '',
+      weaponId: 'rifle',
+    });
+    return game.state.events[game.state.events.length - 1];
+  };
+
+  it('hides an enemy event beyond gameplay vision regardless of the fog texture', () => {
+    const game = new Game(islandWith({}), { enableAI: false });
+    expect(game.fogAt(0, 70, 20)).not.toBe(2);
+    const hidden = shot(game, 1, 70, 20);
+    expect(eventVisibleToLocal(game, hidden)).toBe(false);
+
+    // The renderer's fog toggle is presentation only; the helper has no such
+    // input, so turning the texture off cannot reveal the contact.
+    game.state.scenario.settings.fog = false;
+    expect(eventVisibleToLocal(game, shot(game, 1, 70, 20))).toBe(true);
+  });
+
+  it('shows an enemy event inside vision and always shows friendly fire', () => {
+    const game = new Game(islandWith({}), { enableAI: false });
+    expect(game.fogAt(0, 18, 34)).toBe(2);
+    expect(eventVisibleToLocal(game, shot(game, 1, 18, 34))).toBe(true);
+    expect(eventVisibleToLocal(game, shot(game, 0, 70, 20))).toBe(true);
+  });
+
+  it('never hides an own-team projectile over unseen ground', () => {
+    const game = new Game(islandWith({}), { enableAI: false });
+    expect(pointVisibleToLocal(game, 70 * TILE_SIZE, 20 * TILE_SIZE)).toBe(false);
+    // A shell fired by the local player stays drawn while it crosses fog; its
+    // launch event and audio were already visible/audible by rule.
+    expect(projectileVisibleToLocal(game, 0, 70 * TILE_SIZE, 20 * TILE_SIZE)).toBe(true);
+    // Hostile projectiles keep the gameplay-vision gate.
+    expect(projectileVisibleToLocal(game, 1, 70 * TILE_SIZE, 20 * TILE_SIZE)).toBe(false);
+    expect(projectileVisibleToLocal(game, 1, 18 * TILE_SIZE, 34 * TILE_SIZE)).toBe(true);
+
+    // With gameplay fog off, hostile projectiles are visible everywhere.
+    game.state.scenario.settings.fog = false;
+    expect(projectileVisibleToLocal(game, 1, 70 * TILE_SIZE, 20 * TILE_SIZE)).toBe(true);
+  });
+
+  it('handles malformed projectile positions without throwing', () => {
+    const game = new Game(islandWith({}), { enableAI: false });
+    expect(projectileVisibleToLocal(game, 0, Number.NaN, Number.NaN)).toBe(true);
+    expect(() => projectileVisibleToLocal(game, 1, -1000, -1000)).not.toThrow();
+    expect(() => pointVisibleToLocal(game, Number.NaN, Number.NaN)).not.toThrow();
+  });
+});
+
 describe('combat event metadata', () => {
   it('carries weapon and impact information to the renderer', () => {
     const game = new Game(
@@ -108,6 +183,25 @@ describe('combat event metadata', () => {
   });
 });
 
+describe('visual wreck store', () => {
+  it('drops the oldest hull at the cap and clears without simulation state', () => {
+    const store = new WreckStore();
+    for (let i = 0; i < 30; i++) {
+      store.push({ defId: 'tank', x: i, y: 0, z: 0, facing: 0 });
+    }
+    expect(MAX_VISUAL_WRECKS).toBe(24);
+    expect(store.length).toBe(24);
+    expect(store.wrecks[0].x).toBe(6);
+    expect(store.wrecks[23].x).toBe(29);
+    // A stored hull starts its own burn timers; these are presentation-only.
+    expect(store.wrecks[23].age).toBe(0);
+    expect(store.wrecks[23].smokeTimer).toBeGreaterThan(0);
+    expect(store.wrecks[23].fireTimer).toBeGreaterThan(0);
+    store.clear();
+    expect(store.length).toBe(0);
+  });
+});
+
 describe('destruction feedback', () => {
   it('uses a bounded wreck rather than a second full explosion', () => {
     const particles = new ParticleSystem();
@@ -124,6 +218,29 @@ describe('destruction feedback', () => {
     expect(wreckMaxSize).toBeLessThan(explosionMaxSize);
   });
 
+  it('gives a burning hull a small repeated flame, not a second explosion', () => {
+    const particles = new ParticleSystem();
+    particles.wreckFlame(0, 1, 0, 1);
+    expect(particles.particles).toHaveLength(1);
+    const flame = particles.particles[0];
+    expect(flame.additive).toBe(true);
+    expect(flame.size1).toBeLessThan(flame.size0);
+    expect(flame.life).toBeLessThan(0.5);
+  });
+
+  it('keeps persistent wreck smoke fog-gated and behind the effects switch', () => {
+    const renderer = readFileSync(new URL('../src/render/renderer.ts', import.meta.url), 'utf8');
+    const start = renderer.indexOf('private updateWreckEffects');
+    const end = renderer.indexOf('private drawWrecks', start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const block = renderer.slice(start, end);
+    expect(block).toContain('if (!this.settings.effects) return');
+    expect(block).toContain('pointVisible(game, wreck.x, wreck.z)');
+    expect(block).toContain('this.particles.smoke');
+    expect(block).toContain('this.particles.wreckFlame');
+  });
+
   it('does not reveal projectiles when the fog texture is turned off', () => {
     const renderer = readFileSync(new URL('../src/render/renderer.ts', import.meta.url), 'utf8');
     const start = renderer.indexOf('for (const pr of this.game.state.projectiles)');
@@ -131,7 +248,8 @@ describe('destruction feedback', () => {
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const block = renderer.slice(start, end);
-    expect(block).toContain('pointVisible');
+    // The gate is the shared gameplay-vision helper, never the visual toggle.
+    expect(block).toContain('projectileVisibleToLocal');
     expect(block).not.toContain('showFog');
   });
 });

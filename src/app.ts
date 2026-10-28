@@ -28,6 +28,9 @@ import {
 import type { AIDifficulty, Command, Entity, Stance, VictoryState } from './sim/types';
 import type { SaveData } from './sim/save';
 import { AudioEngine } from './ui/audio';
+import { combatMix } from './ui/audioSpatial';
+import { unitVoiceForEvent } from './ui/unitVoice';
+import { eventVisibleToLocal } from './render/combatFx';
 import { announcementForEvent } from './ui/announcer';
 import { HUD } from './ui/hud';
 import { InputController } from './ui/input';
@@ -77,6 +80,8 @@ export interface AppSettings {
   music: number;
   /** Strategic announcer voice volume. */
   voice: number;
+  /** Selection, move, attack and refusal barks from the selected force. */
+  unitVoice: number;
   effects: boolean;
   shake: boolean;
   fogVisual: boolean;
@@ -198,6 +203,7 @@ export class App {
       ambient: 0.35,
       music: 0.45,
       voice: 0.8,
+      unitVoice: 0.7,
       effects: true,
       shake: true,
       fogVisual: true,
@@ -226,6 +232,7 @@ export class App {
         ...parsed,
         music: Math.max(0, Math.min(1, Number(parsed.music ?? defaults.music))),
         voice: Math.max(0, Math.min(1, Number(parsed.voice ?? defaults.voice))),
+        unitVoice: Math.max(0, Math.min(1, Number(parsed.unitVoice ?? defaults.unitVoice))),
         difficulty,
         mapId,
         nationId,
@@ -242,6 +249,7 @@ export class App {
     this.audio.setVolumes(1, this.settings.sfx, this.settings.ambient);
     this.audio.setMusicVolume(this.settings.music);
     this.audio.setVoiceVolume(this.settings.voice);
+    this.audio.setUnitVoiceVolume(this.settings.unitVoice);
   }
 
   saveSettings(): void {
@@ -1038,23 +1046,30 @@ export class App {
       // Visible enemy fire is part of the battle, not hidden information. Feed
       // it through the same fog gate the renderer uses, with distance trim so
       // a firefight across the island does not sound like one in the base.
-      const visible =
-        isLocal ||
-        !this.game.state.scenario.settings.fog ||
-        this.game.fogAt(
-          this.game.teamOf(local),
-          Math.floor(ev.x / TILE_SIZE),
-          Math.floor(ev.z / TILE_SIZE),
-        ) === 2;
-      if (visible && ev.sound) {
-        let gain = 1;
-        if (!isLocal) {
-          const d = Math.hypot(ev.x - this.renderer.camera.cx, ev.z - this.renderer.camera.cz);
-          const reach = Math.max(1, this.renderer.camera.zoom * 2.6);
-          gain = Math.max(0.12, 1 - d / reach) * 0.55;
-        }
-        this.audio.play(ev.sound, gain);
+      if (eventVisibleToLocal(this.game, ev) && ev.sound) {
+        // Place the cue on the same ground frame the camera uses. Events with
+        // no reported position stay centred rather than being panned as if
+        // they happened at the world origin.
+        const camera = this.renderer.camera;
+        const positioned = Number.isFinite(ev.x) && Number.isFinite(ev.z) && (ev.x !== 0 || ev.z !== 0);
+        const mix = positioned
+          ? combatMix(
+              ev.x,
+              ev.z,
+              {
+                x: camera.cx,
+                z: camera.cz,
+                rightX: camera.right[0],
+                rightZ: camera.right[2],
+                reach: Math.max(1, camera.zoom * 2.6),
+              },
+              isLocal,
+            )
+          : { gain: isLocal ? 1 : 0.55, pan: 0 };
+        this.audio.play(ev.sound, mix.gain, mix.pan);
       }
+      const bark = unitVoiceForEvent(ev, local);
+      if (bark) this.audio.speakUnit(bark.cue, bark.defId);
       if (isLocal && (ev.level === 'warning' || ev.level === 'critical')) {
         this.hud.log(ev.text, ev.level, ev.tick);
         this.toast(ev.text, ev.level === 'critical' ? 'critical' : 'warning');
@@ -1129,17 +1144,34 @@ export class App {
     this.mode = 'none';
     this.placeDefId = null;
     this.hud.selectionChanged();
+    this.playSelectionBark();
   }
 
   addToSelection(id: number): void {
     const e = this.game?.getEntity(id);
     if (!e) return;
-    if (this.selected.includes(id)) {
-      this.selected = this.selected.filter((s) => s !== id);
-    } else {
+    const adding = !this.selected.includes(id);
+    if (adding) {
       this.selected = [...this.selected, id];
+    } else {
+      this.selected = this.selected.filter((s) => s !== id);
     }
     this.hud.selectionChanged();
+    if (adding && e.owner === this.localPlayerId && e.kind === 'unit') {
+      this.audio.speakUnit('select', e.defId);
+    }
+  }
+
+  /**
+   * The first locally owned mobile unit answers a new selection. Structures and
+   * mixed groups follow the same rule: one clear acknowledgement, not a chorus.
+   */
+  private playSelectionBark(): void {
+    if (!this.game) return;
+    const unit = this.selectedEntities().find(
+      (e) => e.kind === 'unit' && e.owner === this.localPlayerId,
+    );
+    if (unit) this.audio.speakUnit('select', unit.defId);
   }
 
   toggleAdditiveSelection(): void {
@@ -1232,7 +1264,9 @@ export class App {
     if (!this.game) return;
     const target = this.pickAt(clientX, clientY);
     const hostile = !!target && this.game.isHostile(target.owner, this.localPlayerId);
-    switch (contextOrderFor(target, this.ownSelected(), this.localPlayerId, hostile)) {
+    const occupants =
+      target?.kind === 'building' ? this.game.garrisonOccupants(target.id) : [];
+    switch (contextOrderFor(target, this.ownSelected(), this.localPlayerId, hostile, occupants)) {
       case 'capture':
         if (target) this.commandCapture(target.id);
         return;
@@ -1877,6 +1911,7 @@ export class App {
     return `
       <div class="setting-row"><div><label>Effects volume</label><small>Weapons, impacts and alerts</small></div><input type="range" min="0" max="1" step="0.05" value="${s.sfx}" data-set="sfx"></div>
       <div class="setting-row"><div><label>Announcer volume</label><small>Strategic voice lines</small></div><input type="range" min="0" max="1" step="0.05" value="${s.voice}" data-set="voice"></div>
+      <div class="setting-row"><div><label>Unit responses</label><small>Selection, orders and refusals</small></div><input type="range" min="0" max="1" step="0.05" value="${s.unitVoice}" data-set="unitVoice"></div>
       <div class="setting-row"><div><label>Ambience volume</label><small>Sea, wind and low drone</small></div><input type="range" min="0" max="1" step="0.05" value="${s.ambient}" data-set="ambient"></div>
       <div class="setting-row"><div><label>Music volume</label><small>Menu and battle soundtracks</small></div><input type="range" min="0" max="1" step="0.05" value="${s.music}" data-set="music"></div>
       <div class="setting-row"><div><label>Visual effects</label><small>Particles, smoke and tracers</small></div><button class="switch ${s.effects ? 'on' : ''}" data-toggle="effects"></button></div>
@@ -1897,7 +1932,7 @@ export class App {
   private bindSettingsControls(root: HTMLElement): void {
     root.querySelectorAll<HTMLInputElement>('[data-set]').forEach((input) => {
       input.addEventListener('input', () => {
-        const key = input.dataset.set as 'sfx' | 'voice' | 'ambient' | 'music';
+        const key = input.dataset.set as 'sfx' | 'voice' | 'unitVoice' | 'ambient' | 'music';
         this.settings[key] = Number(input.value);
         this.saveSettings();
       });

@@ -45,6 +45,30 @@ describe('right-click orders for support engineers', () => {
     expect(contextOrderFor(relay, [engineer], 0, false)).toBe('move');
   });
 
+  it('repairs a damaged shelter before garrisoning it when an engineer is selected', () => {
+    const game = new Game(
+      islandWith({ structures: [{ defId: 'tenement', owner: 0, x: 22, z: 36 }] }),
+      { enableAI: false },
+    );
+    const house = find(game, 'tenement', 0, 'building');
+    const engineer = find(game, 'engineer');
+    const rifle = find(game, 'rifle');
+    house.hp = house.maxHp * 0.5;
+
+    expect(isRepairTarget(house, 0)).toBe(true);
+    expect(contextOrderFor(house, [engineer, rifle], 0, false)).toBe('repair');
+    // Without an engineer the same click still means "occupy it".
+    expect(contextOrderFor(house, [rifle], 0, false)).toBe('garrison');
+  });
+
+  it('accepts an unoccupied neutral shelter for repair', () => {
+    const game = new Game(islandWith({}), { enableAI: false });
+    const house = find(game, 'tenement', -1, 'building');
+    house.hp = house.maxHp * 0.5;
+    expect(isRepairTarget(house, 0)).toBe(true);
+    expect(contextOrderFor(house, [find(game, 'engineer')], 0, false)).toBe('repair');
+  });
+
   it('validates the target used by the mobile repair mode', () => {
     const game = new Game(
       islandWith({ structures: [{ defId: 'barracks', owner: 0, x: 24, z: 34 }] }),
@@ -87,9 +111,12 @@ describe('combat engineer repair orders', () => {
     expect(engineer.order?.type).toBe('repair');
     expect(engineer.state).toBe('repairing');
     const healed = barracks.hp - start;
-    // 3.5 % of 900 HP/s for four seconds = 126 HP.
-    expect(healed).toBeGreaterThan(100);
-    expect(healed).toBeLessThan(150);
+    // Repair replaces 3.5 % of full integrity per second, so a structure takes
+    // the same time to repair however its hit points scale. Asserting the share
+    // instead of an absolute figure keeps that promise under durability changes.
+    const perSecond = healed / 4 / barracks.maxHp;
+    expect(perSecond).toBeGreaterThan(0.02);
+    expect(perSecond).toBeLessThan(0.05);
     expect(barracks.hp).toBeLessThan(barracks.maxHp);
   });
 

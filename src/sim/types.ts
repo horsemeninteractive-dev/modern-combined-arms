@@ -499,7 +499,9 @@ export type SimEventCode =
   | 'powerRestored'
   | 'baseUnderAttack'
   | 'forcesUnderAttack'
-  | 'enemyDetected';
+  | 'enemyDetected'
+  | 'moveOrder'
+  | 'attackOrder';
 
 export type ImpactSurface = 'ground' | 'water' | 'armour' | 'structure' | 'air';
 

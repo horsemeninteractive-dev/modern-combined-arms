@@ -146,6 +146,24 @@ export class ParticleSystem {
     }
   }
 
+  /** A small, repeated flame licking out of a burning hull. */
+  wreckFlame(x: number, y: number, z: number, scale = 1): void {
+    this.push({
+      x: x + (Math.random() - 0.5) * 0.7,
+      y: y + Math.random() * 0.35,
+      z: z + (Math.random() - 0.5) * 0.7,
+      vx: (Math.random() - 0.5) * 0.35,
+      vy: 0.35 + Math.random() * 0.45,
+      vz: (Math.random() - 0.5) * 0.35,
+      life: 0.24 + Math.random() * 0.18,
+      maxLife: 0.42,
+      size0: 0.32 * scale,
+      size1: 0.06,
+      r: 1, g: 0.5 + Math.random() * 0.18, b: 0.08,
+      alpha: 0.72, gravity: -0.15, drag: 0.6, additive: true,
+    });
+  }
+
   /** A structure falling in: dust and smoke, with only a small residual flame. */
   collapse(x: number, y: number, z: number, scale = 1): void {
     this.dust(x, y + 0.4, z, Math.round(14 + 6 * scale), 0.3);

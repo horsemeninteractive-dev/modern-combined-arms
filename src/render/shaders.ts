@@ -233,9 +233,11 @@ layout(location=1) in vec3 aCenter;
 layout(location=2) in vec2 aRadius;
 layout(location=3) in float aRotation;
 layout(location=4) in float aAlpha;
+layout(location=5) in vec3 aColor;
 ${CAMERA}
 out vec2 vLocal;
 out float vAlpha;
+out vec3 vColor;
 void main() {
   vec2 p = aCorner * aRadius;
   float c = cos(aRotation);
@@ -244,6 +246,7 @@ void main() {
   vec3 world = aCenter + vec3(rotated.x, 0.0, rotated.y);
   vLocal = aCorner;
   vAlpha = aAlpha;
+  vColor = aColor;
   gl_Position = projectWorld(world);
 }
 `;
@@ -252,7 +255,7 @@ export const SHADOW_FS = /* glsl */ `#version 300 es
 precision highp float;
 in vec2 vLocal;
 in float vAlpha;
-uniform vec3 uColor;
+in vec3 vColor;
 uniform float uOpacity;
 out vec4 outColor;
 void main() {
@@ -261,7 +264,7 @@ void main() {
   float core = 1.0 - smoothstep(0.0, 0.9, d);
   float a = vAlpha * uOpacity * (0.8 * soft + 0.2 * core);
   if (a < 0.004) discard;
-  outColor = vec4(uColor, a);
+  outColor = vec4(vColor, a);
 }
 `;
 

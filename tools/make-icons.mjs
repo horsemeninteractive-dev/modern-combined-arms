@@ -1,13 +1,15 @@
-// Rasterises the Irontide mark into the PWA icon set without any dependency:
-// shapes are drawn at 4x and box-filtered into an RGBA buffer, then written as
-// a PNG with zlib. Run `node tools/make-icons.mjs` after editing the mark; the
-// generated PNGs under public/icons are the committed assets.
+// Rasterises the MCA insignia (public/insignia.svg) into the PWA icon set
+// without any dependency: shapes are drawn at 4x and box-filtered into an RGBA
+// buffer, then written as a PNG with zlib. Run `node tools/make-icons.mjs` after
+// editing the insignia; the generated PNGs under public/icons are the committed
+// assets. The Irontide engine mark is deliberately not used here: it belongs to
+// the engine splash, not to the game's home-screen identity.
 import { deflateSync } from 'node:zlib';
 import { mkdirSync, writeFileSync } from 'node:fs';
 
 const BG = [11, 17, 20];
-const FRAME = [241, 194, 126];
-const WAVE = [224, 163, 74];
+const BORDER = [224, 163, 74];
+const INK = [241, 194, 126];
 
 const crcTable = new Uint32Array(256).map((_, n) => {
   let c = n;
@@ -50,43 +52,37 @@ function encodePng(width, height, rgba) {
   ]);
 }
 
-/** The hex plate and the tide crest, matching public/irontide-mark.svg. */
-const plate = [[48, 4], [86, 26], [86, 70], [48, 92], [10, 70], [10, 26]];
-const plateStroke = 4.5 / 2;
-const waveStroke = 6.5 / 2;
-const wavePath = [
-  ...sampleCubic([20, 64], [28, 44], [40, 42], [47, 52]),
-  ...sampleCubic([47, 52], [53, 61], [62, 58], [76, 44]).slice(1),
+/*
+ * The insignia, in its own 64-unit space: a framed amber monogram reading
+ * MCA. Kept as plain polylines so the rasteriser stays dependency-free.
+ */
+const FRAME_RECT = { x: 3, y: 3, w: 58, h: 58, stroke: 2 };
+const LETTER_STROKE = 3.4;
+const GLYPHS = [
+  // M
+  [[9.5, 48], [9.5, 16], [15.5, 37], [21.5, 16], [21.5, 48]],
+  // C
+  [[35.5, 16], [27.5, 16], [27.5, 48], [35.5, 48]],
+  // A
+  [[41.5, 48], [47.5, 16], [53.5, 48]],
+  // A crossbar
+  [[45.6, 37], [49.4, 37]],
 ];
-// Square caps: extend the two ends so the raster matches the SVG's linecap.
-const wave = [
-  extend(wavePath[0], wavePath[1], waveStroke),
-  ...wavePath,
-  extend(wavePath[wavePath.length - 1], wavePath[wavePath.length - 2], waveStroke),
-];
-
-function sampleCubic(p0, c1, c2, p1, steps = 28) {
-  const points = [];
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    const u = 1 - t;
-    const a = u * u * u;
-    const b = 3 * u * u * t;
-    const c = 3 * u * t * t;
-    const d = t * t * t;
-    points.push([
-      a * p0[0] + b * c1[0] + c * c2[0] + d * p1[0],
-      a * p0[1] + b * c1[1] + c * c2[1] + d * p1[1],
-    ]);
-  }
-  return points;
-}
 
 function extend(from, toward, distance) {
   const dx = toward[0] - from[0];
   const dy = toward[1] - from[1];
   const len = Math.hypot(dx, dy) || 1;
   return [from[0] + (dx / len) * distance, from[1] + (dy / len) * distance];
+}
+
+/** Square caps, matching the SVG's stroke-linecap. */
+function withCaps(points, half) {
+  return [
+    extend(points[0], points[1], half),
+    ...points,
+    extend(points[points.length - 1], points[points.length - 2], half),
+  ];
 }
 
 function strokeDistance(px, py, points) {
@@ -121,9 +117,10 @@ function edgeDistance(px, py, points) {
 function draw(size, { scale = 1 } = {}) {
   const ss = 4;
   const w = size * ss;
+  // The drawing space is 96 units wide; the insignia is authored at 64.
   const unit = (w / 96) * scale;
   const offset = (w - 96 * unit) / 2;
-  const px = (x, y) => [x * unit + offset, y * unit + offset];
+  const px = (x, y) => [x * 1.5 * unit + offset, y * 1.5 * unit + offset];
 
   const hi = new Uint8ClampedArray(w * w * 4);
   for (let i = 0; i < w * w; i++) {
@@ -138,18 +135,23 @@ function draw(size, { scale = 1 } = {}) {
     hi[i * 4 + 2] = color[2];
   };
 
-  const platePts = plate.map(([x, y]) => px(x, y));
-  const wavePts = wave.map(([x, y]) => px(x, y));
-  const plateHalf = plateStroke * unit;
-  const waveHalf = waveStroke * unit;
+  const frameHalf = (FRAME_RECT.stroke / 2) * 1.5 * unit;
+  const frame = [
+    [FRAME_RECT.x, FRAME_RECT.y],
+    [FRAME_RECT.x + FRAME_RECT.w, FRAME_RECT.y],
+    [FRAME_RECT.x + FRAME_RECT.w, FRAME_RECT.y + FRAME_RECT.h],
+    [FRAME_RECT.x, FRAME_RECT.y + FRAME_RECT.h],
+  ].map(([x, y]) => px(x, y));
+  const inkHalf = (LETTER_STROKE / 2) * 1.5 * unit;
+  const glyphs = GLYPHS.map((points) => withCaps(points.map(([x, y]) => px(x, y)), inkHalf));
 
   for (let y = Math.max(0, Math.floor(offset)); y < Math.min(w, Math.ceil(w - offset)); y++) {
     for (let x = Math.max(0, Math.floor(offset)); x < Math.min(w, Math.ceil(w - offset)); x++) {
       const cx = x + 0.5;
       const cy = y + 0.5;
       const i = y * w + x;
-      if (edgeDistance(cx, cy, platePts) <= plateHalf) put(i, FRAME);
-      else if (strokeDistance(cx, cy, wavePts) <= waveHalf) put(i, WAVE);
+      if (edgeDistance(cx, cy, frame) <= frameHalf) put(i, BORDER);
+      else if (glyphs.some((points) => strokeDistance(cx, cy, points) <= inkHalf)) put(i, INK);
     }
   }
 

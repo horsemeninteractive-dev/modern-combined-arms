@@ -55,8 +55,8 @@ describe('support durability', () => {
   });
 
   it('makes direct fire work for a structure, without displacing siege artillery', () => {
-    expect(secondsToKill('tankGun', 'structure', BUILDINGS.barracks.hp)).toBeGreaterThan(45);
-    expect(secondsToKill('howitzer', 'structure', BUILDINGS.barracks.hp)).toBeGreaterThan(40);
+    expect(secondsToKill('tankGun', 'structure', BUILDINGS.barracks.hp)).toBeGreaterThan(90);
+    expect(secondsToKill('howitzer', 'structure', BUILDINGS.barracks.hp)).toBeGreaterThan(80);
     // Artillery's siege advantage is reach and splash, not raw single-target DPS.
     expect(WEAPONS.howitzer.multipliers.structure ?? 0).toBeGreaterThan(
       WEAPONS.tankGun.multipliers.structure ?? 1,
@@ -111,7 +111,7 @@ describe('infantry and engineer control', () => {
     expect(house.hp).toBeGreaterThan(house.maxHp * 0.5);
   });
 
-  it('still refuses to repair a neutral shelter nobody holds', () => {
+  it('lets an engineer prepare an unoccupied neutral shelter', () => {
     const game = new Game(
       scenarioWith([{ defId: 'tenement', owner: -1, x: 24, z: 12 }], [
         { defId: 'engineer', owner: 0, x: 22, z: 14 },
@@ -120,10 +120,11 @@ describe('infantry and engineer control', () => {
     );
     const house = game.state.entities.find((e) => e.defId === 'tenement')!;
     house.hp = house.maxHp * 0.5;
+    house.lastHitTick = -9999;
     game.enqueueCommand({ type: 'repair', team: 0, ids: [unit(game, 'engineer').id], targetId: house.id });
-    game.advance(4);
-    expect(house.hp).toBe(house.maxHp * 0.5);
-    expect(game.state.events.some((e) => /shelter your infantry hold/.test(e.text))).toBe(true);
+    game.advance(20 * 8);
+    expect(house.hp).toBeGreaterThan(house.maxHp * 0.5);
+    expect(game.state.events.some((e) => /neutral shelter/.test(e.text))).toBe(false);
   });
 });
 
@@ -180,6 +181,48 @@ describe('harvester and unit movement', () => {
     expect(rifle.z).toBe(z);
   });
 
+  it('lets a faster unit overtake a slower friendly column', () => {
+    const game = new Game(
+      scenarioWith([], [
+        { defId: 'harvester', owner: 0, x: 12, z: 20 },
+        { defId: 'recon', owner: 0, x: 8, z: 20 },
+      ]),
+      { enableAI: false },
+    );
+    const harvester = unit(game, 'harvester');
+    const recon = unit(game, 'recon');
+    const destX = 44 * TILE_SIZE;
+    const destZ = 20 * TILE_SIZE;
+    game.enqueueCommand({ type: 'move', team: 0, ids: [harvester.id], x: destX, z: destZ });
+    game.enqueueCommand({ type: 'move', team: 0, ids: [recon.id], x: destX, z: destZ });
+    game.advance(20 * 10);
+
+    expect(recon.x).toBeGreaterThan(harvester.x + 2 * TILE_SIZE);
+  });
+
+  it('lets a vehicle pass a stationary friendly unit in its lane', () => {
+    const game = new Game(
+      scenarioWith([], [
+        { defId: 'rifle', owner: 0, x: 20, z: 20 },
+        { defId: 'tank', owner: 0, x: 14, z: 20 },
+      ]),
+      { enableAI: false },
+    );
+    const rifle = unit(game, 'rifle');
+    const tank = unit(game, 'tank');
+    const rifleX = rifle.x;
+    game.enqueueCommand({
+      type: 'move',
+      team: 0,
+      ids: [tank.id],
+      x: 34 * TILE_SIZE,
+      z: 20 * TILE_SIZE,
+    });
+    game.advance(20 * 10);
+
+    expect(tank.x).toBeGreaterThan(rifleX + 2 * TILE_SIZE);
+  });
+
   it('turns an aircraft onto its flight heading instead of leaving it fixed', () => {
     const game = new Game(scenarioWith([], [{ defId: 'fighter', owner: 0, x: 10, z: 10 }]), {
       enableAI: false,
@@ -214,5 +257,60 @@ describe('harvester and unit movement', () => {
       // Every metre covered points along the nose; the hull never crabs.
       expect(Math.abs(normalizeAngle(travel - tank.facing))).toBeLessThan(0.001);
     }
+  });
+
+  it('keeps an infantry squad flowing around a parked friendly without stacking', () => {
+    const game = new Game(
+      scenarioWith(
+        [],
+        [
+          { defId: 'rifle', owner: 0, x: 20, z: 20 },
+          { defId: 'rifle', owner: 0, x: 16, z: 22 },
+          { defId: 'rifle', owner: 0, x: 16, z: 18 },
+        ],
+      ),
+      { enableAI: false },
+    );
+    const [blocker, ...marchers] = game.entitiesOf(0, 'unit').filter((e) => e.defId === 'rifle');
+    for (const marcher of marchers) {
+      game.enqueueCommand({
+        type: 'move',
+        team: 0,
+        ids: [marcher.id],
+        x: 26 * TILE_SIZE,
+        z: 20 * TILE_SIZE,
+      });
+    }
+    game.advance(20 * 12);
+    for (const marcher of marchers) {
+      // Every marcher gets past the parked squad-mate…
+      expect(marcher.x).toBeGreaterThan(blocker.x + TILE_SIZE);
+      // …and infantry spacing stays a shoulder-width, not a hull-width.
+      expect(Math.hypot(marcher.z - 20 * TILE_SIZE, marcher.x - 26 * TILE_SIZE)).toBeLessThan(
+        2 * TILE_SIZE,
+      );
+    }
+  });
+
+  it('holds a unit that cannot hurt the target instead of walking it in', () => {
+    const game = new Game(
+      scenarioWith([{ defId: 'barracks', owner: 1, x: 24, z: 20 }], [
+        { defId: 'rifle', owner: 0, x: 16, z: 20 },
+      ]),
+      { enableAI: false },
+    );
+    const rifle = unit(game, 'rifle');
+    const barracks = game.state.entities.find(
+      (e) => e.kind === 'building' && e.defId === 'barracks' && e.owner === 1,
+    )!;
+    const start = { x: rifle.x, z: rifle.z };
+    game.enqueueCommand({ type: 'attack', team: 0, ids: [rifle.id], targetId: barracks.id });
+    game.advance(20 * 6);
+    expect(rifle.order).toBeNull();
+    expect(rifle.path).toHaveLength(0);
+    expect(Math.hypot(rifle.x - start.x, rifle.z - start.z)).toBeLessThan(0.5);
+    expect(
+      game.state.events.some((e) => e.type === 'orderFailed' && /cannot attack/i.test(e.text)),
+    ).toBe(true);
   });
 });

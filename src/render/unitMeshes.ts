@@ -122,11 +122,14 @@ function addInfantryBase(
   b.box(0, 1.02, 0, 0.065, 0.05, 0.075, SKIN);
   b.sphere(0.01, 1.08, 0, 0.095, 4, 7, SKIN);
   // A rounded helmet shell with a separate brim, ear covers, NVG mount and
-  // goggle strip; the crown is a sphere, not another square block.
-  b.sphere(0.005, 1.13, 0, 0.095, 3, 7, helmet);
-  b.box(0.085, 1.10, 0, 0.05, 0.035, 0.19, helmet);
-  b.box(0.005, 1.08, 0.105, 0.09, 0.06, 0.025, helmet);
-  b.box(0.005, 1.08, -0.105, 0.09, 0.06, 0.025, helmet);
+  // goggle strip; the crown is a sphere, not another square block. The cover
+  // carries a partial team tint: at battle zoom the helmet is the only part of
+  // a rifleman large enough to show ownership, while the shoulder patch is
+  // under a pixel. The mix keeps the olive cover instead of a flat marker.
+  b.sphere(0.005, 1.13, 0, 0.095, 3, 7, helmet, 0.65);
+  b.box(0.085, 1.10, 0, 0.05, 0.035, 0.19, helmet, 0.65);
+  b.box(0.005, 1.08, 0.105, 0.09, 0.06, 0.025, helmet, 0.5);
+  b.box(0.005, 1.08, -0.105, 0.09, 0.06, 0.025, helmet, 0.5);
   b.box(0.085, 1.17, 0, 0.03, 0.035, 0.045, PALETTE.darkMetal);
   b.box(0.08, 1.07, 0, 0.02, 0.03, 0.13, PALETTE.glassDark);
   // A raised, team-tinted shoulder patch; the overlay carries the primary
@@ -1885,6 +1888,22 @@ const SHADOW_RADIUS: Record<string, [number, number]> = {
 
 export function unitShadowRadius(id: string): [number, number] {
   return SHADOW_RADIUS[id] ?? [1.4, 1.4];
+}
+
+/**
+ * Ground presence pool for foot units. At battle zoom a rifleman is only a few
+ * pixels wide, so infantry also stamp a soft team-coloured ellipse on the
+ * ground beneath the normal contact shadow. It is presentation only: no
+ * entity, picking, collision or simulation state, and vehicles do not get one.
+ */
+const GROUND_MARKER: Record<string, { rx: number; rz: number; alpha: number }> = {
+  rifle: { rx: 0.48, rz: 0.26, alpha: 0.34 },
+  atgm: { rx: 0.52, rz: 0.28, alpha: 0.34 },
+  medic: { rx: 0.48, rz: 0.26, alpha: 0.34 },
+};
+
+export function unitGroundMarker(id: string): { rx: number; rz: number; alpha: number } | null {
+  return GROUND_MARKER[id] ?? null;
 }
 
 /**

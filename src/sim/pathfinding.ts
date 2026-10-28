@@ -107,8 +107,10 @@ function stepCost(nav: NavGrid, from: number, to: number, diagonal: boolean): nu
   );
   if (!Number.isFinite(cost)) return Number.POSITIVE_INFINITY;
   // Traffic is a preference, not a wall: a corridor packed with friendly
-  // units must still be usable, just less attractive than an open lane.
-  const traffic = nav.soft?.[to] ? 2.5 : 1;
+  // units must still be usable, just less attractive than an open lane. A
+  // moving unit is lighter traffic than one holding position.
+  const soft = nav.soft?.[to] ?? 0;
+  const traffic = soft === 2 ? 1.5 : soft ? 2.5 : 1;
   return cost * (diagonal ? 1.41421356 : 1) * traffic;
 }
 

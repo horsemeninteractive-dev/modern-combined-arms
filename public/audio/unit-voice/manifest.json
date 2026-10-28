@@ -1,0 +1,581 @@
+{
+  "version": 2,
+  "engine": "kokoro-82m-onnx",
+  "preset": "field",
+  "sampleRate": 24000,
+  "bitrateKbps": 64,
+  "cues": [
+    "select",
+    "move",
+    "attack",
+    "unableToComply"
+  ],
+  "processing": {
+    "highpass": 200.0,
+    "lowpass": 4400.0,
+    "presence": 1800.0,
+    "presence_gain": 2.5,
+    "presence_q": 0.9,
+    "comp_threshold": -18.0,
+    "comp_ratio": 2.6,
+    "comp_attack_ms": 6.0,
+    "comp_release_ms": 100.0,
+    "makeup_db": 2.5,
+    "drive": 1.0,
+    "noise_db": -52.0,
+    "target_peak_db": -2.0
+  },
+  "units": {
+    "engineer": {
+      "name": "Combat Engineer",
+      "role": "Construction / capture",
+      "voice": "bm_george",
+      "lang": "en-gb",
+      "speed": 1.0,
+      "lines": {
+        "select": {
+          "text": "Engineer, standing by.",
+          "file": "engineer/select.mp3",
+          "durationMs": 1984
+        },
+        "move": {
+          "text": "Moving out.",
+          "file": "engineer/move.mp3",
+          "durationMs": 1010
+        },
+        "attack": {
+          "text": "Unarmed, cannot engage.",
+          "file": "engineer/attack.mp3",
+          "durationMs": 2010
+        },
+        "unableToComply": {
+          "text": "Cannot comply.",
+          "file": "engineer/unableToComply.mp3",
+          "durationMs": 1330
+        }
+      }
+    },
+    "rifle": {
+      "name": "Rifleman",
+      "role": "Infantry",
+      "voice": "am_echo",
+      "lang": "en-us",
+      "speed": 1.08,
+      "lines": {
+        "select": {
+          "text": "Rifle squad, ready.",
+          "file": "rifle/select.mp3",
+          "durationMs": 1590
+        },
+        "move": {
+          "text": "On the way.",
+          "file": "rifle/move.mp3",
+          "durationMs": 930
+        },
+        "attack": {
+          "text": "Target acquired.",
+          "file": "rifle/attack.mp3",
+          "durationMs": 1330
+        },
+        "unableToComply": {
+          "text": "Negative, unable.",
+          "file": "rifle/unableToComply.mp3",
+          "durationMs": 1490
+        }
+      }
+    },
+    "atgm": {
+      "name": "ATGM Gunner",
+      "role": "Anti-armour",
+      "voice": "am_michael",
+      "lang": "en-us",
+      "speed": 1.04,
+      "lines": {
+        "select": {
+          "text": "Missile team, ready.",
+          "file": "atgm/select.mp3",
+          "durationMs": 1245
+        },
+        "move": {
+          "text": "Missile team moving.",
+          "file": "atgm/move.mp3",
+          "durationMs": 1275
+        },
+        "attack": {
+          "text": "Tank in sight.",
+          "file": "atgm/attack.mp3",
+          "durationMs": 1000
+        },
+        "unableToComply": {
+          "text": "No shot.",
+          "file": "atgm/unableToComply.mp3",
+          "durationMs": 905
+        }
+      }
+    },
+    "medic": {
+      "name": "Field Medic",
+      "role": "Infantry support",
+      "voice": "bf_emma",
+      "lang": "en-gb",
+      "speed": 1.1,
+      "lines": {
+        "select": {
+          "text": "Medic, ready.",
+          "file": "medic/select.mp3",
+          "durationMs": 1055
+        },
+        "move": {
+          "text": "Medic moving up.",
+          "file": "medic/move.mp3",
+          "durationMs": 1190
+        },
+        "attack": {
+          "text": "Unarmed, cannot engage.",
+          "file": "medic/attack.mp3",
+          "durationMs": 1600
+        },
+        "unableToComply": {
+          "text": "Cannot comply.",
+          "file": "medic/unableToComply.mp3",
+          "durationMs": 1130
+        }
+      }
+    },
+    "tank": {
+      "name": "Main Battle Tank",
+      "role": "Armour",
+      "voice": "am_onyx",
+      "lang": "en-us",
+      "speed": 0.98,
+      "lines": {
+        "select": {
+          "text": "Main battle tank, ready.",
+          "file": "tank/select.mp3",
+          "durationMs": 2185
+        },
+        "move": {
+          "text": "Rolling out.",
+          "file": "tank/move.mp3",
+          "durationMs": 1035
+        },
+        "attack": {
+          "text": "Target acquired.",
+          "file": "tank/attack.mp3",
+          "durationMs": 1325
+        },
+        "unableToComply": {
+          "text": "Negative.",
+          "file": "tank/unableToComply.mp3",
+          "durationMs": 895
+        }
+      }
+    },
+    "spg": {
+      "name": "Self-Propelled Howitzer",
+      "role": "Indirect fire",
+      "voice": "am_eric",
+      "lang": "en-us",
+      "speed": 0.95,
+      "lines": {
+        "select": {
+          "text": "Gun battery, ready.",
+          "file": "spg/select.mp3",
+          "durationMs": 1390
+        },
+        "move": {
+          "text": "Gun battery moving.",
+          "file": "spg/move.mp3",
+          "durationMs": 1340
+        },
+        "attack": {
+          "text": "Fire mission.",
+          "file": "spg/attack.mp3",
+          "durationMs": 1030
+        },
+        "unableToComply": {
+          "text": "Cannot fire.",
+          "file": "spg/unableToComply.mp3",
+          "durationMs": 1090
+        }
+      }
+    },
+    "recon": {
+      "name": "Recon Vehicle",
+      "role": "Reconnaissance",
+      "voice": "am_liam",
+      "lang": "en-us",
+      "speed": 1.06,
+      "lines": {
+        "select": {
+          "text": "Scout vehicle, ready.",
+          "file": "recon/select.mp3",
+          "durationMs": 1450
+        },
+        "move": {
+          "text": "Scout vehicle moving out.",
+          "file": "recon/move.mp3",
+          "durationMs": 1600
+        },
+        "attack": {
+          "text": "Target acquired.",
+          "file": "recon/attack.mp3",
+          "durationMs": 1220
+        },
+        "unableToComply": {
+          "text": "Negative.",
+          "file": "recon/unableToComply.mp3",
+          "durationMs": 850
+        }
+      }
+    },
+    "aa": {
+      "name": "AA Vehicle",
+      "role": "Air defence",
+      "voice": "bf_alice",
+      "lang": "en-gb",
+      "speed": 1.0,
+      "lines": {
+        "select": {
+          "text": "Air defence, ready.",
+          "file": "aa/select.mp3",
+          "durationMs": 1575
+        },
+        "move": {
+          "text": "Air defence moving.",
+          "file": "aa/move.mp3",
+          "durationMs": 1595
+        },
+        "attack": {
+          "text": "Target acquired.",
+          "file": "aa/attack.mp3",
+          "durationMs": 1395
+        },
+        "unableToComply": {
+          "text": "No target.",
+          "file": "aa/unableToComply.mp3",
+          "durationMs": 1300
+        }
+      }
+    },
+    "recovery": {
+      "name": "Field Recovery Vehicle",
+      "role": "Repair / recovery",
+      "voice": "bm_fable",
+      "lang": "en-gb",
+      "speed": 0.98,
+      "lines": {
+        "select": {
+          "text": "Recovery, standing by.",
+          "file": "recovery/select.mp3",
+          "durationMs": 2289
+        },
+        "move": {
+          "text": "Recovery moving.",
+          "file": "recovery/move.mp3",
+          "durationMs": 1805
+        },
+        "attack": {
+          "text": "Unarmed, cannot engage.",
+          "file": "recovery/attack.mp3",
+          "durationMs": 2389
+        },
+        "unableToComply": {
+          "text": "Cannot comply.",
+          "file": "recovery/unableToComply.mp3",
+          "durationMs": 1664
+        }
+      }
+    },
+    "harvester": {
+      "name": "Harvester",
+      "role": "Economy",
+      "voice": "am_puck",
+      "lang": "en-us",
+      "speed": 0.96,
+      "lines": {
+        "select": {
+          "text": "Harvester, ready.",
+          "file": "harvester/select.mp3",
+          "durationMs": 1110
+        },
+        "move": {
+          "text": "Harvester moving.",
+          "file": "harvester/move.mp3",
+          "durationMs": 1090
+        },
+        "attack": {
+          "text": "Unarmed, cannot engage.",
+          "file": "harvester/attack.mp3",
+          "durationMs": 1380
+        },
+        "unableToComply": {
+          "text": "Negative.",
+          "file": "harvester/unableToComply.mp3",
+          "durationMs": 830
+        }
+      }
+    },
+    "fighter": {
+      "name": "Strike Fighter",
+      "role": "Strike aircraft",
+      "voice": "bf_lily",
+      "lang": "en-gb",
+      "speed": 1.12,
+      "lines": {
+        "select": {
+          "text": "Strike flight, ready.",
+          "file": "fighter/select.mp3",
+          "durationMs": 1440
+        },
+        "move": {
+          "text": "Course set.",
+          "file": "fighter/move.mp3",
+          "durationMs": 1040
+        },
+        "attack": {
+          "text": "Missiles armed.",
+          "file": "fighter/attack.mp3",
+          "durationMs": 1420
+        },
+        "unableToComply": {
+          "text": "Unable.",
+          "file": "fighter/unableToComply.mp3",
+          "durationMs": 1005
+        }
+      }
+    },
+    "interceptor": {
+      "name": "Interceptor",
+      "role": "Air superiority",
+      "voice": "af_nova",
+      "lang": "en-us",
+      "speed": 1.12,
+      "lines": {
+        "select": {
+          "text": "Air cover, ready.",
+          "file": "interceptor/select.mp3",
+          "durationMs": 1250
+        },
+        "move": {
+          "text": "Course set.",
+          "file": "interceptor/move.mp3",
+          "durationMs": 1040
+        },
+        "attack": {
+          "text": "Target locked.",
+          "file": "interceptor/attack.mp3",
+          "durationMs": 1130
+        },
+        "unableToComply": {
+          "text": "Unable.",
+          "file": "interceptor/unableToComply.mp3",
+          "durationMs": 885
+        }
+      }
+    },
+    "uav": {
+      "name": "Recon UAV",
+      "role": "Reconnaissance aviation",
+      "voice": "af_sky",
+      "lang": "en-us",
+      "speed": 1.1,
+      "lines": {
+        "select": {
+          "text": "Drone, on station.",
+          "file": "uav/select.mp3",
+          "durationMs": 1365
+        },
+        "move": {
+          "text": "Climbing to station.",
+          "file": "uav/move.mp3",
+          "durationMs": 1320
+        },
+        "attack": {
+          "text": "Unarmed, cannot engage.",
+          "file": "uav/attack.mp3",
+          "durationMs": 1620
+        },
+        "unableToComply": {
+          "text": "Unable.",
+          "file": "uav/unableToComply.mp3",
+          "durationMs": 765
+        }
+      }
+    },
+    "corvette": {
+      "name": "Missile Corvette",
+      "role": "Naval combatant",
+      "voice": "bm_lewis",
+      "lang": "en-gb",
+      "speed": 1.0,
+      "lines": {
+        "select": {
+          "text": "Warship, standing by.",
+          "file": "corvette/select.mp3",
+          "durationMs": 1579
+        },
+        "move": {
+          "text": "Under way.",
+          "file": "corvette/move.mp3",
+          "durationMs": 850
+        },
+        "attack": {
+          "text": "Target acquired.",
+          "file": "corvette/attack.mp3",
+          "durationMs": 1131
+        },
+        "unableToComply": {
+          "text": "Unable.",
+          "file": "corvette/unableToComply.mp3",
+          "durationMs": 760
+        }
+      }
+    },
+    "pathfinder": {
+      "name": "Pathfinder Recon Team",
+      "role": "Reconnaissance",
+      "voice": "bf_isabella",
+      "lang": "en-gb",
+      "speed": 1.06,
+      "lines": {
+        "select": {
+          "text": "Scout team, ready.",
+          "file": "pathfinder/select.mp3",
+          "durationMs": 1270
+        },
+        "move": {
+          "text": "Scout team moving.",
+          "file": "pathfinder/move.mp3",
+          "durationMs": 1300
+        },
+        "attack": {
+          "text": "Unarmed, cannot engage.",
+          "file": "pathfinder/attack.mp3",
+          "durationMs": 1630
+        },
+        "unableToComply": {
+          "text": "Negative.",
+          "file": "pathfinder/unableToComply.mp3",
+          "durationMs": 930
+        }
+      }
+    },
+    "spearhead": {
+      "name": "Spearhead MBT",
+      "role": "Armour",
+      "voice": "am_fenrir",
+      "lang": "en-us",
+      "speed": 0.98,
+      "lines": {
+        "select": {
+          "text": "Main battle tank, ready.",
+          "file": "spearhead/select.mp3",
+          "durationMs": 1350
+        },
+        "move": {
+          "text": "Tank rolling.",
+          "file": "spearhead/move.mp3",
+          "durationMs": 900
+        },
+        "attack": {
+          "text": "Target acquired.",
+          "file": "spearhead/attack.mp3",
+          "durationMs": 1000
+        },
+        "unableToComply": {
+          "text": "Negative.",
+          "file": "spearhead/unableToComply.mp3",
+          "durationMs": 780
+        }
+      }
+    },
+    "mlrs": {
+      "name": "Rocket Battery",
+      "role": "Indirect fire",
+      "voice": "bm_daniel",
+      "lang": "en-gb",
+      "speed": 0.96,
+      "lines": {
+        "select": {
+          "text": "Rocket battery, standing by.",
+          "file": "mlrs/select.mp3",
+          "durationMs": 2130
+        },
+        "move": {
+          "text": "Rocket battery moving.",
+          "file": "mlrs/move.mp3",
+          "durationMs": 1735
+        },
+        "attack": {
+          "text": "Fire mission.",
+          "file": "mlrs/attack.mp3",
+          "durationMs": 1195
+        },
+        "unableToComply": {
+          "text": "Cannot fire.",
+          "file": "mlrs/unableToComply.mp3",
+          "durationMs": 1320
+        }
+      }
+    },
+    "heavyHowitzer": {
+      "name": "Heavy Howitzer",
+      "role": "Indirect fire",
+      "voice": "am_adam",
+      "lang": "en-us",
+      "speed": 0.94,
+      "lines": {
+        "select": {
+          "text": "Heavy guns, ready.",
+          "file": "heavyHowitzer/select.mp3",
+          "durationMs": 1344
+        },
+        "move": {
+          "text": "Heavy battery moving.",
+          "file": "heavyHowitzer/move.mp3",
+          "durationMs": 1400
+        },
+        "attack": {
+          "text": "Fire mission.",
+          "file": "heavyHowitzer/attack.mp3",
+          "durationMs": 1003
+        },
+        "unableToComply": {
+          "text": "Cannot fire.",
+          "file": "heavyHowitzer/unableToComply.mp3",
+          "durationMs": 1060
+        }
+      }
+    },
+    "deepReconUAV": {
+      "name": "Deep Recon UAV",
+      "role": "Reconnaissance aviation",
+      "voice": "af_sarah",
+      "lang": "en-us",
+      "speed": 1.08,
+      "lines": {
+        "select": {
+          "text": "Recon drone, on station.",
+          "file": "deepReconUAV/select.mp3",
+          "durationMs": 1595
+        },
+        "move": {
+          "text": "Drone moving to station.",
+          "file": "deepReconUAV/move.mp3",
+          "durationMs": 1387
+        },
+        "attack": {
+          "text": "Unarmed, cannot engage.",
+          "file": "deepReconUAV/attack.mp3",
+          "durationMs": 1457
+        },
+        "unableToComply": {
+          "text": "Unable.",
+          "file": "deepReconUAV/unableToComply.mp3",
+          "durationMs": 715
+        }
+      }
+    }
+  }
+}

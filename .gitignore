@@ -16,6 +16,10 @@ ss/
 repomix-output.xml
 MCA.zip
 
+# Python caches from the local voice-generation tooling
+__pycache__/
+*.pyc
+
 # Editor and OS noise
 .DS_Store
 Thumbs.db

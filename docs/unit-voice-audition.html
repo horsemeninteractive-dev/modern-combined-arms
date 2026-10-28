@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MCA — Unit radio bark audition</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b1110;
+        --panel: #121c1a;
+        --panel-2: #172523;
+        --line: #29413c;
+        --text: #d9e6e1;
+        --muted: #8fa8a0;
+        --amber: #f1c27e;
+        --teal: #52c5e6;
+        --red: #ef6c4d;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: radial-gradient(circle at 20% -10%, #1b312c 0, var(--bg) 55%);
+        color: var(--text);
+        font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+      }
+      header, main { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+      header { padding-top: 34px; padding-bottom: 10px; }
+      .eyebrow {
+        margin: 0 0 8px;
+        color: var(--amber);
+        font-size: 11px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+      h1 { margin: 0; font-size: 30px; font-weight: 650; letter-spacing: -0.02em; }
+      .lede { max-width: 760px; margin: 10px 0 0; color: var(--muted); }
+      .note {
+        max-width: 860px;
+        margin: 14px 0 0;
+        padding: 10px 12px;
+        border-left: 2px solid var(--amber);
+        background: #141f1c;
+        color: #c9d8d2;
+        font-size: 13px;
+      }
+      .now {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-height: 42px;
+        margin-top: 16px;
+        padding: 9px 12px;
+        border: 1px solid var(--line);
+        background: #0d1715;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .now strong { color: var(--teal); font-weight: 600; }
+      main { padding-bottom: 50px; }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin: 20px 0 16px;
+      }
+      input, select, button {
+        font: inherit;
+        color: var(--text);
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 2px;
+      }
+      input, select { padding: 9px 10px; }
+      input { flex: 1 1 240px; min-width: 0; }
+      select { flex: 0 1 220px; }
+      button { cursor: pointer; }
+      button:hover { border-color: #4c6d64; background: var(--panel-2); }
+      button:focus-visible, input:focus-visible, select:focus-visible {
+        outline: 2px solid var(--amber);
+        outline-offset: 1px;
+      }
+      #stop { padding: 9px 18px; color: var(--muted); }
+      .meta { color: var(--muted); font-size: 12px; margin: 0 0 16px; }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+        gap: 12px;
+      }
+      .unit {
+        border: 1px solid var(--line);
+        background: linear-gradient(180deg, #13201d, #101a18);
+        padding: 14px;
+      }
+      .unit-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+      h2 { margin: 0; font-size: 15px; font-weight: 600; }
+      .voice {
+        color: var(--muted);
+        font-family: ui-monospace, "Cascadia Mono", monospace;
+        font-size: 10px;
+        white-space: nowrap;
+      }
+      .role { margin: 2px 0 10px; color: var(--muted); font-size: 12px; }
+      .cues { display: grid; gap: 6px; }
+      .cue {
+        display: grid;
+        grid-template-columns: 66px 1fr;
+        gap: 9px;
+        align-items: baseline;
+        width: 100%;
+        padding: 7px 9px;
+        text-align: left;
+        background: #0d1715;
+      }
+      .cue span { color: var(--amber); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+      .cue small { color: var(--muted); }
+      .cue.active { border-color: var(--teal); background: #102322; }
+      .cue.active span { color: var(--teal); }
+      .all {
+        width: 100%;
+        margin-top: 8px;
+        padding: 7px 9px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .error {
+        margin: 18px 0 0;
+        padding: 12px;
+        border: 1px solid #6d3a2d;
+        background: #23130f;
+        color: #ffb59f;
+      }
+      .error code { color: #ffd9cc; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <p class="eyebrow">Modern Combined Arms · voice asset review</p>
+      <h1>Unit radio barks</h1>
+      <p class="lede">
+        Selection, movement, attack and unable-to-comply lines for every unit in the roster.
+        Each unit type has its own voice; each clip is trimmed, band-limited, compressed and
+        finished with a low carrier-noise bed.
+      </p>
+      <p class="note">
+        Generated locally with Kokoro-82M. Every unit type has a different voice; eight of the
+        nineteen are British. Kokoro has no Lithuanian, Polish or Russian voices, so the national
+        variants use English voices. See <code>docs/UNIT_VOICE_SET.md</code>.
+      </p>
+      <div class="now" id="now">Select any line to audition it.</div>
+    </header>
+    <main>
+      <div class="controls">
+        <input id="search" type="search" placeholder="Filter by unit, role or voice…" autocomplete="off" />
+        <select id="role"><option value="">All roles</option></select>
+        <button id="stop" type="button">Stop</button>
+      </div>
+      <p class="meta" id="meta">Loading manifest…</p>
+      <div class="grid" id="grid"></div>
+      <p class="error" id="error" hidden></p>
+    </main>
+    <script>
+      const BASE = "../public/audio/unit-voice/";
+      const CUES = [
+        ["select", "Select"],
+        ["move", "Move"],
+        ["attack", "Attack"],
+        ["unableToComply", "Unable"],
+      ];
+      const audio = new Audio();
+      audio.preload = "none";
+      let queue = [];
+      let activeFile = null;
+      let lastLabel = "";
+
+      const $ = (id) => document.getElementById(id);
+      const now = $("now");
+      const grid = $("grid");
+      const meta = $("meta");
+      const error = $("error");
+
+      function showError(message) {
+        error.hidden = false;
+        error.innerHTML = message;
+      }
+
+      function clearError() {
+        error.hidden = true;
+        error.textContent = "";
+      }
+
+      function setActive(file) {
+        activeFile = file;
+        for (const button of grid.querySelectorAll(".cue")) {
+          button.classList.toggle("active", button.dataset.file === file);
+        }
+      }
+
+      function describe(item) {
+        const unit = item.unit;
+        return `<strong>${unit.name}</strong> · ${item.label} — “${item.text}”`;
+      }
+
+      function playQueue(items) {
+        queue = items.slice();
+        playNext();
+      }
+
+      function playNext() {
+        const item = queue.shift();
+        if (!item) {
+          lastLabel = "";
+          return;
+        }
+        lastLabel = item.label;
+        setActive(item.file);
+        now.innerHTML = describe(item);
+        audio.src = BASE + item.file;
+        const attempt = audio.play();
+        if (attempt && typeof attempt.catch === "function") {
+          attempt.catch((reason) => {
+            queue = [];
+            showError(
+              `Playback failed: ${String(reason && reason.message ? reason.message : reason)}. ` +
+                `Serve the repository root with <code>python -m http.server 8788</code> and open ` +
+                `<code>http://127.0.0.1:8788/docs/unit-voice-audition.html</code>.`
+            );
+          });
+        }
+      }
+
+      audio.addEventListener("ended", () => {
+        if (queue.length) playNext();
+        else {
+          setActive(null);
+          now.textContent = lastLabel ? `Finished: ${lastLabel}.` : "Select any line to audition it.";
+        }
+      });
+
+      $("stop").addEventListener("click", () => {
+        queue = [];
+        audio.pause();
+        audio.removeAttribute("src");
+        audio.load();
+        setActive(null);
+        now.textContent = "Stopped.";
+      });
+
+      function unitCard(unitId, unit) {
+        const card = document.createElement("article");
+        card.className = "unit";
+        card.dataset.search = `${unit.name} ${unit.role} ${unit.voice}`.toLowerCase();
+        card.dataset.role = unit.role;
+
+        const head = document.createElement("div");
+        head.className = "unit-head";
+        const title = document.createElement("h2");
+        title.textContent = unit.name;
+        const voice = document.createElement("span");
+        voice.className = "voice";
+        voice.textContent = unit.voice.replace(/Neural$/, "");
+        voice.title = unit.voice;
+        head.append(title, voice);
+
+        const role = document.createElement("p");
+        role.className = "role";
+        role.textContent = unit.role;
+
+        const cues = document.createElement("div");
+        cues.className = "cues";
+        const items = [];
+
+        for (const [cue, label] of CUES) {
+          const line = unit.lines[cue];
+          if (!line) continue;
+          const item = { file: line.file, text: line.text, label, unit };
+          items.push(item);
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "cue";
+          button.dataset.file = line.file;
+          const cueName = document.createElement("span");
+          cueName.textContent = label;
+          const detail = document.createElement("small");
+          detail.textContent = `${line.text} · ${(line.durationMs / 1000).toFixed(2)} s`;
+          button.append(cueName, detail);
+          button.addEventListener("click", () => {
+            clearError();
+            playQueue([item]);
+          });
+          cues.append(button);
+        }
+
+        const all = document.createElement("button");
+        all.type = "button";
+        all.className = "all";
+        all.textContent = "Play all four";
+        all.addEventListener("click", () => {
+          clearError();
+          playQueue(items);
+        });
+
+        card.append(head, role, cues, all);
+        return card;
+      }
+
+      async function boot() {
+        try {
+          const response = await fetch(`${BASE}manifest.json`, { cache: "no-store" });
+          if (!response.ok) throw new Error(`manifest returned ${response.status}`);
+          const manifest = await response.json();
+          const entries = Object.entries(manifest.units);
+          const uniqueVoices = new Set(entries.map(([, unit]) => unit.voice));
+          const clipCount = entries.reduce((total, [, unit]) => total + Object.keys(unit.lines).length, 0);
+
+          const roles = [...new Set(entries.map(([, unit]) => unit.role))].sort();
+          for (const role of roles) {
+            const option = document.createElement("option");
+            option.value = role;
+            option.textContent = role;
+            $("role").append(option);
+          }
+
+          for (const [unitId, unit] of entries) grid.append(unitCard(unitId, unit));
+          meta.textContent = `${entries.length} unit types · ${clipCount} clips · ${uniqueVoices.size} distinct voices · ` +
+            `${manifest.engine} · ${manifest.sampleRate / 1000} kHz mono MP3 @ ${manifest.bitrateKbps} kbps`;
+
+          const applyFilter = () => {
+            const query = $("search").value.trim().toLowerCase();
+            const role = $("role").value;
+            let shown = 0;
+            for (const card of grid.children) {
+              const matches = (!query || card.dataset.search.includes(query)) &&
+                (!role || card.dataset.role === role);
+              card.hidden = !matches;
+              if (matches) shown++;
+            }
+            meta.textContent = `${shown} of ${entries.length} unit types shown · ` +
+              `${clipCount} clips · ${uniqueVoices.size} distinct voices`;
+          };
+          $("search").addEventListener("input", applyFilter);
+          $("role").addEventListener("change", applyFilter);
+        } catch (reason) {
+          meta.textContent = "Manifest not loaded.";
+          showError(
+            `Could not load the voice manifest: ${String(reason && reason.message ? reason.message : reason)}. ` +
+              `Serve the repository root with <code>python -m http.server 8788</code> and open ` +
+              `<code>http://127.0.0.1:8788/docs/unit-voice-audition.html</code>.`
+          );
+        }
+      }
+
+      boot();
+    </script>
+  </body>
+</html>

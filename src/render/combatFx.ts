@@ -1,4 +1,7 @@
 import { clamp01, rotateLocalOffset } from '../core/math';
+import { TILE_SIZE } from '../sim/constants';
+import type { Game } from '../sim/game';
+import type { SimEvent } from '../sim/types';
 import { WEAPONS } from '../data/weapons';
 import type { Vec3 } from './math';
 import { buildingStyle } from './buildingMeshes';
@@ -38,11 +41,13 @@ export interface WeaponFxProfile {
 const SMALL_ARMS: WeaponFxProfile = {
   class: 'smallArms',
   label: 'small arms',
-  muzzleScale: 0.55,
+  muzzleScale: 0.6,
   muzzleSmoke: 0,
-  tracerLength: 1.2,
-  tracerWidth: 0.07,
-  tracerSegments: 2,
+  // Overlapping tail dots read as one short tracer. Three widely spaced dots
+  // looked like floating sparks at battle zoom, with no readable direction.
+  tracerLength: 1.6,
+  tracerWidth: 0.085,
+  tracerSegments: 6,
   tracerColor: [1, 0.9, 0.55],
   projectileSize: 0.18,
   impactScale: 0.5,
@@ -57,14 +62,16 @@ const CANNON: WeaponFxProfile = {
   label: 'direct-fire cannon',
   muzzleScale: 1.0,
   muzzleSmoke: 1,
-  tracerLength: 2.6,
-  tracerWidth: 0.14,
-  tracerSegments: 3,
+  tracerLength: 2.8,
+  tracerWidth: 0.19,
+  tracerSegments: 7,
   tracerColor: [1, 0.62, 0.24],
   projectileSize: 0.38,
   impactScale: 0.9,
   hitSparkScale: 1.2,
-  explosionScale: 0.78,
+  // A direct hit must not read smaller than a ground miss. The old 0.78
+  // fireball was below the 0.9 miss puff at the same range.
+  explosionScale: 1.0,
   shake: 0.05,
   trailSmoke: false,
 };
@@ -74,14 +81,14 @@ const MISSILE: WeaponFxProfile = {
   label: 'guided missile',
   muzzleScale: 1.35,
   muzzleSmoke: 2,
-  tracerLength: 3.2,
-  tracerWidth: 0.17,
-  tracerSegments: 3,
+  tracerLength: 3.4,
+  tracerWidth: 0.22,
+  tracerSegments: 8,
   tracerColor: [1, 0.82, 0.5],
   projectileSize: 0.36,
   impactScale: 1.05,
   hitSparkScale: 1.35,
-  explosionScale: 0.95,
+  explosionScale: 1.15,
   shake: 0.07,
   trailSmoke: true,
 };
@@ -92,13 +99,13 @@ const ARTILLERY: WeaponFxProfile = {
   muzzleScale: 1.7,
   muzzleSmoke: 3,
   tracerLength: 3.6,
-  tracerWidth: 0.2,
-  tracerSegments: 4,
+  tracerWidth: 0.24,
+  tracerSegments: 8,
   tracerColor: [1, 0.55, 0.18],
   projectileSize: 0.42,
   impactScale: 1.3,
   hitSparkScale: 1.5,
-  explosionScale: 1.3,
+  explosionScale: 1.4,
   shake: 0.12,
   trailSmoke: false,
 };
@@ -108,14 +115,14 @@ const ANTI_AIR: WeaponFxProfile = {
   label: 'air-defence missile',
   muzzleScale: 1.1,
   muzzleSmoke: 1,
-  tracerLength: 2.2,
-  tracerWidth: 0.12,
-  tracerSegments: 3,
+  tracerLength: 2.4,
+  tracerWidth: 0.16,
+  tracerSegments: 6,
   tracerColor: [0.72, 0.95, 1],
   projectileSize: 0.3,
   impactScale: 0.95,
   hitSparkScale: 1.0,
-  explosionScale: 0.9,
+  explosionScale: 1.05,
   shake: 0.04,
   trailSmoke: true,
 };
@@ -126,8 +133,8 @@ const UNKNOWN: WeaponFxProfile = {
   muzzleScale: 0.8,
   muzzleSmoke: 1,
   tracerLength: 2,
-  tracerWidth: 0.12,
-  tracerSegments: 2,
+  tracerWidth: 0.15,
+  tracerSegments: 6,
   tracerColor: [1, 0.85, 0.6],
   projectileSize: 0.3,
   impactScale: 0.75,
@@ -142,6 +149,44 @@ const CANNON_IDS = new Set(['tankGun', 'atTurretGun', 'spearheadGun', 'navalGun'
 const MISSILE_IDS = new Set(['atgm', 'strikeMissile', 'navalMissile', 'coastalMissile']);
 const ARTILLERY_IDS = new Set(['howitzer', 'mlrsRocket', 'heavyShell']);
 const ANTI_AIR_IDS = new Set(['samVehicle', 'samBattery', 'airMissile']);
+
+/**
+ * Gameplay fog, not the renderer's fog-texture toggle, decides whether a world
+ * point is visible to the local player. A spectator with no team sees the whole
+ * field. This is the shared presentation gate for effects, trails and audio.
+ */
+export function pointVisibleToLocal(game: Game, x: number, z: number): boolean {
+  if (!game.state.scenario.settings.fog) return true;
+  const team = game.teamOf(game.localPlayerId);
+  if (team < 0) return true;
+  return game.fogAt(team, Math.floor(x / TILE_SIZE), Math.floor(z / TILE_SIZE)) === 2;
+}
+
+/**
+ * The one visibility rule shared by combat visuals and combat audio. Friendly
+ * events are always visible: they are the player's own battle, not hidden
+ * information. Enemy events follow gameplay vision.
+ */
+export function eventVisibleToLocal(game: Game, ev: SimEvent): boolean {
+  if (ev.team === game.localPlayerId) return true;
+  return pointVisibleToLocal(game, ev.x, ev.z);
+}
+
+/**
+ * A projectile is hidden only when it is hostile and its current ground tile is
+ * unseen. An own-team shell crossing fog is not hidden information, and hiding
+ * it made long artillery arcs disappear mid-flight while their firing event
+ * and audio stayed visible.
+ */
+export function projectileVisibleToLocal(
+  game: Game,
+  owner: number,
+  x: number,
+  z: number,
+): boolean {
+  if (game.teamOf(owner) === game.teamOf(game.localPlayerId)) return true;
+  return pointVisibleToLocal(game, x, z);
+}
 
 export function weaponFxClass(weaponId?: string): WeaponFxClass {
   if (!weaponId) return 'unknown';
@@ -177,6 +222,51 @@ export interface ProjectileSample {
   x: number;
   y: number;
   z: number;
+}
+
+export interface VisualWreck {
+  defId: string;
+  x: number;
+  y: number;
+  z: number;
+  facing: number;
+  /** Seconds since the hull was created; drives how long it actively burns. */
+  age?: number;
+  smokeTimer?: number;
+  fireTimer?: number;
+}
+
+/** Hard ceiling for persistent hulls; they are presentation-only, so bounded. */
+export const MAX_VISUAL_WRECKS = 24;
+
+/**
+ * Bounded list of charred hulls. No entity, collision, picking or save entry:
+ * the store only ever holds enough data to redraw an existing unit body.
+ */
+export class WreckStore {
+  private list: VisualWreck[] = [];
+
+  get wrecks(): readonly VisualWreck[] {
+    return this.list;
+  }
+
+  get length(): number {
+    return this.list.length;
+  }
+
+  push(wreck: VisualWreck): void {
+    this.list.push({
+      age: 0,
+      smokeTimer: 0.55,
+      fireTimer: 0.15,
+      ...wreck,
+    });
+    while (this.list.length > MAX_VISUAL_WRECKS) this.list.shift();
+  }
+
+  clear(): void {
+    this.list.length = 0;
+  }
 }
 
 /** Linear interpolation between the last two rendered simulation positions. */

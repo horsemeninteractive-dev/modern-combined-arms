@@ -46,6 +46,7 @@ import {
   unitStyle,
   unitVisualScale,
   unitShadowRadius,
+  unitGroundMarker,
   FALLBACK_STYLE,
   type EntityStyle,
 } from './unitMeshes';
@@ -68,23 +69,18 @@ import { teamColorForOwner } from './teamColor';
 import { limbModelMatrix, turretModelMatrix, unitBodyHeading } from './unitTransform';
 import { rotateLocalOffset } from '../core/math';
 import {
+  eventVisibleToLocal,
+  pointVisibleToLocal,
+  projectileVisibleToLocal,
   sampleProjectile,
   staticMuzzleAnchor,
   weaponFxProfile,
+  WreckStore,
   type ProjectileSample,
 } from './combatFx';
 
 const NEAR = 1;
 const FAR = 3000;
-const MAX_WRECKS = 24;
-
-interface VisualWreck {
-  defId: string;
-  x: number;
-  y: number;
-  z: number;
-  facing: number;
-}
 
 interface VisualEntity {
   x: number;
@@ -252,7 +248,7 @@ export class Renderer {
   }>();
   private visuals = new Map<number, VisualEntity>();
   /** Presentation-only hulks; never entities, picks, saves or collision. */
-  private wrecks: VisualWreck[] = [];
+  private readonly wrecks = new WreckStore();
   private trailTimers = new Map<number, number>();
   private projectileTrailTimers = new Map<number, number>();
   private projectileViews = new Map<number, { previous: ProjectileSample; current: ProjectileSample }>();
@@ -460,7 +456,7 @@ export class Renderer {
     this.scenario = scenario;
     this.game = null;
     this.visuals.clear();
-    this.wrecks.length = 0;
+    this.wrecks.clear();
     this.projectileViews.clear();
     this.particles.clear();
     this.lastEventSeq = 0;
@@ -497,7 +493,7 @@ export class Renderer {
     }
     this.game = game;
     this.visuals.clear();
-    this.wrecks.length = 0;
+    this.wrecks.clear();
     this.trailTimers.clear();
     this.projectileTrailTimers.clear();
     this.projectileViews.clear();
@@ -644,6 +640,7 @@ export class Renderer {
       this.updateVisuals(dt, this.game);
       this.updateProjectileViews(this.game);
       this.emitAmbientEffects(dt, this.game);
+      this.updateWreckEffects(dt, this.game);
       this.updateProjectileTrails(dt, this.game);
       this.refreshOre();
       this.updateFog();
@@ -888,10 +885,7 @@ export class Renderer {
   }
 
   private pointVisible(game: Game, x: number, z: number): boolean {
-    if (!this.scenario?.settings.fog) return true;
-    const team = game.teamOf(game.localPlayerId);
-    if (team < 0) return true;
-    return game.fogAt(team, Math.floor(x / TILE_SIZE), Math.floor(z / TILE_SIZE)) === 2;
+    return pointVisibleToLocal(game, x, z);
   }
 
   private updateProjectileTrails(dt: number, game: Game): void {
@@ -900,9 +894,9 @@ export class Renderer {
     for (const p of game.state.projectiles) {
       seen.add(p.id);
       if (!weaponFxProfile(p.weaponId).trailSmoke) continue;
-      // A smoking missile beyond the vision boundary is still hidden: the
-      // trail is presentation, not a sensor.
-      if (!this.pointVisible(game, p.x, p.z)) continue;
+      // A hostile smoking missile beyond the vision boundary is still hidden:
+      // the trail is presentation, not a sensor. Own-team trails stay drawn.
+      if (!projectileVisibleToLocal(game, p.owner, p.x, p.z)) continue;
       let t = this.projectileTrailTimers.get(p.id) ?? 0;
       t -= dt;
       if (t <= 0) {
@@ -920,16 +914,9 @@ export class Renderer {
     const events = game.eventsAfter(this.lastEventSeq);
     if (events.length === 0) return;
     this.lastEventSeq = events[events.length - 1].seq;
-    const team = game.teamOf(game.localPlayerId);
     for (const ev of events) {
       if (ev.x === 0 && ev.z === 0) continue;
-      const tx = Math.floor(ev.x / TILE_SIZE);
-      const tz = Math.floor(ev.z / TILE_SIZE);
-      const visible =
-        ev.team === game.localPlayerId ||
-        !game.state.scenario.settings.fog ||
-        game.fogAt(team, tx, tz) === 2;
-      if (!visible) continue;
+      if (!eventVisibleToLocal(game, ev)) continue;
       const groundY = tileWorldHeight(this.scenario!, ev.x, ev.z);
       const profile = weaponFxProfile(ev.weaponId);
       switch (ev.type) {
@@ -1009,7 +996,6 @@ export class Renderer {
                 z: ev.z,
                 facing: ev.facing ?? 0,
               });
-              if (this.wrecks.length > MAX_WRECKS) this.wrecks.shift();
             }
           }
           break;
@@ -1269,6 +1255,22 @@ export class Renderer {
           const [rx, rz] = unitShadowRadius(e.defId);
           const lean = this.shadowLean(0.55);
           const growth = e.construction ? 0.7 : 1.32;
+          const marker = unitGroundMarker(e.defId);
+          if (marker) {
+            // Foot units are only a few pixels wide at battle zoom. A soft
+            // alliance-coloured pool under the contact shadow marks presence
+            // and ownership without scaling the body or adding a draw call.
+            shadows.push({
+              x,
+              y,
+              z,
+              rx: marker.rx * growth,
+              rz: marker.rz * growth,
+              rotation: -(v?.facing ?? e.facing),
+              alpha: marker.alpha,
+              color: this.teamColorOf(game, e.owner),
+            });
+          }
           shadows.push({
             x: x + lean.x,
             y,
@@ -1318,6 +1320,19 @@ export class Renderer {
           continue;
         }
         const lean = this.shadowLean(0.55);
+        const marker = unitGroundMarker(u.defId);
+        if (marker) {
+          shadows.push({
+            x,
+            y: tileWorldHeight(this.scenario, x, z) + 0.09,
+            z,
+            rx: marker.rx * 1.32,
+            rz: marker.rz * 1.32,
+            rotation: -0.6,
+            alpha: marker.alpha,
+            color: this.teamColorScenario(u.owner),
+          });
+        }
         shadows.push({
           x: x + lean.x,
           y: tileWorldHeight(this.scenario, x, z) + 0.09,
@@ -1495,6 +1510,33 @@ export class Renderer {
   }
 
   /**
+   * Persistent, bounded burn-off from the wreck list. Smoke is emitted for as
+   * long as the hull survives the cap; the visible flame is limited to the
+   * first half-minute so a field of old wrecks does not turn into a bonfire.
+   * The gameplay-vision gate is the same one used to draw the hull, so a wreck
+   * in fog cannot reveal itself through smoke.
+   */
+  private updateWreckEffects(dt: number, game: Game): void {
+    if (!this.settings.effects) return;
+    for (const wreck of this.wrecks.wrecks) {
+      const age = (wreck.age ?? 0) + dt;
+      wreck.age = age;
+      if (!this.pointVisible(game, wreck.x, wreck.z)) continue;
+      wreck.smokeTimer = (wreck.smokeTimer ?? 0) - dt;
+      if (wreck.smokeTimer <= 0) {
+        wreck.smokeTimer = 0.9;
+        this.particles.smoke(wreck.x, wreck.y + 0.7, wreck.z, 1, 0.12);
+      }
+      if (age >= 25) continue;
+      wreck.fireTimer = (wreck.fireTimer ?? 0) - dt;
+      if (wreck.fireTimer <= 0) {
+        wreck.fireTimer = 0.38;
+        this.particles.wreckFlame(wreck.x, wreck.y + 0.45, wreck.z, 1);
+      }
+    }
+  }
+
+  /**
    * Hulks of destroyed land vehicles. They are drawn from the existing unit
    * body mesh with a charred tint: no new geometry, no entity, no collision,
    * no picking and no save entry. The cap keeps a long match bounded.
@@ -1512,7 +1554,7 @@ export class Renderer {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     this.bindFlagTexture();
-    for (const wreck of this.wrecks) {
+    for (const wreck of this.wrecks.wrecks) {
       if (!this.pointVisible(game, wreck.x, wreck.z)) continue;
       const body = this.unitMeshes.get(wreck.defId)?.body;
       if (!body) continue;
@@ -1888,8 +1930,9 @@ export class Renderer {
     if (this.game) {
       for (const pr of this.game.state.projectiles) {
         // Fog hiding is a gameplay rule, not a visual toggle: turning the fog
-        // texture off must never reveal a projectile the team cannot see.
-        if (!this.pointVisible(this.game, pr.x, pr.z)) continue;
+        // texture off must never reveal a hostile projectile the team cannot
+        // see. Own-team shells are not hidden information.
+        if (!projectileVisibleToLocal(this.game, pr.owner, pr.x, pr.z)) continue;
         const profile = weaponFxProfile(pr.weaponId);
         const pos = this.projectilePosition(pr.id, { x: pr.x, y: pr.y, z: pr.z });
         const view = this.projectileViews.get(pr.id);

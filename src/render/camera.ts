@@ -17,6 +17,13 @@ const DISTANCE = 1400;
  */
 export const BATTLE_ZOOM = 36;
 
+/**
+ * Closest inspection framing. Roughly 3.5 tiles above and below the focus,
+ * enough to read a building's facade or a vehicle's hull without the fixed
+ * isometric pitch collapsing into a head-on view.
+ */
+export const CLOSE_ZOOM = 14;
+
 export class Camera {
   cx = 0;
   cz = 0;
@@ -93,7 +100,7 @@ export class Camera {
   }
 
   setZoom(halfHeight: number): void {
-    this.zoom = clamp(halfHeight, 22, 110);
+    this.zoom = clamp(halfHeight, CLOSE_ZOOM, 110);
     this.update();
   }
 

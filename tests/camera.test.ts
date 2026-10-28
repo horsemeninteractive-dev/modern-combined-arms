@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BATTLE_ZOOM, Camera } from '../src/render/camera';
+import { BATTLE_ZOOM, CLOSE_ZOOM, Camera } from '../src/render/camera';
 
 function camera(): Camera {
   const cam = new Camera();
@@ -70,6 +70,17 @@ describe('isometric camera', () => {
     narrow.setViewport(1024, 768);
     narrow.setBattleZoom();
     expect(narrow.halfW).toBeCloseTo(52, 4);
+  });
+
+  it('clamps zoom-in at the close inspection limit', () => {
+    const cam = camera();
+    cam.setZoom(4);
+    expect(cam.zoom).toBe(CLOSE_ZOOM);
+    expect(cam.zoom).toBeLessThan(22);
+    cam.zoomBy(0.9);
+    expect(cam.zoom).toBe(CLOSE_ZOOM);
+    cam.setZoom(80);
+    expect(cam.zoom).toBe(80);
   });
 
   it('frames a focused point above the command deck', () => {
