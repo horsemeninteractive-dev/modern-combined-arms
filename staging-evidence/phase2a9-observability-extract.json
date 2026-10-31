@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "phase": "2A.9",
+  "capturedAt": "2026-10-30T19:53:30Z",
+  "worker": "mca-multiplayer-staging",
+  "metric": "$workers.cpuTimeMs",
+  "resolution": "integer milliseconds per Durable Object invocation",
+  "source": "POST /accounts/{account_id}/workers/observability/telemetry/query, view=events, executionModel=durableObject",
+  "fields": [
+    "$workers.cpuTimeMs",
+    "$workers.wallTimeMs",
+    "$workers.scriptVersion.id",
+    "event.request.url",
+    "eventTimestamp"
+  ],
+  "note": "Values are the exact cpuTimeMs observations in run-index order. Each array maps to runs named p2a9-<session>-<profile>-<batch>-<rep>, or p2a9-<session>-stress-1-extra-<index> for extraBatch1. Warmup runs are excluded from the arrays.",
+  "builds": {
+    "A": {
+      "label": "pre-2A.8 pathfinding",
+      "versionId": "e5aef673-bf6f-461c-8539-5605c5ddf908",
+      "tag": "phase2a9-a",
+      "artifactSha256": "774bc3828b765d2aed8112eaa4acefa436ca39e0fb5cf0545b6368252f3d5398",
+      "queryRunId": "xydv2qtrpwt0nmb3zua3vcu3",
+      "queryStatus": "COMPLETED",
+      "timeframe": "2026-10-30T19:46:30Z/2026-10-30T19:52:30Z",
+      "attemptedInvocations": 222,
+      "observedInvocations": 222,
+      "attemptedSamples": 216,
+      "observedSamples": 216,
+      "sampleCoverage": 1,
+      "outcomes": { "ok": 216, "error": 0, "canceled": 0 },
+      "statistics": {
+        "elapsedSeconds": 0.149387463,
+        "rowsRead": 2701051,
+        "bytesRead": 894417379,
+        "abrLevel": 1
+      },
+      "sessions": {
+        "A1": {
+          "baseline": {
+            "0": [8, 7, 5, 2, 2, 3],
+            "1": [19, 4, 2, 2, 2, 5],
+            "5": [11, 3, 3, 3, 21, 2],
+            "20": [17, 5, 4, 4, 7, 4],
+            "100": [26, 23, 12, 10, 12, 10]
+          },
+          "stress": {
+            "0": [9, 9, 4, 4, 4, 8],
+            "1": [66, 23, 19, 19, 21, 19],
+            "1extra": [19, 27, 17, 23, 23, 21, 22, 18, 18, 17, 17, 17],
+            "5": [61, 30, 26, 25, 29, 28],
+            "20": [105, 61, 82, 90, 56, 50],
+            "100": [224, 295, 320, 313, 274, 144]
+          }
+        },
+        "A2": {
+          "baseline": {
+            "0": [7, 12, 2, 3, 3, 3],
+            "1": [12, 6, 3, 3, 3, 5],
+            "5": [19, 3, 3, 3, 3, 4],
+            "20": [29, 9, 4, 4, 4, 3],
+            "100": [47, 51, 11, 15, 22, 9]
+          },
+          "stress": {
+            "0": [15, 13, 7, 4, 5, 6],
+            "1": [115, 29, 24, 27, 33, 30],
+            "1extra": [24, 43, 28, 28, 36, 23, 27, 25, 30, 25, 29, 20],
+            "5": [96, 43, 42, 25, 30, 31],
+            "20": [194, 95, 121, 64, 57, 68],
+            "100": [295, 181, 180, 260, 213, 170]
+          }
+        },
+        "A3": {
+          "baseline": {
+            "0": [5, 11, 1, 3, 2, 2],
+            "1": [17, 9, 1, 2, 2, 2],
+            "5": [12, 2, 2, 2, 2, 2],
+            "20": [34, 11, 5, 3, 3, 3],
+            "100": [26, 26, 5, 7, 14, 8]
+          },
+          "stress": {
+            "0": [10, 20, 4, 3, 6, 3],
+            "1": [72, 19, 19, 20, 42, 44],
+            "1extra": [17, 30, 19, 20, 21, 19, 37, 20, 19, 18, 19, 19],
+            "5": [73, 45, 43, 25, 23, 22],
+            "20": [115, 98, 67, 46, 40, 42],
+            "100": [201, 279, 283, 126, 120, 110]
+          }
+        }
+      }
+    },
+    "B": {
+      "label": "Phase 2A.8 optimised pathfinding",
+      "versionId": "d23e416c-c755-4ec4-bfb3-373ec216c275",
+      "tag": "phase2a9-b",
+      "artifactSha256": "05b2b2465d639852f24d1561c6d300362bf8aae9bcc464c0e1607c46717b87c7",
+      "queryRunId": "5o4job4n19nrgvk6kfzkuhbe",
+      "queryStatus": "COMPLETED",
+      "timeframe": "2026-10-30T19:47:50Z/2026-10-30T19:53:30Z",
+      "attemptedInvocations": 222,
+      "observedInvocations": 222,
+      "attemptedSamples": 216,
+      "observedSamples": 216,
+      "sampleCoverage": 1,
+      "outcomes": { "ok": 216, "error": 0, "canceled": 0 },
+      "statistics": {
+        "elapsedSeconds": 0.156238619,
+        "rowsRead": 2515727,
+        "bytesRead": 842400999,
+        "abrLevel": 1
+      },
+      "sessions": {
+        "B1": {
+          "baseline": {
+            "0": [4, 5, 2, 1, 1, 1],
+            "1": [8, 3, 1, 1, 1, 3],
+            "5": [10, 2, 1, 1, 1, 1],
+            "20": [26, 3, 3, 2, 3, 2],
+            "100": [41, 34, 6, 9, 16, 4]
+          },
+          "stress": {
+            "0": [13, 6, 1, 2, 2, 2],
+            "1": [61, 15, 12, 11, 14, 21],
+            "1extra": [12, 18, 23, 12, 11, 15, 12, 11, 20, 9, 11, 21],
+            "5": [46, 21, 35, 32, 18, 17],
+            "20": [82, 58, 66, 40, 40, 61],
+            "100": [221, 152, 160, 160, 134, 239]
+          }
+        },
+        "B2": {
+          "baseline": {
+            "0": [5, 13, 2, 2, 2, 2],
+            "1": [9, 4, 3, 3, 2, 3],
+            "5": [11, 2, 2, 2, 32, 3],
+            "20": [20, 4, 7, 3, 2, 3],
+            "100": [31, 20, 12, 8, 10, 5]
+          },
+          "stress": {
+            "0": [10, 10, 2, 5, 4, 4],
+            "1": [56, 15, 18, 13, 14, 12],
+            "1extra": [13, 37, 15, 29, 21, 15, 31, 13, 15, 26, 13, 14],
+            "5": [59, 19, 18, 19, 22, 34],
+            "20": [94, 38, 62, 33, 33, 34],
+            "100": [312, 122, 144, 116, 100, 90]
+          }
+        },
+        "B3": {
+          "baseline": {
+            "0": [6, 6, 1, 2, 1, 1],
+            "1": [13, 3, 1, 1, 1, 1],
+            "5": [11, 1, 1, 1, 1, 1],
+            "20": [16, 4, 3, 3, 2, 3],
+            "100": [25, 18, 4, 5, 5, 4]
+          },
+          "stress": {
+            "0": [8, 11, 2, 3, 5, 3],
+            "1": [56, 18, 12, 14, 16, 12],
+            "1extra": [14, 21, 28, 15, 14, 15, 14, 13, 13, 15, 16, 14],
+            "5": [55, 21, 18, 16, 28, 18],
+            "20": [93, 43, 55, 32, 31, 54],
+            "100": [180, 117, 117, 97, 92, 84]
+          }
+        }
+      }
+    }
+  }
+}

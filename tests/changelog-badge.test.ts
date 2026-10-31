@@ -37,7 +37,10 @@ describe('changelog badge', () => {
     const acknowledged = buildKey(running);
     expect(hasUnseenChangelog({ ...running, commit: 'deadbee' }, acknowledged)).toBe(true);
     expect(hasUnseenChangelog({ ...running, build: running.build + 1 }, acknowledged)).toBe(true);
-    expect(hasUnseenChangelog({ ...running, version: '0.2.0' }, acknowledged)).toBe(true);
+    // Any different version, not one hard-coded to this release.
+    expect(hasUnseenChangelog({ ...running, version: `${running.version}-next` }, acknowledged)).toBe(
+      true,
+    );
     expect(hasUnseenChangelog({ ...running, stage: 'RC' }, acknowledged)).toBe(true);
   });
 

@@ -1,0 +1,86 @@
+{
+  "ok": true,
+  "roomId": "probe2-mvua8vgp",
+  "mode": "1v1",
+  "protocol": 1,
+  "closed": true,
+  "closedReason": "shutdown",
+  "closedAt": 1793323078881,
+  "started": true,
+  "createdAt": 1793323058390,
+  "matchDurationMs": 30000,
+  "matchDeadlineAt": 1793323088399,
+  "reservation": {
+    "reservationId": "r15",
+    "status": "released",
+    "hardDeadlineAt": 1793323088399
+  },
+  "lastHeartbeatAt": 1793323078660,
+  "heartbeatIntervalMs": 20000,
+  "match": {
+    "phase": "closed",
+    "tick": 404,
+    "startedAtMs": 1793323058643,
+    "finishedAtMs": 1793323078881,
+    "closedReason": "shutdown",
+    "stats": {
+      "ticks": 404,
+      "snapshots": 406,
+      "outboundBytes": 24099848,
+      "inboundMessages": 7,
+      "connectionsAccepted": 2,
+      "commandsAccepted": 7,
+      "commandsRejected": 0,
+      "heartbeatCount": 1,
+      "approxRequests": 8
+    },
+    "result": {
+      "phase": "playing",
+      "winnerTeam": null,
+      "reason": null,
+      "teams": [
+        {
+          "team": 0,
+          "playerIds": [
+            0
+          ],
+          "defeated": false,
+          "score": 5177
+        },
+        {
+          "team": 1,
+          "playerIds": [
+            1
+          ],
+          "defeated": false,
+          "score": 5225
+        }
+      ],
+      "tick": 404
+    }
+  },
+  "finalResult": {
+    "phase": "playing",
+    "winnerTeam": null,
+    "reason": null,
+    "teams": [
+      {
+        "team": 0,
+        "playerIds": [
+          0
+        ],
+        "defeated": false,
+        "score": 5177
+      },
+      {
+        "team": 1,
+        "playerIds": [
+          1
+        ],
+        "defeated": false,
+        "score": 5225
+      }
+    ],
+    "tick": 404
+  }
+}

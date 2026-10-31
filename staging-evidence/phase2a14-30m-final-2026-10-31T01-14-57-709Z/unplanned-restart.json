@@ -1,0 +1,100 @@
+{
+  "trigger": "unplanned-runtime-restart",
+  "observedAt": "2026-10-31T01:25:56.044Z",
+  "note": "No admin restart request preceded this event. Both raw WebSockets closed with no close code at the same instant, the room restored, and both clients reconnected on the first attempt. This is separate from controlled restarts A and B and was not deliberately manufactured.",
+  "lastPersistenceSuccessAt": "2026-10-31T01:25:46.018Z",
+  "lastPersistenceSuccessAtMs": 1793409946018,
+  "observedTickAtLastPersistenceSuccess": 13024,
+  "checkpointObservedAt": "2026-10-31T01:25:52.209Z",
+  "checkpointAgeAtCloseMs": 10026,
+  "lastAcceptedCommandsBeforeClose": [
+    {
+      "seat": 0,
+      "tick": 13039,
+      "at": "2026-10-31T01:25:52.986Z",
+      "type": "move"
+    },
+    {
+      "seat": 1,
+      "tick": 13059,
+      "at": "2026-10-31T01:25:53.982Z",
+      "type": "move"
+    }
+  ],
+  "socketsClosedAt": [
+    "2026-10-31T01:25:56.044Z",
+    "2026-10-31T01:25:56.048Z"
+  ],
+  "restoredAt": "2026-10-31T01:25:56.414Z",
+  "restoredSnapshotTick": 12900,
+  "restoredSnapshotTickDerivation": "first post-restart status at 01:26:02.139Z reported totalTicks 13014 and processTicks 114; 13014 - 114 = 12900",
+  "firstPostRestartStatus": {
+    "at": "2026-10-31T01:26:02.139Z",
+    "totalTicks": 13014,
+    "processTicks": 114,
+    "snapshotCycles": 1,
+    "lastSuccessAt": 1793409956414,
+    "ageSinceSuccessMs": 5740,
+    "phase": "playing",
+    "persistenceFailures": 0
+  },
+  "rollback": {
+    "fromObservedCheckpointTicks": 124,
+    "fromObservedCheckpointMs": 6200,
+    "fromLastAcceptedCommandTicks": 159,
+    "fromLastAcceptedCommandMs": 7950,
+    "within15sCheckpointPolicy": true
+  },
+  "reconnect": [
+    {
+      "seat": 0,
+      "at": "2026-10-31T01:25:56.442Z",
+      "attempt": 1,
+      "elapsedMsAfterClose": 396,
+      "cause": "close-none"
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-31T01:25:56.446Z",
+      "attempt": 1,
+      "elapsedMsAfterClose": 397,
+      "cause": "close-none"
+    }
+  ],
+  "firstPostRestartCommands": [
+    {
+      "seat": 0,
+      "tick": 12932,
+      "at": "2026-10-31T01:25:58.022Z",
+      "accepted": true,
+      "type": "move"
+    },
+    {
+      "seat": 1,
+      "tick": 12950,
+      "at": "2026-10-31T01:25:58.944Z",
+      "accepted": true,
+      "type": "move"
+    }
+  ],
+  "firstPostRestartClientUpdates": {
+    "at": "2026-10-31T01:25:59.649Z",
+    "bothSeatsReportedTick": 12964,
+    "seat0Entities": 15,
+    "seat1Entities": 9,
+    "note": "Both client metrics intervals reported the same authoritative tick after reconnecting."
+  },
+  "rejectedUpdatesObserved": 0,
+  "resyncRequestsObserved": 0,
+  "startContinuity": {
+    "startedAtMsBefore": 1793409298524,
+    "startedAtMsAfter": 1793409298524,
+    "matchDeadlineAtBefore": 1793411098373,
+    "matchDeadlineAtAfter": 1793411098373
+  },
+  "epochContinuity": {
+    "observed": false,
+    "note": "The unplanned event was not scheduled by the harness, so the pre/post protocol sync generation was not captured. Controlled restarts A and B were independently measured and remained monotonic."
+  },
+  "verdict": "Recovered cleanly through the existing lifecycle; no rejected current-epoch updates and no resync requests were observed in the 14-second window. Not counted as one of the two controlled restart trials."
+}

@@ -1,0 +1,1 @@
+{"query":"query { a:__type(name:\"AccountDurableObjectsPeriodicGroupsSum\"){fields{name description}} b:__type(name:\"AccountDurableObjectsPeriodicGroupsDimensions\"){fields{name description}} c:__type(name:\"AccountDurableObjectsInvocationsAdaptiveGroupsQuantiles\"){fields{name description}} d:__type(name:\"AccountDurableObjectsPeriodicGroupsMax\"){fields{name description}} }"}

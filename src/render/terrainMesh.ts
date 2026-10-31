@@ -659,10 +659,24 @@ export function buildPropInstances(
   scenario: Scenario,
   ore?: Uint16Array,
   maxOre?: Uint16Array,
-): { trees: PropInstance[]; rocks: PropInstance[]; ore: PropInstance[] } {
+): {
+  trees: PropInstance[];
+  rocks: PropInstance[];
+  ore: PropInstance[];
+  bushes: PropInstance[];
+  shrubs: PropInstance[];
+  tufts: PropInstance[];
+  fences: PropInstance[];
+  lamps: PropInstance[];
+} {
   const trees: PropInstance[] = [];
   const rocks: PropInstance[] = [];
   const oreInstances: PropInstance[] = [];
+  const bushes: PropInstance[] = [];
+  const shrubs: PropInstance[] = [];
+  const tufts: PropInstance[] = [];
+  const fences: PropInstance[] = [];
+  const lamps: PropInstance[] = [];
   const W = scenario.width;
   const H = scenario.height;
   // Coastal riprap is part of the existing instanced rock pass, not a new draw
@@ -758,6 +772,149 @@ export function buildPropInstances(
           });
         }
       }
+      // Ground cover is placed by landscape, not by tile count. Five-tile
+      // cells decide where the brushland is; field edges next to timber, rock,
+      // water or a road always carry cover, because that is where scrub grows.
+      // Open fields are left open on purpose, with only grass tufts and the odd
+      // straggler. A flat per-tile chance was what made the old scatter read as
+      // random dots across every lawn.
+      if ((tile.t === Terrain.Grass || tile.t === Terrain.Sand) && !blocked[i] && tile.o === 0) {
+        const grass = tile.t === Terrain.Grass;
+        let edge = false;
+        for (let dz = -1; dz <= 1 && !edge; dz++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = x + dx;
+            const nz = z + dz;
+            if (nx < 0 || nz < 0 || nx >= W || nz >= H) continue;
+            const near = scenario.tiles[nz * W + nx].t as TerrainId;
+            if (
+              TERRAIN[near].water ||
+              near === Terrain.Forest ||
+              near === Terrain.Rock ||
+              near === Terrain.Urban ||
+              near === Terrain.Road
+            ) {
+              edge = true;
+              break;
+            }
+          }
+        }
+        const patch = hash01(Math.floor(x / 5), Math.floor(z / 5), 96);
+        const brushland = grass && (patch > 0.6 || (edge && patch > 0.24));
+        const roll = hash01(x, z, 101);
+        const plant = (kind: 'bush' | 'shrub' | 'tuft', salt: number) => {
+          const wx = (x + 0.5) * TILE_SIZE + (hash01(x, z, salt) - 0.5) * 2.9;
+          const wz = (z + 0.5) * TILE_SIZE + (hash01(x, z, salt + 1) - 0.5) * 2.9;
+          const tint = 0.82 + hash01(x, z, salt + 2) * 0.34;
+          const dry = !grass;
+          // Three green families rather than one flat tint: a cool hedge green,
+          // a yellow field green and a deeper blue-green. Brush growing in
+          // company then mixes tones instead of stamping the same dot across a
+          // field, which is what made the old scatter read as dark specks.
+          const variant = hash01(x, z, salt + 5);
+          const green: [number, number, number] =
+            variant < 0.34
+              ? [0.80, 1.0, 0.76]
+              : variant < 0.68
+                ? [1.04, 1.0, 0.72]
+                : [0.74, 0.94, 0.86];
+          const instance: PropInstance = {
+            x: wx,
+            y: terrainSurfaceHeight(scenario, wx, wz),
+            z: wz,
+            rotation: hash01(x, z, salt + 3) * Math.PI * 2,
+            scale: kind === 'tuft' ? 0.7 + hash01(x, z, salt + 4) * 0.7 : 0.55 + hash01(x, z, salt + 4) * 0.9,
+            color: dry
+              ? [tint * 0.98, tint * 0.9, tint * 0.68]
+              : [tint * green[0], tint * green[1], tint * green[2]],
+          };
+          if (kind === 'bush') bushes.push(instance);
+          else if (kind === 'shrub') shrubs.push(instance);
+          else tufts.push(instance);
+        };
+        if (brushland) {
+          if (roll < 0.34) plant('bush', 105);
+          else if (roll < 0.5) plant('shrub', 109);
+          else if (roll < 0.62) plant('tuft', 113);
+          // Brush grows in company: a second, smaller plant beside the first.
+          if (roll < 0.5 && hash01(x, z, 127) > 0.55) plant('bush', 131);
+        } else if (grass) {
+          if (roll < 0.09) plant('tuft', 137);
+          else if (roll < 0.11) plant('bush', 139);
+        } else if (roll < 0.14) {
+          plant('tuft', 141);
+        }
+      }
+
+      // Field fencing runs parallel to the carriageway, so open grass next to a
+      // road gets a boundary line. The local fence mesh runs along X, which is
+      // why a north/south road needs the quarter-turn.
+      if (tile.t === Terrain.Grass && !blocked[i] && tile.o === 0) {
+        let roadX = 0;
+        let roadZ = 0;
+        for (const [dx, dz] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ] as const) {
+          const nx = x + dx;
+          const nz = z + dz;
+          if (nx < 0 || nz < 0 || nx >= W || nz >= H) continue;
+          if (scenario.tiles[nz * W + nx].t === Terrain.Road) {
+            roadX = dx;
+            roadZ = dz;
+            break;
+          }
+        }
+        if ((roadX !== 0 || roadZ !== 0) && hash01(x, z, 121) > 0.6) {
+          const wx = (x + 0.5 + roadX * 0.34) * TILE_SIZE;
+          const wz = (z + 0.5 + roadZ * 0.34) * TILE_SIZE;
+          fences.push({
+            x: wx,
+            y: terrainSurfaceHeight(scenario, wx, wz),
+            z: wz,
+            rotation: roadX !== 0 ? Math.PI / 2 : 0,
+            scale: 0.92 + hash01(x, z, 123) * 0.2,
+            color: [0.92 + hash01(x, z, 125) * 0.14, 0.94, 0.96],
+          });
+        }
+      }
+
+      // Street lamps stand at the kerb and lean over the carriageway. One road
+      // tile in about eight gets one, aimed at the nearest land beside it.
+      if (tile.t === Terrain.Road && hash01(x, z, 131) > 0.875) {
+        let kerbX = 0;
+        let kerbZ = 0;
+        for (const [dx, dz] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ] as const) {
+          const nx = x + dx;
+          const nz = z + dz;
+          if (nx < 0 || nz < 0 || nx >= W || nz >= H) continue;
+          const neighbour = scenario.tiles[nz * W + nx];
+          if (TERRAIN[neighbour.t as TerrainId].water || neighbour.t === Terrain.Road) continue;
+          kerbX = dx;
+          kerbZ = dz;
+          break;
+        }
+        if (kerbX !== 0 || kerbZ !== 0) {
+          const wx = (x + 0.5 + kerbX * 0.4) * TILE_SIZE;
+          const wz = (z + 0.5 + kerbZ * 0.4) * TILE_SIZE;
+          lamps.push({
+            x: wx,
+            y: terrainSurfaceHeight(scenario, wx, wz),
+            z: wz,
+            rotation: Math.atan2(-kerbZ, -kerbX),
+            scale: 1,
+            color: [1, 1, 1],
+          });
+        }
+      }
+
       const amount = ore ? ore[i] : tile.o;
       if (amount > 0) {
         const max = maxOre ? maxOre[i] : tile.o || 1;
@@ -775,7 +932,7 @@ export function buildPropInstances(
       }
     }
   }
-  return { trees, rocks, ore: oreInstances };
+  return { trees, rocks, ore: oreInstances, bushes, shrubs, tufts, fences, lamps };
 }
 
 export function runtimeOreInstances(scenario: Scenario, map: RuntimeMap): PropInstance[] {

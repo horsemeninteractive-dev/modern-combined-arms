@@ -1,12 +1,14 @@
 {
   "name": "iron-tide",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.2.0",
   "releaseStage": "BETA",
   "type": "module",
   "description": "MCA: Modern Combined Arms — combined-arms RTS vertical slice",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "rooms:dev": "vite build --config mp-room-vite.config.ts && npx wrangler dev --config mp-room-wrangler.jsonc --ip 127.0.0.1 --port 8791 --persist-to .dev/mp-room --var MP_ADMIN_TOKEN:local-dev-admin --var MCA_RESERVATION_TOKEN:local-dev-reservation",
+    "rooms:deploy": "vite build --config mp-room-vite.config.ts && npx wrangler deploy --config mp-room-wrangler.live.jsonc",
     "build": "tsc --noEmit && vite build && node tools/build-sw.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc --noEmit",

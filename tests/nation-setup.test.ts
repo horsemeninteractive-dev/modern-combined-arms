@@ -16,6 +16,8 @@ import {
   identityLabel,
   isKnownFactionId,
   opposingAllianceId,
+  playableNations,
+  resolveOpponentNation,
   tryIdentityDef,
 } from '../src/data/factions';
 import { mergeRoster, resolveRoster, rosterIncludes } from '../src/data/roster';
@@ -69,6 +71,28 @@ describe('nation identity registry', () => {
     expect(() => defaultNationFor('nobody')).toThrow();
     expect(opposingAllianceId('defender')).toBe('eastern');
     expect(opposingAllianceId('eastern')).toBe('defender');
+  });
+
+  it('offers every playable nation as an opponent, mirror matches included', () => {
+    expect(playableNations().map((nation) => nation.id)).toEqual([...PLAYABLE_NATION_IDS]);
+    expect(resolveOpponentNation('uk', 'uk').id).toBe('uk');
+    expect(resolveOpponentNation('russia', 'russia').id).toBe('russia');
+    expect(resolveOpponentNation('lithuania', 'poland').id).toBe('poland');
+    for (const nation of NATION_LIST) {
+      for (const option of playableNations()) {
+        expect(resolveOpponentNation(nation.id, option.id).id).toBe(option.id);
+      }
+    }
+  });
+
+  it('falls back to the other-alliance default for empty, unknown or legacy picks', () => {
+    for (const nation of NATION_LIST) {
+      const fallback = defaultOpponentNation(nation.id).id;
+      expect(resolveOpponentNation(nation.id).id).toBe(fallback);
+      expect(resolveOpponentNation(nation.id, '').id).toBe(fallback);
+      expect(resolveOpponentNation(nation.id, 'atlantis').id).toBe(fallback);
+      expect(resolveOpponentNation(nation.id, 'baltic').id).toBe(fallback);
+    }
   });
 
   it('assigns a deterministic opponent from the other alliance', () => {

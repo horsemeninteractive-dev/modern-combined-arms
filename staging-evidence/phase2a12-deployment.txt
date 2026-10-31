@@ -1,0 +1,23 @@
+# Phase 2A.12 deployment and source identification
+Captured: 2026-10-30T22:58:39Z
+
+Worker: mca-multiplayer-staging
+URL: https://mca-multiplayer-staging.horsemeninteractive.workers.dev
+Active version: b1030bee-2c89-4a23-addd-f1567b0d818b
+Tag: phase2a11
+Message: Phase 2A.11: durable epochs and continuous match timing (start-preservation)
+Deployed artifact: b5081f68a578b1b9af1def18ff889be30620f0a4d84d7d4d7b8227ebfd02396e *dist-mp-room/roomWorker.js
+Deployed artifact matches local dist-mp-room/roomWorker.js.
+Worker health: {"ok":true,"onlineEnabled":true,"devMode":true,"adminConfigured":true,"reservationConfigured":true,"protocol":"mca.v2","snapshotVersion":2,"build":"phase2a11-staging"}
+
+Repository branch: master
+HEAD: 132ccc8363d5b5bc98b6518b4afd1738dedaad6a
+Working tree: 152 modified/untracked paths; 0 staged paths.
+Feature flag: 10:  enabled: false,
+
+Phase 2A.12 harness: a0eed242ac7f3e0ed9232ddd56476212629613e730037026ede2e203cff2acb8 *tools/phase2a12-soak.mjs
+Snapshot source: c6fa0789f9ac13108a2c4feb50f2ad2434c3b0437ba2810fd4a63511a8f5f8aa *src/multiplayer/roomSnapshot.ts
+Simulation source: 1450fb913285b3a9ae7f1d037de65db0abbe10b52ef5a647b82ce87bb77842ef *src/sim/game.ts
+
+No deployment or deployed-source change was made in Phase 2A.12. The evidence harness itself was adjusted before the recorded trials to reduce status polling; dist-mp-room/roomWorker.js was not rebuilt or redeployed.
+Production was untouched; the flag remains disabled; two-room maximum, daily allowance and 30-minute deadline are unchanged.

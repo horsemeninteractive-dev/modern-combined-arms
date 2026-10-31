@@ -1,0 +1,30 @@
+{
+    "wallTime": 11,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "fe6645d8122912fa9bf17e6e670832d3f304ce9a1f507b39b6ba5fc3ad02de13",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "CapacityCoordinatorDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793341688609,
+    "event": {
+        "request": {
+            "url": "https://capacity/heartbeat",
+            "method": "POST",
+            "headers": {
+                "content-type": "application/json",
+                "x-mca-reservation-token": "REDACTED"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}

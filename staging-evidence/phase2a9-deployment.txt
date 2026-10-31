@@ -1,0 +1,65 @@
+Current 100% version: d23e416c-c755-4ec4-bfb3-373ec216c275 (phase2a9-b, Phase 2A.8 optimised pathfinding)
+
+# Phase 2A.9 staging deployment and source identification
+Captured: 2026-10-30T20:04:16Z
+
+## Current deployment
+                 Created:  2026-10-30T19:40:36.558Z
+                     Tag:  phase2a9-a
+                 Message:  Phase 2A.9 A: pre-2A.8 pathfinding
+
+Created:     2026-10-30T19:50:59.829Z
+Author:      horsemeninteractive@gmail.com
+Source:      Unknown (deployment)
+Message:     -
+Version(s):  (100%) d23e416c-c755-4ec4-bfb3-373ec216c275
+                 Created:  2026-10-30T19:40:59.463Z
+                     Tag:  phase2a9-b
+                 Message:  Phase 2A.9 B: Phase 2A.8 optimised pathfinding
+
+## Tagged versions
+Message:     -
+
+Version ID:  b164b42c-dba1-493f-b6f5-8a203f5ba750
+Created:     2026-10-30T12:58:44.466Z
+Author:      horsemeninteractive@gmail.com
+Source:      Unknown (version_upload)
+Tag:         -
+Message:     -
+
+Version ID:  febd117e-8d8e-481e-ba88-c212df262073
+Created:     2026-10-30T13:42:45.624Z
+Author:      horsemeninteractive@gmail.com
+Source:      Unknown (version_upload)
+Tag:         -
+Message:     -
+
+Version ID:  e5aef673-bf6f-461c-8539-5605c5ddf908
+Created:     2026-10-30T19:40:36.558Z
+Author:      horsemeninteractive@gmail.com
+Source:      Unknown (version_upload)
+Tag:         phase2a9-a
+Message:     Phase 2A.9 A: pre-2A.8 pathfinding
+
+Version ID:  d23e416c-c755-4ec4-bfb3-373ec216c275
+Created:     2026-10-30T19:40:59.463Z
+Author:      horsemeninteractive@gmail.com
+Source:      Unknown (version_upload)
+Tag:         phase2a9-b
+Message:     Phase 2A.9 B: Phase 2A.8 optimised pathfinding
+
+
+## Source hashes
+6bd4cb4ecac8c2f39f53a39e8d0b13ec091cffd41ea6f08896667b78f759faaf *src/sim/pathfinding.ts
+1c2417c57543c4cfb66b4a039d0d0cff0dbe596d2c13b28e99f0f16e85ec2469 *src/sim/navBatch.ts
+1450fb913285b3a9ae7f1d037de65db0abbe10b52ef5a647b82ce87bb77842ef *src/sim/game.ts
+860eb1aa62c7efa1b35c207b5ba8942a1eb052a3aa8d61b8fbda75e07e438f39 *tmp/phase2a8-old/src/sim/pathfinding.ts
+a62b97593c42f3b22c154b763f761150890c960b75fdc203999d2d1cab976b0a *tmp/phase2a8-old/src/sim/navBatch.ts
+bd86717fedd51cac8da4b75fd10f1fb0414eabf09a6df828815a67896f8a2b7a *tmp/phase2a8-old/src/sim/game.ts
+774bc3828b765d2aed8112eaa4acefa436ca39e0fb5cf0545b6368252f3d5398 *tmp/phase2a9-builds/A/roomWorker.js
+05b2b2465d639852f24d1561c6d300362bf8aae9bcc464c0e1607c46717b87c7 *tmp/phase2a9-builds/B/roomWorker.js
+
+## A/B source-tree difference
+Files tmp/phase2a8-old/src/sim/game.ts and src/sim/game.ts differ
+Files tmp/phase2a8-old/src/sim/navBatch.ts and src/sim/navBatch.ts differ
+Files tmp/phase2a8-old/src/sim/pathfinding.ts and src/sim/pathfinding.ts differ

@@ -1,0 +1,218 @@
+{
+  "source": "staging-evidence\\phase2a2-run\\cpu-profile-soak.pprof",
+  "bytes": 8655,
+  "sampleTypes": [
+    {
+      "type": "cpu",
+      "unit": "nanoseconds"
+    }
+  ],
+  "period": 1000000,
+  "durationNanos": 19999692000,
+  "samples": 444,
+  "totalCpuMs": 444.0,
+  "topSelf": [
+    {
+      "function": "createTeamSnapshot",
+      "cpuMs": 229.0,
+      "percent": 51.58
+    },
+    {
+      "function": "sendSnapshotObject",
+      "cpuMs": 89.0,
+      "percent": 20.05
+    },
+    {
+      "function": "(idle)",
+      "cpuMs": 31.0,
+      "percent": 6.98
+    },
+    {
+      "function": "sendText",
+      "cpuMs": 22.0,
+      "percent": 4.95
+    },
+    {
+      "function": "(garbage collector)",
+      "cpuMs": 10.0,
+      "percent": 2.25
+    },
+    {
+      "function": "tick",
+      "cpuMs": 10.0,
+      "percent": 2.25
+    },
+    {
+      "function": "hasLineOfSight",
+      "cpuMs": 5.0,
+      "percent": 1.13
+    },
+    {
+      "function": "updateBuildingSystems",
+      "cpuMs": 5.0,
+      "percent": 1.13
+    },
+    {
+      "function": "",
+      "cpuMs": 4.0,
+      "percent": 0.9
+    },
+    {
+      "function": "player",
+      "cpuMs": 3.0,
+      "percent": 0.68
+    },
+    {
+      "function": "evaluateMatchResult",
+      "cpuMs": 3.0,
+      "percent": 0.68
+    },
+    {
+      "function": "persistSnapshot",
+      "cpuMs": 3.0,
+      "percent": 0.68
+    },
+    {
+      "function": "utf8ByteLength",
+      "cpuMs": 3.0,
+      "percent": 0.68
+    },
+    {
+      "function": "evaluateVictory",
+      "cpuMs": 3.0,
+      "percent": 0.68
+    },
+    {
+      "function": "put",
+      "cpuMs": 2.0,
+      "percent": 0.45
+    },
+    {
+      "function": "runTick",
+      "cpuMs": 2.0,
+      "percent": 0.45
+    },
+    {
+      "function": "updateUnits",
+      "cpuMs": 2.0,
+      "percent": 0.45
+    },
+    {
+      "function": "(program)",
+      "cpuMs": 2.0,
+      "percent": 0.45
+    },
+    {
+      "function": "broadcast",
+      "cpuMs": 1.0,
+      "percent": 0.23
+    },
+    {
+      "function": "ownedEntities",
+      "cpuMs": 1.0,
+      "percent": 0.23
+    }
+  ],
+  "topInclusive": [
+    {
+      "function": "(root)",
+      "cpuMs": 444.0,
+      "percent": 100.0
+    },
+    {
+      "function": "",
+      "cpuMs": 398.0,
+      "percent": 89.64
+    },
+    {
+      "function": "runTick",
+      "cpuMs": 390.0,
+      "percent": 87.84
+    },
+    {
+      "function": "tick",
+      "cpuMs": 388.0,
+      "percent": 87.39
+    },
+    {
+      "function": "broadcast",
+      "cpuMs": 344.0,
+      "percent": 77.48
+    },
+    {
+      "function": "createTeamSnapshot",
+      "cpuMs": 231.0,
+      "percent": 52.03
+    },
+    {
+      "function": "sendSnapshotObject",
+      "cpuMs": 112.0,
+      "percent": 25.23
+    },
+    {
+      "function": "(idle)",
+      "cpuMs": 31.0,
+      "percent": 6.98
+    },
+    {
+      "function": "sendText",
+      "cpuMs": 22.0,
+      "percent": 4.95
+    },
+    {
+      "function": "(garbage collector)",
+      "cpuMs": 10.0,
+      "percent": 2.25
+    },
+    {
+      "function": "persistSnapshot",
+      "cpuMs": 10.0,
+      "percent": 2.25
+    },
+    {
+      "function": "updateUnits",
+      "cpuMs": 9.0,
+      "percent": 2.03
+    },
+    {
+      "function": "persistPeriodic",
+      "cpuMs": 8.0,
+      "percent": 1.8
+    },
+    {
+      "function": "updateBuildingSystems",
+      "cpuMs": 7.0,
+      "percent": 1.58
+    },
+    {
+      "function": "refreshVision",
+      "cpuMs": 6.0,
+      "percent": 1.35
+    },
+    {
+      "function": "hasLineOfSight",
+      "cpuMs": 5.0,
+      "percent": 1.13
+    },
+    {
+      "function": "updateOrderTargeting",
+      "cpuMs": 4.0,
+      "percent": 0.9
+    },
+    {
+      "function": "player",
+      "cpuMs": 3.0,
+      "percent": 0.68
+    },
+    {
+      "function": "passiveMatsFor",
+      "cpuMs": 3.0,
+      "percent": 0.68
+    },
+    {
+      "function": "evaluateMatchResult",
+      "cpuMs": 3.0,
+      "percent": 0.68
+    }
+  ]
+}

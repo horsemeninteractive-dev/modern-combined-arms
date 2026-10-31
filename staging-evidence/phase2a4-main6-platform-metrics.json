@@ -1,0 +1,82 @@
+{
+  "query": {
+    "name": "phase2a4-main6-mvupcv34",
+    "start": "2026-10-30T08:20:30Z",
+    "end": "2026-10-30T08:51:30Z",
+    "datasets": [
+      "durableObjectsPeriodicGroups",
+      "durableObjectsInvocationsAdaptiveGroups",
+      "durableObjectsStorageGroups"
+    ],
+    "note": "Collected through the Cloudflare API connector after the soak. Account identifiers are omitted."
+  },
+  "periodic": {
+    "rows": 31,
+    "first": "2026-10-30T08:20:38Z",
+    "last": "2026-10-30T08:50:38Z",
+    "objectId": "dffa3698dcef0252d2469e561997081a32b0bbffad2bf2d7b8d1c0cf0593ac7c",
+    "namespaceId": "4c3a9ed29ce1475aae7ec0530538afca",
+    "colo": "LHR",
+    "cpuTimeUs": 19697594,
+    "activeTimeUs": 1800087526,
+    "durationGbSeconds": 230.411203328,
+    "inboundWebsocketMessages": 536,
+    "outboundWebsocketMessages": 36540,
+    "rowsRead": 840,
+    "rowsWritten": 1779,
+    "subrequests": 91,
+    "exceededCpuErrors": 0,
+    "exceededMemoryErrors": 0,
+    "fatalInternalErrors": 0,
+    "memoryBytes": { "first": 6902828, "last": 18799148, "min": 6902828, "max": 34723835 },
+    "activeWebsocketConnectionsMax": 2,
+    "perMinute": [
+      { "at": "2026-10-30T08:20:38Z", "cpuTimeUs": 1042223, "activeTimeUs": 59999984, "memoryBytes": 6902828, "activeWebsocketConnections": 2, "inbound": 16, "outbound": 1214 },
+      { "at": "2026-10-30T08:21:38Z", "cpuTimeUs": 670594, "activeTimeUs": 60000087, "memoryBytes": 8630011, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:22:38Z", "cpuTimeUs": 641941, "activeTimeUs": 60000148, "memoryBytes": 10190380, "activeWebsocketConnections": 2, "inbound": 17, "outbound": 1217 },
+      { "at": "2026-10-30T08:23:38Z", "cpuTimeUs": 564417, "activeTimeUs": 60000094, "memoryBytes": 10371116, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:24:38Z", "cpuTimeUs": 662885, "activeTimeUs": 60000086, "memoryBytes": 13056812, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:25:38Z", "cpuTimeUs": 598703, "activeTimeUs": 60000082, "memoryBytes": 13492780, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:26:38Z", "cpuTimeUs": 559505, "activeTimeUs": 60000084, "memoryBytes": 14998572, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:27:38Z", "cpuTimeUs": 557011, "activeTimeUs": 60000070, "memoryBytes": 15855660, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:28:38Z", "cpuTimeUs": 576983, "activeTimeUs": 60000072, "memoryBytes": 18272300, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:29:38Z", "cpuTimeUs": 547409, "activeTimeUs": 60000085, "memoryBytes": 18825772, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:30:38Z", "cpuTimeUs": 620318, "activeTimeUs": 60000085, "memoryBytes": 20179500, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:31:38Z", "cpuTimeUs": 584823, "activeTimeUs": 60000092, "memoryBytes": 21566508, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:32:38Z", "cpuTimeUs": 586531, "activeTimeUs": 60000084, "memoryBytes": 23869996, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:33:38Z", "cpuTimeUs": 616741, "activeTimeUs": 60000125, "memoryBytes": 25215532, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:34:38Z", "cpuTimeUs": 589870, "activeTimeUs": 60000125, "memoryBytes": 27584507, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:35:38Z", "cpuTimeUs": 579136, "activeTimeUs": 60000078, "memoryBytes": 27909676, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:36:38Z", "cpuTimeUs": 626440, "activeTimeUs": 60000081, "memoryBytes": 29280044, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:37:38Z", "cpuTimeUs": 618245, "activeTimeUs": 60000099, "memoryBytes": 30993403, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:38:38Z", "cpuTimeUs": 612895, "activeTimeUs": 60000113, "memoryBytes": 32733691, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:39:38Z", "cpuTimeUs": 612828, "activeTimeUs": 60000091, "memoryBytes": 33901307, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:40:38Z", "cpuTimeUs": 604562, "activeTimeUs": 60000093, "memoryBytes": 34723835, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:41:38Z", "cpuTimeUs": 781893, "activeTimeUs": 60000083, "memoryBytes": 29483771, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:42:38Z", "cpuTimeUs": 812791, "activeTimeUs": 60000063, "memoryBytes": 30750971, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:43:38Z", "cpuTimeUs": 700257, "activeTimeUs": 60000146, "memoryBytes": 30724652, "activeWebsocketConnections": 2, "inbound": 17, "outbound": 1217 },
+      { "at": "2026-10-30T08:44:38Z", "cpuTimeUs": 675028, "activeTimeUs": 60000112, "memoryBytes": 30602284, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:45:38Z", "cpuTimeUs": 725201, "activeTimeUs": 60000094, "memoryBytes": 31018028, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:46:38Z", "cpuTimeUs": 662549, "activeTimeUs": 60000081, "memoryBytes": 31350828, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:47:38Z", "cpuTimeUs": 795038, "activeTimeUs": 60000070, "memoryBytes": 17100588, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:48:38Z", "cpuTimeUs": 746784, "activeTimeUs": 60000073, "memoryBytes": 16902188, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:49:38Z", "cpuTimeUs": 707772, "activeTimeUs": 60000077, "memoryBytes": 17041964, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:50:38Z", "cpuTimeUs": 16221, "activeTimeUs": 84869, "memoryBytes": 18799148, "activeWebsocketConnections": 2, "inbound": 0, "outbound": 6 }
+    ]
+  },
+  "invocations": {
+    "rows": 3,
+    "requests": 4,
+    "errors": 2,
+    "wallTimeUs": 3599782719,
+    "responseBodyBytes": 17506541,
+    "entries": [
+      { "at": "2026-10-30T08:20:38Z", "type": "http", "status": "success", "requests": 1, "errors": 0, "cpuP50": 60885, "cpuP95": 60885, "cpuP99": 60885, "wallP50": 227003, "wallP95": 227003, "wallP99": 227003 },
+      { "at": "2026-10-30T08:20:39Z", "type": "http", "status": "clientDisconnected", "requests": 2, "errors": 2, "cpuP50": 5608, "cpuP95": 19628880, "cpuP99": 19628880, "wallP50": 1799746800, "wallP95": 1799806100, "wallP99": 1799806100 },
+      { "at": "2026-10-30T08:50:39Z", "type": "http", "status": "success", "requests": 1, "errors": 0, "cpuP50": 2235, "cpuP95": 2235, "cpuP99": 2235, "wallP50": 2782, "wallP95": 2782, "wallP99": 2782 }
+    ],
+    "note": "The two errors are expected terminal statuses for the long-lived WebSocket invocations at match close, not application exceptions. No wrangler tail exception was recorded."
+  },
+  "storage": { "rows": 0, "firstStoredBytes": null, "lastStoredBytes": null, "maxStoredBytes": null, "points": [] },
+  "errors": []
+}

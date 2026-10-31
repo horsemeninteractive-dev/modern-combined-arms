@@ -1,0 +1,19 @@
+{
+  "roomId": "phase2a2-probe3-mvuesysy",
+  "mode": "1v1",
+  "protocol": 1,
+  "matchDurationMs": 30000,
+  "matchDeadlineAt": 1793330744412,
+  "seats": [
+    {
+      "seatId": 0,
+      "playerId": 0,
+      "team": 0
+    },
+    {
+      "seatId": 1,
+      "playerId": 1,
+      "team": 1
+    }
+  ]
+}

@@ -8,6 +8,111 @@ The release version and stage come from `package.json`; the build number shown
 in the menu is the repository commit count at build time. The same file is
 rendered in game from **Changelog** in the main-menu footer.
 
+## [0.2.0 BETA] — 2026-10-31
+
+Online 1v1, played for real. This update turns multiplayer from a server-only
+validation build into a mode two people can play: host or join a room, pick a
+nation and a colour, ready up, and the host starts a timed match that the room
+simulates while both players command their own army. It also fixes the three
+faults that made a networked battle ignore orders, and ships the deployment
+configuration live hosting needed. No simulation, combat, pathfinding or balance
+rule changed.
+
+### Online 1v1
+
+- The **Multiplayer** deck is live in the shipped build: host a room and share its room code and join code, or join with someone else's. The deck shows each seat's nation, colour, readiness and connection state, and the room's own map and match length.
+- Each seat picks its own nation and colour; changing either clears that seat's readiness, so a start can never use a configuration nobody confirmed.
+- Connecting is never a start. The match begins only from an explicit host action, and the room re-validates occupancy, connectivity, readiness and the remaining reserved window before it builds the simulation.
+- The battlefield draws the room's team projection and nothing else: entities, players, projectiles, fog, charted structures, contacts and the result all arrive from the authoritative stream, with positions eased between updates and snapped across a resync. The client owns no simulation, so it cannot show the opponent's true opening through fog.
+- Orders are intent only. Right-click, attack-move, stop, hold, stance, capture, repair, garrison, rally and production all travel to the room, which decides authority from the authenticated seat; the client never predicts and never applies an order locally.
+- A dropped seat socket reconnects by itself with bounded backoff and reuses its seat token, and the room answers with a fresh baseline sync. A battle that stops receiving says so on screen and says when the link is back.
+
+### Room lifecycle
+
+- A room that has not started a match survives Durable Object eviction and restoration without a match snapshot, so a lobby no longer needs a running game to exist.
+- The start transition is a single durable commit: the world is built and persisted, the lifecycle is committed, and only then does a seat ever see `playing`.
+
+### Fixes
+
+- **Commands were dropped after the start.** Sockets were opened in the lobby, and their message handler called the lobby, which the start transition had already cleared; updates flowed out while every order, keepalive and resync a seat sent was discarded. Routing is now resolved per message, so a seat's socket is handled by whichever lifecycle owns it.
+- **Orders named their own authority.** Commands carried `team` for the local simulation, and the room's gate refuses any command that selects its own authority. The networked path now sends intent only (`team`, `playerId`, `owner` and `seat` are stripped), and a test pins the wire shape.
+- **Right-click panned the camera instead of giving an order.** A right-button press became a camera drag on the first pixel, so hand tremor scrolled the map and any travel past six pixels silently cancelled the order. A press is now an order until it travels five pixels, and the camera does not move at all below that.
+- A background tab no longer closes a healthy seat: the keepalive watchdog only escalates a keepalive the room failed to answer, and never while the tab is hidden and its timers are throttled.
+
+### Deployment
+
+- The production build carries the live room worker address from `.env.production`, so `npm run build` and `npm run release` ship a deck whose Multiplayer entry works with no extra steps. A build without an address still dims the entry rather than pointing players at nothing.
+- Added `npm run rooms:deploy` with a dedicated live Worker config: one Durable Object namespace, development mode off (no probe page, no loopback exemption), and an allowlist for the live app plus its preview hosts.
+- Added one shared origin policy for the Worker's CORS grant and the room's socket check, supporting exact origins and a single-label wildcard, so the two can never disagree about who may connect.
+- A browser origin that is not allowlisted is now refused before it reaches a room. A missing CORS grant only hid the reply; the request could still create a room and spend a capacity slot.
+- `connect-src` in the page's header rules now lists the room worker's `https` and `wss` origins and the app's preview hosts, matching what the worker allowlists.
+- The two active-room cap, the daily capacity allowance, the 30-minute hard deadline and the zero-cost operating rule are unchanged.
+
+### Documentation and verification
+
+- The README documents the three settings that must agree for live play (build address, worker allowlist, page `connect-src`) and the two deploy commands.
+- The GDD records the shipped build and the online 1v1 mode.
+- Verified with two browser seats against a production build and a live-configured worker: host, join by code, both ready, host start, then orders accepted and units moving on both seats, with a foreign origin refused at the edge and development mode absent from the live runtime.
+- Added regression coverage for the socket handoff after start, the stripped authority fields, the keepalive and reconnect behaviour, the right-click drag tolerance, the origin policy and the deployed worker surface.
+
+### Known gaps
+
+- Rooms are joined by code only: there is no room browser, lobby list, account system or matchmaking, and no spectators or late joiners.
+- Reconnection is automatic but not resumable by hand: a refreshed tab returns to the menu and must rejoin the room by code.
+- The live deployment allows exactly two active rooms and its daily allowance, and a match is hard-capped at 30 minutes.
+- Verified with two seats on one machine (separate browser sessions), not across two physical devices or networks; latency was loopback and deployed-edge only.
+- The 10 ms individual-tick CPU target remains unverified at platform level.
+
+## [0.1.3 BETA] — 2026-10-31
+
+Readability, settings, input and renderer review. This update rebuilds the
+interface's type and contrast rules, makes the menu honest about what is
+available, adds a settings surface for scale and graphics, and gives the
+battlefield silhouettes, smoother fog, structure shadows and readable ground
+cover. No simulation, combat, pathfinding or balance rule changed.
+
+### Legibility
+
+- Introduced a five-step type scale (11, 12, 13, 15 and 18 px) as custom properties and moved every HUD, production-sidebar, selection-panel, command-bar and left-rail declaration onto it; the previous sheet had 254 font sizes, 111 of them 8.5 px or smaller and the smallest 6 px. Resource figures now read larger than their labels, and uppercase letter-spaced styling is kept only for short headings.
+- Raised `--ink-faint` to `#7f908b` and restricted it to decorative rules and borders; readable copy uses `--ink-dim`.
+- Menu subtitles wrap instead of truncating, menu items and their hover and keyboard-focus states are brighter, and **Multiplayer** is clearly unavailable: dimmed, `disabled`, `aria-disabled` and still carrying its **SOON** tag.
+- Unaffordable and locked production cards print the blocking reason on the card itself (`NO MATERIALS`, `NO REQUISITION`, `QUEUE FULL`, `NEEDS SHIPYARD`, `UNDER CONSTRUCTION`), separating a temporary shortage from missing technology by tone as well as dimming. The tooltip keeps the full sentence.
+- Command-bar buttons show their hotkey (`A`, `S`, `H`, `C`, `G`, `R`, `D`, `B`) on desktop; the touch composition drops the hints and keeps the labels.
+- While no radar is online the tactical map collapses to a slim bar that names the cause — no radar array, or a grid brownout — and the Radar Array card is flagged in the Base tab. `minimapStatus()` semantics are unchanged.
+- Added WebGL context-loss handling: `webglcontextlost` is prevented from discarding the canvas, the loop pauses and the DOM stops drawing; `webglcontextrestored` rebuilds programs, buffers, textures and framebuffers and resumes. The thumbnail renderer degrades to icons if its own context cannot be rebuilt.
+
+### Settings and input
+
+- Added an **Interface scale** setting (80–150%, default 100%) driving a `--ui-scale` property that the rail, sidebar, console and type tokens derive from.
+- Added **Graphics quality** (Low, Medium, High) and an independent **Render scale** (50–100% of the device pixel ratio, still capped at 2×). Presets set render scale, the particle ceiling (900, 1800 or 2800), flat shadows and animated water; an optional **FPS** readout shows frame, simulation and entity counts.
+- Added an **Escape key** choice: pause the battle (the previous behaviour) or open the menu. A command mode still cancels first.
+- Input conveniences, all routed through existing `App` commands: double-click a unit to select every visible unit of its type; `Ctrl+A` for the mobile army; `F8`/`F9` to cycle idle harvesters and engineers; `F2` to jump to the last alert, which critical toasts now also do when clicked; camera bookmarks on `Ctrl+Shift+1..4` (save) and `Shift+1..4` (recall), leaving `F1` on the briefing and `Ctrl+1..9` on control groups.
+- Selections above eight units collapse to one roster card per type with a count and a combined health bar; clicking that card narrows the selection to the type.
+- Deliberately deferred, with the requirements recorded in `src/ui/input.ts`: key rebinding, patrol and waypoint queues.
+
+### Renderer
+
+- Added a silhouette pass for friendly units hidden behind a structure: a second draw of the unit bodies with a greater-depth test, depth writes off and a flat team colour, pulled toward the eye in view depth only so a nearby wall passes but distant terrain does not. The pass runs before the units themselves, uses the same vision gate as the main draw, and has its own **Unit silhouettes** setting.
+- Fog now cross-fades: the current vision mask is moved to a second texture on each update and blended over exactly one update interval, so the boundary slides instead of stepping every third tick. The three authored states are unchanged (255 visible, 112 charted, 0 unseen) but charted ground is desaturated toward luminance and cooled before it is dimmed, and ground, water, props and roads share one fog function.
+- Tall structures cast a short flat projected shadow following the sun's ground direction, tipped by the authored mesh height, with strength falling from midday through dusk to night and further reduced in overcast or rain. Still no shadow maps.
+- Added very low-frequency world-position drift to the terrain shading, gated to grass cover so road, ore and buildable ground keep their authored colours.
+- Lifted the value of shrubs, bushes and grass tufts and added three green families — cool hedge, yellow field and deep blue-green — so thickets mix tones instead of reading as black spots. Sand keeps its dry tint.
+- The camera is unchanged (45° yaw, 30° pitch). Post-processing and tone mapping were deliberately left out of this pass.
+
+### Documentation and verification
+
+- Reconciled the README with the shipped menu (Singleplayer, Multiplayer soon, Map Editor, Settings), the new settings and controls, the fog, presentation and interface descriptions, and the current test count.
+- Retitled the GDD to **Modern Combined Arms**, recorded the shipped build and added the concrete interface state and the deliberately unimplemented list.
+- Verified every documentation link resolves.
+- Added regression coverage for interface scaling, graphics presets, render scale, Escape behaviour, idle cycling and roster grouping, and for the fog cross-fade, silhouette pass, structure shadows, terrain drift and vegetation variants. Two fog and terrain-material assertions were rewritten to follow the two-texture field and the shared fog function.
+
+### Known gaps
+
+- Tone mapping and post-processing are not implemented; the renderer still writes lit colour straight to the canvas.
+- Key rebinding, patrol and waypoint queues remain unimplemented, as listed above.
+- The renderer changes are verified by shader compilation, a live WebGL2 context and source-level tests; no scripted in-battle capture exercised the silhouettes or the fog cross-fade.
+- The interface was checked in a Chromium viewport at desktop and landscape-mobile sizes, not on physical low-end devices or with safe-area insets.
+
 ## [0.1.2 BETA] — 2026-10-28
 
 Battlefield-control, readability and audio follow-up to 0.1.1. This update makes
@@ -28,6 +133,7 @@ and gives the build a proper install icon and link preview.
 - Own-team projectiles and missile trails are no longer fog-culled per tile. Friendly fire events and audio were always shown, so the player's own artillery no longer disappears mid-flight over unseen ground. Hostile projectiles still obey gameplay fog, and the visual fog toggle remains outside the rule.
 - Wrecks now burn and smoke as they settle, then stop within about half a minute so an old battlefield does not turn into a permanent bonfire. Emission uses the same gameplay-vision query as the hull and stays inside the existing 24-wreck cap.
 - Tracer chains were tuned for continuity: small-arms, cannon and missile tracers are longer, wider and drawn in up to eight segments, and impact and explosion scale were raised a step per class so a tank shell still reads against massed rifle fire.
+- Wheeled vehicles now leave a pair of narrow, treaded rubber marks that fade faster than steel track marks, and ground impacts from cannon, missile and artillery rounds leave a small dark crater with a disturbed-earth rim. Both reuse the bounded ground-decal batch: no collision, save entry or gameplay effect, and rifle bullets do not scar the ground.
 - The camera can now be zoomed in to 14 — roughly three and a half tiles above and below the focus — to inspect a facade or a hull without the isometric pitch collapsing into a head-on view. Battle zoom is unchanged.
 
 ### Audio

@@ -1,0 +1,202 @@
+{
+  "index": 1,
+  "scheduledAgeMs": 12500,
+  "checkpointObservedAt": 1793473683490,
+  "checkpointObservedAtIso": "2026-10-31T19:08:03.490Z",
+  "checkpointAgeAtRequestMs": 12656,
+  "checkpointAgeAtAbortApproxMs": 12739,
+  "ageSinceAnyPersistenceSuccessMs": 7753,
+  "lastSuccessAt": 1793473683432,
+  "lastSuccessAtIso": "2026-10-31T19:08:03.432Z",
+  "lastCheckpointTick": 3003,
+  "snapshotCyclesBefore": 6,
+  "snapshotCyclesAfterRestore": 1,
+  "preTick": 3256,
+  "preEpochs": [
+    1027,
+    1027
+  ],
+  "preSeqs": [
+    1630,
+    1630
+  ],
+  "restoredSnapshotTick": 3000,
+  "restoredTotalTicks": 3000,
+  "restoredProcessTicks": 0,
+  "restoredAtIso": "2026-10-31T19:08:16.507Z",
+  "postRestartTickAfterChecks": 3005,
+  "processTicksAfterChecks": 5,
+  "rollbackTicks": 256,
+  "rollbackMs": 12800,
+  "withinCheckpointInterval": true,
+  "restartRequestedAt": "2026-10-31T19:08:16.146Z",
+  "restartResponseAt": "2026-10-31T19:08:16.179Z",
+  "socketsClosedAt": [
+    "2026-10-31T19:08:16.231Z",
+    "2026-10-31T19:08:16.234Z"
+  ],
+  "closedAfterRequestMs": [
+    85,
+    88
+  ],
+  "restoredStatusAfterCloseMs": 273,
+  "reconnect": [
+    {
+      "seat": 0,
+      "connectMs": 93,
+      "firstSyncAt": 1793473696598,
+      "firstSyncMsAfterClose": 364,
+      "firstSyncTick": 3001,
+      "firstSyncEpoch": 2052,
+      "firstSyncSeq": 1503,
+      "firstSyncHadMap": true,
+      "firstSyncFogTiles": 6912,
+      "firstSyncStateTick": 3001,
+      "firstDeltaAt": 1793473696656,
+      "firstDeltaMsAfterSync": 58,
+      "firstDeltaTick": 3002,
+      "firstDeltaEpoch": 2052,
+      "firstCommandAt": 1793473696675,
+      "firstCommandMsAfterSync": 77,
+      "firstCommandAccepted": true,
+      "firstCommandTick": 3002,
+      "resyncAcceptedAt": 1793473696730,
+      "resyncRateLimitedAt": 1793473696748,
+      "resyncSyncEpoch": 2053,
+      "staleSyncReject": {
+        "ok": false,
+        "reason": "epoch-mismatch",
+        "detail": "Sync epoch did not advance."
+      },
+      "staleDeltaReject": {
+        "ok": false,
+        "reason": "epoch-mismatch",
+        "detail": "Delta belongs to another sync generation."
+      },
+      "stateTickAfterRecovery": 3004
+    },
+    {
+      "seat": 1,
+      "connectMs": 97,
+      "firstSyncAt": 1793473696604,
+      "firstSyncMsAfterClose": 370,
+      "firstSyncTick": 3001,
+      "firstSyncEpoch": 2052,
+      "firstSyncSeq": 1503,
+      "firstSyncHadMap": true,
+      "firstSyncFogTiles": 6912,
+      "firstSyncStateTick": 3001,
+      "firstDeltaAt": 1793473696652,
+      "firstDeltaMsAfterSync": 48,
+      "firstDeltaTick": 3002,
+      "firstDeltaEpoch": 2052,
+      "firstCommandAt": 1793473696688,
+      "firstCommandMsAfterSync": 84,
+      "firstCommandAccepted": true,
+      "firstCommandTick": 3002,
+      "resyncAcceptedAt": 1793473696768,
+      "resyncRateLimitedAt": 1793473696782,
+      "resyncSyncEpoch": 2053,
+      "staleSyncReject": {
+        "ok": false,
+        "reason": "epoch-mismatch",
+        "detail": "Sync epoch did not advance."
+      },
+      "staleDeltaReject": {
+        "ok": false,
+        "reason": "epoch-mismatch",
+        "detail": "Delta belongs to another sync generation."
+      },
+      "stateTickAfterRecovery": 3004
+    }
+  ],
+  "postRestartCommands": [
+    {
+      "seat": 0,
+      "accepted": true,
+      "tick": 3002
+    },
+    {
+      "seat": 1,
+      "accepted": true,
+      "tick": 3002
+    }
+  ],
+  "postCheckpointCommands": [
+    {
+      "seat": 0,
+      "purpose": "move",
+      "commandType": "move",
+      "accepted": true,
+      "tick": 3256
+    },
+    {
+      "seat": 1,
+      "purpose": "probe",
+      "commandType": "move",
+      "accepted": true,
+      "tick": 3256
+    }
+  ],
+  "startContinuity": {
+    "before": 1793473531323,
+    "after": 1793473531323,
+    "deadlineBefore": 1793473781159,
+    "deadlineAfter": 1793473781159
+  },
+  "rejectedUpdates": 0,
+  "lastReject": null,
+  "combatAtRestart": {
+    "at": "2026-10-31T19:08:16.818Z",
+    "issued": [
+      {
+        "move": 18,
+        "production": 1,
+        "probe": 17,
+        "attack": 1
+      },
+      {
+        "move": 8,
+        "production": 1,
+        "probe": 25,
+        "attack": 2
+      }
+    ],
+    "attackOrders": [
+      1,
+      2
+    ],
+    "attackMoveOrders": [
+      17,
+      25
+    ],
+    "orderReplacements": [
+      24,
+      23
+    ],
+    "hits": [
+      37,
+      33
+    ],
+    "enemyUnitsLost": [
+      2,
+      5
+    ],
+    "enemyBuildingsLost": [
+      0,
+      0
+    ],
+    "ownUnitsLost": [
+      5,
+      2
+    ],
+    "replacements": [
+      2,
+      1
+    ],
+    "disengages": [
+      3,
+      0
+    ]
+  }
+}

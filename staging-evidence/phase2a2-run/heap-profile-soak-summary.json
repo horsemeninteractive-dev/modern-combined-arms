@@ -1,0 +1,350 @@
+{
+  "source": "staging-evidence\\phase2a2-run\\heap-profile-soak.pprof",
+  "bytes": 1985,
+  "sampleTypes": [
+    {
+      "type": "alloc_objects",
+      "unit": "count"
+    },
+    {
+      "type": "alloc_space",
+      "unit": "bytes"
+    }
+  ],
+  "samplePeriodBytes": 524288,
+  "samples": 37,
+  "totals": [
+    {
+      "type": "alloc_objects",
+      "unit": "count",
+      "value": 15653431,
+      "percentOfSampled": 100.0
+    },
+    {
+      "type": "alloc_space",
+      "unit": "bytes",
+      "value": 566034024,
+      "percentOfSampled": 100.0
+    }
+  ],
+  "bySampleType": [
+    {
+      "type": "alloc_objects",
+      "unit": "count",
+      "total": 15653431,
+      "topSelf": [
+        {
+          "function": "next",
+          "value": 15361932,
+          "percent": 98.14
+        },
+        {
+          "function": "hasLineOfSight",
+          "value": 87382,
+          "percent": 0.56
+        },
+        {
+          "function": "from",
+          "value": 33731,
+          "percent": 0.22
+        },
+        {
+          "function": "map",
+          "value": 32769,
+          "percent": 0.21
+        },
+        {
+          "function": "createTeamSnapshot",
+          "value": 26215,
+          "percent": 0.17
+        },
+        {
+          "function": "sendText",
+          "value": 21846,
+          "percent": 0.14
+        },
+        {
+          "function": "processCommands",
+          "value": 21846,
+          "percent": 0.14
+        },
+        {
+          "function": "updateEngineerAssignments",
+          "value": 18725,
+          "percent": 0.12
+        },
+        {
+          "function": "updateGarrisons",
+          "value": 18725,
+          "percent": 0.12
+        },
+        {
+          "function": "sort",
+          "value": 8739,
+          "percent": 0.06
+        },
+        {
+          "function": "evaluateMatchResult",
+          "value": 7282,
+          "percent": 0.05
+        },
+        {
+          "function": "filter",
+          "value": 6899,
+          "percent": 0.04
+        },
+        {
+          "function": "Map",
+          "value": 6899,
+          "percent": 0.04
+        },
+        {
+          "function": "sendSnapshotObject",
+          "value": 437,
+          "percent": 0.0
+        },
+        {
+          "function": "persistSnapshot",
+          "value": 4,
+          "percent": 0.0
+        }
+      ],
+      "topInclusive": [
+        {
+          "function": "(root)",
+          "value": 15653431,
+          "percent": 100.0
+        },
+        {
+          "function": "tick",
+          "value": 15626944,
+          "percent": 99.83
+        },
+        {
+          "function": "runTick",
+          "value": 15626944,
+          "percent": 99.83
+        },
+        {
+          "function": "broadcast",
+          "value": 15391463,
+          "percent": 98.33
+        },
+        {
+          "function": "from",
+          "value": 15369448,
+          "percent": 98.19
+        },
+        {
+          "function": "createTeamSnapshot",
+          "value": 15369180,
+          "percent": 98.18
+        },
+        {
+          "function": "next",
+          "value": 15361932,
+          "percent": 98.14
+        },
+        {
+          "function": "hasLineOfSight",
+          "value": 87382,
+          "percent": 0.56
+        },
+        {
+          "function": "refreshVision",
+          "value": 87382,
+          "percent": 0.56
+        },
+        {
+          "function": "map",
+          "value": 66057,
+          "percent": 0.42
+        },
+        {
+          "function": "updateUnits",
+          "value": 32769,
+          "percent": 0.21
+        },
+        {
+          "function": "updateGarrisons",
+          "value": 27464,
+          "percent": 0.18
+        },
+        {
+          "function": "persistSnapshot",
+          "value": 26487,
+          "percent": 0.17
+        },
+        {
+          "function": "persistPeriodic",
+          "value": 26487,
+          "percent": 0.17
+        },
+        {
+          "function": "toSave",
+          "value": 26483,
+          "percent": 0.17
+        }
+      ]
+    },
+    {
+      "type": "alloc_space",
+      "unit": "bytes",
+      "total": 566034024,
+      "topSelf": [
+        {
+          "function": "next",
+          "value": 307238640,
+          "percent": 54.28
+        },
+        {
+          "function": "from",
+          "value": 224491692,
+          "percent": 39.66
+        },
+        {
+          "function": "sendSnapshotObject",
+          "value": 25476820,
+          "percent": 4.5
+        },
+        {
+          "function": "persistSnapshot",
+          "value": 2010880,
+          "percent": 0.36
+        },
+        {
+          "function": "sendText",
+          "value": 1048608,
+          "percent": 0.19
+        },
+        {
+          "function": "hasLineOfSight",
+          "value": 1048584,
+          "percent": 0.19
+        },
+        {
+          "function": "sort",
+          "value": 524340,
+          "percent": 0.09
+        },
+        {
+          "function": "filter",
+          "value": 524324,
+          "percent": 0.09
+        },
+        {
+          "function": "Map",
+          "value": 524324,
+          "percent": 0.09
+        },
+        {
+          "function": "evaluateMatchResult",
+          "value": 524304,
+          "percent": 0.09
+        },
+        {
+          "function": "map",
+          "value": 524304,
+          "percent": 0.09
+        },
+        {
+          "function": "processCommands",
+          "value": 524304,
+          "percent": 0.09
+        },
+        {
+          "function": "createTeamSnapshot",
+          "value": 524300,
+          "percent": 0.09
+        },
+        {
+          "function": "updateEngineerAssignments",
+          "value": 524300,
+          "percent": 0.09
+        },
+        {
+          "function": "updateGarrisons",
+          "value": 524300,
+          "percent": 0.09
+        }
+      ],
+      "topInclusive": [
+        {
+          "function": "(root)",
+          "value": 566034024,
+          "percent": 100.0
+        },
+        {
+          "function": "tick",
+          "value": 560306396,
+          "percent": 98.99
+        },
+        {
+          "function": "runTick",
+          "value": 560306396,
+          "percent": 98.99
+        },
+        {
+          "function": "broadcast",
+          "value": 554539012,
+          "percent": 97.97
+        },
+        {
+          "function": "from",
+          "value": 531206032,
+          "percent": 93.85
+        },
+        {
+          "function": "createTeamSnapshot",
+          "value": 528013584,
+          "percent": 93.28
+        },
+        {
+          "function": "next",
+          "value": 307238640,
+          "percent": 54.28
+        },
+        {
+          "function": "sendSnapshotObject",
+          "value": 26525428,
+          "percent": 4.69
+        },
+        {
+          "function": "persistSnapshot",
+          "value": 5727628,
+          "percent": 1.01
+        },
+        {
+          "function": "persistPeriodic",
+          "value": 5727628,
+          "percent": 1.01
+        },
+        {
+          "function": "toSave",
+          "value": 3716748,
+          "percent": 0.66
+        },
+        {
+          "function": "createRoomSnapshot",
+          "value": 3716748,
+          "percent": 0.66
+        },
+        {
+          "function": "snapshot",
+          "value": 3716748,
+          "percent": 0.66
+        },
+        {
+          "function": "map",
+          "value": 3169936,
+          "percent": 0.56
+        },
+        {
+          "function": "updateGarrisons",
+          "value": 1048640,
+          "percent": 0.19
+        }
+      ]
+    }
+  ]
+}

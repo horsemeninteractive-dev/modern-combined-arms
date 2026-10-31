@@ -1,0 +1,69 @@
+{
+  "at": "2026-10-30T01:49:06.804Z",
+  "base": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev",
+  "tests": {
+    "reconnect": {
+      "roomId": "reconnect-mvubdcvo",
+      "matchDurationMs": 60000,
+      "matchDeadlineAt": 1793325007191,
+      "passed": true,
+      "hello": {
+        "seat": 0,
+        "team": 0,
+        "phase": "playing"
+      },
+      "closed": true,
+      "reservation": "released"
+    },
+    "abandon": {
+      "roomId": "abandon-mvubdefv",
+      "matchDurationMs": 90000,
+      "matchDeadlineAt": 1793325039139,
+      "passed": true,
+      "outcome": "victory",
+      "winnerTeam": 0,
+      "reason": "abandoned",
+      "observedAfterMs": 30123,
+      "closed": true,
+      "reservation": "released"
+    },
+    "shutdown": {
+      "roomId": "shutdown-mvube22q",
+      "matchDurationMs": 60000,
+      "matchDeadlineAt": 1793325039874,
+      "passed": true,
+      "shutdownStatus": 200,
+      "clientCode": "room-shutdown",
+      "closed": true,
+      "reservation": "released"
+    },
+    "deadline": {
+      "roomId": "deadline-mvube2pb",
+      "matchDurationMs": 10000,
+      "matchDeadlineAt": 1793324990667,
+      "passed": true,
+      "outcomes": [
+        "draw",
+        "draw"
+      ],
+      "serverTick": 196,
+      "elapsedMs": 9819,
+      "closed": true,
+      "reservation": "released"
+    },
+    "capacity": {
+      "passed": true,
+      "statuses": [
+        null,
+        null,
+        503,
+        200
+      ],
+      "rejectedCode": "capacity-full",
+      "aReservation": "released",
+      "freedStatus": 200,
+      "freedCode": null
+    }
+  },
+  "passed": true
+}

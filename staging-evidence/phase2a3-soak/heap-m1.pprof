@@ -1,0 +1,11 @@
+{
+  "result": null,
+  "success": false,
+  "errors": [
+    {
+      "code": 10397,
+      "message": "The Worker runtime could not start profiling. Please try again."
+    }
+  ],
+  "messages": []
+}

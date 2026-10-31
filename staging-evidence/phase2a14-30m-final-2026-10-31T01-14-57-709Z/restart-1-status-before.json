@@ -1,0 +1,648 @@
+{
+  "ok": true,
+  "roomId": "phase2a14-30m-final-mvvplakw",
+  "mode": "1v1",
+  "protocol": 2,
+  "closed": false,
+  "closedReason": null,
+  "closedAt": null,
+  "started": true,
+  "createdAt": 1793409298362,
+  "matchDurationMs": 1800000,
+  "matchDeadlineAt": 1793411098373,
+  "reservation": {
+    "reservationId": "r266",
+    "status": "active",
+    "hardDeadlineAt": 1793411098373
+  },
+  "lastHeartbeatAt": 1793410396435,
+  "heartbeatIntervalMs": 20000,
+  "persistenceIntervalMs": 15000,
+  "diagnostics": {
+    "version": 1,
+    "clock": "performance.now",
+    "clockAdvanced": false,
+    "timerNote": "Deployed Workers freeze timer APIs during CPU-only work as a Spectre mitigation. Zero durations mean the clock did not advance, not that the work took no time.",
+    "enabled": true,
+    "startedAt": 1793409956414,
+    "activatedAt": 1793409298362,
+    "closedAt": null,
+    "closedReason": null,
+    "tick": {
+      "count": 8954,
+      "totalMs": 0,
+      "simulationMs": 0,
+      "otherWorkMs": 0,
+      "errors": 0,
+      "lastError": null,
+      "durationsAvailable": false,
+      "duration": {
+        "count": 8954,
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "p99": 0,
+        "p999": 0,
+        "max": 0,
+        "mean": 0,
+        "sum": 0,
+        "over10": 0,
+        "over50": 0,
+        "bucketWidth": 0.1,
+        "overflow": 0
+      },
+      "simulation": {
+        "count": 8954,
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "p99": 0,
+        "p999": 0,
+        "max": 0,
+        "mean": 0,
+        "sum": 0,
+        "over10": 0,
+        "over50": 0,
+        "bucketWidth": 0.1,
+        "overflow": 0
+      }
+    },
+    "snapshots": {
+      "total": 8956,
+      "bytes": 11042985,
+      "bytesMethod": "utf16-code-units",
+      "perSeat": [
+        {
+          "seat": 0,
+          "count": 4478,
+          "bytes": 5666973,
+          "size": {
+            "count": 4478,
+            "min": 400,
+            "p50": 1408,
+            "p90": 1664,
+            "p95": 1664,
+            "p99": 2176,
+            "p999": 2432,
+            "max": 60507,
+            "mean": 1265.514292094685,
+            "sum": 5666973,
+            "over10": 4478,
+            "over50": 4478,
+            "bucketWidth": 256,
+            "overflow": 0
+          },
+          "serialization": {
+            "count": 4478,
+            "min": 0,
+            "p50": 0,
+            "p90": 0,
+            "p95": 0,
+            "p99": 0,
+            "p999": 0,
+            "max": 0,
+            "mean": 0,
+            "sum": 0,
+            "over10": 0,
+            "over50": 0,
+            "bucketWidth": 0.1,
+            "overflow": 0
+          }
+        },
+        {
+          "seat": 1,
+          "count": 4478,
+          "bytes": 5376012,
+          "size": {
+            "count": 4478,
+            "min": 414,
+            "p50": 1152,
+            "p90": 1664,
+            "p95": 1920,
+            "p99": 2176,
+            "p999": 3200,
+            "max": 59173,
+            "mean": 1200.5386333184458,
+            "sum": 5376012,
+            "over10": 4478,
+            "over50": 4478,
+            "bucketWidth": 256,
+            "overflow": 0
+          },
+          "serialization": {
+            "count": 4478,
+            "min": 0,
+            "p50": 0,
+            "p90": 0,
+            "p95": 0,
+            "p99": 0,
+            "p999": 0,
+            "max": 0,
+            "mean": 0,
+            "sum": 0,
+            "over10": 0,
+            "over50": 0,
+            "bucketWidth": 0.1,
+            "overflow": 0
+          }
+        }
+      ],
+      "serialization": {
+        "count": 8956,
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "p99": 0,
+        "p999": 0,
+        "max": 0,
+        "mean": 0,
+        "sum": 0,
+        "over10": 0,
+        "over50": 0,
+        "bucketWidth": 0.1,
+        "overflow": 0
+      },
+      "durationsAvailable": false,
+      "failures": {
+        "serialization": 0,
+        "send": 0,
+        "controlSend": 0,
+        "slowClient": 0
+      }
+    },
+    "lifecycle": {
+      "connectionsAccepted": 2,
+      "seatConnects": [
+        1,
+        1
+      ],
+      "seatDisconnects": [
+        0,
+        0
+      ],
+      "reconnectAttempts": 2,
+      "reconnectSuccesses": 2,
+      "reconnectRejections": 0,
+      "socketRejections": {},
+      "deadlineHits": 0,
+      "abnormalShutdowns": 0
+    },
+    "keepalive": {
+      "received": 46,
+      "acked": 46,
+      "rateLimited": 0
+    },
+    "sync": {
+      "count": 4,
+      "bytes": 156038,
+      "perSeat": [
+        2,
+        2
+      ]
+    },
+    "delta": {
+      "count": 8952,
+      "bytes": 10886947,
+      "perSeat": [
+        4476,
+        4476
+      ],
+      "size": {
+        "count": 8952,
+        "min": 400,
+        "p50": 1120,
+        "p90": 1760,
+        "p95": 1760,
+        "p99": 2080,
+        "p999": 2592,
+        "max": 11967,
+        "mean": 1216.1468945487043,
+        "sum": 10886947,
+        "over10": 8952,
+        "over50": 8952,
+        "bucketWidth": 64,
+        "overflow": 0
+      }
+    },
+    "resync": {
+      "requested": 0,
+      "accepted": 0,
+      "rejected": 0,
+      "lastRejection": null
+    },
+    "socket": {
+      "maxBufferedBytes": [
+        0,
+        0
+      ],
+      "lastBufferedBytes": [
+        0,
+        0
+      ]
+    },
+    "reservations": {
+      "heartbeatSuccesses": 22,
+      "heartbeatFailures": 0,
+      "releaseSuccesses": 0,
+      "releaseFailures": 0,
+      "lastFailureCode": null
+    },
+    "persistence": {
+      "reads": 38,
+      "writes": 261,
+      "deletes": 180,
+      "readBytes": 517468,
+      "writeBytes": 7807033,
+      "snapshotCycles": 30,
+      "metaCycles": 51,
+      "loadCycles": 1,
+      "failures": 0,
+      "lastSuccessAt": 1793410396435,
+      "lastFailureAt": null,
+      "lastFailureKind": null,
+      "lastFailure": null,
+      "chunksWritten": 180,
+      "lastSnapshotBytes": 260155,
+      "maxSnapshotBytes": 260460,
+      "maxCycleMs": 0,
+      "durationsAvailable": false,
+      "cycleDuration": {
+        "count": 82,
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "p99": 0,
+        "p999": 0,
+        "max": 0,
+        "mean": 0,
+        "sum": 0,
+        "over10": 0,
+        "over50": 0,
+        "bucketWidth": 1,
+        "overflow": 0
+      },
+      "operationDuration": {
+        "count": 479,
+        "min": 0,
+        "p50": 0,
+        "p90": 0,
+        "p95": 0,
+        "p99": 0,
+        "p999": 0,
+        "max": 0,
+        "mean": 0,
+        "sum": 0,
+        "over10": 0,
+        "over50": 0,
+        "bucketWidth": 1,
+        "overflow": 0
+      },
+      "ageSinceSuccessMs": 7692,
+      "behind": false
+    }
+  },
+  "matchTiming": {
+    "startedAtMs": 1793409298524,
+    "finishedAtMs": null,
+    "totalTicks": 21854,
+    "processTicks": 8954,
+    "startedAtDerived": false
+  },
+  "match": {
+    "phase": "playing",
+    "tick": 21854,
+    "startedAtMs": 1793409298524,
+    "finishedAtMs": null,
+    "closedReason": null,
+    "stats": {
+      "ticks": 21854,
+      "processTicks": 8954,
+      "snapshots": 8956,
+      "syncs": 4,
+      "deltas": 8952,
+      "outboundBytes": 11056539,
+      "inboundMessages": 224,
+      "connectionsAccepted": 2,
+      "commandsAccepted": 178,
+      "commandsRejected": 0,
+      "heartbeatCount": 22,
+      "approxRequests": 40
+    },
+    "diagnostics": {
+      "version": 1,
+      "clock": "performance.now",
+      "clockAdvanced": false,
+      "timerNote": "Deployed Workers freeze timer APIs during CPU-only work as a Spectre mitigation. Zero durations mean the clock did not advance, not that the work took no time.",
+      "enabled": true,
+      "startedAt": 1793409956414,
+      "activatedAt": 1793409298362,
+      "closedAt": null,
+      "closedReason": null,
+      "tick": {
+        "count": 8954,
+        "totalMs": 0,
+        "simulationMs": 0,
+        "otherWorkMs": 0,
+        "errors": 0,
+        "lastError": null,
+        "durationsAvailable": false,
+        "duration": {
+          "count": 8954,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "p99": 0,
+          "p999": 0,
+          "max": 0,
+          "mean": 0,
+          "sum": 0,
+          "over10": 0,
+          "over50": 0,
+          "bucketWidth": 0.1,
+          "overflow": 0
+        },
+        "simulation": {
+          "count": 8954,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "p99": 0,
+          "p999": 0,
+          "max": 0,
+          "mean": 0,
+          "sum": 0,
+          "over10": 0,
+          "over50": 0,
+          "bucketWidth": 0.1,
+          "overflow": 0
+        }
+      },
+      "snapshots": {
+        "total": 8956,
+        "bytes": 11042985,
+        "bytesMethod": "utf16-code-units",
+        "perSeat": [
+          {
+            "seat": 0,
+            "count": 4478,
+            "bytes": 5666973,
+            "size": {
+              "count": 4478,
+              "min": 400,
+              "p50": 1408,
+              "p90": 1664,
+              "p95": 1664,
+              "p99": 2176,
+              "p999": 2432,
+              "max": 60507,
+              "mean": 1265.514292094685,
+              "sum": 5666973,
+              "over10": 4478,
+              "over50": 4478,
+              "bucketWidth": 256,
+              "overflow": 0
+            },
+            "serialization": {
+              "count": 4478,
+              "min": 0,
+              "p50": 0,
+              "p90": 0,
+              "p95": 0,
+              "p99": 0,
+              "p999": 0,
+              "max": 0,
+              "mean": 0,
+              "sum": 0,
+              "over10": 0,
+              "over50": 0,
+              "bucketWidth": 0.1,
+              "overflow": 0
+            }
+          },
+          {
+            "seat": 1,
+            "count": 4478,
+            "bytes": 5376012,
+            "size": {
+              "count": 4478,
+              "min": 414,
+              "p50": 1152,
+              "p90": 1664,
+              "p95": 1920,
+              "p99": 2176,
+              "p999": 3200,
+              "max": 59173,
+              "mean": 1200.5386333184458,
+              "sum": 5376012,
+              "over10": 4478,
+              "over50": 4478,
+              "bucketWidth": 256,
+              "overflow": 0
+            },
+            "serialization": {
+              "count": 4478,
+              "min": 0,
+              "p50": 0,
+              "p90": 0,
+              "p95": 0,
+              "p99": 0,
+              "p999": 0,
+              "max": 0,
+              "mean": 0,
+              "sum": 0,
+              "over10": 0,
+              "over50": 0,
+              "bucketWidth": 0.1,
+              "overflow": 0
+            }
+          }
+        ],
+        "serialization": {
+          "count": 8956,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "p99": 0,
+          "p999": 0,
+          "max": 0,
+          "mean": 0,
+          "sum": 0,
+          "over10": 0,
+          "over50": 0,
+          "bucketWidth": 0.1,
+          "overflow": 0
+        },
+        "durationsAvailable": false,
+        "failures": {
+          "serialization": 0,
+          "send": 0,
+          "controlSend": 0,
+          "slowClient": 0
+        }
+      },
+      "lifecycle": {
+        "connectionsAccepted": 2,
+        "seatConnects": [
+          1,
+          1
+        ],
+        "seatDisconnects": [
+          0,
+          0
+        ],
+        "reconnectAttempts": 2,
+        "reconnectSuccesses": 2,
+        "reconnectRejections": 0,
+        "socketRejections": {},
+        "deadlineHits": 0,
+        "abnormalShutdowns": 0
+      },
+      "keepalive": {
+        "received": 46,
+        "acked": 46,
+        "rateLimited": 0
+      },
+      "sync": {
+        "count": 4,
+        "bytes": 156038,
+        "perSeat": [
+          2,
+          2
+        ]
+      },
+      "delta": {
+        "count": 8952,
+        "bytes": 10886947,
+        "perSeat": [
+          4476,
+          4476
+        ],
+        "size": {
+          "count": 8952,
+          "min": 400,
+          "p50": 1120,
+          "p90": 1760,
+          "p95": 1760,
+          "p99": 2080,
+          "p999": 2592,
+          "max": 11967,
+          "mean": 1216.1468945487043,
+          "sum": 10886947,
+          "over10": 8952,
+          "over50": 8952,
+          "bucketWidth": 64,
+          "overflow": 0
+        }
+      },
+      "resync": {
+        "requested": 0,
+        "accepted": 0,
+        "rejected": 0,
+        "lastRejection": null
+      },
+      "socket": {
+        "maxBufferedBytes": [
+          0,
+          0
+        ],
+        "lastBufferedBytes": [
+          0,
+          0
+        ]
+      },
+      "reservations": {
+        "heartbeatSuccesses": 22,
+        "heartbeatFailures": 0,
+        "releaseSuccesses": 0,
+        "releaseFailures": 0,
+        "lastFailureCode": null
+      },
+      "persistence": {
+        "reads": 38,
+        "writes": 261,
+        "deletes": 180,
+        "readBytes": 517468,
+        "writeBytes": 7807033,
+        "snapshotCycles": 30,
+        "metaCycles": 51,
+        "loadCycles": 1,
+        "failures": 0,
+        "lastSuccessAt": 1793410396435,
+        "lastFailureAt": null,
+        "lastFailureKind": null,
+        "lastFailure": null,
+        "chunksWritten": 180,
+        "lastSnapshotBytes": 260155,
+        "maxSnapshotBytes": 260460,
+        "maxCycleMs": 0,
+        "durationsAvailable": false,
+        "cycleDuration": {
+          "count": 82,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "p99": 0,
+          "p999": 0,
+          "max": 0,
+          "mean": 0,
+          "sum": 0,
+          "over10": 0,
+          "over50": 0,
+          "bucketWidth": 1,
+          "overflow": 0
+        },
+        "operationDuration": {
+          "count": 479,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "p99": 0,
+          "p999": 0,
+          "max": 0,
+          "mean": 0,
+          "sum": 0,
+          "over10": 0,
+          "over50": 0,
+          "bucketWidth": 1,
+          "overflow": 0
+        },
+        "ageSinceSuccessMs": 7692,
+        "behind": false
+      }
+    },
+    "result": {
+      "phase": "playing",
+      "winnerTeam": null,
+      "reason": null,
+      "teams": [
+        {
+          "team": 0,
+          "playerIds": [
+            0
+          ],
+          "defeated": false,
+          "score": 5116
+        },
+        {
+          "team": 1,
+          "playerIds": [
+            1
+          ],
+          "defeated": false,
+          "score": 5765.3
+        }
+      ],
+      "tick": 21854
+    }
+  },
+  "finalResult": null
+}

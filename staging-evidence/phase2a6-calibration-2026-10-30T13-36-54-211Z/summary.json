@@ -1,0 +1,173 @@
+{
+  "version": 1,
+  "generatedAt": "2026-10-30T13:36:59.556Z",
+  "base": "http://127.0.0.1:8795",
+  "versionId": "local",
+  "batches": [
+    0,
+    1,
+    5,
+    10,
+    20,
+    50,
+    100
+  ],
+  "profiles": [
+    "baseline",
+    "stress"
+  ],
+  "reps": 1,
+  "sampleCount": 0,
+  "byProfile": {
+    "baseline": {
+      "samples": 0,
+      "byBatch": {
+        "0": {
+          "n": 0,
+          "values": [],
+          "meanMs": null,
+          "p50Ms": null,
+          "p95Ms": null,
+          "maxMs": null
+        },
+        "1": {
+          "n": 0,
+          "values": [],
+          "meanMs": null,
+          "p50Ms": null,
+          "p95Ms": null,
+          "maxMs": null
+        },
+        "5": {
+          "n": 0,
+          "values": [],
+          "meanMs": null,
+          "p50Ms": null,
+          "p95Ms": null,
+          "maxMs": null
+        },
+        "10": {
+          "n": 0,
+          "values": [],
+          "meanMs": null,
+          "p50Ms": null,
+          "p95Ms": null,
+          "maxMs": null
+        },
+        "20": {
+          "n": 0,
+          "values": [],
+          "meanMs": null,
+          "p50Ms": null,
+          "p95Ms": null,
+          "maxMs": null
+        },
+        "50": {
+          "n": 0,
+          "values": [],
+          "meanMs": null,
+          "p50Ms": null,
+          "p95Ms": null,
+          "maxMs": null
+        },
+        "100": {
+          "n": 0,
+          "values": [],
+          "meanMs": null,
+          "p50Ms": null,
+          "p95Ms": null,
+          "maxMs": null
+        }
+      },
+      "linearFit": null,
+      "estimatedMarginalMsPerTick": null,
+      "estimatedFixedOverheadMs": null
+    },
+    "stress": {
+      "samples": 0,
+      "byBatch": {
+        "0": {
+          "n": 0,
+          "values": [],
+          "meanMs": null,
+          "p50Ms": null,
+          "p95Ms": null,
+          "maxMs": null
+        },
+        "1": {
+          "n": 0,
+          "values": [],
+          "meanMs": null,
+          "p50Ms": null,
+          "p95Ms": null,
+          "maxMs": null
+        },
+        "5": {
+          "n": 0,
+          "values": [],
+          "meanMs": null,
+          "p50Ms": null,
+          "p95Ms": null,
+          "maxMs": null
+        },
+        "10": {
+          "n": 0,
+          "values": [],
+          "meanMs": null,
+          "p50Ms": null,
+          "p95Ms": null,
+          "maxMs": null
+        },
+        "20": {
+          "n": 0,
+          "values": [],
+          "meanMs": null,
+          "p50Ms": null,
+          "p95Ms": null,
+          "maxMs": null
+        },
+        "50": {
+          "n": 0,
+          "values": [],
+          "meanMs": null,
+          "p50Ms": null,
+          "p95Ms": null,
+          "maxMs": null
+        },
+        "100": {
+          "n": 0,
+          "values": [],
+          "meanMs": null,
+          "p50Ms": null,
+          "p95Ms": null,
+          "maxMs": null
+        }
+      },
+      "linearFit": null,
+      "estimatedMarginalMsPerTick": null,
+      "estimatedFixedOverheadMs": null
+    }
+  },
+  "resolution": "wrangler tail cpuTime is integer milliseconds per invocation.",
+  "notes": "Derived marginal cost is a linear fit of invocation CPU against batch size. It is not an individual tick measurement and cannot establish a per-tick maximum.",
+  "tailFile": null,
+  "tailRows": 0,
+  "matchedSamples": 0,
+  "totalSamples": 14,
+  "missingTailSamples": [
+    "p2a6-baseline-0-0",
+    "p2a6-baseline-1-0",
+    "p2a6-baseline-5-0",
+    "p2a6-baseline-10-0",
+    "p2a6-baseline-20-0",
+    "p2a6-baseline-50-0",
+    "p2a6-baseline-100-0",
+    "p2a6-stress-0-0",
+    "p2a6-stress-1-0",
+    "p2a6-stress-5-0",
+    "p2a6-stress-10-0",
+    "p2a6-stress-20-0",
+    "p2a6-stress-50-0",
+    "p2a6-stress-100-0"
+  ]
+}

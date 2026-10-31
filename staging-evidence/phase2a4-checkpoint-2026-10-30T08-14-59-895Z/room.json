@@ -1,0 +1,19 @@
+{
+  "roomId": "phase2a4-checkpoint-mvup5m1v",
+  "mode": "1v1",
+  "protocol": 2,
+  "matchDurationMs": 340000,
+  "matchDeadlineAt": 1793348440488,
+  "seats": [
+    {
+      "seatId": 0,
+      "playerId": 0,
+      "team": 0
+    },
+    {
+      "seatId": 1,
+      "playerId": 1,
+      "team": 1
+    }
+  ]
+}

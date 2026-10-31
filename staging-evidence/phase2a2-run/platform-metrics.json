@@ -1,0 +1,90 @@
+{
+  "query": {
+    "roomId": "phase2a2-main-mvudvtal",
+    "account": "[redacted]",
+    "start": "2026-10-30T02:59:00Z",
+    "end": "2026-10-30T03:02:00Z",
+    "namespaceId": "4c3a9ed29ce1475aae7ec0530538afca",
+    "generatedAt": "2026-10-30T03:01:12.590Z",
+    "datasets": [
+      "durableObjectsPeriodicGroups",
+      "durableObjectsInvocationsAdaptiveGroups",
+      "durableObjectsStorageGroups"
+    ]
+  },
+  "periodic": {
+    "rows": 1,
+    "firstAt": "2026-10-30T02:59:27Z",
+    "lastAt": "2026-10-30T02:59:27Z",
+    "objectId": "9226803d069c1e55ef596a2bd25809cde09c0b7176490389c7b8f8555ebe9d1a",
+    "namespaceId": "4c3a9ed29ce1475aae7ec0530538afca",
+    "coloCode": "LHR",
+    "cpuTimeUs": 1715424,
+    "activeTimeUs": 59999940,
+    "durationGbSeconds": 7.67999232,
+    "inboundWebsocketMessages": 23,
+    "outboundWebsocketMessages": 1221,
+    "rowsRead": 21,
+    "rowsWritten": 53,
+    "storageReadUnits": 0,
+    "storageWriteUnits": 0,
+    "subrequests": 3,
+    "exceededCpuErrors": 0,
+    "exceededMemoryErrors": 0,
+    "fatalInternalErrors": 0,
+    "memoryBytes": {
+      "first": 22950956,
+      "last": 22950956,
+      "min": 22950956,
+      "max": 22950956
+    },
+    "activeWebsocketConnectionsMax": 2,
+    "perMinute": [
+      {
+        "at": "2026-10-30T02:59:27Z",
+        "cpuTimeUs": 1715424,
+        "activeTimeUs": 59999940,
+        "memoryBytes": 22950956,
+        "activeWebsocketConnections": 2,
+        "inboundWebsocketMessages": 23,
+        "outboundWebsocketMessages": 1221,
+        "rowsRead": 21,
+        "rowsWritten": 53
+      }
+    ]
+  },
+  "invocations": {
+    "rows": 1,
+    "requests": 1,
+    "errors": 0,
+    "responseBodyBytes": 311,
+    "wallTimeUs": 185977,
+    "entries": [
+      {
+        "at": "2026-10-30T02:59:27Z",
+        "status": "success",
+        "type": "http",
+        "scriptVersion": "4fe2ebcb-7c41-4338-b9a8-5d9c6b7718ee",
+        "requests": 1,
+        "errors": 0,
+        "responseBodyBytes": 311,
+        "wallTimeUs": 185977,
+        "cpuTimeP50Us": 38123,
+        "cpuTimeP95Us": 38123,
+        "cpuTimeP99Us": 38123,
+        "wallTimeP50Us": 185977,
+        "wallTimeP95Us": 185977,
+        "wallTimeP99Us": 185977
+      }
+    ]
+  },
+  "storage": {
+    "rows": 0,
+    "firstAt": null,
+    "lastAt": null,
+    "storedBytesFirst": null,
+    "storedBytesLast": null,
+    "storedBytesMax": null,
+    "points": []
+  }
+}

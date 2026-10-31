@@ -121,6 +121,9 @@ describe('shipyard in battle', () => {
   it('turns the yard as the player places it during a battle', () => {
     const scenario = createIslandAssault();
     scenario.units.push({ defId: 'engineer', owner: 0, x: 18, z: 37 });
+    // The shipyard is a factory-tier structure now; this test is about its
+    // facing, so the vehicle factory is authored rather than built.
+    scenario.structures.push({ defId: 'factory', owner: 0, x: 24, z: 32 });
     const game = new Game(scenario, { enableAI: false });
     let spot: { x: number; z: number } | null = null;
     for (let z = 1; z < scenario.height - 6 && !spot; z++) {

@@ -432,6 +432,93 @@
         }
       }
     },
+    "submarine": {
+      "name": "Attack Submarine",
+      "role": "Subsurface raider",
+      "voice": "am_santa",
+      "lang": "en-us",
+      "speed": 1.0,
+      "lines": {
+        "select": {
+          "text": "Submarine, standing by.",
+          "file": "submarine/select.mp3",
+          "durationMs": 1899
+        },
+        "move": {
+          "text": "Under way.",
+          "file": "submarine/move.mp3",
+          "durationMs": 811
+        },
+        "attack": {
+          "text": "Torpedoes away.",
+          "file": "submarine/attack.mp3",
+          "durationMs": 1420
+        },
+        "unableToComply": {
+          "text": "Cannot comply.",
+          "file": "submarine/unableToComply.mp3",
+          "durationMs": 1230
+        }
+      }
+    },
+    "missileBoat": {
+      "name": "Missile Boat",
+      "role": "Fast attack",
+      "voice": "af_river",
+      "lang": "en-us",
+      "speed": 1.04,
+      "lines": {
+        "select": {
+          "text": "Fast attack, ready.",
+          "file": "missileBoat/select.mp3",
+          "durationMs": 1425
+        },
+        "move": {
+          "text": "Boat moving.",
+          "file": "missileBoat/move.mp3",
+          "durationMs": 1030
+        },
+        "attack": {
+          "text": "Missiles away.",
+          "file": "missileBoat/attack.mp3",
+          "durationMs": 1190
+        },
+        "unableToComply": {
+          "text": "Cannot comply.",
+          "file": "missileBoat/unableToComply.mp3",
+          "durationMs": 1240
+        }
+      }
+    },
+    "frigate": {
+      "name": "Escort Frigate",
+      "role": "Fleet escort",
+      "voice": "af_nicole",
+      "lang": "en-us",
+      "speed": 0.98,
+      "lines": {
+        "select": {
+          "text": "Escort on station.",
+          "file": "frigate/select.mp3",
+          "durationMs": 1640
+        },
+        "move": {
+          "text": "Escort moving.",
+          "file": "frigate/move.mp3",
+          "durationMs": 1270
+        },
+        "attack": {
+          "text": "Engaging.",
+          "file": "frigate/attack.mp3",
+          "durationMs": 1030
+        },
+        "unableToComply": {
+          "text": "Unable.",
+          "file": "frigate/unableToComply.mp3",
+          "durationMs": 885
+        }
+      }
+    },
     "pathfinder": {
       "name": "Pathfinder Recon Team",
       "role": "Reconnaissance",

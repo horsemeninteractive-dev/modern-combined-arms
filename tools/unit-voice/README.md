@@ -1,6 +1,6 @@
 # Unit voice generation
 
-Generates the 19-unit selection / move / attack / unable-to-comply radio bark set
+Generates the 22-unit selection / move / attack / unable-to-comply radio bark set
 with local [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) ONNX speech.
 The existing strategic announcer clips in `public/audio/battlesys/` are **not**
 touched.
@@ -96,6 +96,9 @@ British Rocket Battery.
 | Interceptor | `af_nova` | American | 1.12 |
 | Recon UAV | `af_sky` | American | 1.10 |
 | Missile Corvette | `bm_lewis` | British | 1.00 |
+| Missile Boat | `af_river` | American | 1.04 |
+| Attack Submarine | `am_santa` | American | 1.00 |
+| Escort Frigate | `af_nicole` | American | 0.98 |
 | Pathfinder Recon Team | `bf_isabella` | British | 1.06 |
 | Spearhead MBT | `am_fenrir` | American | 0.98 |
 | Rocket Battery | `bm_daniel` | British | 0.96 |

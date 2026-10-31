@@ -99,6 +99,7 @@ const ROSTER: BuildingDef[] = [
     buildTime: 26,
     vision: 9,
     power: -25,
+    requires: ['factory'],
     produces: 'air',
     productionList: ['fighter', 'interceptor', 'uav'],
     airfield: true,
@@ -121,12 +122,12 @@ const ROSTER: BuildingDef[] = [
     buildTime: 28,
     vision: 9,
     power: -20,
+    requires: ['factory'],
     produces: 'naval',
-    productionList: ['corvette'],
+    productionList: ['missileBoat', 'corvette', 'submarine', 'frigate'],
     shipyard: true,
     requiresWater: true,
-    description:
-      'Builds and services missile corvettes. Must be placed on a buildable coast with navigable water alongside.',
+    description:	  'Builds and services the naval line: fast missile boats, missile corvettes, attack submarines and escort frigates. Must be placed on a buildable coast with navigable water alongside.',
     icon: 'shipyard',
     hotkey: 'N',
   },
@@ -159,6 +160,7 @@ const ROSTER: BuildingDef[] = [
     buildTime: 12,
     vision: 15,
     power: -12,
+    requires: ['barracks'],
     radar: true,
     description:
       'Battlefield surveillance array. While operational and the grid is balanced it feeds the tactical minimap; a brownout or its loss blanks the map.',
@@ -177,6 +179,7 @@ const ROSTER: BuildingDef[] = [
     buildTime: 12,
     vision: 11,
     power: -20,
+    requires: ['factory'],
     weapons: ['samBattery'],
     description:
       'Static long-range surface-to-air battery. Denies airspace around the base; cannot engage ground forces.',
@@ -233,6 +236,7 @@ const ROSTER: BuildingDef[] = [
     buildTime: 14,
     vision: 11,
     power: -12,
+    requires: ['factory'],
     weapons: ['coastalMissile'],
     turretRate: 1.5,
     requiresWater: true,
@@ -450,6 +454,18 @@ export const NATIONAL_BUILDING_LIST = NATIONAL_BUILDINGS;
 /** Baseline family id for a national variant, or the id itself. */
 export function buildingFamily(id: string): string {
   return BUILDINGS[id]?.variantOf ?? id;
+}
+
+/**
+ * Structure families that must already stand completed before `id` can be
+ * laid. A national variant inherits its baseline's requirements unless it
+ * declares its own, so a substituted structure never escapes its family's gate.
+ */
+export function buildingRequirements(id: string): string[] {
+  const def = BUILDINGS[id];
+  if (!def) return [];
+  if (def.requires) return def.requires;
+  return def.variantOf ? BUILDINGS[def.variantOf]?.requires ?? [] : [];
 }
 
 export function buildingDef(id: string): BuildingDef {

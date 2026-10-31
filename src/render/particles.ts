@@ -22,13 +22,24 @@ const MAX_PARTICLES = 2800;
 
 export class ParticleSystem {
   particles: Particle[] = [];
+  /** Graphics presets lower this; the authored ceiling is the default. */
+  maxParticles = MAX_PARTICLES;
 
   clear(): void {
     this.particles.length = 0;
   }
 
+  /** Clamp the live ceiling and shed anything already above it. */
+  setCap(cap: number): void {
+    if (!Number.isFinite(cap)) return;
+    this.maxParticles = Math.max(0, Math.floor(cap));
+    if (this.particles.length > this.maxParticles) {
+      this.particles.splice(0, this.particles.length - this.maxParticles);
+    }
+  }
+
   private push(p: Particle): void {
-    if (this.particles.length >= MAX_PARTICLES) {
+    if (this.particles.length >= this.maxParticles) {
       this.particles.shift();
     }
     this.particles.push(p);
@@ -224,9 +235,9 @@ export class ParticleSystem {
     });
   }
 
-  wake(x: number, y: number, z: number, angle: number): void {
-    const px = x - Math.cos(angle) * 4;
-    const pz = z - Math.sin(angle) * 4;
+  wake(x: number, y: number, z: number, angle: number, distance = 4): void {
+    const px = x - Math.cos(angle) * distance;
+    const pz = z - Math.sin(angle) * distance;
     this.push({
       x: px + (Math.random() - 0.5) * 1.6, y: y + 0.05, z: pz + (Math.random() - 0.5) * 1.6,
       vx: -Math.cos(angle) * 0.4,

@@ -1,4 +1,6 @@
-import { HARVESTER_CAPACITY, TILE_SIZE } from '../sim/constants';
+import { HARVESTER_CAPACITY, TICK_RATE, TILE_SIZE } from '../sim/constants';
+import { Terrain, tileIndex } from '../sim/terrain';
+import { effectivePixelRatio } from '../settings';
 import { BUILDINGS } from '../data/buildings';
 import { UNITS } from '../data/units';
 import { NATION_LIST } from '../data/factions';
@@ -13,6 +15,7 @@ import {
   InstancedMesh,
   bindTextureUnit,
   MESH_FLAG_TEXTURE_UNIT,
+  MESH_FOG_OLD_TEXTURE_UNIT,
   MESH_FOG_TEXTURE_UNIT,
   MESH_MATERIAL_TEXTURE_UNIT,
   PROP_MATERIAL_TEXTURE_UNIT,
@@ -30,10 +33,10 @@ import {
   WATER_FS,
   WATER_VS,
 } from './shaders';
-import { buildingStyle, FALLBACK_BUILDING } from './buildingMeshes';
+import { buildingStyle, buildingTopHeight, FALLBACK_BUILDING } from './buildingMeshes';
 import {
-  allianceFlagColor,
   buildFlagRig,
+  flagColorForOwner,
   flagMountFor,
   flagNationForFaction,
   flagOwnerForBuilding,
@@ -50,7 +53,16 @@ import {
   FALLBACK_STYLE,
   type EntityStyle,
 } from './unitMeshes';
-import { buildOreMesh, buildRockMesh, buildTreeMesh } from './geometry';
+import {
+  buildBushMesh,
+  buildFenceMesh,
+  buildGrassTuftMesh,
+  buildLampMesh,
+  buildOreMesh,
+  buildRockMesh,
+  buildShrubMesh,
+  buildTreeMesh,
+} from './geometry';
 import { materialLut } from './materials';
 import {
   buildPropInstances,
@@ -63,6 +75,8 @@ import {
 } from './terrainMesh';
 import { ParticleSystem } from './particles';
 import { ParticleGpu, type GpuParticle } from './particleGpu';
+import { DecalGpu } from './decalGpu';
+import { DecalStore, decalAlpha, type GroundDecal } from './decalStore';
 import { ShadowGpu, type GpuShadow } from './shadowGpu';
 import type { Vec3 } from './math';
 import { teamColorForOwner } from './teamColor';
@@ -81,6 +95,16 @@ import {
 
 const NEAR = 1;
 const FAR = 3000;
+
+/** Seconds between fog-mask uploads: the mask is rebuilt every third tick. */
+const FOG_UPDATE_SECONDS = 3 / TICK_RATE;
+/**
+ * The occluded-unit silhouette is pulled this many world units toward the eye
+ * in view depth. Anything closer to the camera than that occludes it, anything
+ * further away — a ridge several tiles in front of the unit — does not.
+ */
+const SILHOUETTE_DEPTH_PULL = 8;
+const SILHOUETTE_ALPHA = 0.5;
 
 interface VisualEntity {
   x: number;
@@ -117,6 +141,8 @@ interface VisualEntity {
   emerge: number;
   /** 0..1 share of the cruise altitude reached, so a fighter climbs out of its hangar. */
   emergeAlt: number;
+  /** Seconds until the next track decal is stamped. */
+  trackTimer: number;
 }
 
 interface MeshProgram {
@@ -130,6 +156,14 @@ export interface RenderSettings {
   showFog: boolean;
   /** Construction guidance lines; enabled only by placement mode. */
   grid: boolean;
+  /** Fraction of the device pixel ratio used for the battlefield canvas. */
+  renderScale: number;
+  /** Flat projected ground shadows for units, structures and props. */
+  shadows: boolean;
+  /** Team-coloured outlines where a unit is hidden behind a structure. */
+  silhouettes: boolean;
+  /** Animated water normals; off keeps the sea but freezes the ripple. */
+  waterDetail: boolean;
 }
 
 interface TerrainGpu {
@@ -189,7 +223,16 @@ export class Renderer {
   readonly gl: WebGL2RenderingContext;
   readonly camera = new Camera();
   readonly particles = new ParticleSystem();
-  settings: RenderSettings = { effects: true, shake: true, showFog: true, grid: false };
+  settings: RenderSettings = {
+    effects: true,
+    shake: true,
+    showFog: true,
+    grid: false,
+    renderScale: 1,
+    shadows: true,
+    silhouettes: true,
+    waterDetail: true,
+  };
 
   private canvas: HTMLCanvasElement;
   private scenario: Scenario | null = null;
@@ -198,8 +241,12 @@ export class Renderer {
   private terrainProgram!: MeshProgram;
   private waterProgram!: MeshProgram;
   private propProgram!: MeshProgram;
-  private particleGpu: ParticleGpu;
-  private shadowGpu: ShadowGpu;
+  private particleGpu!: ParticleGpu;
+  private decalGpu!: DecalGpu;
+  private shadowGpu!: ShadowGpu;
+  /** Fading tracks, tyre marks, scorch and craters; presentation-only and bounded. */
+  private readonly decals = new DecalStore();
+  private decalScratch: GroundDecal[] = [];
   private propShadows: GpuShadow[] = [];
   private shadowScratch: GpuShadow[] = [];
   private terrainGpu: TerrainGpu | null = null;
@@ -208,11 +255,25 @@ export class Renderer {
   private treesMesh!: InstancedMesh;
   private rocksMesh!: InstancedMesh;
   private oreMesh!: InstancedMesh;
+  private bushesMesh!: InstancedMesh;
+  private shrubsMesh!: InstancedMesh;
+  private tuftsMesh!: InstancedMesh;
+  private fencesMesh!: InstancedMesh;
+  private lampsMesh!: InstancedMesh;
   private treeInstances: PropInstance[] = [];
   private rockInstances: PropInstance[] = [];
   private oreInstances: PropInstance[] = [];
-  private fogTexture: WebGLTexture;
-  private shoreTexture: WebGLTexture;
+  private bushInstances: PropInstance[] = [];
+  private shrubInstances: PropInstance[] = [];
+  private tuftInstances: PropInstance[] = [];
+  private fenceInstances: PropInstance[] = [];
+  private lampInstances: PropInstance[] = [];
+  private fogTexture!: WebGLTexture;
+  /** Previous fog mask, cross-faded with the current one over one interval. */
+  private fogTextureOld!: WebGLTexture;
+  private fogBytesPrev: Uint8Array | null = null;
+  private fogBlend = 1;
+  private shoreTexture!: WebGLTexture;
   private shoreData: Uint8Array | null = null;
   private fogData: Uint8Array | null = null;
   private lastFogTick = -999;
@@ -243,6 +304,8 @@ export class Renderer {
     turret: StaticMesh | null;
     leg: StaticMesh | null;
     load: StaticMesh | null;
+    periscope: StaticMesh | null;
+    periscopeOffset?: Vec3;
     launcherPivot?: Vec3;
     launcherElevation?: number;
   }>();
@@ -268,6 +331,50 @@ export class Renderer {
       throw new Error('WebGL2 is required to render Modern Combined Arms. Please enable hardware acceleration or use a current browser.');
     }
     this.gl = gl;
+    this.initGpuResources();
+
+    // Browsers drop a GPU context when a mobile PWA is backgrounded or a
+    // driver resets. Preventing the default on loss is what allows the restore
+    // event to fire; without it the canvas stays black for the rest of the
+    // session. The rebuild is presentation-only and never touches the game.
+    canvas.addEventListener('webglcontextlost', (event) => {
+      event.preventDefault();
+      this.contextLost = true;
+      this.onContextLost?.();
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+      this.contextLost = false;
+      try {
+        this.restoreContext();
+        this.onContextRestored?.();
+      } catch (error) {
+        console.error('MCA renderer: WebGL context restore failed', error);
+        this.contextLost = true;
+        this.onContextLost?.();
+      }
+    });
+    const nav = navigator as Navigator & { maxTouchPoints?: number };
+    this.isTouch = (nav.maxTouchPoints ?? 0) > 0;
+  }
+
+  isTouch = false;
+  /** True between webglcontextlost and a successful restore. */
+  contextLost = false;
+  /** App hook used to pause the battle and tell the player what happened. */
+  onContextLost?: () => void;
+  onContextRestored?: () => void;
+
+  /**
+   * Create or recreate every GPU-side resource. Kept apart from construction
+   * so a restored context can rebuild programs, meshes and textures in place;
+   * the CPU-side simulation, scenario and camera are owned by the caller.
+   */
+  private initGpuResources(): void {
+    const gl = this.gl;
+    this.unitMeshes.clear();
+    this.buildingMeshes.clear();
+    this.flagMeshes.clear();
+    this.flagTextures.clear();
     this.meshProgram = { program: createProgram(gl, MESH_VS, MESH_FS), u: {} };
     this.terrainProgram = { program: createProgram(gl, TERRAIN_VS, TERRAIN_FS), u: {} };
     this.waterProgram = { program: createProgram(gl, WATER_VS, WATER_FS), u: {} };
@@ -275,27 +382,38 @@ export class Renderer {
     this.meshProgram.u = uniformMap(gl, this.meshProgram.program, [
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
       'uModel', 'uTeamColor', 'uSun', 'uTint', 'uAmbient', 'uAlpha', 'uFlash',
-      'uFogTex', 'uFlagTex', 'uMatLut', 'uUseFog', 'uWorldSize', 'uTime',
+      'uFogTex', 'uFogTexOld', 'uFogBlend', 'uFlagTex', 'uMatLut', 'uUseFog',
+      'uWorldSize', 'uTime', 'uSilhouette', 'uDepthPull',
     ]);
     this.terrainProgram.u = uniformMap(gl, this.terrainProgram.program, [
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
-      'uSun', 'uAmbient', 'uFogTex', 'uShoreTex', 'uUseFog', 'uTime', 'uGrid',
+      'uSun', 'uAmbient', 'uFogTex', 'uFogTexOld', 'uFogBlend', 'uShoreTex',
+      'uUseFog', 'uTime', 'uGrid',
     ]);
     this.waterProgram.u = uniformMap(gl, this.waterProgram.program, [
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
-      'uSun', 'uAmbient', 'uFogTex', 'uShoreTex', 'uUseFog', 'uTime', 'uWorldSize',
+      'uSun', 'uAmbient', 'uFogTex', 'uFogTexOld', 'uFogBlend', 'uShoreTex',
+      'uUseFog', 'uTime', 'uWorldSize',
     ]);
     this.propProgram.u = uniformMap(gl, this.propProgram.program, [
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
-      'uSun', 'uAmbient', 'uEmissive', 'uFogTex', 'uMatLut', 'uUseFog', 'uWorldSize',
+      'uSun', 'uAmbient', 'uEmissive', 'uFogTex', 'uFogTexOld', 'uFogBlend',
+      'uMatLut', 'uUseFog', 'uWorldSize',
     ]);
     this.particleGpu = new ParticleGpu(gl);
+    this.decalGpu = new DecalGpu(gl);
     this.shadowGpu = new ShadowGpu(gl);
 
     this.treesMesh = new InstancedMesh(gl, buildTreeMesh());
     this.rocksMesh = new InstancedMesh(gl, buildRockMesh());
     this.oreMesh = new InstancedMesh(gl, buildOreMesh());
+    this.bushesMesh = new InstancedMesh(gl, buildBushMesh());
+    this.shrubsMesh = new InstancedMesh(gl, buildShrubMesh());
+    this.tuftsMesh = new InstancedMesh(gl, buildGrassTuftMesh());
+    this.fencesMesh = new InstancedMesh(gl, buildFenceMesh());
+    this.lampsMesh = new InstancedMesh(gl, buildLampMesh());
     this.fogTexture = this.createTexture();
+    this.fogTextureOld = this.createTexture();
     this.shoreTexture = this.createTexture();
 
     for (const id of Object.keys(UNITS)) {
@@ -306,6 +424,8 @@ export class Renderer {
           turret: style.turret ? new StaticMesh(gl, style.turret) : null,
           leg: style.infantry ? new StaticMesh(gl, style.infantry.leg) : null,
           load: style.load ? new StaticMesh(gl, style.load) : null,
+          periscope: style.periscope ? new StaticMesh(gl, style.periscope) : null,
+          periscopeOffset: style.periscopeOffset,
           launcherPivot: style.launcherPivot,
           launcherElevation: style.launcherElevation,
         });
@@ -344,11 +464,27 @@ export class Renderer {
     gl.depthFunc(gl.LEQUAL);
     gl.disable(gl.CULL_FACE);
     gl.clearColor(...this.clearColor, 1);
-    const nav = navigator as Navigator & { maxTouchPoints?: number };
-    this.isTouch = (nav.maxTouchPoints ?? 0) > 0;
   }
 
-  isTouch = false;
+  /** Rebuild GPU resources and the current scene after a context restore. */
+  private restoreContext(): void {
+    const cameraX = this.camera.cx;
+    const cameraZ = this.camera.cz;
+    const zoom = this.camera.zoom;
+    const scenario = this.scenario;
+    const game = this.game;
+    this.initGpuResources();
+    if (scenario) {
+      this.setScenario(scenario);
+      if (game) this.setGame(game);
+      // Restore the stored centre directly: centerOn() re-applies the HUD
+      // screen lift and would nudge the view on every context rebuild.
+      this.camera.cx = cameraX;
+      this.camera.cz = cameraZ;
+      this.camera.setZoom(zoom);
+    }
+    this.resize();
+  }
 
   private createTexture(): WebGLTexture {
     const gl = this.gl;
@@ -441,7 +577,10 @@ export class Renderer {
     const rect = this.canvas.getBoundingClientRect();
     const w = Math.max(1, Math.floor(rect.width));
     const h = Math.max(1, Math.floor(rect.height));
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    // The graphics preset is applied as a fraction of the physical density and
+    // still respects the historical 2x cap, so low-end devices draw fewer
+    // fragments without changing the CSS layout or the camera projection.
+    const dpr = effectivePixelRatio(window.devicePixelRatio || 1, this.settings.renderScale);
     this.dpr = dpr;
     const pw = Math.floor(w * dpr);
     const ph = Math.floor(h * dpr);
@@ -457,6 +596,7 @@ export class Renderer {
     this.game = null;
     this.visuals.clear();
     this.wrecks.clear();
+    this.decals.clear();
     this.projectileViews.clear();
     this.particles.clear();
     this.lastEventSeq = 0;
@@ -472,16 +612,27 @@ export class Renderer {
     this.treeInstances = props.trees;
     this.rockInstances = props.rocks;
     this.oreInstances = props.ore;
+    this.bushInstances = props.bushes;
+    this.shrubInstances = props.shrubs;
+    this.tuftInstances = props.tufts;
+    this.fenceInstances = props.fences;
+    this.lampInstances = props.lamps;
     this.treesMesh.setInstances(this.treeInstances);
     this.rocksMesh.setInstances(this.rockInstances);
     this.oreMesh.setInstances(this.oreInstances);
+    this.bushesMesh.setInstances(this.bushInstances);
+    this.shrubsMesh.setInstances(this.shrubInstances);
+    this.tuftsMesh.setInstances(this.tuftInstances);
+    this.fencesMesh.setInstances(this.fenceInstances);
+    this.lampsMesh.setInstances(this.lampInstances);
     this.rebuildPropShadows();
     this.shoreData = buildShoreTexture(scenario);
     // The coast field packs land and water distance into separate channels; the
     // old single-channel upload would silently discard the transition band.
     this.uploadTexture(this.shoreTexture, scenario.width, scenario.height, this.shoreData, true);
     this.fogData = new Uint8Array(scenario.width * scenario.height).fill(255);
-    this.uploadTexture(this.fogTexture, scenario.width, scenario.height, this.fogData);
+    this.fogBytesPrev = null;
+    this.uploadFogField(this.fogData);
     this.lastFogTick = -999;
     this.lastOreRefresh = 0;
     this.gl.clearColor(...this.clearColor, 1);
@@ -494,6 +645,7 @@ export class Renderer {
     this.game = game;
     this.visuals.clear();
     this.wrecks.clear();
+    this.decals.clear();
     this.trailTimers.clear();
     this.projectileTrailTimers.clear();
     this.projectileViews.clear();
@@ -580,13 +732,34 @@ export class Renderer {
     gl.bindTexture(gl.TEXTURE_2D, null);
   }
 
+  /**
+   * Publish a new fog mask. The field already on the GPU becomes the previous
+   * texture instead of being overwritten, so the shaders can cross-fade the
+   * two across one upload interval. `fogBlend` restarts at zero, which is what
+   * turns the three-tick mask rebuild into a sliding vision boundary rather
+   * than a step.
+   */
+  private uploadFogField(data: Uint8Array): void {
+    if (!this.scenario) return;
+    const { width, height } = this.scenario;
+    const previous = this.fogBytesPrev ?? data;
+    this.uploadTexture(this.fogTextureOld, width, height, previous);
+    this.uploadTexture(this.fogTexture, width, height, data);
+    if (!this.fogBytesPrev || this.fogBytesPrev.length !== data.length) {
+      this.fogBytesPrev = new Uint8Array(data.length);
+    }
+    this.fogBytesPrev.set(data);
+    this.fogBlend = 0;
+  }
+
   private updateFog(): void {
     if (!this.scenario) return;
     const game = this.game;
     if (!game) {
       if (!this.fogData || this.fogData[0] !== 255) {
         this.fogData = new Uint8Array(this.scenario.width * this.scenario.height).fill(255);
-        this.uploadTexture(this.fogTexture, this.scenario.width, this.scenario.height, this.fogData);
+        this.fogBytesPrev = null;
+        this.uploadFogField(this.fogData);
       }
       return;
     }
@@ -596,14 +769,16 @@ export class Renderer {
     const src = game.state.fog[Math.max(0, team)];
     if (!this.fogData || this.fogData.length !== src.length) {
       this.fogData = new Uint8Array(src.length);
+      this.fogBytesPrev = null;
     }
+    // Three authored states, unchanged: 255 visible, 112 charted, 0 unseen.
     const data = this.fogData;
     if (!game.state.scenario.settings.fog || !this.settings.showFog) {
       data.fill(255);
     } else {
       for (let i = 0; i < src.length; i++) data[i] = src[i] === 2 ? 255 : src[i] === 1 ? 112 : 0;
     }
-    this.uploadTexture(this.fogTexture, this.scenario.width, this.scenario.height, data);
+    this.uploadFogField(data);
   }
 
   private refreshOre(): void {
@@ -633,7 +808,11 @@ export class Renderer {
 
   update(dt: number): void {
     this.time += dt;
+    // The fog cross-fade is driven by wall time, not ticks, so it finishes in
+    // step with the next mask upload even while the battle is paused.
+    this.fogBlend = Math.min(1, this.fogBlend + dt / FOG_UPDATE_SECONDS);
     this.particles.update(dt);
+    this.decals.update(dt);
     this.shake = Math.max(0, this.shake - dt * 1.7);
     if (this.game) {
       this.consumeEvents(this.game);
@@ -674,6 +853,7 @@ export class Renderer {
           doorQueue: 0,
           emerge: 0,
           emergeAlt: 1,
+          trackTimer: 0,
         };
         this.visuals.set(e.id, v);
         this.startEmergence(game, e, v);
@@ -733,6 +913,7 @@ export class Renderer {
         v.turret = e.turretFacing;
         v.motion = e.facing;
         v.emerge = 0;
+        v.trackTimer = 0;
       } else {
         v.x += (e.x - v.x) * ease;
         v.z += (e.z - v.z) * ease;
@@ -833,6 +1014,22 @@ export class Renderer {
             v.trailTimer = 0.4;
           }
         }
+        if (moved && (def.moveClass === 'tracked' || def.moveClass === 'wheeled')) {
+          v.trackTimer -= dt;
+          if (v.trackTimer <= 0) {
+            if (def.moveClass === 'wheeled') {
+              this.stampTyreDecal(e.defId, v);
+              // Rubber marks sit closer together than steel track links.
+              v.trackTimer = 0.38;
+            } else {
+              this.stampTrackDecal(e.defId, v);
+              v.trackTimer = 0.44;
+            }
+          }
+        } else {
+          // A stopped vehicle starts a fresh mark when it moves again.
+          v.trackTimer = 0;
+        }
       }
       const hpRatio = e.hp / e.maxHp;
       if (hpRatio < 0.5) {
@@ -847,6 +1044,60 @@ export class Renderer {
         }
       }
     }
+  }
+
+  private stampTrackDecal(defId: string, v: VisualEntity): void {
+    if (!this.scenario) return;
+    const [rx, rz] = unitShadowRadius(defId);
+    const back = rx * 0.7;
+    const x = v.x - Math.cos(v.motion) * back;
+    const z = v.z - Math.sin(v.motion) * back;
+    if (isWaterAt(this.scenario, x, z)) return;
+    this.decals.addTrack(
+      x,
+      tileWorldHeight(this.scenario, x, z) + 0.06,
+      z,
+      v.motion,
+      rx * 0.95,
+      rz,
+    );
+  }
+
+  private stampTyreDecal(defId: string, v: VisualEntity): void {
+    if (!this.scenario) return;
+    const [rx, rz] = unitShadowRadius(defId);
+    const back = rx * 0.7;
+    const x = v.x - Math.cos(v.motion) * back;
+    const z = v.z - Math.sin(v.motion) * back;
+    if (isWaterAt(this.scenario, x, z)) return;
+    this.decals.addTyreTrack(
+      x,
+      tileWorldHeight(this.scenario, x, z) + 0.06,
+      z,
+      v.motion,
+      rx * 0.9,
+      rz * 0.86,
+    );
+  }
+
+  private addScorchDecal(x: number, z: number, scale: number): void {
+    if (!this.settings.effects || !this.scenario || isWaterAt(this.scenario, x, z)) return;
+    this.decals.addScorch(
+      x,
+      tileWorldHeight(this.scenario, x, z) + 0.05,
+      z,
+      0.9 + 0.7 * scale,
+    );
+  }
+
+  private addCraterDecal(x: number, z: number, scale: number): void {
+    if (!this.settings.effects || !this.scenario || isWaterAt(this.scenario, x, z)) return;
+    this.decals.addCrater(
+      x,
+      tileWorldHeight(this.scenario, x, z) + 0.055,
+      z,
+      0.36 + 0.26 * scale,
+    );
   }
 
   /**
@@ -893,15 +1144,25 @@ export class Renderer {
     const seen = new Set<number>();
     for (const p of game.state.projectiles) {
       seen.add(p.id);
-      if (!weaponFxProfile(p.weaponId).trailSmoke) continue;
-      // A hostile smoking missile beyond the vision boundary is still hidden:
-      // the trail is presentation, not a sensor. Own-team trails stay drawn.
-      if (!projectileVisibleToLocal(game, p.owner, p.x, p.z)) continue;
+      const profile = weaponFxProfile(p.weaponId);
+      if (!profile.trailSmoke && !profile.trailWake) continue;
+      // A hostile trail beyond the vision boundary is still hidden: the trail
+      // is presentation, not a sensor. Own-team trails stay drawn.
+      if (!projectileVisibleToLocal(game, p.owner, p.x, p.z, p.shooterId)) continue;
       let t = this.projectileTrailTimers.get(p.id) ?? 0;
       t -= dt;
       if (t <= 0) {
-        this.particles.smoke(p.x, p.y, p.z, 1, 0.58);
-        t = 0.035;
+        if (profile.trailWake) {
+          const view = this.projectileViews.get(p.id);
+          const angle = view
+            ? Math.atan2(view.current.z - view.previous.z, view.current.x - view.previous.x)
+            : 0;
+          this.particles.wake(p.x, 0.12, p.z, angle, 1.2);
+          t = 0.04;
+        } else {
+          this.particles.smoke(p.x, p.y, p.z, 1, 0.58);
+          t = 0.035;
+        }
       }
       this.projectileTrailTimers.set(p.id, t);
     }
@@ -963,6 +1224,11 @@ export class Renderer {
           } else {
             this.particles.impact(ev.x, y, ev.z, water, profile.impactScale);
           }
+          // Only rounds that actually disturb soil scar it: rifle bullets and
+          // airburst fragments leave sparks, not craters.
+          if (!water && ev.surface === 'ground' && profile.class !== 'smallArms') {
+            this.addCraterDecal(ev.x, ev.z, profile.impactScale);
+          }
           break;
         }
         case 'explosion': {
@@ -971,8 +1237,13 @@ export class Renderer {
           if (water) {
             this.particles.impact(ev.x, y, ev.z, true, profile.impactScale);
           } else {
-            this.particles.explosion(ev.x, y, ev.z, profile.explosionScale || 0.8);
+            const explosionScale = profile.explosionScale || 0.8;
+            this.particles.explosion(ev.x, y, ev.z, explosionScale);
             this.addShake(ev.x, ev.z, Math.max(0.04, profile.shake));
+            if (ev.surface === 'ground') {
+              this.addScorchDecal(ev.x, ev.z, explosionScale);
+              this.addCraterDecal(ev.x, ev.z, explosionScale);
+            }
           }
           break;
         }
@@ -1031,17 +1302,33 @@ export class Renderer {
     this.shake = Math.min(0.7, this.shake + amount * (1 - d / reach));
   }
 
+  /** The team tint a skirmish chose for this player, if any. */
+  private playerColor(owner: number): string | undefined {
+    const players = this.game?.state.scenario.players ?? this.scenario?.players;
+    return players?.find((player) => player.id === owner)?.color;
+  }
+
   private teamColorOf(game: Game, owner: number): [number, number, number] {
-    return [...teamColorForOwner(owner, game.player(owner)?.factionId)];
+    return [...teamColorForOwner(owner, game.player(owner)?.factionId, this.playerColor(owner))];
   }
 
   private teamColorScenario(owner: number): [number, number, number] {
     if (!this.scenario) return [...teamColorForOwner(owner, undefined)];
     const p = this.scenario.players.find((pl) => pl.id === owner);
-    return [...teamColorForOwner(owner, p?.factionId)];
+    return [...teamColorForOwner(owner, p?.factionId, p?.color)];
+  }
+
+  /**
+   * Building flags follow the chosen team tint, not just the alliance colour.
+   * The caller passes the flag owner (the garrison when occupied), so a
+   * garrisoned neutral site cannot fall back to the shell's faction colour.
+   */
+  private flagColorFor(owner: number, factionId: string | undefined): Vec3 {
+    return flagColorForOwner(factionId, this.playerColor(owner));
   }
 
   render(): void {
+    if (this.contextLost) return;
     const gl = this.gl;
     if (!this.scenario) {
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -1057,9 +1344,15 @@ export class Renderer {
 
     this.drawTerrain();
     this.drawWater();
+    this.drawGroundDecals();
     this.drawShadows();
     this.drawProps();
     if (this.game) {
+      // Silhouettes go down before the units themselves. The depth buffer then
+      // holds only terrain, structures and props, so a friendly hull in front of
+      // another cannot trigger a silhouette wash, and a visible unit paints
+      // over its own outline as it should.
+      if (this.settings.silhouettes) this.drawOccludedUnits(this.game);
       this.drawBattleEntities(this.game);
       this.drawWrecks(this.game);
     } else {
@@ -1079,6 +1372,21 @@ export class Renderer {
     gl.uniform1f(u.uNear, NEAR);
     gl.uniform1f(u.uFar, FAR);
     gl.uniform1f(u.uTime ?? null, this.time);
+  }
+
+  /**
+   * Bind the current and previous fog fields and the cross-fade weight. Every
+   * world-projected program declares both samplers, so leaving one unbound
+   * would let the fragment shader read whatever texture the last pass left.
+   */
+  private bindFogFields(
+    u: Record<string, WebGLUniformLocation | null>,
+    currentUnit: number,
+    oldUnit: number,
+  ): void {
+    bindTextureUnit(this.gl, currentUnit, this.fogTexture, u.uFogTex ?? null);
+    bindTextureUnit(this.gl, oldUnit, this.fogTextureOld, u.uFogTexOld ?? null);
+    this.gl.uniform1f(u.uFogBlend ?? null, this.fogBlend);
   }
 
   /** Bind the national flag texture, or the white fallback for ordinary meshes. */
@@ -1104,12 +1412,9 @@ export class Renderer {
     gl.uniform1f(p.u.uUseFog, this.game && this.settings.showFog ? 1 : 0);
     gl.uniform1f(p.u.uTime, this.time);
     gl.uniform1f(p.u.uGrid, this.settings.grid ? 1 : 0);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.fogTexture);
-    gl.uniform1i(p.u.uFogTex, 0);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, this.shoreTexture);
-    gl.uniform1i(p.u.uShoreTex, 1);
+    bindTextureUnit(gl, 1, this.shoreTexture, p.u.uShoreTex ?? null);
+    // Fog at unit 0, the previous field at unit 2; the shore map keeps unit 1.
+    this.bindFogFields(p.u, 0, 2);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindVertexArray(this.terrainGpu.vao);
     gl.drawElements(gl.TRIANGLES, this.terrainGpu.count, gl.UNSIGNED_INT, 0);
@@ -1133,7 +1438,7 @@ export class Renderer {
       // The mesh shader also samples the flag texture, so fog cannot share unit
       // 0 with it: binding both there made roads read the white fallback as fog
       // and render at full brightness across ground nobody had seen.
-      bindTextureUnit(gl, MESH_FOG_TEXTURE_UNIT, this.fogTexture, mp.u.uFogTex);
+      this.bindFogFields(mp.u, MESH_FOG_TEXTURE_UNIT, MESH_FOG_OLD_TEXTURE_UNIT);
       bindTextureUnit(gl, MESH_MATERIAL_TEXTURE_UNIT, this.materialTexture, mp.u.uMatLut ?? null);
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -1151,15 +1456,12 @@ export class Renderer {
     this.setCameraUniforms(p);
     gl.uniform3fv(p.u.uSun, this.sun);
     gl.uniform1f(p.u.uAmbient, this.ambient);
-    gl.uniform1f(p.u.uTime, this.time);
+    // Low quality keeps the sea surface but stops paying for animated normals.
+    gl.uniform1f(p.u.uTime, this.settings.waterDetail ? this.time : 0);
     gl.uniform1f(p.u.uUseFog, this.game && this.settings.showFog ? 1 : 0);
     gl.uniform2f(p.u.uWorldSize, this.scenario.width * TILE_SIZE, this.scenario.height * TILE_SIZE);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.fogTexture);
-    gl.uniform1i(p.u.uFogTex, 0);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, this.shoreTexture);
-    gl.uniform1i(p.u.uShoreTex, 1);
+    bindTextureUnit(gl, 1, this.shoreTexture, p.u.uShoreTex ?? null);
+    this.bindFogFields(p.u, 0, 2);
     gl.bindVertexArray(this.waterVao);
     gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
     gl.bindVertexArray(null);
@@ -1175,13 +1477,18 @@ export class Renderer {
     gl.uniform1f(p.u.uAmbient, this.ambient);
     gl.uniform1f(p.u.uUseFog, this.game && this.settings.showFog ? 1 : 0);
     gl.uniform2f(p.u.uWorldSize, this.scenario!.width * TILE_SIZE, this.scenario!.height * TILE_SIZE);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.fogTexture);
-    gl.uniform1i(p.u.uFogTex, 0);
+    this.bindFogFields(p.u, 0, 2);
     bindTextureUnit(gl, PROP_MATERIAL_TEXTURE_UNIT, this.materialTexture, p.u.uMatLut ?? null);
     gl.uniform1f(p.u.uEmissive, 0);
     this.treesMesh.draw(this.treeInstances.length);
     this.rocksMesh.draw(this.rockInstances.length);
+    // The authored detail set. Three instanced batches, not one draw per prop:
+    // scrub, boundary fencing and kerbside lamps share the prop program.
+    this.bushesMesh.draw(this.bushInstances.length);
+    this.shrubsMesh.draw(this.shrubInstances.length);
+    this.tuftsMesh.draw(this.tuftInstances.length);
+    this.fencesMesh.draw(this.fenceInstances.length);
+    this.lampsMesh.draw(this.lampInstances.length);
     gl.uniform1f(p.u.uEmissive, 0.22);
     this.oreMesh.draw(this.oreInstances.length);
   }
@@ -1198,14 +1505,75 @@ export class Renderer {
     return { x: (-this.sun[0] / sunY) * altitude, z: (-this.sun[2] / sunY) * altitude };
   }
 
+  /**
+   * Flat cast shadow for a tall structure: four overlapping slices of the same
+   * soft quad, stepped along the sun's ground direction. There is no shadow map
+   * and no extra program; the tip is the projection of the authored mesh top,
+   * so the cast follows the real geometry instead of a per-building constant.
+   * Strength is faded by time of day and weather, keeping dusk and night quiet.
+   */
+  private pushCastShadow(
+    shadows: GpuShadow[],
+    x: number,
+    y: number,
+    z: number,
+    footprintW: number,
+    footprintH: number,
+    defId: string,
+  ): void {
+    const height = buildingTopHeight(defId);
+    if (height <= 2.5) return;
+    const strength = this.castShadowStrength();
+    if (strength <= 0) return;
+    const tip = this.airShadowOffset(height * 0.85);
+    const halfW = (footprintW * TILE_SIZE) / 2;
+    const halfH = (footprintH * TILE_SIZE) / 2;
+    for (let i = 1; i <= 4; i++) {
+      const t = i / 4;
+      shadows.push({
+        x: x + tip.x * t,
+        y,
+        z: z + tip.z * t,
+        rx: halfW * (1.14 - 0.4 * t) + 0.6,
+        rz: halfH * (1.02 - 0.3 * t) + 0.6,
+        rotation: 0,
+        alpha: 0.4 * strength,
+      });
+    }
+  }
+
+  /** How strongly a structure's cast shadow reads, by time of day and weather. */
+  private castShadowStrength(): number {
+    const settings = this.scenario?.settings;
+    if (settings?.weather === 'overcast' || settings?.weather === 'rain') return 0.35;
+    const tod = settings?.timeOfDay ?? 'dusk';
+    if (tod === 'day') return 1;
+    if (tod === 'dawn') return 0.66;
+    if (tod === 'night') return 0.3;
+    return 0.58;
+  }
+
   /** Ground height for a shadow, lifting it clear of the water surface at sea. */
   private shadowGroundY(x: number, z: number): number {
     if (!this.scenario) return 0;
     return isWaterAt(this.scenario, x, z) ? 0.2 : tileWorldHeight(this.scenario, x, z) + 0.09;
   }
 
+  private drawGroundDecals(): void {
+    if (!this.settings.effects || !this.scenario) return;
+    const decals = this.decalScratch;
+    decals.length = 0;
+    for (const decal of this.decals.decals) {
+      if (!(decalAlpha(decal) > 0)) continue;
+      // Persistent marks must not reveal ground the local team cannot see.
+      if (this.game && !this.pointVisible(this.game, decal.x, decal.z)) continue;
+      decals.push(decal);
+    }
+    this.decalGpu.draw(this.camera, decals);
+  }
+
   private drawShadows(): void {
-    if (!this.scenario) return;
+    if (!this.scenario || !this.settings.shadows) return;
     const shadows = this.shadowScratch;
     shadows.length = 0;
     if (this.game) {
@@ -1251,6 +1619,7 @@ export class Renderer {
             rotation: 0,
             alpha: 1,
           });
+          this.pushCastShadow(shadows, x, y, z, f.w, f.h, e.defId);
         } else {
           const [rx, rz] = unitShadowRadius(e.defId);
           const lean = this.shadowLean(0.55);
@@ -1288,15 +1657,25 @@ export class Renderer {
         if (!def) continue;
         const center = footprintCenter(s.defId, s.x, s.z);
         const lean = this.shadowLean(1.4);
+        const groundY = tileWorldHeight(this.scenario, center.x, center.z) + 0.09;
         shadows.push({
           x: center.x + lean.x,
-          y: tileWorldHeight(this.scenario, center.x, center.z) + 0.09,
+          y: groundY,
           z: center.z + lean.z,
           rx: (def.footprint.w * TILE_SIZE) / 2 * 1.28 + 1.0,
           rz: (def.footprint.h * TILE_SIZE) / 2 * 1.28 + 1.0,
           rotation: 0,
           alpha: 1,
         });
+        this.pushCastShadow(
+          shadows,
+          center.x,
+          groundY,
+          center.z,
+          def.footprint.w,
+          def.footprint.h,
+          s.defId,
+        );
       }
       for (const u of this.scenario.units) {
         const def = UNITS[u.defId];
@@ -1378,6 +1757,57 @@ export class Renderer {
         alpha: 0.9,
       });
     }
+    for (const bush of this.bushInstances) {
+      const s = bush.scale;
+      const lean = this.shadowLean(0.4 * s);
+      out.push({
+        x: bush.x + lean.x,
+        y: bush.y + 0.07,
+        z: bush.z + lean.z,
+        rx: 0.95 * s,
+        rz: 0.8 * s,
+        rotation: 0,
+        alpha: 0.62,
+      });
+    }
+    for (const shrub of this.shrubInstances) {
+      const s = shrub.scale;
+      const lean = this.shadowLean(0.5 * s);
+      out.push({
+        x: shrub.x + lean.x,
+        y: shrub.y + 0.07,
+        z: shrub.z + lean.z,
+        rx: 0.62 * s,
+        rz: 0.55 * s,
+        rotation: 0,
+        alpha: 0.55,
+      });
+    }
+    for (const fence of this.fenceInstances) {
+      const s = fence.scale;
+      const lean = this.shadowLean(0.22 * s);
+      out.push({
+        x: fence.x + lean.x,
+        y: fence.y + 0.07,
+        z: fence.z + lean.z,
+        rx: 1.25 * s,
+        rz: 0.22 * s,
+        rotation: fence.rotation,
+        alpha: 0.55,
+      });
+    }
+    for (const lamp of this.lampInstances) {
+      const lean = this.shadowLean(0.5);
+      out.push({
+        x: lamp.x + lean.x,
+        y: lamp.y + 0.07,
+        z: lamp.z + lean.z,
+        rx: 0.32,
+        rz: 0.26,
+        rotation: 0,
+        alpha: 0.6,
+      });
+    }
     for (const ore of this.oreInstances) {
       const s = ore.scale;
       const lean = this.shadowLean(0.12 * s);
@@ -1405,6 +1835,9 @@ export class Renderer {
     gl.uniform3f(mp.u.uTint, 1, 1, 1);
     // Entities carry their own charting alpha; the shader fog is for roads.
     gl.uniform1f(mp.u.uUseFog, 0);
+    gl.uniform1f(mp.u.uSilhouette, 0);
+    gl.uniform1f(mp.u.uDepthPull, 0);
+    this.bindFogFields(mp.u, MESH_FOG_TEXTURE_UNIT, MESH_FOG_OLD_TEXTURE_UNIT);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     bindTextureUnit(gl, MESH_MATERIAL_TEXTURE_UNIT, this.materialTexture, mp.u.uMatLut ?? null);
@@ -1475,7 +1908,7 @@ export class Renderer {
           this.drawBuildingFlags(
             buildingRig,
             flagNation,
-            allianceFlagColor(factionId),
+            this.flagColorFor(owner, factionId),
             x,
             y,
             z,
@@ -1550,6 +1983,9 @@ export class Renderer {
     gl.uniform3fv(mp.u.uSun, this.sun);
     gl.uniform1f(mp.u.uAmbient, this.ambient);
     gl.uniform1f(mp.u.uUseFog, 0);
+    gl.uniform1f(mp.u.uSilhouette, 0);
+    gl.uniform1f(mp.u.uDepthPull, 0);
+    this.bindFogFields(mp.u, MESH_FOG_TEXTURE_UNIT, MESH_FOG_OLD_TEXTURE_UNIT);
     gl.uniform3f(mp.u.uTeamColor, 0.17, 0.17, 0.15);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -1579,6 +2015,9 @@ export class Renderer {
     gl.uniform3f(mp.u.uTint, 1, 1, 1);
     // Entities carry their own charting alpha; the shader fog is for roads.
     gl.uniform1f(mp.u.uUseFog, 0);
+    gl.uniform1f(mp.u.uSilhouette, 0);
+    gl.uniform1f(mp.u.uDepthPull, 0);
+    this.bindFogFields(mp.u, MESH_FOG_TEXTURE_UNIT, MESH_FOG_OLD_TEXTURE_UNIT);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     this.bindFlagTexture();
@@ -1621,7 +2060,9 @@ export class Renderer {
           : [];
       const garrisonOwner = occupants.length > 0 ? occupants[0].owner : null;
       const construction = e.construction;
-      const progress = construction ? 0.25 + e.buildProgress * 0.75 : 1;
+      // A fresh site is groundworks, not a quarter-built shell: the mesh starts
+      // at roughly a tenth of its height and grows into the frame from there.
+      const progress = construction ? 0.04 + e.buildProgress * 0.96 : 1;
       const liveAlpha = construction ? 0.72 : e.hp / e.maxHp < 0.25 ? 0.94 : 1;
       const alpha = remembered ? 0.5 : liveAlpha;
       // Moving parts are frozen on a remembered silhouette: the shape that was
@@ -1638,7 +2079,7 @@ export class Renderer {
         z,
         facing,
         turret,
-        construction ? 0.18 + progress * 0.82 : 1,
+        construction ? 0.06 + progress * 0.94 : 1,
         alpha,
         flash,
         construction,
@@ -1654,9 +2095,90 @@ export class Renderer {
         doorOpen,
         rotorAngle,
         remembered,
+        !remembered && !!e.submarine?.dived,
       );
     }
     gl.disable(gl.BLEND);
+  }
+
+  /**
+   * Flat team-coloured silhouettes for units hidden behind a structure.
+   *
+   * The pass re-draws the unit bodies with a GREATER depth test and a small pull
+   * toward the camera in view depth, so a pixel is written only where something
+   * sits just in front of the unit: the wall of a building between the camera
+   * and the infantryman, not a ridge several tiles further down the view.
+   * Visibility is the same test the main pass uses, so a silhouette can never
+   * reveal fog or ground the team has not seen. Bodies only: no flags, no
+   * wrecks, no props and no extra draw call per unit.
+   */
+  private drawOccludedUnits(game: Game): void {
+    const gl = this.gl;
+    const mp = this.meshProgram;
+    gl.useProgram(mp.program);
+    this.setCameraUniforms(mp);
+    gl.uniform3fv(mp.u.uSun, this.sun);
+    gl.uniform1f(mp.u.uAmbient, this.ambient);
+    gl.uniform3f(mp.u.uTint, 1, 1, 1);
+    gl.uniform1f(mp.u.uUseFog, 0);
+    this.bindFogFields(mp.u, MESH_FOG_TEXTURE_UNIT, MESH_FOG_OLD_TEXTURE_UNIT);
+    gl.uniform1f(mp.u.uSilhouette, 1);
+    gl.uniform1f(mp.u.uDepthPull, SILHOUETTE_DEPTH_PULL);
+    gl.uniform1f(mp.u.uFlash, 0);
+    gl.depthFunc(gl.GREATER);
+    gl.depthMask(false);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    const team = game.teamOf(game.localPlayerId);
+    for (const e of game.state.entities) {
+      if (e.kind !== 'unit' || e.hp <= 0 || e.garrisonId) continue;
+      if (e.submarine?.dived) continue;
+      if (game.visionStateOf(team, e.id) !== 'visible') continue;
+      const v = this.visuals.get(e.id);
+      const x = v?.x ?? e.x;
+      const z = v?.z ?? e.z;
+      // Timber hides a unit with foliage rather than with a structure; an
+      // outline there would wash across the canopy instead of reading as a
+      // body behind a wall.
+      const map = game.state.scenario;
+      const tx = Math.floor(x / TILE_SIZE);
+      const tz = Math.floor(z / TILE_SIZE);
+      if (tx < 0 || tz < 0 || tx >= map.width || tz >= map.height) continue;
+      if (map.tiles[tileIndex(map.width, tx, tz)].t === Terrain.Forest) continue;
+      const def = UNITS[e.defId];
+      const groundY = tileWorldHeight(this.scenario!, x, z);
+      const y =
+        def?.domain === 'air' && !e.aircraft?.landed
+          ? groundY + 0.25 + (AIR_UNIT_ALTITUDE - groundY - 0.25) * (v?.emergeAlt ?? 1)
+          : groundY + (def?.domain === 'naval' ? 0.12 : 0);
+      this.drawEntityMesh(
+        'unit',
+        e.defId,
+        e.owner,
+        x,
+        y,
+        z,
+        v?.facing ?? e.facing,
+        v?.turret ?? e.turretFacing,
+        1,
+        SILHOUETTE_ALPHA,
+        0,
+        false,
+        0,
+        {
+          gait: v?.gait ?? 0,
+          pace: v?.pace ?? 0,
+          elevation: v?.elevation ?? 0,
+          motion: v?.motion ?? e.facing,
+          moving: false,
+        },
+      );
+    }
+    gl.depthMask(true);
+    gl.depthFunc(gl.LEQUAL);
+    gl.disable(gl.BLEND);
+    gl.uniform1f(mp.u.uSilhouette, 0);
+    gl.uniform1f(mp.u.uDepthPull, 0);
   }
 
   private drawEntityMesh(
@@ -1678,6 +2200,7 @@ export class Renderer {
     doorOpen = 0,
     rotorAngle = 0,
     remembered = false,
+    submerged = false,
   ): void {
     const mp = this.meshProgram;
     const gl = this.gl;
@@ -1714,7 +2237,7 @@ export class Renderer {
           this.drawBuildingFlags(
             rig,
             flagNation,
-            allianceFlagColor(factionId),
+            this.flagColorFor(flagOwner, factionId),
             x,
             y,
             z,
@@ -1725,14 +2248,8 @@ export class Renderer {
           );
         }
       }
-      if (construction) {
-        // A simple scaffold cage outline effect: draw the mesh again with a
-        // team-tinted translucent pass at full height.
-        gl.uniformMatrix4fv(mp.u.uModel, false, modelFor(x, y, z, -facing, 1, 1));
-        gl.uniform1f(mp.u.uAlpha, 0.1);
-        gl.uniform1f(mp.u.uFlash, 0.15);
-        occupied.draw();
-      }
+      // No translucent full-height ghost here: the construction outline is the
+      // building's own wireframe, drawn by the overlay, while this mesh grows.
       return;
     }
     const style = this.unitMeshes.get(defId);
@@ -1749,6 +2266,21 @@ export class Renderer {
       UNITS[defId]?.moveClass !== 'foot'
     ) {
       bodyFacing = anim.motion;
+    }
+    if (submerged) {
+      const periscope = style.periscope;
+      if (!periscope) return;
+      const offset = style.periscopeOffset ?? [0, 0, 0];
+      gl.uniformMatrix4fv(
+        mp.u.uModel,
+        false,
+        modelFor(x, y + offset[1] * vs, z, -bodyFacing, vs, vs),
+      );
+      gl.uniform3fv(mp.u.uTeamColor, team);
+      gl.uniform1f(mp.u.uAlpha, alpha);
+      gl.uniform1f(mp.u.uFlash, flash);
+      periscope.draw();
+      return;
     }
     const model = modelFor(x, y, z, -bodyFacing, vs, vs);
     gl.uniformMatrix4fv(mp.u.uModel, false, model);
@@ -1932,7 +2464,7 @@ export class Renderer {
         // Fog hiding is a gameplay rule, not a visual toggle: turning the fog
         // texture off must never reveal a hostile projectile the team cannot
         // see. Own-team shells are not hidden information.
-        if (!projectileVisibleToLocal(this.game, pr.owner, pr.x, pr.z)) continue;
+        if (!projectileVisibleToLocal(this.game, pr.owner, pr.x, pr.z, pr.shooterId)) continue;
         const profile = weaponFxProfile(pr.weaponId);
         const pos = this.projectilePosition(pr.id, { x: pr.x, y: pr.y, z: pr.z });
         const view = this.projectileViews.get(pr.id);
@@ -1977,6 +2509,7 @@ export class Renderer {
 
   dispose(): void {
     this.particleGpu.dispose();
+    this.decalGpu.dispose();
     this.shadowGpu.dispose();
   }
 }

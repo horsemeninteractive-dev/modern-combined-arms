@@ -1,0 +1,3269 @@
+{
+    "wallTime": 13,
+    "cpuTime": 2,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "fe6645d8122912fa9bf17e6e670832d3f304ce9a1f507b39b6ba5fc3ad02de13",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "CapacityCoordinatorDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344746800,
+    "event": {
+        "request": {
+            "url": "https://capacity/heartbeat",
+            "method": "POST",
+            "headers": {
+                "content-type": "application/json",
+                "x-mca-reservation-token": "REDACTED"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 10,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "fe6645d8122912fa9bf17e6e670832d3f304ce9a1f507b39b6ba5fc3ad02de13",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "CapacityCoordinatorDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344766797,
+    "event": {
+        "request": {
+            "url": "https://capacity/heartbeat",
+            "method": "POST",
+            "headers": {
+                "content-type": "application/json",
+                "x-mca-reservation-token": "REDACTED"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 11,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "fe6645d8122912fa9bf17e6e670832d3f304ce9a1f507b39b6ba5fc3ad02de13",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "CapacityCoordinatorDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344786799,
+    "event": {
+        "request": {
+            "url": "https://capacity/heartbeat",
+            "method": "POST",
+            "headers": {
+                "content-type": "application/json",
+                "x-mca-reservation-token": "REDACTED"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 10,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "fe6645d8122912fa9bf17e6e670832d3f304ce9a1f507b39b6ba5fc3ad02de13",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "CapacityCoordinatorDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344806798,
+    "event": {
+        "request": {
+            "url": "https://capacity/heartbeat",
+            "method": "POST",
+            "headers": {
+                "content-type": "application/json",
+                "x-mca-reservation-token": "REDACTED"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 12,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "fe6645d8122912fa9bf17e6e670832d3f304ce9a1f507b39b6ba5fc3ad02de13",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "CapacityCoordinatorDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344826797,
+    "event": {
+        "request": {
+            "url": "https://capacity/heartbeat",
+            "method": "POST",
+            "headers": {
+                "content-type": "application/json",
+                "x-mca-reservation-token": "REDACTED"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 15,
+    "cpuTime": 2,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "fe6645d8122912fa9bf17e6e670832d3f304ce9a1f507b39b6ba5fc3ad02de13",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "CapacityCoordinatorDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344846797,
+    "event": {
+        "request": {
+            "url": "https://capacity/heartbeat",
+            "method": "POST",
+            "headers": {
+                "content-type": "application/json",
+                "x-mca-reservation-token": "REDACTED"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 12,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "fe6645d8122912fa9bf17e6e670832d3f304ce9a1f507b39b6ba5fc3ad02de13",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "CapacityCoordinatorDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344866799,
+    "event": {
+        "request": {
+            "url": "https://capacity/heartbeat",
+            "method": "POST",
+            "headers": {
+                "content-type": "application/json",
+                "x-mca-reservation-token": "REDACTED"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 11,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "fe6645d8122912fa9bf17e6e670832d3f304ce9a1f507b39b6ba5fc3ad02de13",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "CapacityCoordinatorDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344886798,
+    "event": {
+        "request": {
+            "url": "https://capacity/heartbeat",
+            "method": "POST",
+            "headers": {
+                "content-type": "application/json",
+                "x-mca-reservation-token": "REDACTED"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 41,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344905569,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa3bbd225781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "94.103.240.109"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": [
+                    "host",
+                    "connection",
+                    "Authorization",
+                    "accept",
+                    "accept-language",
+                    "sec-fetch-mode",
+                    "user-agent",
+                    "accept-encoding"
+                ],
+                "clientTcpRtt": 8,
+                "clientQuicRtt": 0,
+                "colo": "LHR",
+                "asn": 213094,
+                "asOrganization": "Full Fibre Limited",
+                "country": "GB",
+                "isEUCountry": false,
+                "city": "Belper",
+                "continent": "EU",
+                "region": "England",
+                "regionCode": "ENG",
+                "timezone": "Europe/London",
+                "longitude": "-1.48119",
+                "latitude": "53.0233",
+                "postalCode": "DE56",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "Iz11NHs3tXiQe6pEKDFaoOXKvPD1XCjeeTu8qh20Vxs=",
+                "tlsClientCiphersSha1": "kXrN3VEKDdzz2cPKTQaKzpxVTxQ=",
+                "tlsClientExtensionsSha1": "1eY97BUYYO8vDaTfHQywB1pcNdM=",
+                "tlsClientExtensionsSha1Le": "u4wtEMFQBY18l3BzHAvORm+KGRw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "d3da9dd33aa83f693df96ec1f9d2a410b60841a5427b5a413e94db320341bcf43058f55df21b7e04b47c9527c27d1c1c",
+                    "serverHandshake": "16e046d4b646a9eb0a09d367fb3bda794a2a7281efe1173862649e112985414b5f47633107910d8d353471904a151648",
+                    "clientFinished": "d53dd3a8b1b2c6bfe8dcbdf2e425d5e398fe6cba366859d1305f09e34730f7a5df6cd087c26a1ffcbcdc57ef0788f8ae",
+                    "serverFinished": "ad0f5f0b12448e154e59ad1672838f4a2f2c0a9e5d7b2ce84cd7f8a1edc955d52b1ccc417de563be790c6bc8045aa667"
+                },
+                "tlsClientHelloLength": "1638",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 375339
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 7,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344905812,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa3d3f745781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "94.103.240.109"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": [
+                    "host",
+                    "connection",
+                    "Authorization",
+                    "accept",
+                    "accept-language",
+                    "sec-fetch-mode",
+                    "user-agent",
+                    "accept-encoding"
+                ],
+                "clientTcpRtt": 8,
+                "clientQuicRtt": 0,
+                "colo": "LHR",
+                "asn": 213094,
+                "asOrganization": "Full Fibre Limited",
+                "country": "GB",
+                "isEUCountry": false,
+                "city": "Belper",
+                "continent": "EU",
+                "region": "England",
+                "regionCode": "ENG",
+                "timezone": "Europe/London",
+                "longitude": "-1.48119",
+                "latitude": "53.0233",
+                "postalCode": "DE56",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "Iz11NHs3tXiQe6pEKDFaoOXKvPD1XCjeeTu8qh20Vxs=",
+                "tlsClientCiphersSha1": "kXrN3VEKDdzz2cPKTQaKzpxVTxQ=",
+                "tlsClientExtensionsSha1": "1eY97BUYYO8vDaTfHQywB1pcNdM=",
+                "tlsClientExtensionsSha1Le": "u4wtEMFQBY18l3BzHAvORm+KGRw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "d3da9dd33aa83f693df96ec1f9d2a410b60841a5427b5a413e94db320341bcf43058f55df21b7e04b47c9527c27d1c1c",
+                    "serverHandshake": "16e046d4b646a9eb0a09d367fb3bda794a2a7281efe1173862649e112985414b5f47633107910d8d353471904a151648",
+                    "clientFinished": "d53dd3a8b1b2c6bfe8dcbdf2e425d5e398fe6cba366859d1305f09e34730f7a5df6cd087c26a1ffcbcdc57ef0788f8ae",
+                    "serverFinished": "ad0f5f0b12448e154e59ad1672838f4a2f2c0a9e5d7b2ce84cd7f8a1edc955d52b1ccc417de563be790c6bc8045aa667"
+                },
+                "tlsClientHelloLength": "1638",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 745188
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 242,
+    "cpuTime": 24,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "b5232f0a63d75eb645b78dbd00de61ebb8fb7b80d4133d6294d4241482df3655",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "MatchRoomDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344905575,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa3bbd225781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-mca-room-action": "status",
+                "x-real-ip": "94.103.240.109"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 6,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344905996,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa3e79415781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "94.103.240.109"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": [
+                    "host",
+                    "connection",
+                    "Authorization",
+                    "accept",
+                    "accept-language",
+                    "sec-fetch-mode",
+                    "user-agent",
+                    "accept-encoding"
+                ],
+                "clientTcpRtt": 8,
+                "clientQuicRtt": 0,
+                "colo": "LHR",
+                "asn": 213094,
+                "asOrganization": "Full Fibre Limited",
+                "country": "GB",
+                "isEUCountry": false,
+                "city": "Belper",
+                "continent": "EU",
+                "region": "England",
+                "regionCode": "ENG",
+                "timezone": "Europe/London",
+                "longitude": "-1.48119",
+                "latitude": "53.0233",
+                "postalCode": "DE56",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "Iz11NHs3tXiQe6pEKDFaoOXKvPD1XCjeeTu8qh20Vxs=",
+                "tlsClientCiphersSha1": "kXrN3VEKDdzz2cPKTQaKzpxVTxQ=",
+                "tlsClientExtensionsSha1": "1eY97BUYYO8vDaTfHQywB1pcNdM=",
+                "tlsClientExtensionsSha1Le": "u4wtEMFQBY18l3BzHAvORm+KGRw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "d3da9dd33aa83f693df96ec1f9d2a410b60841a5427b5a413e94db320341bcf43058f55df21b7e04b47c9527c27d1c1c",
+                    "serverHandshake": "16e046d4b646a9eb0a09d367fb3bda794a2a7281efe1173862649e112985414b5f47633107910d8d353471904a151648",
+                    "clientFinished": "d53dd3a8b1b2c6bfe8dcbdf2e425d5e398fe6cba366859d1305f09e34730f7a5df6cd087c26a1ffcbcdc57ef0788f8ae",
+                    "serverFinished": "ad0f5f0b12448e154e59ad1672838f4a2f2c0a9e5d7b2ce84cd7f8a1edc955d52b1ccc417de563be790c6bc8045aa667"
+                },
+                "tlsClientHelloLength": "1638",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 745188
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 183,
+    "cpuTime": 2,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "b5232f0a63d75eb645b78dbd00de61ebb8fb7b80d4133d6294d4241482df3655",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "MatchRoomDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344905797,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa3d3f745781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-mca-room-action": "status",
+                "x-real-ip": "94.103.240.109"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 200,
+    "cpuTime": 4,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "b5232f0a63d75eb645b78dbd00de61ebb8fb7b80d4133d6294d4241482df3655",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "MatchRoomDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344905982,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa3e79415781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-mca-room-action": "status",
+                "x-real-ip": "94.103.240.109"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 6,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344906197,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa3f9afa5781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "94.103.240.109"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": [
+                    "host",
+                    "connection",
+                    "Authorization",
+                    "accept",
+                    "accept-language",
+                    "sec-fetch-mode",
+                    "user-agent",
+                    "accept-encoding"
+                ],
+                "clientTcpRtt": 8,
+                "clientQuicRtt": 0,
+                "colo": "LHR",
+                "asn": 213094,
+                "asOrganization": "Full Fibre Limited",
+                "country": "GB",
+                "isEUCountry": false,
+                "city": "Belper",
+                "continent": "EU",
+                "region": "England",
+                "regionCode": "ENG",
+                "timezone": "Europe/London",
+                "longitude": "-1.48119",
+                "latitude": "53.0233",
+                "postalCode": "DE56",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "Iz11NHs3tXiQe6pEKDFaoOXKvPD1XCjeeTu8qh20Vxs=",
+                "tlsClientCiphersSha1": "kXrN3VEKDdzz2cPKTQaKzpxVTxQ=",
+                "tlsClientExtensionsSha1": "1eY97BUYYO8vDaTfHQywB1pcNdM=",
+                "tlsClientExtensionsSha1Le": "u4wtEMFQBY18l3BzHAvORm+KGRw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "d3da9dd33aa83f693df96ec1f9d2a410b60841a5427b5a413e94db320341bcf43058f55df21b7e04b47c9527c27d1c1c",
+                    "serverHandshake": "16e046d4b646a9eb0a09d367fb3bda794a2a7281efe1173862649e112985414b5f47633107910d8d353471904a151648",
+                    "clientFinished": "d53dd3a8b1b2c6bfe8dcbdf2e425d5e398fe6cba366859d1305f09e34730f7a5df6cd087c26a1ffcbcdc57ef0788f8ae",
+                    "serverFinished": "ad0f5f0b12448e154e59ad1672838f4a2f2c0a9e5d7b2ce84cd7f8a1edc955d52b1ccc417de563be790c6bc8045aa667"
+                },
+                "tlsClientHelloLength": "1638",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 745188
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 6,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344906397,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa40dcdf5781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "94.103.240.109"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": [
+                    "host",
+                    "connection",
+                    "Authorization",
+                    "accept",
+                    "accept-language",
+                    "sec-fetch-mode",
+                    "user-agent",
+                    "accept-encoding"
+                ],
+                "clientTcpRtt": 8,
+                "clientQuicRtt": 0,
+                "colo": "LHR",
+                "asn": 213094,
+                "asOrganization": "Full Fibre Limited",
+                "country": "GB",
+                "isEUCountry": false,
+                "city": "Belper",
+                "continent": "EU",
+                "region": "England",
+                "regionCode": "ENG",
+                "timezone": "Europe/London",
+                "longitude": "-1.48119",
+                "latitude": "53.0233",
+                "postalCode": "DE56",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "Iz11NHs3tXiQe6pEKDFaoOXKvPD1XCjeeTu8qh20Vxs=",
+                "tlsClientCiphersSha1": "kXrN3VEKDdzz2cPKTQaKzpxVTxQ=",
+                "tlsClientExtensionsSha1": "1eY97BUYYO8vDaTfHQywB1pcNdM=",
+                "tlsClientExtensionsSha1Le": "u4wtEMFQBY18l3BzHAvORm+KGRw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "d3da9dd33aa83f693df96ec1f9d2a410b60841a5427b5a413e94db320341bcf43058f55df21b7e04b47c9527c27d1c1c",
+                    "serverHandshake": "16e046d4b646a9eb0a09d367fb3bda794a2a7281efe1173862649e112985414b5f47633107910d8d353471904a151648",
+                    "clientFinished": "d53dd3a8b1b2c6bfe8dcbdf2e425d5e398fe6cba366859d1305f09e34730f7a5df6cd087c26a1ffcbcdc57ef0788f8ae",
+                    "serverFinished": "ad0f5f0b12448e154e59ad1672838f4a2f2c0a9e5d7b2ce84cd7f8a1edc955d52b1ccc417de563be790c6bc8045aa667"
+                },
+                "tlsClientHelloLength": "1638",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 745188
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 200,
+    "cpuTime": 2,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "b5232f0a63d75eb645b78dbd00de61ebb8fb7b80d4133d6294d4241482df3655",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "MatchRoomDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344906182,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa3f9afa5781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-mca-room-action": "status",
+                "x-real-ip": "94.103.240.109"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 198,
+    "cpuTime": 4,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "b5232f0a63d75eb645b78dbd00de61ebb8fb7b80d4133d6294d4241482df3655",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "MatchRoomDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344906383,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa40dcdf5781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-mca-room-action": "status",
+                "x-real-ip": "94.103.240.109"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 7,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344906595,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa421f495781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "94.103.240.109"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": [
+                    "host",
+                    "connection",
+                    "Authorization",
+                    "accept",
+                    "accept-language",
+                    "sec-fetch-mode",
+                    "user-agent",
+                    "accept-encoding"
+                ],
+                "clientTcpRtt": 8,
+                "clientQuicRtt": 0,
+                "colo": "LHR",
+                "asn": 213094,
+                "asOrganization": "Full Fibre Limited",
+                "country": "GB",
+                "isEUCountry": false,
+                "city": "Belper",
+                "continent": "EU",
+                "region": "England",
+                "regionCode": "ENG",
+                "timezone": "Europe/London",
+                "longitude": "-1.48119",
+                "latitude": "53.0233",
+                "postalCode": "DE56",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "Iz11NHs3tXiQe6pEKDFaoOXKvPD1XCjeeTu8qh20Vxs=",
+                "tlsClientCiphersSha1": "kXrN3VEKDdzz2cPKTQaKzpxVTxQ=",
+                "tlsClientExtensionsSha1": "1eY97BUYYO8vDaTfHQywB1pcNdM=",
+                "tlsClientExtensionsSha1Le": "u4wtEMFQBY18l3BzHAvORm+KGRw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "d3da9dd33aa83f693df96ec1f9d2a410b60841a5427b5a413e94db320341bcf43058f55df21b7e04b47c9527c27d1c1c",
+                    "serverHandshake": "16e046d4b646a9eb0a09d367fb3bda794a2a7281efe1173862649e112985414b5f47633107910d8d353471904a151648",
+                    "clientFinished": "d53dd3a8b1b2c6bfe8dcbdf2e425d5e398fe6cba366859d1305f09e34730f7a5df6cd087c26a1ffcbcdc57ef0788f8ae",
+                    "serverFinished": "ad0f5f0b12448e154e59ad1672838f4a2f2c0a9e5d7b2ce84cd7f8a1edc955d52b1ccc417de563be790c6bc8045aa667"
+                },
+                "tlsClientHelloLength": "1638",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 745188
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 193,
+    "cpuTime": 4,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "b5232f0a63d75eb645b78dbd00de61ebb8fb7b80d4133d6294d4241482df3655",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "MatchRoomDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344906581,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa421f495781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-mca-room-action": "status",
+                "x-real-ip": "94.103.240.109"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 5,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344911052,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa5e0fcd5781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "94.103.240.109"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": [
+                    "host",
+                    "connection",
+                    "Authorization",
+                    "accept",
+                    "accept-language",
+                    "sec-fetch-mode",
+                    "user-agent",
+                    "accept-encoding"
+                ],
+                "clientTcpRtt": 8,
+                "clientQuicRtt": 0,
+                "colo": "LHR",
+                "asn": 213094,
+                "asOrganization": "Full Fibre Limited",
+                "country": "GB",
+                "isEUCountry": false,
+                "city": "Belper",
+                "continent": "EU",
+                "region": "England",
+                "regionCode": "ENG",
+                "timezone": "Europe/London",
+                "longitude": "-1.48119",
+                "latitude": "53.0233",
+                "postalCode": "DE56",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "Iz11NHs3tXiQe6pEKDFaoOXKvPD1XCjeeTu8qh20Vxs=",
+                "tlsClientCiphersSha1": "kXrN3VEKDdzz2cPKTQaKzpxVTxQ=",
+                "tlsClientExtensionsSha1": "1eY97BUYYO8vDaTfHQywB1pcNdM=",
+                "tlsClientExtensionsSha1Le": "u4wtEMFQBY18l3BzHAvORm+KGRw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "d3da9dd33aa83f693df96ec1f9d2a410b60841a5427b5a413e94db320341bcf43058f55df21b7e04b47c9527c27d1c1c",
+                    "serverHandshake": "16e046d4b646a9eb0a09d367fb3bda794a2a7281efe1173862649e112985414b5f47633107910d8d353471904a151648",
+                    "clientFinished": "d53dd3a8b1b2c6bfe8dcbdf2e425d5e398fe6cba366859d1305f09e34730f7a5df6cd087c26a1ffcbcdc57ef0788f8ae",
+                    "serverFinished": "ad0f5f0b12448e154e59ad1672838f4a2f2c0a9e5d7b2ce84cd7f8a1edc955d52b1ccc417de563be790c6bc8045aa667"
+                },
+                "tlsClientHelloLength": "1638",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 745188
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 181,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "b5232f0a63d75eb645b78dbd00de61ebb8fb7b80d4133d6294d4241482df3655",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "MatchRoomDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344911946,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa63a9875781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-mca-room-action": "status",
+                "x-real-ip": "94.103.240.109"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 7,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344913031,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa6a6cab5781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "94.103.240.109"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": [
+                    "host",
+                    "connection",
+                    "Authorization",
+                    "accept",
+                    "accept-language",
+                    "sec-fetch-mode",
+                    "user-agent",
+                    "accept-encoding"
+                ],
+                "clientTcpRtt": 8,
+                "clientQuicRtt": 0,
+                "colo": "LHR",
+                "asn": 213094,
+                "asOrganization": "Full Fibre Limited",
+                "country": "GB",
+                "isEUCountry": false,
+                "city": "Belper",
+                "continent": "EU",
+                "region": "England",
+                "regionCode": "ENG",
+                "timezone": "Europe/London",
+                "longitude": "-1.48119",
+                "latitude": "53.0233",
+                "postalCode": "DE56",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "Iz11NHs3tXiQe6pEKDFaoOXKvPD1XCjeeTu8qh20Vxs=",
+                "tlsClientCiphersSha1": "kXrN3VEKDdzz2cPKTQaKzpxVTxQ=",
+                "tlsClientExtensionsSha1": "1eY97BUYYO8vDaTfHQywB1pcNdM=",
+                "tlsClientExtensionsSha1Le": "u4wtEMFQBY18l3BzHAvORm+KGRw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "d3da9dd33aa83f693df96ec1f9d2a410b60841a5427b5a413e94db320341bcf43058f55df21b7e04b47c9527c27d1c1c",
+                    "serverHandshake": "16e046d4b646a9eb0a09d367fb3bda794a2a7281efe1173862649e112985414b5f47633107910d8d353471904a151648",
+                    "clientFinished": "d53dd3a8b1b2c6bfe8dcbdf2e425d5e398fe6cba366859d1305f09e34730f7a5df6cd087c26a1ffcbcdc57ef0788f8ae",
+                    "serverFinished": "ad0f5f0b12448e154e59ad1672838f4a2f2c0a9e5d7b2ce84cd7f8a1edc955d52b1ccc417de563be790c6bc8045aa667"
+                },
+                "tlsClientHelloLength": "1638",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 745188
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 177,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "b5232f0a63d75eb645b78dbd00de61ebb8fb7b80d4133d6294d4241482df3655",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "MatchRoomDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344913914,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa6ffdb15781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-mca-room-action": "status",
+                "x-real-ip": "94.103.240.109"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 173,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "b5232f0a63d75eb645b78dbd00de61ebb8fb7b80d4133d6294d4241482df3655",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "MatchRoomDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344914820,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa75aea15781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-mca-room-action": "status",
+                "x-real-ip": "94.103.240.109"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 7,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344914999,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa76b8935781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "94.103.240.109"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": [
+                    "host",
+                    "connection",
+                    "Authorization",
+                    "accept",
+                    "accept-language",
+                    "sec-fetch-mode",
+                    "user-agent",
+                    "accept-encoding"
+                ],
+                "clientTcpRtt": 8,
+                "clientQuicRtt": 0,
+                "colo": "LHR",
+                "asn": 213094,
+                "asOrganization": "Full Fibre Limited",
+                "country": "GB",
+                "isEUCountry": false,
+                "city": "Belper",
+                "continent": "EU",
+                "region": "England",
+                "regionCode": "ENG",
+                "timezone": "Europe/London",
+                "longitude": "-1.48119",
+                "latitude": "53.0233",
+                "postalCode": "DE56",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "Iz11NHs3tXiQe6pEKDFaoOXKvPD1XCjeeTu8qh20Vxs=",
+                "tlsClientCiphersSha1": "kXrN3VEKDdzz2cPKTQaKzpxVTxQ=",
+                "tlsClientExtensionsSha1": "1eY97BUYYO8vDaTfHQywB1pcNdM=",
+                "tlsClientExtensionsSha1Le": "u4wtEMFQBY18l3BzHAvORm+KGRw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "d3da9dd33aa83f693df96ec1f9d2a410b60841a5427b5a413e94db320341bcf43058f55df21b7e04b47c9527c27d1c1c",
+                    "serverHandshake": "16e046d4b646a9eb0a09d367fb3bda794a2a7281efe1173862649e112985414b5f47633107910d8d353471904a151648",
+                    "clientFinished": "d53dd3a8b1b2c6bfe8dcbdf2e425d5e398fe6cba366859d1305f09e34730f7a5df6cd087c26a1ffcbcdc57ef0788f8ae",
+                    "serverFinished": "ad0f5f0b12448e154e59ad1672838f4a2f2c0a9e5d7b2ce84cd7f8a1edc955d52b1ccc417de563be790c6bc8045aa667"
+                },
+                "tlsClientHelloLength": "1638",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 745188
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 181,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "b5232f0a63d75eb645b78dbd00de61ebb8fb7b80d4133d6294d4241482df3655",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "MatchRoomDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344915908,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa7c79bf5781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-mca-room-action": "status",
+                "x-real-ip": "94.103.240.109"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 6,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344916998,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa833c275781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "94.103.240.109"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": [
+                    "host",
+                    "connection",
+                    "Authorization",
+                    "accept",
+                    "accept-language",
+                    "sec-fetch-mode",
+                    "user-agent",
+                    "accept-encoding"
+                ],
+                "clientTcpRtt": 8,
+                "clientQuicRtt": 0,
+                "colo": "LHR",
+                "asn": 213094,
+                "asOrganization": "Full Fibre Limited",
+                "country": "GB",
+                "isEUCountry": false,
+                "city": "Belper",
+                "continent": "EU",
+                "region": "England",
+                "regionCode": "ENG",
+                "timezone": "Europe/London",
+                "longitude": "-1.48119",
+                "latitude": "53.0233",
+                "postalCode": "DE56",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "Iz11NHs3tXiQe6pEKDFaoOXKvPD1XCjeeTu8qh20Vxs=",
+                "tlsClientCiphersSha1": "kXrN3VEKDdzz2cPKTQaKzpxVTxQ=",
+                "tlsClientExtensionsSha1": "1eY97BUYYO8vDaTfHQywB1pcNdM=",
+                "tlsClientExtensionsSha1Le": "u4wtEMFQBY18l3BzHAvORm+KGRw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "d3da9dd33aa83f693df96ec1f9d2a410b60841a5427b5a413e94db320341bcf43058f55df21b7e04b47c9527c27d1c1c",
+                    "serverHandshake": "16e046d4b646a9eb0a09d367fb3bda794a2a7281efe1173862649e112985414b5f47633107910d8d353471904a151648",
+                    "clientFinished": "d53dd3a8b1b2c6bfe8dcbdf2e425d5e398fe6cba366859d1305f09e34730f7a5df6cd087c26a1ffcbcdc57ef0788f8ae",
+                    "serverFinished": "ad0f5f0b12448e154e59ad1672838f4a2f2c0a9e5d7b2ce84cd7f8a1edc955d52b1ccc417de563be790c6bc8045aa667"
+                },
+                "tlsClientHelloLength": "1638",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 745188
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 179,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "b5232f0a63d75eb645b78dbd00de61ebb8fb7b80d4133d6294d4241482df3655",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "MatchRoomDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344917888,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa88dd335781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-mca-room-action": "status",
+                "x-real-ip": "94.103.240.109"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 6,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344919165,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa90cb525781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "94.103.240.109"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": [
+                    "host",
+                    "connection",
+                    "Authorization",
+                    "accept",
+                    "accept-language",
+                    "sec-fetch-mode",
+                    "user-agent",
+                    "accept-encoding"
+                ],
+                "clientTcpRtt": 8,
+                "clientQuicRtt": 0,
+                "colo": "LHR",
+                "asn": 213094,
+                "asOrganization": "Full Fibre Limited",
+                "country": "GB",
+                "isEUCountry": false,
+                "city": "Belper",
+                "continent": "EU",
+                "region": "England",
+                "regionCode": "ENG",
+                "timezone": "Europe/London",
+                "longitude": "-1.48119",
+                "latitude": "53.0233",
+                "postalCode": "DE56",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "Iz11NHs3tXiQe6pEKDFaoOXKvPD1XCjeeTu8qh20Vxs=",
+                "tlsClientCiphersSha1": "kXrN3VEKDdzz2cPKTQaKzpxVTxQ=",
+                "tlsClientExtensionsSha1": "1eY97BUYYO8vDaTfHQywB1pcNdM=",
+                "tlsClientExtensionsSha1Le": "u4wtEMFQBY18l3BzHAvORm+KGRw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "d3da9dd33aa83f693df96ec1f9d2a410b60841a5427b5a413e94db320341bcf43058f55df21b7e04b47c9527c27d1c1c",
+                    "serverHandshake": "16e046d4b646a9eb0a09d367fb3bda794a2a7281efe1173862649e112985414b5f47633107910d8d353471904a151648",
+                    "clientFinished": "d53dd3a8b1b2c6bfe8dcbdf2e425d5e398fe6cba366859d1305f09e34730f7a5df6cd087c26a1ffcbcdc57ef0788f8ae",
+                    "serverFinished": "ad0f5f0b12448e154e59ad1672838f4a2f2c0a9e5d7b2ce84cd7f8a1edc955d52b1ccc417de563be790c6bc8045aa667"
+                },
+                "tlsClientHelloLength": "1638",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 745188
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 6,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344920068,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa966c9f5781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "94.103.240.109"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": [
+                    "host",
+                    "connection",
+                    "Authorization",
+                    "accept",
+                    "accept-language",
+                    "sec-fetch-mode",
+                    "user-agent",
+                    "accept-encoding"
+                ],
+                "clientTcpRtt": 8,
+                "clientQuicRtt": 0,
+                "colo": "LHR",
+                "asn": 213094,
+                "asOrganization": "Full Fibre Limited",
+                "country": "GB",
+                "isEUCountry": false,
+                "city": "Belper",
+                "continent": "EU",
+                "region": "England",
+                "regionCode": "ENG",
+                "timezone": "Europe/London",
+                "longitude": "-1.48119",
+                "latitude": "53.0233",
+                "postalCode": "DE56",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "Iz11NHs3tXiQe6pEKDFaoOXKvPD1XCjeeTu8qh20Vxs=",
+                "tlsClientCiphersSha1": "kXrN3VEKDdzz2cPKTQaKzpxVTxQ=",
+                "tlsClientExtensionsSha1": "1eY97BUYYO8vDaTfHQywB1pcNdM=",
+                "tlsClientExtensionsSha1Le": "u4wtEMFQBY18l3BzHAvORm+KGRw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "d3da9dd33aa83f693df96ec1f9d2a410b60841a5427b5a413e94db320341bcf43058f55df21b7e04b47c9527c27d1c1c",
+                    "serverHandshake": "16e046d4b646a9eb0a09d367fb3bda794a2a7281efe1173862649e112985414b5f47633107910d8d353471904a151648",
+                    "clientFinished": "d53dd3a8b1b2c6bfe8dcbdf2e425d5e398fe6cba366859d1305f09e34730f7a5df6cd087c26a1ffcbcdc57ef0788f8ae",
+                    "serverFinished": "ad0f5f0b12448e154e59ad1672838f4a2f2c0a9e5d7b2ce84cd7f8a1edc955d52b1ccc417de563be790c6bc8045aa667"
+                },
+                "tlsClientHelloLength": "1638",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 745188
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 184,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "b5232f0a63d75eb645b78dbd00de61ebb8fb7b80d4133d6294d4241482df3655",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "MatchRoomDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344919880,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa954ad95781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-mca-room-action": "status",
+                "x-real-ip": "94.103.240.109"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 189,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "b5232f0a63d75eb645b78dbd00de61ebb8fb7b80d4133d6294d4241482df3655",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "MatchRoomDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344920802,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aa9b0c3b5781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-mca-room-action": "status",
+                "x-real-ip": "94.103.240.109"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 6,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344922101,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aaa319725781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "94.103.240.109"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": [
+                    "host",
+                    "connection",
+                    "Authorization",
+                    "accept",
+                    "accept-language",
+                    "sec-fetch-mode",
+                    "user-agent",
+                    "accept-encoding"
+                ],
+                "clientTcpRtt": 8,
+                "clientQuicRtt": 0,
+                "colo": "LHR",
+                "asn": 213094,
+                "asOrganization": "Full Fibre Limited",
+                "country": "GB",
+                "isEUCountry": false,
+                "city": "Belper",
+                "continent": "EU",
+                "region": "England",
+                "regionCode": "ENG",
+                "timezone": "Europe/London",
+                "longitude": "-1.48119",
+                "latitude": "53.0233",
+                "postalCode": "DE56",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "Iz11NHs3tXiQe6pEKDFaoOXKvPD1XCjeeTu8qh20Vxs=",
+                "tlsClientCiphersSha1": "kXrN3VEKDdzz2cPKTQaKzpxVTxQ=",
+                "tlsClientExtensionsSha1": "1eY97BUYYO8vDaTfHQywB1pcNdM=",
+                "tlsClientExtensionsSha1Le": "u4wtEMFQBY18l3BzHAvORm+KGRw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "d3da9dd33aa83f693df96ec1f9d2a410b60841a5427b5a413e94db320341bcf43058f55df21b7e04b47c9527c27d1c1c",
+                    "serverHandshake": "16e046d4b646a9eb0a09d367fb3bda794a2a7281efe1173862649e112985414b5f47633107910d8d353471904a151648",
+                    "clientFinished": "d53dd3a8b1b2c6bfe8dcbdf2e425d5e398fe6cba366859d1305f09e34730f7a5df6cd087c26a1ffcbcdc57ef0788f8ae",
+                    "serverFinished": "ad0f5f0b12448e154e59ad1672838f4a2f2c0a9e5d7b2ce84cd7f8a1edc955d52b1ccc417de563be790c6bc8045aa667"
+                },
+                "tlsClientHelloLength": "1638",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 745188
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 183,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "b5232f0a63d75eb645b78dbd00de61ebb8fb7b80d4133d6294d4241482df3655",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "MatchRoomDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344922815,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aaa7993a5781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-mca-room-action": "status",
+                "x-real-ip": "94.103.240.109"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 6,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344924081,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aaaf7f425781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "94.103.240.109"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": [
+                    "host",
+                    "connection",
+                    "Authorization",
+                    "accept",
+                    "accept-language",
+                    "sec-fetch-mode",
+                    "user-agent",
+                    "accept-encoding"
+                ],
+                "clientTcpRtt": 8,
+                "clientQuicRtt": 0,
+                "colo": "LHR",
+                "asn": 213094,
+                "asOrganization": "Full Fibre Limited",
+                "country": "GB",
+                "isEUCountry": false,
+                "city": "Belper",
+                "continent": "EU",
+                "region": "England",
+                "regionCode": "ENG",
+                "timezone": "Europe/London",
+                "longitude": "-1.48119",
+                "latitude": "53.0233",
+                "postalCode": "DE56",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "Iz11NHs3tXiQe6pEKDFaoOXKvPD1XCjeeTu8qh20Vxs=",
+                "tlsClientCiphersSha1": "kXrN3VEKDdzz2cPKTQaKzpxVTxQ=",
+                "tlsClientExtensionsSha1": "1eY97BUYYO8vDaTfHQywB1pcNdM=",
+                "tlsClientExtensionsSha1Le": "u4wtEMFQBY18l3BzHAvORm+KGRw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "d3da9dd33aa83f693df96ec1f9d2a410b60841a5427b5a413e94db320341bcf43058f55df21b7e04b47c9527c27d1c1c",
+                    "serverHandshake": "16e046d4b646a9eb0a09d367fb3bda794a2a7281efe1173862649e112985414b5f47633107910d8d353471904a151648",
+                    "clientFinished": "d53dd3a8b1b2c6bfe8dcbdf2e425d5e398fe6cba366859d1305f09e34730f7a5df6cd087c26a1ffcbcdc57ef0788f8ae",
+                    "serverFinished": "ad0f5f0b12448e154e59ad1672838f4a2f2c0a9e5d7b2ce84cd7f8a1edc955d52b1ccc417de563be790c6bc8045aa667"
+                },
+                "tlsClientHelloLength": "1638",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 802209
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 174,
+    "cpuTime": 2,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "b5232f0a63d75eb645b78dbd00de61ebb8fb7b80d4133d6294d4241482df3655",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "MatchRoomDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344924973,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aab518e75781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-mca-room-action": "status",
+                "x-real-ip": "94.103.240.109"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 12,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "fe6645d8122912fa9bf17e6e670832d3f304ce9a1f507b39b6ba5fc3ad02de13",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "CapacityCoordinatorDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344925604,
+    "event": {
+        "request": {
+            "url": "https://capacity/heartbeat",
+            "method": "POST",
+            "headers": {
+                "content-type": "application/json",
+                "x-mca-reservation-token": "REDACTED"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 6,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344926068,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aabbec1b5781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "94.103.240.109"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": [
+                    "host",
+                    "connection",
+                    "Authorization",
+                    "accept",
+                    "accept-language",
+                    "sec-fetch-mode",
+                    "user-agent",
+                    "accept-encoding"
+                ],
+                "clientTcpRtt": 8,
+                "clientQuicRtt": 0,
+                "colo": "LHR",
+                "asn": 213094,
+                "asOrganization": "Full Fibre Limited",
+                "country": "GB",
+                "isEUCountry": false,
+                "city": "Belper",
+                "continent": "EU",
+                "region": "England",
+                "regionCode": "ENG",
+                "timezone": "Europe/London",
+                "longitude": "-1.48119",
+                "latitude": "53.0233",
+                "postalCode": "DE56",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "Iz11NHs3tXiQe6pEKDFaoOXKvPD1XCjeeTu8qh20Vxs=",
+                "tlsClientCiphersSha1": "kXrN3VEKDdzz2cPKTQaKzpxVTxQ=",
+                "tlsClientExtensionsSha1": "1eY97BUYYO8vDaTfHQywB1pcNdM=",
+                "tlsClientExtensionsSha1Le": "u4wtEMFQBY18l3BzHAvORm+KGRw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "d3da9dd33aa83f693df96ec1f9d2a410b60841a5427b5a413e94db320341bcf43058f55df21b7e04b47c9527c27d1c1c",
+                    "serverHandshake": "16e046d4b646a9eb0a09d367fb3bda794a2a7281efe1173862649e112985414b5f47633107910d8d353471904a151648",
+                    "clientFinished": "d53dd3a8b1b2c6bfe8dcbdf2e425d5e398fe6cba366859d1305f09e34730f7a5df6cd087c26a1ffcbcdc57ef0788f8ae",
+                    "serverFinished": "ad0f5f0b12448e154e59ad1672838f4a2f2c0a9e5d7b2ce84cd7f8a1edc955d52b1ccc417de563be790c6bc8045aa667"
+                },
+                "tlsClientHelloLength": "1638",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 802209
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 183,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "b5232f0a63d75eb645b78dbd00de61ebb8fb7b80d4133d6294d4241482df3655",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "MatchRoomDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344926958,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aac18d045781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-mca-room-action": "status",
+                "x-real-ip": "94.103.240.109"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 6,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344928058,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aac8581d5781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "94.103.240.109"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": [
+                    "host",
+                    "connection",
+                    "Authorization",
+                    "accept",
+                    "accept-language",
+                    "sec-fetch-mode",
+                    "user-agent",
+                    "accept-encoding"
+                ],
+                "clientTcpRtt": 8,
+                "clientQuicRtt": 0,
+                "colo": "LHR",
+                "asn": 213094,
+                "asOrganization": "Full Fibre Limited",
+                "country": "GB",
+                "isEUCountry": false,
+                "city": "Belper",
+                "continent": "EU",
+                "region": "England",
+                "regionCode": "ENG",
+                "timezone": "Europe/London",
+                "longitude": "-1.48119",
+                "latitude": "53.0233",
+                "postalCode": "DE56",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "Iz11NHs3tXiQe6pEKDFaoOXKvPD1XCjeeTu8qh20Vxs=",
+                "tlsClientCiphersSha1": "kXrN3VEKDdzz2cPKTQaKzpxVTxQ=",
+                "tlsClientExtensionsSha1": "1eY97BUYYO8vDaTfHQywB1pcNdM=",
+                "tlsClientExtensionsSha1Le": "u4wtEMFQBY18l3BzHAvORm+KGRw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "d3da9dd33aa83f693df96ec1f9d2a410b60841a5427b5a413e94db320341bcf43058f55df21b7e04b47c9527c27d1c1c",
+                    "serverHandshake": "16e046d4b646a9eb0a09d367fb3bda794a2a7281efe1173862649e112985414b5f47633107910d8d353471904a151648",
+                    "clientFinished": "d53dd3a8b1b2c6bfe8dcbdf2e425d5e398fe6cba366859d1305f09e34730f7a5df6cd087c26a1ffcbcdc57ef0788f8ae",
+                    "serverFinished": "ad0f5f0b12448e154e59ad1672838f4a2f2c0a9e5d7b2ce84cd7f8a1edc955d52b1ccc417de563be790c6bc8045aa667"
+                },
+                "tlsClientHelloLength": "1638",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 802209
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 183,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "b5232f0a63d75eb645b78dbd00de61ebb8fb7b80d4133d6294d4241482df3655",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "MatchRoomDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344928942,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aacde8545781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-mca-room-action": "status",
+                "x-real-ip": "94.103.240.109"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 6,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344930049,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aad4ca9d5781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "94.103.240.109"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": [
+                    "host",
+                    "connection",
+                    "Authorization",
+                    "accept",
+                    "accept-language",
+                    "sec-fetch-mode",
+                    "user-agent",
+                    "accept-encoding"
+                ],
+                "clientTcpRtt": 8,
+                "clientQuicRtt": 0,
+                "colo": "LHR",
+                "asn": 213094,
+                "asOrganization": "Full Fibre Limited",
+                "country": "GB",
+                "isEUCountry": false,
+                "city": "Belper",
+                "continent": "EU",
+                "region": "England",
+                "regionCode": "ENG",
+                "timezone": "Europe/London",
+                "longitude": "-1.48119",
+                "latitude": "53.0233",
+                "postalCode": "DE56",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "Iz11NHs3tXiQe6pEKDFaoOXKvPD1XCjeeTu8qh20Vxs=",
+                "tlsClientCiphersSha1": "kXrN3VEKDdzz2cPKTQaKzpxVTxQ=",
+                "tlsClientExtensionsSha1": "1eY97BUYYO8vDaTfHQywB1pcNdM=",
+                "tlsClientExtensionsSha1Le": "u4wtEMFQBY18l3BzHAvORm+KGRw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "d3da9dd33aa83f693df96ec1f9d2a410b60841a5427b5a413e94db320341bcf43058f55df21b7e04b47c9527c27d1c1c",
+                    "serverHandshake": "16e046d4b646a9eb0a09d367fb3bda794a2a7281efe1173862649e112985414b5f47633107910d8d353471904a151648",
+                    "clientFinished": "d53dd3a8b1b2c6bfe8dcbdf2e425d5e398fe6cba366859d1305f09e34730f7a5df6cd087c26a1ffcbcdc57ef0788f8ae",
+                    "serverFinished": "ad0f5f0b12448e154e59ad1672838f4a2f2c0a9e5d7b2ce84cd7f8a1edc955d52b1ccc417de563be790c6bc8045aa667"
+                },
+                "tlsClientHelloLength": "1638",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 802209
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 183,
+    "cpuTime": 2,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "b5232f0a63d75eb645b78dbd00de61ebb8fb7b80d4133d6294d4241482df3655",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "MatchRoomDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344930922,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aada4b5d5781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-mca-room-action": "status",
+                "x-real-ip": "94.103.240.109"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 6,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344932014,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aae11e2c5781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "94.103.240.109"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": [
+                    "host",
+                    "connection",
+                    "Authorization",
+                    "accept",
+                    "accept-language",
+                    "sec-fetch-mode",
+                    "user-agent",
+                    "accept-encoding"
+                ],
+                "clientTcpRtt": 8,
+                "clientQuicRtt": 0,
+                "colo": "LHR",
+                "asn": 213094,
+                "asOrganization": "Full Fibre Limited",
+                "country": "GB",
+                "isEUCountry": false,
+                "city": "Belper",
+                "continent": "EU",
+                "region": "England",
+                "regionCode": "ENG",
+                "timezone": "Europe/London",
+                "longitude": "-1.48119",
+                "latitude": "53.0233",
+                "postalCode": "DE56",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "Iz11NHs3tXiQe6pEKDFaoOXKvPD1XCjeeTu8qh20Vxs=",
+                "tlsClientCiphersSha1": "kXrN3VEKDdzz2cPKTQaKzpxVTxQ=",
+                "tlsClientExtensionsSha1": "1eY97BUYYO8vDaTfHQywB1pcNdM=",
+                "tlsClientExtensionsSha1Le": "u4wtEMFQBY18l3BzHAvORm+KGRw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "d3da9dd33aa83f693df96ec1f9d2a410b60841a5427b5a413e94db320341bcf43058f55df21b7e04b47c9527c27d1c1c",
+                    "serverHandshake": "16e046d4b646a9eb0a09d367fb3bda794a2a7281efe1173862649e112985414b5f47633107910d8d353471904a151648",
+                    "clientFinished": "d53dd3a8b1b2c6bfe8dcbdf2e425d5e398fe6cba366859d1305f09e34730f7a5df6cd087c26a1ffcbcdc57ef0788f8ae",
+                    "serverFinished": "ad0f5f0b12448e154e59ad1672838f4a2f2c0a9e5d7b2ce84cd7f8a1edc955d52b1ccc417de563be790c6bc8045aa667"
+                },
+                "tlsClientHelloLength": "1638",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 802209
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 181,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "b5232f0a63d75eb645b78dbd00de61ebb8fb7b80d4133d6294d4241482df3655",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "MatchRoomDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344932931,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aae6cf8d5781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-mca-room-action": "status",
+                "x-real-ip": "94.103.240.109"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 6,
+    "cpuTime": 0,
+    "truncated": false,
+    "executionModel": "stateless",
+    "outcome": "ok",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344934003,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aaed7b9c5781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-real-ip": "94.103.240.109"
+            },
+            "cf": {
+                "httpProtocol": "HTTP/1.1",
+                "clientAcceptEncoding": "gzip, deflate, br",
+                "requestPriority": "",
+                "edgeRequestKeepAliveStatus": 1,
+                "requestHeaderNames": [
+                    "host",
+                    "connection",
+                    "Authorization",
+                    "accept",
+                    "accept-language",
+                    "sec-fetch-mode",
+                    "user-agent",
+                    "accept-encoding"
+                ],
+                "clientTcpRtt": 8,
+                "clientQuicRtt": 0,
+                "colo": "LHR",
+                "asn": 213094,
+                "asOrganization": "Full Fibre Limited",
+                "country": "GB",
+                "isEUCountry": false,
+                "city": "Belper",
+                "continent": "EU",
+                "region": "England",
+                "regionCode": "ENG",
+                "timezone": "Europe/London",
+                "longitude": "-1.48119",
+                "latitude": "53.0233",
+                "postalCode": "DE56",
+                "tlsVersion": "TLSv1.3",
+                "tlsCipher": "AEAD-AES256-GCM-SHA384",
+                "tlsClientRandom": "Iz11NHs3tXiQe6pEKDFaoOXKvPD1XCjeeTu8qh20Vxs=",
+                "tlsClientCiphersSha1": "kXrN3VEKDdzz2cPKTQaKzpxVTxQ=",
+                "tlsClientExtensionsSha1": "1eY97BUYYO8vDaTfHQywB1pcNdM=",
+                "tlsClientExtensionsSha1Le": "u4wtEMFQBY18l3BzHAvORm+KGRw=",
+                "tlsExportedAuthenticator": {
+                    "clientHandshake": "d3da9dd33aa83f693df96ec1f9d2a410b60841a5427b5a413e94db320341bcf43058f55df21b7e04b47c9527c27d1c1c",
+                    "serverHandshake": "16e046d4b646a9eb0a09d367fb3bda794a2a7281efe1173862649e112985414b5f47633107910d8d353471904a151648",
+                    "clientFinished": "d53dd3a8b1b2c6bfe8dcbdf2e425d5e398fe6cba366859d1305f09e34730f7a5df6cd087c26a1ffcbcdc57ef0788f8ae",
+                    "serverFinished": "ad0f5f0b12448e154e59ad1672838f4a2f2c0a9e5d7b2ce84cd7f8a1edc955d52b1ccc417de563be790c6bc8045aa667"
+                },
+                "tlsClientHelloLength": "1638",
+                "tlsClientAuth": {
+                    "certPresented": "0",
+                    "certVerified": "NONE",
+                    "certRevoked": "0",
+                    "certIssuerDN": "",
+                    "certSubjectDN": "",
+                    "certIssuerDNRFC2253": "",
+                    "certSubjectDNRFC2253": "",
+                    "certIssuerDNLegacy": "",
+                    "certSubjectDNLegacy": "",
+                    "certSerial": "",
+                    "certIssuerSerial": "",
+                    "certSKI": "",
+                    "certIssuerSKI": "",
+                    "certFingerprintSHA1": "",
+                    "certFingerprintSHA256": "",
+                    "certNotBefore": "",
+                    "certNotAfter": "",
+                    "certRFC9440": "",
+                    "certRFC9440TooLarge": false,
+                    "certChainRFC9440": "",
+                    "certChainRFC9440TooLarge": false
+                },
+                "verifiedBotCategory": "",
+                "edgeL4": {
+                    "deliveryRate": 802209
+                }
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 175,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "b5232f0a63d75eb645b78dbd00de61ebb8fb7b80d4133d6294d4241482df3655",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "MatchRoomDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344934923,
+    "event": {
+        "request": {
+            "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev/api/multiplayer/rooms/phase2a4-main4-mvuma044/status",
+            "method": "GET",
+            "headers": {
+                "accept": "*/*",
+                "accept-encoding": "gzip, br",
+                "accept-language": "*",
+                "authorization": "REDACTED",
+                "cf-connecting-ip": "94.103.240.109",
+                "cf-ipcountry": "GB",
+                "cf-ray": "a528aaf33d875781",
+                "cf-visitor": "{\"scheme\":\"https\"}",
+                "connection": "Keep-Alive",
+                "host": "mca-multiplayer-staging.horsemeninteractive.workers.dev",
+                "sec-fetch-mode": "cors",
+                "user-agent": "node",
+                "x-forwarded-proto": "https",
+                "x-mca-room-action": "status",
+                "x-real-ip": "94.103.240.109"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}
+{
+    "wallTime": 14,
+    "cpuTime": 1,
+    "truncated": false,
+    "executionModel": "durableObject",
+    "outcome": "ok",
+    "durableObjectId": "fe6645d8122912fa9bf17e6e670832d3f304ce9a1f507b39b6ba5fc3ad02de13",
+    "scriptVersion": {
+        "id": "1f70dec3-acfb-430c-9bb0-bef51839b4cd"
+    },
+    "entrypoint": "CapacityCoordinatorDurableObject",
+    "scriptName": "mca-multiplayer-staging",
+    "diagnosticsChannelEvents": [],
+    "exceptions": [],
+    "logs": [],
+    "eventTimestamp": 1793344935637,
+    "event": {
+        "request": {
+            "url": "https://capacity/release",
+            "method": "POST",
+            "headers": {
+                "content-type": "application/json",
+                "x-mca-reservation-token": "REDACTED"
+            }
+        },
+        "response": {
+            "status": 200
+        }
+    }
+}

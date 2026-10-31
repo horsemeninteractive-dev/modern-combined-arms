@@ -1,9 +1,10 @@
-# Modern Combined-Arms RTS — Game Design Document
+# Modern Combined Arms — Game Design Document
 
-**Document status:** Consolidated working design  
-**Version:** 0.1  
-**Date:** 23 October 2026  
-**Project title:** Not yet chosen  
+**Document status:** Consolidated working design, reconciled against the shipped build  
+**Version:** 0.1.1  
+**Date:** 31 October 2026  
+**Project title:** Modern Combined Arms (MCA)  
+**Shipped build:** 0.2.0 BETA — four skirmish theatres, six nations, a campaign prologue, the Scenario Forge editor, a single-player skirmish AI and playable online 1v1. Release notes are in [CHANGELOG.md](CHANGELOG.md).  
 **Important status note:** This document consolidates the current interview decisions and fills unanswered details with recommended defaults where the user authorised recommendations. It is a working baseline, not a claim that every narrative or balance detail is permanently locked. Explicitly provisional ideas are labelled as such. The first playable slice should validate the core experience before the design is expanded into a full production specification.
 
 ---
@@ -688,11 +689,58 @@ Support, at minimum:
 - Input remapping and adjustable control sensitivity where applicable.
 - Important feedback that does not rely on sound alone.
 
+The shipped build implements colour-redundant team identity, an 80–150% interface
+scale, a graphics-quality and render-scale setting, an optional frame-rate
+readout, a choice of Escape behaviour, reduced camera shake and configurable
+visual effects. Input remapping and adjustable control sensitivity are not
+implemented.
+
 ### 13.8 Visual direction
 
 Avoid a bland collection of panels over a battlefield. The interface should feel like a polished military command system, with strong hierarchy, high-quality unit/building imagery or renders where useful, map intelligence, event presentation and clear faction identity. Visual richness should make information more engaging, not bury it in decoration.
 
 ---
+
+### 13.9 Shipped interface state (v0.2.0 BETA)
+
+The implemented interface follows the sections above with these concrete choices:
+
+- **Type and scale.** Every HUD, production-sidebar, selection-panel and command-bar
+  size comes from five tokens (11, 12, 13, 15 and 18 px) multiplied by an interface
+  scale of 80–150%. Resource figures are set larger than their labels; uppercase
+  letter-spaced styling is reserved for short headings.
+- **Selection.** Click, box-select, additive select, control groups, double-click (or
+  double-tap) for every visible unit of a type, and `Ctrl+A` for the whole mobile
+  army. Above eight units the roster collapses to one card per type with a count, and
+  that card narrows the selection to the type.
+- **Commands.** Contextual right-click plus explicit attack-move, stop, hold, capture,
+  garrison, return, dive and construction commands, each with a desktop hotkey shown
+  on the button and a touch command-bar equivalent. Escape cancels an active command
+  mode first, then either pauses the battle or opens the menu, according to the
+  setting.
+- **Wayfinding.** `F2` (or a click on a critical toast) jumps to the last alert,
+  `F8`/`F9` cycle idle harvesters and engineers, and `Ctrl+Shift+1..4` / `Shift+1..4`
+  save and recall camera bookmarks. `F1` remains the briefing, `F3` the debug overlay
+  and `Ctrl+1..9` the control groups.
+- **Production feedback.** Facility cards print the blocking reason (`NO MATERIALS`,
+  `NEEDS SHIPYARD`, `QUEUE FULL`) on the card, distinguish a temporary shortage from
+  missing technology by colour, and keep the full explanation in the tooltip.
+- **Radar.** While the tactical map is offline it collapses to a slim bar that names
+  the cause (no radar array, or a grid brownout), and the Radar Array card is flagged
+  in the Base tab.
+- **Alerts.** Critical toasts are clickable; world markers and the event log remain
+  non-modal.
+
+### 13.10 Deliberately not implemented
+
+- **Key rebinding** needs a persisted action map, conflict detection, key-cap
+  rendering read from that map, and a settings editor for it.
+- **Patrol** needs the simulation to consume the order's second destination (the
+  order type already carries it) plus command, command-gate and HUD wiring on every
+  seat.
+- **Waypoint queues** need a per-unit queue in authoritative state, snapshot and save
+  migration, and modifier-order input; that is a simulation change, not an interface
+  one.
 
 ## 14. Audio and presentation
 
@@ -836,7 +884,9 @@ The slice is not complete merely because a unit can move around a map. It should
 - General-purpose mission scripting.
 - Integrated community map library.
 - Full modding SDK and custom asset pipeline.
-- Multiplayer implementation.
+- Multiplayer implementation. (A staging build exists behind a disabled feature
+  flag and is verified by the multiplayer phase reports; it is not part of this
+  slice and is not switched on in any shipped build.)
 - Complete platform store packaging and certification.
 
 The architecture should leave room for these systems, but they should not prevent a complete, testable vertical slice.
@@ -1045,7 +1095,8 @@ These details were not all explicitly settled, so they are recommended baseline 
 
 These are not blockers for beginning the vertical slice:
 
-- Final project title and faction naming/branding.
+- Final faction naming and branding details. The project title is settled:
+  **Modern Combined Arms** (MCA).
 - Exact 2034–2038 timeline.
 - Final narrative trigger for the connected second theatre.
 - Final nation-by-nation unit rosters and equipment variants.

@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="430" viewBox="0 0 960 430" role="img" aria-label="MCA room lifecycle: lobby, starting, playing, finished, closed">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8fa3af"/>
+    </marker>
+    <style>
+      .box { fill:#0f171d; stroke:#2a3b46; stroke-width:1.5; }
+      .hot { fill:#10231f; stroke:#4fd1c5; }
+      .bad { fill:#231315; stroke:#f26d6d; }
+      .label { fill:#d7e3ea; font:600 15px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+      .sub { fill:#8fa3af; font:12px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+      .edge { stroke:#8fa3af; stroke-width:1.4; fill:none; marker-end:url(#arrow); }
+      .note { fill:#8fa3af; font:11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; }
+    </style>
+  </defs>
+
+  <rect width="960" height="430" fill="#0b1115"/>
+
+  <!-- lobby -->
+  <rect class="box" x="40" y="60" width="200" height="86" rx="6"/>
+  <text class="label" x="60" y="92">lobby</text>
+  <text class="sub" x="60" y="112">meta.started = false</text>
+  <text class="sub" x="60" y="130">no Game · no snapshot</text>
+
+  <!-- starting -->
+  <rect class="box" x="330" y="60" width="200" height="86" rx="6"/>
+  <text class="label" x="350" y="92">starting</text>
+  <text class="sub" x="350" y="112">in-memory transition</text>
+  <text class="sub" x="350" y="130">serialised by one promise</text>
+
+  <!-- playing -->
+  <rect class="hot" x="620" y="60" width="200" height="86" rx="6" style="fill:#10231f;stroke:#4fd1c5;stroke-width:1.5"/>
+  <text class="label" x="640" y="92">playing</text>
+  <text class="sub" x="640" y="112">meta.started = true</text>
+  <text class="sub" x="640" y="130">snapshot + matchDeadlineAt</text>
+
+  <!-- finished -->
+  <rect class="box" x="620" y="230" width="200" height="86" rx="6"/>
+  <text class="label" x="640" y="262">finished</text>
+  <text class="sub" x="640" y="282">result in snapshot</text>
+  <text class="sub" x="640" y="300">final checkpoint written</text>
+
+  <!-- closed -->
+  <rect class="bad" x="330" y="230" width="200" height="86" rx="6" style="fill:#231315;stroke:#f26d6d;stroke-width:1.5"/>
+  <text class="label" x="350" y="262">closed</text>
+  <text class="sub" x="350" y="282">reservation released once</text>
+  <text class="sub" x="350" y="300">never reopens</text>
+
+  <!-- edges -->
+  <path class="edge" d="M 240 103 L 326 103"/>
+  <text class="note" x="248" y="94">host POST /start</text>
+
+  <path class="edge" d="M 530 103 L 616 103"/>
+  <text class="note" x="532" y="94">snapshot → then meta</text>
+
+  <path class="edge" d="M 330 120 C 290 150 290 150 250 140" marker-end="url(#arrow)"/>
+  <text class="note" x="238" y="158">write failed → rollback</text>
+
+  <path class="edge" d="M 720 146 L 720 226"/>
+  <text class="note" x="730" y="190">victory · deadline · abandon</text>
+
+  <path class="edge" d="M 618 273 L 534 273"/>
+  <text class="note" x="536" y="264">finalise</text>
+
+  <path class="edge" d="M 400 146 C 400 190 420 200 430 226"/>
+  <text class="note" x="300" y="200">shutdown or reservation deadline</text>
+
+  <!-- self loops -->
+  <path class="edge" d="M 140 60 C 150 20 230 20 236 56" marker-end="url(#arrow)"/>
+  <text class="note" x="146" y="30">connect / disconnect / ready</text>
+  <path class="edge" d="M 820 60 C 830 20 700 20 700 56" marker-end="url(#arrow)"/>
+  <text class="note" x="742" y="30">tick · checkpoint</text>
+
+  <!-- legend -->
+  <text class="note" x="40" y="380">Durability rule: clients may only observe playing after the opening snapshot and the lifecycle commit are both on disk.</text>
+  <text class="note" x="40" y="400">Restoration rule: !started restores a lobby from metadata alone; started restores a match through strict validateRoomSnapshot.</text>
+</svg>

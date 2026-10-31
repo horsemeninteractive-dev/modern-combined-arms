@@ -137,3 +137,22 @@ describe('validation coverage', () => {
     }
   });
 });
+
+describe('skirmish team colours', () => {
+  it('round-trips an optional player tint and leaves un-tinted maps alone', () => {
+    const scenario = createIslandAssault();
+    scenario.players[0].color = '#7fbf6a';
+    scenario.players[1].color = '#a98bf0';
+    const parsed = parseScenario(JSON.parse(scenarioToJson(scenario)));
+    expect(parsed.players[0].color).toBe('#7fbf6a');
+    expect(parsed.players[1].color).toBe('#a98bf0');
+    const plain = parseScenario(JSON.parse(scenarioToJson(createIslandAssault())));
+    expect(plain.players[0].color).toBeUndefined();
+  });
+
+  it('rejects a tint that is not a full hex colour', () => {
+    const scenario = createIslandAssault();
+    (scenario.players[0] as { color?: string }).color = 'blue';
+    expect(() => parseScenario(JSON.parse(scenarioToJson(scenario)))).toThrow(/hex colour/);
+  });
+});

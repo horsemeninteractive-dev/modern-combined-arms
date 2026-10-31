@@ -1,0 +1,23 @@
+# Phase 2A.13 staging deployment and source identification
+Captured: 2026-10-31T00:17:00Z
+
+Worker: mca-multiplayer-staging
+URL: https://mca-multiplayer-staging.horsemeninteractive.workers.dev
+Active version: 9fd1dcf4-3046-438d-b72d-0c3880b0afc5
+Version created: 2026-10-31T00:02:04.043Z
+Deployment created: 2026-10-31T00:02:05.643Z
+Tag: phase2a13
+Message: Phase 2A.13: snapshot target integrity and finalisation ordering
+Deployed artifact (local upload): cfca794ca41719449fd827fcd06b13ddbdb806c2b7d54a02703e9c4959396f1a *dist-mp-room/roomWorker.js
+
+Worker health:
+{"ok":true,"onlineEnabled":true,"devMode":true,"adminConfigured":true,"reservationConfigured":true,"protocol":"mca.v2","snapshotVersion":2,"build":"phase2a13-staging"}
+
+Repository branch: master
+HEAD: 132ccc8363d5b5bc98b6518b4afd1738dedaad6a
+Working tree: 156 modified/untracked paths; 0 staged paths.
+Feature flag: src/multiplayer/featureFlag.ts enabled: false.
+
+No production deployment, production activation, capacity increase, paid service,
+billing change or automatic upgrade occurred. The two-room maximum, daily
+allowance and 30-minute hard deadline are unchanged.

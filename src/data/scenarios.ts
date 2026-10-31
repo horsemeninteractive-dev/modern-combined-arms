@@ -263,7 +263,7 @@ export function createIslandAssault(): Scenario {
       id: 'island-assault',
       name: 'Island Assault — Kestrel Bay',
       description:
-        'A Baltic task force holds a narrow western beachhead on Kestrel Island. The 11th Expeditionary Corps controls the eastern plateau and the deep-water bay. Break the ridge line, contest the relays and destroy the enemy command post.',
+        'A task force holds a narrow western beachhead on Kestrel Island. An expeditionary corps controls the eastern plateau and the deep-water bay. Break the ridge line, contest the relays and destroy the enemy command post.',
       author: 'MCA scenario team',
       created: '2026-10-23',
       targetSize: 'medium',
@@ -328,7 +328,7 @@ export function createIslandAssault(): Scenario {
       { defId: 'rifle', owner: 1, x: 72, z: 33 },
     ],
     objectives: [
-      'Destroy the 11th Expeditionary Corps Command Post.',
+      'Destroy the opposing Command Post.',
       'Capture the signals relays to sustain advanced production.',
       'Seize the forward supply depot in the village for supplementary materials.',
       'Keep your own Command Post operational.',

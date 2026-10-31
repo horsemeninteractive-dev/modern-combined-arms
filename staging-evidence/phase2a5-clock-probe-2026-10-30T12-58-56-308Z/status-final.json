@@ -1,0 +1,13 @@
+{
+  "capturedAt": "2026-10-30T13:01:25.969Z",
+  "roomId": "phase2a5-clock-mvuzarhj",
+  "httpStatus": 200,
+  "ok": true,
+  "closed": true,
+  "closedReason": "shutdown",
+  "started": true,
+  "reservation": {
+    "reservationId": "r125",
+    "status": "released"
+  }
+}

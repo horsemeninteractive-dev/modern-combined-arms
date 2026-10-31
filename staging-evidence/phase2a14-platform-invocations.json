@@ -1,0 +1,67 @@
+{
+  "phase": "2A.14",
+  "source": "Cloudflare GraphQL durableObjectsInvocationsAdaptiveGroups",
+  "capturedAt": "2026-10-31T01:46:00Z",
+  "scope": {
+    "worker": "mca-multiplayer-staging",
+    "roomId": "phase2a14-30m-final-mvvplakw",
+    "namespaceId": "4c3a9ed29ce1475aae7ec0530538afca",
+    "objectId": "18490a1ebe6fd967a63bf31b8058108de74d944f9aef175f668f787fae43311b",
+    "scriptVersion": "9fd1dcf4-3046-438d-b72d-0c3880b0afc5",
+    "window": "2026-10-31T01:14:00Z/2026-10-31T01:46:00Z"
+  },
+  "coverage": {
+    "rows": 241,
+    "note": "Adaptive invocation groups; this is a sampled/aggregated dataset, not an individual invocation or per-tick census. Long-lived WebSocket rows are aggregated by connection lifetime."
+  },
+  "totals": {
+    "groups": 241,
+    "requests": 369,
+    "errors": 8,
+    "wallTimeMs": 5390486.879,
+    "responseBodyBytes": 57110379
+  },
+  "byStatus": {
+    "internalError": {
+      "groups": 2,
+      "requests": 4,
+      "errors": 4,
+      "wallTimeMs": 1499800.076,
+      "responseBodyBytes": 19492490,
+      "maxCpuP50Us": 3696,
+      "maxCpuP99Us": 146833
+    },
+    "success": {
+      "groups": 237,
+      "requests": 361,
+      "errors": 0,
+      "wallTimeMs": 1792963.237,
+      "responseBodyBytes": 3151608,
+      "maxCpuP50Us": 255401,
+      "maxCpuP99Us": 255401
+    },
+    "responseStreamDisconnected": {
+      "groups": 1,
+      "requests": 2,
+      "errors": 2,
+      "wallTimeMs": 710059.186,
+      "responseBodyBytes": 9587424,
+      "maxCpuP50Us": 1855,
+      "maxCpuP99Us": 18113
+    },
+    "clientDisconnected": {
+      "groups": 1,
+      "requests": 2,
+      "errors": 2,
+      "wallTimeMs": 1387664.38,
+      "responseBodyBytes": 24878857,
+      "maxCpuP50Us": 1339,
+      "maxCpuP99Us": 5420
+    }
+  },
+  "interpretation": {
+    "internalErrors": "The two internalError groups coincide with the controlled restarts. They are lifecycle artefacts of forced runtime restarts, not simulation or serialization errors; the room diagnostics recorded zero tick, persistence and serialization failures.",
+    "clientDisconnects": "responseStreamDisconnected and clientDisconnected correspond to the forced socket closures. They are not CPU measurements.",
+    "cpu": "The invocation rows contain percentile CPU per adaptive group, not a per-tick timeline. No value is used as individual-tick CPU evidence."
+  }
+}

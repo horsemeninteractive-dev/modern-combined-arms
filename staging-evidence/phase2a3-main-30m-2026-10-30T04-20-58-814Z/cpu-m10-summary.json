@@ -1,0 +1,218 @@
+{
+  "source": "staging-evidence\\phase2a3-main-30m-2026-10-30T04-20-58-814Z\\cpu-m10.pprof",
+  "bytes": 7773,
+  "sampleTypes": [
+    {
+      "type": "cpu",
+      "unit": "nanoseconds"
+    }
+  ],
+  "period": 1000000,
+  "durationNanos": 19999680000,
+  "samples": 404,
+  "totalCpuMs": 404.0,
+  "topSelf": [
+    {
+      "function": "createTeamSnapshot",
+      "cpuMs": 225.0,
+      "percent": 55.69
+    },
+    {
+      "function": "sendSnapshotObject",
+      "cpuMs": 73.0,
+      "percent": 18.07
+    },
+    {
+      "function": "(idle)",
+      "cpuMs": 24.0,
+      "percent": 5.94
+    },
+    {
+      "function": "(garbage collector)",
+      "cpuMs": 16.0,
+      "percent": 3.96
+    },
+    {
+      "function": "sendText",
+      "cpuMs": 12.0,
+      "percent": 2.97
+    },
+    {
+      "function": "tick",
+      "cpuMs": 6.0,
+      "percent": 1.49
+    },
+    {
+      "function": "(program)",
+      "cpuMs": 6.0,
+      "percent": 1.49
+    },
+    {
+      "function": "",
+      "cpuMs": 6.0,
+      "percent": 1.49
+    },
+    {
+      "function": "updateUnits",
+      "cpuMs": 4.0,
+      "percent": 0.99
+    },
+    {
+      "function": "hasLineOfSight",
+      "cpuMs": 3.0,
+      "percent": 0.74
+    },
+    {
+      "function": "__name",
+      "cpuMs": 3.0,
+      "percent": 0.74
+    },
+    {
+      "function": "updatePassiveIncome",
+      "cpuMs": 2.0,
+      "percent": 0.5
+    },
+    {
+      "function": "updateGarrisons",
+      "cpuMs": 2.0,
+      "percent": 0.5
+    },
+    {
+      "function": "broadcast",
+      "cpuMs": 2.0,
+      "percent": 0.5
+    },
+    {
+      "function": "checkAbandonment",
+      "cpuMs": 2.0,
+      "percent": 0.5
+    },
+    {
+      "function": "evaluateMatchResult",
+      "cpuMs": 2.0,
+      "percent": 0.5
+    },
+    {
+      "function": "updateBuildingSystems",
+      "cpuMs": 2.0,
+      "percent": 0.5
+    },
+    {
+      "function": "recordSnapshot",
+      "cpuMs": 1.0,
+      "percent": 0.25
+    },
+    {
+      "function": "separateUnits",
+      "cpuMs": 1.0,
+      "percent": 0.25
+    },
+    {
+      "function": "projectPlayer",
+      "cpuMs": 1.0,
+      "percent": 0.25
+    }
+  ],
+  "topInclusive": [
+    {
+      "function": "(root)",
+      "cpuMs": 404.0,
+      "percent": 100.0
+    },
+    {
+      "function": "",
+      "cpuMs": 358.0,
+      "percent": 88.61
+    },
+    {
+      "function": "runTick",
+      "cpuMs": 354.0,
+      "percent": 87.62
+    },
+    {
+      "function": "tick",
+      "cpuMs": 352.0,
+      "percent": 87.13
+    },
+    {
+      "function": "broadcast",
+      "cpuMs": 315.0,
+      "percent": 77.97
+    },
+    {
+      "function": "createTeamSnapshot",
+      "cpuMs": 225.0,
+      "percent": 55.69
+    },
+    {
+      "function": "sendSnapshotObject",
+      "cpuMs": 87.0,
+      "percent": 21.53
+    },
+    {
+      "function": "(idle)",
+      "cpuMs": 24.0,
+      "percent": 5.94
+    },
+    {
+      "function": "(garbage collector)",
+      "cpuMs": 16.0,
+      "percent": 3.96
+    },
+    {
+      "function": "sendText",
+      "cpuMs": 12.0,
+      "percent": 2.97
+    },
+    {
+      "function": "updateBuildingSystems",
+      "cpuMs": 8.0,
+      "percent": 1.98
+    },
+    {
+      "function": "updateUnits",
+      "cpuMs": 7.0,
+      "percent": 1.73
+    },
+    {
+      "function": "(program)",
+      "cpuMs": 6.0,
+      "percent": 1.49
+    },
+    {
+      "function": "evaluateMatchResult",
+      "cpuMs": 5.0,
+      "percent": 1.24
+    },
+    {
+      "function": "refreshVision",
+      "cpuMs": 5.0,
+      "percent": 1.24
+    },
+    {
+      "function": "hasLineOfSight",
+      "cpuMs": 3.0,
+      "percent": 0.74
+    },
+    {
+      "function": "__name",
+      "cpuMs": 3.0,
+      "percent": 0.74
+    },
+    {
+      "function": "persistSnapshot",
+      "cpuMs": 3.0,
+      "percent": 0.74
+    },
+    {
+      "function": "persistPeriodic",
+      "cpuMs": 3.0,
+      "percent": 0.74
+    },
+    {
+      "function": "recordSnapshot",
+      "cpuMs": 2.0,
+      "percent": 0.5
+    }
+  ]
+}

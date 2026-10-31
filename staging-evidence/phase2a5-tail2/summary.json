@@ -1,0 +1,22 @@
+{
+  "records": 115,
+  "probeInvocations": [
+    {
+      "at": "2026-10-30T12:40:20.613Z",
+      "cpuTimeMs": 3,
+      "wallTimeMs": 4,
+      "outcome": "ok",
+      "entrypoint": "MatchRoomDurableObject",
+      "objectId": "81a668a815d3d89883e770cbfb95ed9ca0ab63881810b0d62ebacc69791b94b5",
+      "scriptVersion": "79874609-6adf-48fe-86fa-e32696ffda54"
+    },
+    {
+      "at": "2026-10-30T12:40:20.595Z",
+      "cpuTimeMs": 1,
+      "wallTimeMs": 24,
+      "outcome": "ok",
+      "scriptVersion": "79874609-6adf-48fe-86fa-e32696ffda54"
+    }
+  ],
+  "note": "wrangler tail cpuTime is integer milliseconds per invocation; it is not per-tick CPU."
+}

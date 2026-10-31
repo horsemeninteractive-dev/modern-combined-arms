@@ -21,6 +21,9 @@ export interface EntityStyle {
    * the geometry hangs down to local Y = 0, which puts the boots on the ground.
    */
   infantry?: { leg: MeshBuffers; hip: Vec3; hipOffset: number };
+  /** Periscope and mast shown instead of the hull while the boat is dived. */
+  periscope?: MeshBuffers;
+  periscopeOffset?: Vec3;
 }
 
 const SKIN: Color = [0.55, 0.44, 0.33];
@@ -116,20 +119,21 @@ function addInfantryBase(
   b.box(0.125, 0.84, 0.10, 0.045, 0.07, 0.07, PALETTE.canvas);
   b.box(0.125, 0.84, -0.10, 0.045, 0.07, 0.07, PALETTE.canvas);
   b.box(0.125, 0.96, 0, 0.025, 0.045, 0.12, PALETTE.darkMetal);
-  // Shoulder caps, neck and head.
-  b.box(0, 0.97, 0.15, 0.15, 0.12, 0.11, uniform);
-  b.box(0, 0.97, -0.15, 0.15, 0.12, 0.11, uniform);
+  // Shoulder caps, neck and head. The caps share the helmet's team colour so
+  // the silhouette reads as one ownership marker from above.
+  b.box(0, 0.97, 0.15, 0.15, 0.12, 0.11, uniform, 0.9);
+  b.box(0, 0.97, -0.15, 0.15, 0.12, 0.11, uniform, 0.9);
   b.box(0, 1.02, 0, 0.065, 0.05, 0.075, SKIN);
   b.sphere(0.01, 1.08, 0, 0.095, 4, 7, SKIN);
   // A rounded helmet shell with a separate brim, ear covers, NVG mount and
-  // goggle strip; the crown is a sphere, not another square block. The cover
-  // carries a partial team tint: at battle zoom the helmet is the only part of
-  // a rifleman large enough to show ownership, while the shoulder patch is
-  // under a pixel. The mix keeps the olive cover instead of a flat marker.
-  b.sphere(0.005, 1.13, 0, 0.095, 3, 7, helmet, 0.65);
-  b.box(0.085, 1.10, 0, 0.05, 0.035, 0.19, helmet, 0.65);
-  b.box(0.005, 1.08, 0.105, 0.09, 0.06, 0.025, helmet, 0.5);
-  b.box(0.005, 1.08, -0.105, 0.09, 0.06, 0.025, helmet, 0.5);
+  // goggle strip; the crown is a sphere, not another square block. At battle
+  // zoom this crown is the largest readable part of a rifleman, so it carries
+  // the full team colour; the shoulder caps below add a second coloured mass
+  // without turning the uniform into a flat marker.
+  b.sphere(0.005, 1.13, 0, 0.095, 3, 7, helmet, 1);
+  b.box(0.085, 1.10, 0, 0.05, 0.035, 0.19, helmet, 1);
+  b.box(0.005, 1.08, 0.105, 0.09, 0.06, 0.025, helmet, 0.9);
+  b.box(0.005, 1.08, -0.105, 0.09, 0.06, 0.025, helmet, 0.9);
   b.box(0.085, 1.17, 0, 0.03, 0.035, 0.045, PALETTE.darkMetal);
   b.box(0.08, 1.07, 0, 0.02, 0.03, 0.13, PALETTE.glassDark);
   // A raised, team-tinted shoulder patch; the overlay carries the primary
@@ -137,6 +141,9 @@ function addInfantryBase(
   b.box(0.005, 0.98, -0.21, 0.075, 0.045, 0.015, uniform, 0.9);
   if (options.pack !== false) {
     b.box(-0.12, 0.82, 0, 0.10, 0.26, 0.19, PALETTE.oliveDark);
+    // A painted flap on top of the pack catches the isometric camera even when
+    // the helmet is partly hidden by terrain or a nearby vehicle.
+    b.box(-0.12, 0.958, 0, 0.105, 0.018, 0.185, PALETTE.canvas, 0.95);
     b.cylinderZ(-0.16, 0.94, 0, 0.05, 0.14, 5, PALETTE.canvas);
     b.box(-0.16, 0.82, 0.09, 0.06, 0.14, 0.06, PALETTE.oliveDark);
     b.box(-0.16, 0.82, -0.09, 0.06, 0.14, 0.06, PALETTE.oliveDark);
@@ -485,6 +492,10 @@ function buildMbtTurret(): MeshBuffers {
   // A restrained lighter roof panel keeps the turret readable without a
   // large flat highlight that reads as a white box from the battle camera.
   b.box(-0.22, 0.30, 0, 0.78, 0.02, 0.72, PALETTE.hullLight);
+  // A broad painted recognition panel on the turret roof. The old team trim
+  // was only on the flanks, which the isometric camera foreshortens into a
+  // couple of pixels; the roof is the one surface every tank shows in play.
+  b.box(-0.22, 0.316, 0, 0.62, 0.02, 0.52, PALETTE.hull, 0.9);
   b.box(-0.80, 0.13, 0, 0.42, 0.26, 0.92, PALETTE.hullDark);
   b.box(0.72, 0.17, 0, 0.34, 0.28, 0.52, PALETTE.hullDark);
   // Main gun: thermal sleeve, muzzle brake and a 2.20 tip.
@@ -613,6 +624,9 @@ function buildSpgTurret(): MeshBuffers {
   b.addQuad(b1, m1, m2, b2, PALETTE.hullLight);
   b.addQuad(b0, b3, m3, m0, PALETTE.hullDark);
   b.box(-0.30, y2 + 0.015, 0, 1.40, 0.03, 0.94, PALETTE.hullLight);
+  // The casemate roof is the SPG's largest camera-facing surface; paint it so
+  // the battery reads as friendly or hostile without hunting for a flank panel.
+  b.box(-0.30, y2 + 0.035, 0, 1.10, 0.02, 0.62, PALETTE.hull, 0.9);
   // Sloped front plate and mantlet around the tube.
   b.addQuad(
     [0.62, y0, -0.68],
@@ -1828,10 +1842,224 @@ function buildCorvetteTurret(): MeshBuffers {
 }
 
 /**
+ * Fast attack craft. A short planing hull, low bridge and two light missile
+ * canisters: deliberately smaller and flatter than the corvette so a pair reads
+ * as a swarm rather than a second capital ship. The deck gun is separate.
+ */
+function buildMissileBoatBody(): MeshBuffers {
+  const b = new MeshBuilder();
+  const hull: Color = [0.34, 0.38, 0.40];
+  const upper: Color = [0.40, 0.44, 0.45];
+  // Planing hull, spray rail and a sharp bow wedge.
+  b.box(0.20, 0.38, 0, 6.00, 0.44, 1.52, hull);
+  b.box(0.20, 0.64, 0, 5.80, 0.16, 1.64, upper);
+  b.addQuad([3.20, 0.16, -0.76], [3.20, 0.16, 0.76], [4.40, 0.46, 0.08], [4.40, 0.46, -0.08], hull);
+  b.addQuad([3.20, 0.62, -0.82], [3.20, 0.62, 0.82], [4.40, 0.50, 0.08], [4.40, 0.50, -0.08], upper);
+  b.addQuad([3.20, 0.16, -0.76], [4.40, 0.46, -0.08], [4.40, 0.50, -0.08], [3.20, 0.62, -0.82], PALETTE.hullDark);
+  b.addQuad([3.20, 0.16, 0.76], [3.20, 0.62, 0.82], [4.40, 0.50, 0.08], [4.40, 0.46, 0.08], PALETTE.hullDark);
+  b.box(0.20, 0.12, -0.78, 6.00, 0.08, 0.04, PALETTE.track);
+  b.box(0.20, 0.12, 0.78, 6.00, 0.08, 0.04, PALETTE.track);
+  // Deck and a short raised foredeck.
+  b.box(0.20, 0.75, 0, 5.90, 0.08, 1.50, PALETTE.hullDark);
+  b.box(2.55, 0.81, 0, 1.50, 0.05, 1.24, upper);
+  b.box(2.55, 0.835, 0, 1.10, 0.02, 0.86, PALETTE.hull, 0.88);
+  // Low bridge with a raked screen and a pilot-house roof.
+  b.box(0.10, 1.02, 0, 1.70, 0.58, 1.06, upper);
+  b.addQuad([0.95, 0.74, -0.53], [0.95, 0.74, 0.53], [0.82, 1.30, 0.46], [0.82, 1.30, -0.46], PALETTE.hull);
+  b.box(0.10, 1.34, 0, 1.56, 0.10, 0.96, upper);
+  b.box(0.96, 1.06, 0, 0.035, 0.20, 0.84, PALETTE.glassDark);
+  b.box(0.98, 1.07, 0, 0.02, 0.15, 0.74, PALETTE.glass);
+  for (const z of [-0.54, 0.54]) {
+    b.box(0.10, 1.06, z, 1.10, 0.16, 0.02, PALETTE.glassDark);
+    b.box(0.10, 1.07, z * 1.01, 0.96, 0.11, 0.01, PALETTE.glass);
+  }
+  // Short funnel and a light mast.
+  b.box(-1.30, 1.02, 0, 0.44, 0.42, 0.56, upper);
+  b.box(-1.30, 1.42, 0, 0.48, 0.08, 0.62, PALETTE.darkMetal);
+  b.box(-1.72, 1.92, 0, 0.06, 1.02, 0.06, PALETTE.metal);
+  b.box(-1.72, 2.20, 0, 0.80, 0.05, 0.06, PALETTE.metal);
+  b.box(-1.72, 2.36, 0, 0.42, 0.08, 0.16, PALETTE.darkMetal);
+  // Two light anti-ship canisters on angled deck cradles.
+  for (const z of [-0.46, 0.46]) {
+    b.box(-2.20, 0.94, z, 1.10, 0.18, 0.38, PALETTE.darkMetal);
+    b.cylinderX(-2.20, 1.10, z, 0.09, 1.02, 8, PALETTE.oliveDark);
+    b.box(-1.18, 1.10, z, 0.14, 0.18, 0.16, PALETTE.warning);
+  }
+  // Grabrails, life raft and mooring cleats.
+  for (const z of [-0.73, 0.73]) {
+    b.box(0.20, 0.96, z, 5.70, 0.04, 0.03, PALETTE.metal);
+    for (let i = 0; i < 5; i++) {
+      b.box(-2.40 + i * 1.20, 1.02, z, 0.02, 0.13, 0.02, PALETTE.metal);
+    }
+    b.box(2.80, 0.99, z * 1.02, 0.72, 0.13, 0.13, PALETTE.oliveDark);
+    b.box(4.00, 0.36, z * 0.58, 0.12, 0.20, 0.14, PALETTE.darkMetal);
+  }
+  // Stern transom and outdrive propellers.
+  b.box(-2.90, 0.50, 0, 0.30, 0.56, 1.44, PALETTE.hullDark);
+  for (const z of [-0.40, 0.40]) {
+    b.box(-3.04, 0.24, z, 0.16, 0.28, 0.10, PALETTE.metal);
+    b.cylinderX(-3.08, 0.20, z, 0.11, 0.22, 6, PALETTE.darkMetal);
+  }
+  return b.build();
+}
+
+/** Compact automatic mount for the fast attack craft. */
+function buildMissileBoatTurret(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.cylinder(0, -0.10, 0, 0.20, 0.26, 10, PALETTE.darkMetal);
+  b.cylinder(0, 0.01, 0, 0.30, 0.04, 12, PALETTE.hullDark);
+  b.addQuad([-0.32, 0.03, -0.32], [0.24, 0.03, -0.32], [0.16, 0.26, -0.24], [-0.28, 0.26, -0.25], PALETTE.hull);
+  b.addQuad([-0.32, 0.03, 0.32], [-0.28, 0.26, 0.25], [0.16, 0.26, 0.24], [0.24, 0.03, 0.32], PALETTE.hull);
+  b.addQuad([-0.32, 0.03, -0.32], [-0.32, 0.03, 0.32], [-0.28, 0.26, 0.25], [-0.28, 0.26, -0.25], PALETTE.hullDark);
+  b.box(-0.04, 0.285, 0, 0.40, 0.03, 0.46, PALETTE.hull, 0.9);
+  b.box(0.22, 0.20, 0, 0.28, 0.13, 0.28, PALETTE.hullDark);
+  b.cylinderX(0.54, 0.20, 0, 0.035, 0.70, 7, PALETTE.darkMetal);
+  b.cylinderX(1.24, 0.20, 0, 0.052, 0.08, 7, PALETTE.hullDark);
+  b.box(-0.10, 0.35, 0.16, 0.13, 0.10, 0.14, PALETTE.hullDark);
+  b.box(-0.08, 0.38, 0.16, 0.07, 0.02, 0.07, PALETTE.glass);
+  return b.build();
+}
+
+/**
+ * Escort frigate. A longer, higher hull than the corvette with a taller bridge,
+ * a boxy naval-SAM launcher aft and four anti-ship canisters amidships. The
+ * 76 mm mount is the shared corvette turret.
+ */
+function buildFrigateBody(): MeshBuffers {
+  const b = new MeshBuilder();
+  const hull: Color = [0.33, 0.37, 0.39];
+  const upper: Color = [0.39, 0.43, 0.44];
+  // Lower hull, waterline band and flared upper hull.
+  b.box(0.40, 0.44, 0, 11.20, 0.60, 2.24, hull);
+  b.box(0.40, 0.76, 0, 10.80, 0.24, 2.40, upper);
+  b.addQuad([5.60, 0.34, -1.12], [5.60, 0.34, 1.12], [6.96, 0.64, 0.12], [6.96, 0.64, -0.12], hull);
+  b.addQuad([5.60, 0.90, -1.20], [5.60, 0.90, 1.20], [6.96, 0.68, 0.12], [6.96, 0.68, -0.12], upper);
+  b.addQuad([5.60, 0.34, -1.12], [6.96, 0.64, -0.12], [6.96, 0.68, -0.12], [5.60, 0.90, -1.20], PALETTE.hullDark);
+  b.addQuad([5.60, 0.34, 1.12], [5.60, 0.90, 1.20], [6.96, 0.68, 0.12], [6.96, 0.64, 0.12], PALETTE.hullDark);
+  b.box(0.40, 0.14, -1.14, 11.20, 0.10, 0.05, PALETTE.track);
+  b.box(0.40, 0.14, 1.14, 11.20, 0.10, 0.05, PALETTE.track);
+  // Deck with forecastle, waist and quarterdeck.
+  b.box(0.40, 0.91, 0, 11.00, 0.10, 2.18, PALETTE.hullDark);
+  b.box(4.10, 0.98, 0, 2.60, 0.06, 1.98, upper);
+  b.box(4.10, 1.015, 0, 1.50, 0.02, 1.04, PALETTE.hull, 0.88);
+  b.box(-3.40, 0.98, 0, 2.60, 0.06, 2.00, upper);
+  // Taller bridge and operations block.
+  b.box(-0.60, 1.62, 0, 2.80, 1.18, 1.82, upper);
+  b.addQuad([0.80, 1.03, -0.91], [0.80, 1.03, 0.91], [0.62, 2.12, 0.78], [0.62, 2.12, -0.78], PALETTE.hull);
+  b.box(-0.62, 2.20, 0, 2.62, 0.12, 1.68, upper);
+  b.box(-0.66, 2.33, 0, 1.82, 0.14, 1.32, PALETTE.hull);
+  b.box(0.72, 1.68, 0, 0.04, 0.42, 1.58, PALETTE.glassDark);
+  b.box(0.74, 1.69, 0, 0.02, 0.32, 1.40, PALETTE.glass);
+  for (const z of [-0.93, 0.93]) {
+    b.box(-0.55, 1.66, z, 1.55, 0.30, 0.02, PALETTE.glassDark);
+    b.box(-0.55, 1.67, z * 1.01, 1.40, 0.22, 0.01, PALETTE.glass);
+  }
+  // Twin uptakes and a heavy mast with an air-search radar.
+  for (const z of [-0.36, 0.36]) {
+    b.box(-2.10, 1.76, z, 0.52, 0.98, 0.44, upper);
+    b.box(-2.10, 2.27, z, 0.56, 0.10, 0.48, PALETTE.darkMetal);
+  }
+  b.box(-2.85, 2.55, 0, 0.12, 1.30, 0.12, PALETTE.metal);
+  b.box(-2.85, 3.14, 0, 1.86, 0.08, 0.12, PALETTE.metal);
+  b.box(-2.85, 3.45, 0, 1.06, 0.30, 0.20, PALETTE.darkMetal);
+  b.box(-2.85, 3.49, 0, 0.82, 0.04, 0.12, PALETTE.glassDark);
+  // Boxy eight-cell naval SAM launcher on the quarterdeck.
+  b.box(-3.75, 1.10, 0, 1.62, 0.62, 1.72, PALETTE.darkMetal);
+  b.box(-3.75, 1.43, 0, 1.74, 0.12, 1.86, upper);
+  for (const z of [-0.55, -0.18, 0.18, 0.55]) {
+    for (const y of [1.18, 1.42]) {
+      b.box(-3.06, y, z, 0.10, 0.16, 0.16, PALETTE.oliveDark);
+      b.box(-2.97, y, z, 0.02, 0.12, 0.12, PALETTE.track);
+    }
+  }
+  // Four anti-ship canisters amidships, canted outboard.
+  for (const z of [-0.78, 0.78]) {
+    b.box(-1.85, 1.06, z, 1.46, 0.22, 0.46, PALETTE.darkMetal);
+    for (let i = 0; i < 2; i++) {
+      b.cylinderX(-1.74, 1.20 + i * 0.16, z, 0.105, 1.30, 8, PALETTE.oliveDark);
+      b.box(-1.02, 1.20 + i * 0.16, z, 0.16, 0.20, 0.18, PALETTE.warning);
+    }
+  }
+  // Rails, anchors, rafts and team panels.
+  for (const z of [-1.08, 1.08]) {
+    b.box(0.40, 1.13, z, 10.30, 0.05, 0.035, PALETTE.metal);
+    for (let i = 0; i < 10; i++) {
+      b.box(-4.60 + i * 1.04, 1.20, z, 0.025, 0.16, 0.025, PALETTE.metal);
+    }
+    b.box(-0.40, 1.38, z * 1.13, 1.40, 0.10, 0.02, PALETTE.hull, 0.88);
+    b.box(3.70, 1.16, z * 1.06, 0.90, 0.16, 0.16, PALETTE.oliveDark);
+    b.box(5.70, 0.45, z * 0.76, 0.14, 0.24, 0.18, PALETTE.darkMetal);
+  }
+  b.box(5.10, 1.12, 0, 0.70, 0.16, 1.54, PALETTE.hullDark);
+  b.box(5.50, 0.74, 0, 0.22, 0.22, 0.90, PALETTE.metal);
+  // Stern transom, rudders and screws.
+  b.box(-5.56, 0.58, 0, 0.40, 0.72, 2.16, PALETTE.hullDark);
+  for (const z of [-0.58, 0.58]) {
+    b.box(-5.76, 0.28, z, 0.20, 0.38, 0.14, PALETTE.metal);
+    b.cylinderX(-5.82, 0.24, z, 0.14, 0.30, 6, PALETTE.darkMetal);
+  }
+  return b.build();
+}
+
+/**
+ * Diesel-electric attack boat. A long, low black hull with a sail, bow dive
+ * planes and a stern rudder. The periscope is a separate mesh so a dived boat
+ * can show only the feather and wake that its sensors can actually justify.
+ */
+function buildSubmarineBody(): MeshBuffers {
+  const b = new MeshBuilder();
+  const hull: Color = [0.16, 0.19, 0.19];
+  const upper: Color = [0.21, 0.24, 0.24];
+  // Pressure hull with a tapered bow and stern.
+  b.box(0.30, 0.38, 0, 6.40, 0.68, 1.34, hull);
+  b.addQuad([3.50, 0.20, -0.67], [3.50, 0.20, 0.67], [4.55, 0.38, 0.09], [4.55, 0.38, -0.09], hull);
+  b.addQuad([3.50, 0.72, -0.63], [3.50, 0.72, 0.63], [4.55, 0.44, 0.07], [4.55, 0.44, -0.07], upper);
+  b.addQuad([3.50, 0.20, -0.67], [4.55, 0.38, -0.09], [4.55, 0.44, -0.07], [3.50, 0.72, -0.63], PALETTE.hullDark);
+  b.addQuad([3.50, 0.20, 0.67], [3.50, 0.72, 0.63], [4.55, 0.44, 0.07], [4.55, 0.38, 0.09], PALETTE.hullDark);
+  // Broad flat casing and a narrow deck walkway.
+  b.box(0.30, 0.76, 0, 6.20, 0.10, 1.50, upper);
+  b.box(0.30, 0.82, 0, 5.90, 0.04, 1.10, PALETTE.track);
+  // Sail with a raked leading edge, bridge windows and a periscope well.
+  b.box(-0.62, 1.08, 0, 1.35, 0.72, 0.70, upper);
+  b.addQuad([0.06, 0.76, -0.34], [0.06, 0.76, 0.34], [-0.15, 1.44, 0.30], [-0.15, 1.44, -0.30], hull);
+  b.box(-0.56, 1.46, 0, 1.20, 0.08, 0.62, upper);
+  b.box(0.02, 1.12, 0, 0.03, 0.18, 0.46, PALETTE.glassDark);
+  b.box(0.03, 1.13, 0, 0.02, 0.12, 0.38, PALETTE.glass);
+  // Bow dive planes, stern planes and rudder.
+  for (const z of [-0.95, 0.95]) {
+    b.box(3.25, 0.50, z, 0.95, 0.08, 0.45, hull, 0.95);
+    b.box(-3.95, 0.48, z, 0.75, 0.08, 0.30, hull);
+  }
+  b.box(-3.72, 0.55, 0, 0.55, 0.82, 0.08, hull);
+  // Deck hatches, bollards and the torpedo-loading rail.
+  for (const x of [-2.55, -1.25, 1.55, 2.55]) {
+    b.box(x, 0.84, 0, 0.42, 0.06, 0.46, PALETTE.darkMetal);
+  }
+  for (const z of [-0.66, 0.66]) {
+    b.box(2.60, 0.88, z, 0.12, 0.08, 0.12, PALETTE.metal);
+  }
+  // Stern propeller guard and shaft.
+  b.box(-4.28, 0.38, 0, 0.30, 0.18, 0.18, PALETTE.darkMetal);
+  b.cylinderX(-4.48, 0.38, 0, 0.08, 0.18, 6, PALETTE.metal);
+  return b.build();
+}
+
+function buildSubmarinePeriscope(): MeshBuffers {
+  const b = new MeshBuilder();
+  // Origin is the waterline; the feather rises just above the sea surface.
+  b.cylinder(0, 0.02, 0, 0.10, 0.08, 8, PALETTE.darkMetal);
+  b.cylinder(0, 0.50, 0, 0.045, 1.00, 8, PALETTE.metal);
+  b.box(0.02, 1.02, 0, 0.12, 0.12, 0.16, PALETTE.darkMetal);
+  b.box(0.08, 1.03, 0, 0.10, 0.05, 0.09, PALETTE.glass);
+  b.box(-0.06, 1.12, 0, 0.06, 0.04, 0.22, PALETTE.darkMetal);
+  return b.build();
+}
+
+/**
  * Visual-only scale per unit. The roster is now authored at the shared 1:1
- * world scale; only the corvette keeps a presentation multiplier, because its
- * hull is authored around a shipyard slip rather than a 2 m soldier. Collision
- * radii, movement and picking are untouched.
+ * world scale; the ships keep a presentation multiplier because their hulls are
+ * authored around a shipyard slip rather than a 2 m soldier. Collision radii,
+ * movement and picking are untouched.
  */
 const VISUAL_SCALE: Record<string, number> = {
   rifle: 1,
@@ -1852,7 +2080,10 @@ const VISUAL_SCALE: Record<string, number> = {
   interceptor: 1,
   uav: 1,
   deepReconUAV: 1,
+  missileBoat: 0.7,
   corvette: 0.7,
+  submarine: 0.7,
+  frigate: 0.7,
 };
 
 export function unitVisualScale(id: string): number {
@@ -1883,7 +2114,10 @@ const SHADOW_RADIUS: Record<string, [number, number]> = {
   interceptor: [2.40, 2.20],
   uav: [1.60, 1.00],
   deepReconUAV: [1.80, 1.00],
+  missileBoat: [2.30, 0.80],
   corvette: [3.60, 1.10],
+  submarine: [3.00, 0.85],
+  frigate: [4.40, 1.30],
 };
 
 export function unitShadowRadius(id: string): [number, number] {
@@ -1894,12 +2128,13 @@ export function unitShadowRadius(id: string): [number, number] {
  * Ground presence pool for foot units. At battle zoom a rifleman is only a few
  * pixels wide, so infantry also stamp a soft team-coloured ellipse on the
  * ground beneath the normal contact shadow. It is presentation only: no
- * entity, picking, collision or simulation state, and vehicles do not get one.
+ * entity, picking, collision or simulation state, and vehicles do not get one
+ * because their painted roof panels carry ownership without a second decal.
  */
 const GROUND_MARKER: Record<string, { rx: number; rz: number; alpha: number }> = {
-  rifle: { rx: 0.48, rz: 0.26, alpha: 0.34 },
-  atgm: { rx: 0.52, rz: 0.28, alpha: 0.34 },
-  medic: { rx: 0.48, rz: 0.26, alpha: 0.34 },
+  rifle: { rx: 0.52, rz: 0.28, alpha: 0.42 },
+  atgm: { rx: 0.56, rz: 0.30, alpha: 0.42 },
+  medic: { rx: 0.52, rz: 0.28, alpha: 0.42 },
 };
 
 export function unitGroundMarker(id: string): { rx: number; rz: number; alpha: number } | null {
@@ -1930,7 +2165,10 @@ const BANNER_HEIGHT: Record<string, number> = {
   interceptor: 1.95,
   uav: 1.45,
   deepReconUAV: 1.45,
+  missileBoat: 2.05,
   corvette: 2.75,
+  submarine: 2.10,
+  frigate: 3.35,
 };
 
 export function unitBannerHeight(id: string): number {
@@ -1948,6 +2186,8 @@ export const AIR_UNIT_ALTITUDE = 13;
 const RECON_BODY = buildRecon();
 const MBT_BODY = buildMbtBody();
 const MBT_TURRET = buildMbtTurret();
+/** The frigate carries the same 76 mm mount as the corvette. */
+const CORVETTE_TURRET = buildCorvetteTurret();
 
 const STYLES: Record<string, EntityStyle> = {
   rifle: { body: buildRifle(), turretOffset: [0, 0, 0], infantry: infantryRig() },
@@ -2009,12 +2249,34 @@ const STYLES: Record<string, EntityStyle> = {
   interceptor: { body: buildInterceptor(), turretOffset: [0, 0, 0] },
   uav: { body: buildUav(), turretOffset: [0, 0, 0] },
   deepReconUAV: { body: buildDeepReconUav(), turretOffset: [0, 0, 0] },
+  missileBoat: {
+    body: buildMissileBoatBody(),
+    turret: buildMissileBoatTurret(),
+    // 0.60 + 1.32 local = 1.34 at the 0.70 scale, the authored 1.35 reach;
+    // 0.65 + 0.29 = 0.66 local, the authored 0.62 height.
+    turretOffset: [0.60, 0.65, 0],
+  },
   corvette: {
     body: buildCorvetteBody(),
-    turret: buildCorvetteTurret(),
+    turret: CORVETTE_TURRET,
     // 2.90 + 1.40 local = 4.30 at the 0.70 scale, the authored 3.0 reach;
     // 1.05 + 0.22 = 1.27 local, the authored 0.90 height.
     turretOffset: [2.90, 1.05, 0],
+  },
+  submarine: {
+    body: buildSubmarineBody(),
+    turretOffset: [0, 0, 0],
+    periscope: buildSubmarinePeriscope(),
+    periscopeOffset: [0, 0.02, 0],
+  },
+  frigate: {
+    body: buildFrigateBody(),
+    // The frigate mounts the same 76 mm turret as the corvette on a longer
+    // forecastle; the SAM box and extra canisters live on the hull instead.
+    turret: CORVETTE_TURRET,
+    // 3.60 + 1.40 local = 3.50 at the 0.70 scale, the authored 3.5 reach;
+    // 1.15 + 0.22 = 0.96 local, the authored 0.95 height.
+    turretOffset: [3.60, 1.15, 0],
   },
 };
 

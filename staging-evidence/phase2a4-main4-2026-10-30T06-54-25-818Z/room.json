@@ -1,0 +1,19 @@
+{
+  "roomId": "phase2a4-main4-mvuma044",
+  "mode": "1v1",
+  "protocol": 2,
+  "matchDurationMs": 1800000,
+  "matchDeadlineAt": 1793345066546,
+  "seats": [
+    {
+      "seatId": 0,
+      "playerId": 0,
+      "team": 0
+    },
+    {
+      "seatId": 1,
+      "playerId": 1,
+      "team": 1
+    }
+  ]
+}

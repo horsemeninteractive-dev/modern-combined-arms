@@ -21,6 +21,7 @@ describe('combat presentation profiles', () => {
     expect(weaponFxClass('rifle')).toBe('smallArms');
     expect(weaponFxClass('atgm')).toBe('missile');
     expect(weaponFxClass('tankGun')).toBe('cannon');
+    expect(weaponFxClass('torpedo')).toBe('torpedo');
 
     const rifle = weaponFxProfile('rifle');
     const atgm = weaponFxProfile('atgm');

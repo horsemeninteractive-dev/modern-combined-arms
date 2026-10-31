@@ -4,12 +4,15 @@ import { BUILDINGS } from '../src/data/buildings';
 import { FACTIONS, NATION_LIST } from '../src/data/factions';
 import { FALLBACK_BUILDING, buildingStyle } from '../src/render/buildingMeshes';
 import { MESH_VS } from '../src/render/shaders';
+import { teamColorForOwner } from '../src/render/teamColor';
+import { hexToRgb } from '../src/render/math';
 import {
   BUILDING_FLAG_ANCHORS,
   FLAG_NATIONS,
   allianceFlagColor,
   buildFlagRig,
   flagAnchorFor,
+  flagColorForOwner,
   flagMountFor,
   flagNationForFaction,
   flagOwnerForBuilding,
@@ -174,5 +177,28 @@ describe('flag rig', () => {
     expect(BUILDING_FLAG_ANCHORS.tenement.y).toBeGreaterThan(8);
     expect(BUILDING_FLAG_ANCHORS.airfield.y).toBeLessThan(1);
     expect(BUILDING_FLAG_ANCHORS.shipyard.y).toBeLessThan(1.2);
+  });
+});
+
+describe('skirmish team tint', () => {
+  it('prefers the chosen colour over the faction palette', () => {
+    expect(teamColorForOwner(0, 'uk', '#7fbf6a')).toEqual(hexToRgb('#7fbf6a'));
+    expect(teamColorForOwner(0, 'uk')).toEqual(hexToRgb('#6f8fce'));
+    // Neutral structures stay neutral whatever the override is.
+    expect(teamColorForOwner(-1, 'uk', '#7fbf6a')).toEqual([0.55, 0.6, 0.58]);
+  });
+
+  it('gives a garrisoned structure its own colour band', () => {
+    // A neutral shell occupied by player 1: the flag owner is the garrison,
+    // and the upper cloth must use that player's chosen skirmish colour.
+    const flagOwner = flagOwnerForBuilding(-1, 1);
+    expect(flagOwner).toBe(1);
+    expect(flagColorForOwner('russia', '#7fbf6a')).toEqual(hexToRgb('#7fbf6a'));
+    // Without an override it still follows the alliance colour, not a faction
+    // palette, because the cloth is a side marker rather than a nation decal.
+    expect(flagColorForOwner('russia', undefined)).toEqual(allianceFlagColor('russia'));
+
+    const renderer = readFileSync(new URL('../src/render/renderer.ts', import.meta.url), 'utf8');
+    expect(renderer).toContain('this.flagColorFor(flagOwner, factionId)');
   });
 });

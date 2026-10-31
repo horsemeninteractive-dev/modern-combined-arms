@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MCA Phase 0 — Pages proxy probe</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        background: #10140f;
+        color: #c7d2b5;
+      }
+      body {
+        max-width: 900px;
+        margin: 48px auto;
+        padding: 0 24px;
+        line-height: 1.5;
+      }
+      h1 {
+        font-size: 18px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .note {
+        color: #8e9a80;
+      }
+      #status {
+        padding: 12px 16px;
+        border: 1px solid #3d4936;
+        background: #171d14;
+        margin: 20px 0;
+      }
+      #log {
+        height: 360px;
+        overflow: auto;
+        padding: 12px 16px;
+        border: 1px solid #2b3525;
+        background: #0b0e09;
+        font-size: 12px;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>MCA Phase 0 — Pages proxy probe</h1>
+    <p class="note">
+      Dev-only. This page fetches a cookie, opens a same-origin WebSocket through
+      <code>functions/api/phase0/room/[[path]].ts</code>, then forwards to the
+      <code>Phase0Room</code> Durable Object.
+    </p>
+    <div id="status">connecting…</div>
+    <div id="log"></div>
+    <script type="module" src="/probe.js"></script>
+  </body>
+</html>

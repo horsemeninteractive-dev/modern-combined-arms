@@ -1,0 +1,218 @@
+{
+  "source": "staging-evidence\\phase2a3-soak\\cpu-m10.pprof",
+  "bytes": 7770,
+  "sampleTypes": [
+    {
+      "type": "cpu",
+      "unit": "nanoseconds"
+    }
+  ],
+  "period": 1000000,
+  "durationNanos": 19999799000,
+  "samples": 414,
+  "totalCpuMs": 414.0,
+  "topSelf": [
+    {
+      "function": "createTeamSnapshot",
+      "cpuMs": 207.0,
+      "percent": 50.0
+    },
+    {
+      "function": "sendSnapshotObject",
+      "cpuMs": 76.0,
+      "percent": 18.36
+    },
+    {
+      "function": "(idle)",
+      "cpuMs": 26.0,
+      "percent": 6.28
+    },
+    {
+      "function": "(garbage collector)",
+      "cpuMs": 15.0,
+      "percent": 3.62
+    },
+    {
+      "function": "player",
+      "cpuMs": 15.0,
+      "percent": 3.62
+    },
+    {
+      "function": "sendText",
+      "cpuMs": 14.0,
+      "percent": 3.38
+    },
+    {
+      "function": "tick",
+      "cpuMs": 9.0,
+      "percent": 2.17
+    },
+    {
+      "function": "",
+      "cpuMs": 8.0,
+      "percent": 1.93
+    },
+    {
+      "function": "updateUnits",
+      "cpuMs": 6.0,
+      "percent": 1.45
+    },
+    {
+      "function": "runTick",
+      "cpuMs": 5.0,
+      "percent": 1.21
+    },
+    {
+      "function": "refreshVision",
+      "cpuMs": 5.0,
+      "percent": 1.21
+    },
+    {
+      "function": "(program)",
+      "cpuMs": 4.0,
+      "percent": 0.97
+    },
+    {
+      "function": "moveAlongPath",
+      "cpuMs": 3.0,
+      "percent": 0.72
+    },
+    {
+      "function": "updateBuildingSystems",
+      "cpuMs": 3.0,
+      "percent": 0.72
+    },
+    {
+      "function": "toSave",
+      "cpuMs": 2.0,
+      "percent": 0.48
+    },
+    {
+      "function": "persistSnapshot",
+      "cpuMs": 2.0,
+      "percent": 0.48
+    },
+    {
+      "function": "utf8ByteLength",
+      "cpuMs": 2.0,
+      "percent": 0.48
+    },
+    {
+      "function": "unitDef",
+      "cpuMs": 2.0,
+      "percent": 0.48
+    },
+    {
+      "function": "hasLineOfSight",
+      "cpuMs": 2.0,
+      "percent": 0.48
+    },
+    {
+      "function": "put",
+      "cpuMs": 1.0,
+      "percent": 0.24
+    }
+  ],
+  "topInclusive": [
+    {
+      "function": "(root)",
+      "cpuMs": 414.0,
+      "percent": 100.0
+    },
+    {
+      "function": "",
+      "cpuMs": 368.0,
+      "percent": 88.89
+    },
+    {
+      "function": "runTick",
+      "cpuMs": 361.0,
+      "percent": 87.2
+    },
+    {
+      "function": "tick",
+      "cpuMs": 356.0,
+      "percent": 85.99
+    },
+    {
+      "function": "broadcast",
+      "cpuMs": 305.0,
+      "percent": 73.67
+    },
+    {
+      "function": "createTeamSnapshot",
+      "cpuMs": 214.0,
+      "percent": 51.69
+    },
+    {
+      "function": "sendSnapshotObject",
+      "cpuMs": 90.0,
+      "percent": 21.74
+    },
+    {
+      "function": "(idle)",
+      "cpuMs": 26.0,
+      "percent": 6.28
+    },
+    {
+      "function": "updateUnits",
+      "cpuMs": 26.0,
+      "percent": 6.28
+    },
+    {
+      "function": "(garbage collector)",
+      "cpuMs": 15.0,
+      "percent": 3.62
+    },
+    {
+      "function": "player",
+      "cpuMs": 15.0,
+      "percent": 3.62
+    },
+    {
+      "function": "sendText",
+      "cpuMs": 14.0,
+      "percent": 3.38
+    },
+    {
+      "function": "teamOf",
+      "cpuMs": 14.0,
+      "percent": 3.38
+    },
+    {
+      "function": "acquireAutoTarget",
+      "cpuMs": 14.0,
+      "percent": 3.38
+    },
+    {
+      "function": "persistSnapshot",
+      "cpuMs": 7.0,
+      "percent": 1.69
+    },
+    {
+      "function": "refreshVision",
+      "cpuMs": 7.0,
+      "percent": 1.69
+    },
+    {
+      "function": "persistPeriodic",
+      "cpuMs": 6.0,
+      "percent": 1.45
+    },
+    {
+      "function": "eventsAfter",
+      "cpuMs": 6.0,
+      "percent": 1.45
+    },
+    {
+      "function": "(program)",
+      "cpuMs": 4.0,
+      "percent": 0.97
+    },
+    {
+      "function": "moveAlongPath",
+      "cpuMs": 3.0,
+      "percent": 0.72
+    }
+  ]
+}

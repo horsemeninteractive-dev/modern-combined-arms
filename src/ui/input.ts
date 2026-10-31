@@ -4,12 +4,37 @@ import { isGarrisonTarget, isRepairTarget } from './orderIntent';
 
 /** Arrow keys pan; A/S/H/C stay free for the orders the briefing advertises. */
 const PAN_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+/**
+ * How far a right-button press may travel before it counts as a camera drag.
+ * Below this the press is an order: the camera never moves, because a player
+ * aiming an order at a unit cannot keep the mouse perfectly still.
+ */
+const DRAG_THRESHOLD_PX = 5;
+
+/*
+ * Deliberately out of scope for this pass:
+ * - Key rebinding needs a persisted action map, conflict detection, key-cap
+ *   rendering from the map, and a settings editor for it.
+ * - Patrol needs the simulation to consume order.x2/z2 (the type already has
+ *   them) plus command, gate and HUD wiring on both seats.
+ * - Waypoint queues need a per-unit queue in authoritative state, snapshot and
+ *   save migration, and Shift+order input; that is a simulation change.
+ */
 
 export class InputController {
   private app: App;
   private canvas: HTMLCanvasElement;
   private down: { x: number; y: number; button: number; pointerId: number; moved: boolean; touch: boolean } | null = null;
-  private pan: { x: number; y: number; pointerId: number } | null = null;
+  private pan: {
+    x: number;
+    y: number;
+    startX: number;
+    startY: number;
+    pointerId: number;
+    /** True once the press has travelled far enough to mean "drag the view". */
+    dragging: boolean;
+    touch: boolean;
+  } | null = null;
   private pendingTap: { x: number; y: number; pointerId: number; moved: boolean; touch: boolean } | null = null;
   private keys = new Set<string>();
   private lastClick = { id: 0, time: 0 };
@@ -61,7 +86,17 @@ export class InputController {
       }
     }
     if (event.button === 2 || event.button === 1) {
-      this.pan = { x: event.clientX, y: event.clientY, pointerId: event.pointerId };
+      // A press is not a drag yet: the view stays put until the pointer has
+      // actually travelled, so a right-click order never nudges the camera.
+      this.pan = {
+        x: event.clientX,
+        y: event.clientY,
+        startX: event.clientX,
+        startY: event.clientY,
+        pointerId: event.pointerId,
+        dragging: false,
+        touch,
+      };
       return;
     }
     if (event.button !== 0) return;
@@ -113,6 +148,16 @@ export class InputController {
       }
     }
     if (this.pan && this.pan.pointerId === event.pointerId) {
+      if (!this.pan.dragging) {
+        const travel = Math.hypot(event.clientX - this.pan.startX, event.clientY - this.pan.startY);
+        if (travel <= DRAG_THRESHOLD_PX) {
+          // Still inside the click tolerance: no pan, so the press can become an order.
+          this.pan.x = event.clientX;
+          this.pan.y = event.clientY;
+          return;
+        }
+        this.pan.dragging = true;
+      }
       this.app.renderer.camera.panScreen(event.clientX - this.pan.x, event.clientY - this.pan.y);
       this.pan.x = event.clientX;
       this.pan.y = event.clientY;
@@ -137,12 +182,12 @@ export class InputController {
     if (touch) this.touches.delete(event.pointerId);
     if (this.pinch && this.touches.size < 2) this.pinch = null;
     if (this.pan && this.pan.pointerId === event.pointerId) {
-      const dx = event.clientX - this.pan.x;
-      const dy = event.clientY - this.pan.y;
-      const totalMoved = Math.abs(dx) + Math.abs(dy);
+      const press = this.pan;
       this.pan = null;
-      if (!touch && totalMoved < 6 && event.button === 2) {
-        this.app.orderAt(event.clientX, event.clientY, event.shiftKey);
+      // The order lands where the button went down, which is where the player
+      // aimed: a stray pixel of travel must not move the destination.
+      if (!touch && !press.dragging && event.button === 2) {
+        this.app.orderAt(press.startX, press.startY, event.shiftKey);
       }
       return;
     }
@@ -354,13 +399,28 @@ export class InputController {
       return;
     }
     if (event.ctrlKey || event.metaKey) {
-      if (/^Digit[1-9]$/.test(code)) {
+      // Ctrl+Shift+1..4 are camera bookmarks; Ctrl+1..9 stay control groups.
+      if (event.shiftKey && /^Digit[1-4]$/.test(code)) {
+        event.preventDefault();
+        this.app.saveBookmark(Number(code.slice(5)));
+      } else if (/^Digit[1-9]$/.test(code)) {
         event.preventDefault();
         this.app.assignGroup(Number(code.slice(5)));
+      } else if (code === 'KeyA') {
+        // Ctrl+A is the familiar select-all: in battle it selects the army.
+        event.preventDefault();
+        this.app.selectAllArmy();
       } else if (code === 'KeyS') {
         event.preventDefault();
         this.app.openSaveMenu(false);
       }
+      return;
+    }
+    if (event.altKey) return;
+    // Shift+1..4 recalls a camera bookmark; plain 1..9 recalls control groups.
+    if (event.shiftKey && /^Digit[1-4]$/.test(code)) {
+      event.preventDefault();
+      this.app.recallBookmark(Number(code.slice(5)));
       return;
     }
     if (/^Digit[1-9]$/.test(code)) {
@@ -371,8 +431,23 @@ export class InputController {
     switch (code) {
       case 'Escape':
         event.preventDefault();
+        // A command mode always cancels first; the configured behaviour only
+        // governs the otherwise-idle battle.
         if (this.app.mode !== 'none') this.app.cancelMode();
+        else if (this.app.settings.escBehavior === 'menu') this.app.openPauseMenu();
         else this.app.togglePause();
+        break;
+      case 'F2':
+        event.preventDefault();
+        this.app.jumpToLastAlert();
+        break;
+      case 'F8':
+        event.preventDefault();
+        this.app.cycleIdleUnit('harvester');
+        break;
+      case 'F9':
+        event.preventDefault();
+        this.app.cycleIdleUnit('engineer');
         break;
       case 'KeyP':
         event.preventDefault();
@@ -415,6 +490,10 @@ export class InputController {
       case 'KeyR':
         event.preventDefault();
         this.app.commandReturn();
+        break;
+      case 'KeyD':
+        event.preventDefault();
+        this.app.commandDive();
         break;
       case 'KeyB':
         event.preventDefault();

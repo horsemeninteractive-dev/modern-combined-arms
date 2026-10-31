@@ -1,0 +1,350 @@
+{
+  "source": "staging-evidence\\phase2a3-soak\\heap-m6.pprof",
+  "bytes": 2506,
+  "sampleTypes": [
+    {
+      "type": "alloc_objects",
+      "unit": "count"
+    },
+    {
+      "type": "alloc_space",
+      "unit": "bytes"
+    }
+  ],
+  "samplePeriodBytes": 524288,
+  "samples": 50,
+  "totals": [
+    {
+      "type": "alloc_objects",
+      "unit": "count",
+      "value": 12761443,
+      "percentOfSampled": 100.0
+    },
+    {
+      "type": "alloc_space",
+      "unit": "bytes",
+      "value": 439833332,
+      "percentOfSampled": 100.0
+    }
+  ],
+  "bySampleType": [
+    {
+      "type": "alloc_objects",
+      "unit": "count",
+      "total": 12761443,
+      "topSelf": [
+        {
+          "function": "next",
+          "value": 12242359,
+          "percent": 95.93
+        },
+        {
+          "function": "acquireAutoTarget",
+          "value": 174771,
+          "percent": 1.37
+        },
+        {
+          "function": "createTeamSnapshot",
+          "value": 75826,
+          "percent": 0.59
+        },
+        {
+          "function": "updateBuildingSystems",
+          "value": 51494,
+          "percent": 0.4
+        },
+        {
+          "function": "broadcast",
+          "value": 48061,
+          "percent": 0.38
+        },
+        {
+          "function": "evaluateMatchResult",
+          "value": 26215,
+          "percent": 0.21
+        },
+        {
+          "function": "values",
+          "value": 21846,
+          "percent": 0.17
+        },
+        {
+          "function": "updateEngineerAssignments",
+          "value": 21846,
+          "percent": 0.17
+        },
+        {
+          "function": "from",
+          "value": 18931,
+          "percent": 0.15
+        },
+        {
+          "function": "updateUnits",
+          "value": 18725,
+          "percent": 0.15
+        },
+        {
+          "function": "filter",
+          "value": 18725,
+          "percent": 0.15
+        },
+        {
+          "function": "Set",
+          "value": 13982,
+          "percent": 0.11
+        },
+        {
+          "function": "add",
+          "value": 11069,
+          "percent": 0.09
+        },
+        {
+          "function": "",
+          "value": 10923,
+          "percent": 0.09
+        },
+        {
+          "function": "sort",
+          "value": 6363,
+          "percent": 0.05
+        }
+      ],
+      "topInclusive": [
+        {
+          "function": "(root)",
+          "value": 12761443,
+          "percent": 100.0
+        },
+        {
+          "function": "tick",
+          "value": 12682753,
+          "percent": 99.38
+        },
+        {
+          "function": "runTick",
+          "value": 12682753,
+          "percent": 99.38
+        },
+        {
+          "function": "next",
+          "value": 12242359,
+          "percent": 95.93
+        },
+        {
+          "function": "broadcast",
+          "value": 11655208,
+          "percent": 91.33
+        },
+        {
+          "function": "createTeamSnapshot",
+          "value": 11606840,
+          "percent": 90.95
+        },
+        {
+          "function": "from",
+          "value": 11553487,
+          "percent": 90.53
+        },
+        {
+          "function": "updateUnits",
+          "value": 770978,
+          "percent": 6.04
+        },
+        {
+          "function": "acquireAutoTarget",
+          "value": 751499,
+          "percent": 5.89
+        },
+        {
+          "function": "updateBuildingSystems",
+          "value": 144495,
+          "percent": 1.13
+        },
+        {
+          "function": "toSave",
+          "value": 78690,
+          "percent": 0.62
+        },
+        {
+          "function": "createRoomSnapshot",
+          "value": 78690,
+          "percent": 0.62
+        },
+        {
+          "function": "snapshot",
+          "value": 78690,
+          "percent": 0.62
+        },
+        {
+          "function": "persistSnapshot",
+          "value": 78690,
+          "percent": 0.62
+        },
+        {
+          "function": "persistPeriodic",
+          "value": 78690,
+          "percent": 0.62
+        }
+      ]
+    },
+    {
+      "type": "alloc_space",
+      "unit": "bytes",
+      "total": 439833332,
+      "topSelf": [
+        {
+          "function": "next",
+          "value": 244847180,
+          "percent": 55.67
+        },
+        {
+          "function": "from",
+          "value": 155728628,
+          "percent": 35.41
+        },
+        {
+          "function": "sendSnapshotObject",
+          "value": 18284120,
+          "percent": 4.16
+        },
+        {
+          "function": "acquireAutoTarget",
+          "value": 8389008,
+          "percent": 1.91
+        },
+        {
+          "function": "createTeamSnapshot",
+          "value": 3145848,
+          "percent": 0.72
+        },
+        {
+          "function": "sort",
+          "value": 1573908,
+          "percent": 0.36
+        },
+        {
+          "function": "add",
+          "value": 1572980,
+          "percent": 0.36
+        },
+        {
+          "function": "Set",
+          "value": 1048640,
+          "percent": 0.24
+        },
+        {
+          "function": "broadcast",
+          "value": 1048604,
+          "percent": 0.24
+        },
+        {
+          "function": "updateBuildingSystems",
+          "value": 1048604,
+          "percent": 0.24
+        },
+        {
+          "function": "values",
+          "value": 524304,
+          "percent": 0.12
+        },
+        {
+          "function": "",
+          "value": 524304,
+          "percent": 0.12
+        },
+        {
+          "function": "updateEngineerAssignments",
+          "value": 524304,
+          "percent": 0.12
+        },
+        {
+          "function": "evaluateMatchResult",
+          "value": 524300,
+          "percent": 0.12
+        },
+        {
+          "function": "updateUnits",
+          "value": 524300,
+          "percent": 0.12
+        }
+      ],
+      "topInclusive": [
+        {
+          "function": "(root)",
+          "value": 439833332,
+          "percent": 100.0
+        },
+        {
+          "function": "tick",
+          "value": 437190080,
+          "percent": 99.4
+        },
+        {
+          "function": "runTick",
+          "value": 437190080,
+          "percent": 99.4
+        },
+        {
+          "function": "broadcast",
+          "value": 408352312,
+          "percent": 92.84
+        },
+        {
+          "function": "createTeamSnapshot",
+          "value": 389019588,
+          "percent": 88.45
+        },
+        {
+          "function": "from",
+          "value": 386419748,
+          "percent": 87.86
+        },
+        {
+          "function": "next",
+          "value": 244847180,
+          "percent": 55.67
+        },
+        {
+          "function": "updateUnits",
+          "value": 20972652,
+          "percent": 4.77
+        },
+        {
+          "function": "acquireAutoTarget",
+          "value": 19923568,
+          "percent": 4.53
+        },
+        {
+          "function": "sendSnapshotObject",
+          "value": 18284120,
+          "percent": 4.16
+        },
+        {
+          "function": "updateBuildingSystems",
+          "value": 3145808,
+          "percent": 0.72
+        },
+        {
+          "function": "toSave",
+          "value": 2643252,
+          "percent": 0.6
+        },
+        {
+          "function": "createRoomSnapshot",
+          "value": 2643252,
+          "percent": 0.6
+        },
+        {
+          "function": "snapshot",
+          "value": 2643252,
+          "percent": 0.6
+        },
+        {
+          "function": "persistSnapshot",
+          "value": 2643252,
+          "percent": 0.6
+        }
+      ]
+    }
+  ]
+}

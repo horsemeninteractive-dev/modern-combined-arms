@@ -12,7 +12,14 @@ import { buildingStyle } from './buildingMeshes';
  * screen. Keeping the mapping here means the renderer and its tests agree on
  * what a rifle, a tank gun and an ATGM look like without changing weapon data.
  */
-export type WeaponFxClass = 'smallArms' | 'cannon' | 'missile' | 'artillery' | 'antiAir' | 'unknown';
+export type WeaponFxClass =
+  | 'smallArms'
+  | 'cannon'
+  | 'missile'
+  | 'torpedo'
+  | 'artillery'
+  | 'antiAir'
+  | 'unknown';
 
 export interface WeaponFxProfile {
   class: WeaponFxClass;
@@ -36,6 +43,8 @@ export interface WeaponFxProfile {
   shake: number;
   /** Whether the projectile should leave a propellant smoke trail. */
   trailSmoke: boolean;
+  /** Surface wake instead of smoke, for a torpedo running at the waterline. */
+  trailWake?: boolean;
 }
 
 const SMALL_ARMS: WeaponFxProfile = {
@@ -93,6 +102,24 @@ const MISSILE: WeaponFxProfile = {
   trailSmoke: true,
 };
 
+const TORPEDO: WeaponFxProfile = {
+  class: 'torpedo',
+  label: 'torpedo',
+  muzzleScale: 0.45,
+  muzzleSmoke: 0,
+  tracerLength: 2.2,
+  tracerWidth: 0.15,
+  tracerSegments: 6,
+  tracerColor: [0.8, 0.94, 1],
+  projectileSize: 0.24,
+  impactScale: 1.15,
+  hitSparkScale: 1.25,
+  explosionScale: 1.2,
+  shake: 0.06,
+  trailSmoke: false,
+  trailWake: true,
+};
+
 const ARTILLERY: WeaponFxProfile = {
   class: 'artillery',
   label: 'artillery',
@@ -147,6 +174,7 @@ const UNKNOWN: WeaponFxProfile = {
 const SMALL_ARMS_IDS = new Set(['rifle', 'heavyMg', 'autocannon']);
 const CANNON_IDS = new Set(['tankGun', 'atTurretGun', 'spearheadGun', 'navalGun']);
 const MISSILE_IDS = new Set(['atgm', 'strikeMissile', 'navalMissile', 'coastalMissile']);
+const TORPEDO_IDS = new Set(['torpedo']);
 const ARTILLERY_IDS = new Set(['howitzer', 'mlrsRocket', 'heavyShell']);
 const ANTI_AIR_IDS = new Set(['samVehicle', 'samBattery', 'airMissile']);
 
@@ -169,6 +197,11 @@ export function pointVisibleToLocal(game: Game, x: number, z: number): boolean {
  */
 export function eventVisibleToLocal(game: Game, ev: SimEvent): boolean {
   if (ev.team === game.localPlayerId) return true;
+  // A sonar contact or launch datum can make a submarine visible in a tile
+  // whose terrain fog is still unexplored. The entity set is the gameplay
+  // sensor result, so it takes precedence over the tile fallback.
+  const team = game.teamOf(game.localPlayerId);
+  if (team >= 0 && ev.entityId && game.isVisibleTo(team, ev.entityId)) return true;
   return pointVisibleToLocal(game, ev.x, ev.z);
 }
 
@@ -183,8 +216,11 @@ export function projectileVisibleToLocal(
   owner: number,
   x: number,
   z: number,
+  shooterId?: number,
 ): boolean {
-  if (game.teamOf(owner) === game.teamOf(game.localPlayerId)) return true;
+  const team = game.teamOf(game.localPlayerId);
+  if (game.teamOf(owner) === team) return true;
+  if (shooterId !== undefined && team >= 0 && game.isVisibleTo(team, shooterId)) return true;
   return pointVisibleToLocal(game, x, z);
 }
 
@@ -192,6 +228,7 @@ export function weaponFxClass(weaponId?: string): WeaponFxClass {
   if (!weaponId) return 'unknown';
   if (SMALL_ARMS_IDS.has(weaponId)) return 'smallArms';
   if (CANNON_IDS.has(weaponId)) return 'cannon';
+  if (TORPEDO_IDS.has(weaponId)) return 'torpedo';
   if (MISSILE_IDS.has(weaponId)) return 'missile';
   if (ARTILLERY_IDS.has(weaponId)) return 'artillery';
   if (ANTI_AIR_IDS.has(weaponId)) return 'antiAir';
@@ -209,6 +246,8 @@ export function weaponFxProfile(weaponId?: string): WeaponFxProfile {
       return CANNON;
     case 'missile':
       return MISSILE;
+    case 'torpedo':
+      return TORPEDO;
     case 'artillery':
       return ARTILLERY;
     case 'antiAir':

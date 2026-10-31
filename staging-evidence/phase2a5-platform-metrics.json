@@ -1,0 +1,160 @@
+{
+  "version": 1,
+  "capturedAt": "2026-10-30T13:01:30Z",
+  "scope": {
+    "worker": "mca-multiplayer-staging",
+    "versionId": "b164b42c-dba1-493f-b6f5-8a203f5ba750",
+    "roomId": "phase2a5-clock-mvuzarhj",
+    "namespaceId": "4c3a9ed29ce1475aae7ec0530538afca",
+    "objectId": "37bf46f731b17fa2f4ca62250d2ead234d717fe89e178a01015fffeda46f5b34",
+    "window": "2026-10-30T12:58:00Z/2026-10-30T13:02:00Z",
+    "account": "[redacted]"
+  },
+  "introspection": {
+    "query": "query { __type(name: \"AccountDurableObjectsInvocationsAdaptiveGroupsQuantiles\") { fields { name type { name kind ofType { name } } } } }",
+    "dataset": "durableObjectsInvocationsAdaptiveGroups",
+    "availableQuantiles": [
+      "cpuTimeP25",
+      "cpuTimeP50",
+      "cpuTimeP75",
+      "cpuTimeP90",
+      "cpuTimeP95",
+      "cpuTimeP99",
+      "cpuTimeP999",
+      "wallTimeP25",
+      "wallTimeP50",
+      "wallTimeP75",
+      "wallTimeP90",
+      "wallTimeP95",
+      "wallTimeP99",
+      "wallTimeP999"
+    ],
+    "sumFields": ["requests", "errors", "responseBodySize", "wallTime"],
+    "scopeNote": "Quantiles describe a Durable Object invocation, not a simulation tick. The room's long-lived WebSocket invocation aggregates an entire connection.",
+    "periodicDataset": "durableObjectsPeriodicGroups",
+    "periodicCpuField": "sum.cpuTime",
+    "periodicScopeNote": "One row per minute per object; no per-tick CPU field or quantile exists."
+  },
+  "rows": [
+    {
+      "dimensions": {
+        "datetime": "2026-10-30T12:58:56Z",
+        "name": "phase2a5-clock-mvuzarhj",
+        "namespaceId": "4c3a9ed29ce1475aae7ec0530538afca",
+        "objectId": "37bf46f731b17fa2f4ca62250d2ead234d717fe89e178a01015fffeda46f5b34",
+        "scriptVersion": "b164b42c-dba1-493f-b6f5-8a203f5ba750",
+        "status": "success",
+        "type": "http"
+      },
+      "max": { "responseBodySize": 310, "wallTime": 253612 },
+      "quantiles": {
+        "cpuTimeP50": 70207,
+        "cpuTimeP90": 70207,
+        "cpuTimeP95": 70207,
+        "cpuTimeP99": 70207,
+        "cpuTimeP999": 70207,
+        "wallTimeP50": 253612,
+        "wallTimeP95": 253612,
+        "wallTimeP99": 253612
+      },
+      "sum": { "errors": 0, "requests": 1, "responseBodySize": 310, "wallTime": 253612 }
+    },
+    {
+      "dimensions": {
+        "datetime": "2026-10-30T12:58:57Z",
+        "name": "phase2a5-clock-mvuzarhj",
+        "namespaceId": "4c3a9ed29ce1475aae7ec0530538afca",
+        "objectId": "37bf46f731b17fa2f4ca62250d2ead234d717fe89e178a01015fffeda46f5b34",
+        "scriptVersion": "b164b42c-dba1-493f-b6f5-8a203f5ba750",
+        "status": "success",
+        "type": "http"
+      },
+      "max": { "responseBodySize": 10399, "wallTime": 350949 },
+      "quantiles": {
+        "cpuTimeP50": 2530,
+        "cpuTimeP90": 22349,
+        "cpuTimeP95": 22349,
+        "cpuTimeP99": 22349,
+        "cpuTimeP999": 22349,
+        "wallTimeP50": 146232,
+        "wallTimeP95": 350949,
+        "wallTimeP99": 350949
+      },
+      "sum": { "errors": 0, "requests": 5, "responseBodySize": 29358, "wallTime": 926830 }
+    },
+    {
+      "dimensions": {
+        "datetime": "2026-10-30T12:58:58Z",
+        "name": "phase2a5-clock-mvuzarhj",
+        "namespaceId": "4c3a9ed29ce1475aae7ec0530538afca",
+        "objectId": "37bf46f731b17fa2f4ca62250d2ead234d717fe89e178a01015fffeda46f5b34",
+        "scriptVersion": "b164b42c-dba1-493f-b6f5-8a203f5ba750",
+        "status": "success",
+        "type": "http"
+      },
+      "max": { "responseBodySize": 10401, "wallTime": 311795 },
+      "quantiles": {
+        "cpuTimeP50": 4467,
+        "cpuTimeP90": 4943,
+        "cpuTimeP95": 4943,
+        "cpuTimeP99": 4943,
+        "cpuTimeP999": 4943,
+        "wallTimeP50": 297646,
+        "wallTimeP95": 311795,
+        "wallTimeP99": 311795
+      },
+      "sum": { "errors": 0, "requests": 3, "responseBodySize": 31203, "wallTime": 901245 }
+    },
+    {
+      "dimensions": {
+        "datetime": "2026-10-30T12:58:59Z",
+        "name": "phase2a5-clock-mvuzarhj",
+        "namespaceId": "4c3a9ed29ce1475aae7ec0530538afca",
+        "objectId": "37bf46f731b17fa2f4ca62250d2ead234d717fe89e178a01015fffeda46f5b34",
+        "scriptVersion": "b164b42c-dba1-493f-b6f5-8a203f5ba750",
+        "status": "success",
+        "type": "http"
+      },
+      "max": { "responseBodySize": 25, "wallTime": 95655 },
+      "quantiles": {
+        "cpuTimeP50": 14190,
+        "cpuTimeP90": 14190,
+        "cpuTimeP95": 14190,
+        "cpuTimeP99": 14190,
+        "cpuTimeP999": 14190,
+        "wallTimeP50": 95655,
+        "wallTimeP95": 95655,
+        "wallTimeP99": 95655
+      },
+      "sum": { "errors": 0, "requests": 1, "responseBodySize": 25, "wallTime": 95655 }
+    },
+    {
+      "dimensions": {
+        "datetime": "2026-10-30T13:00:00Z",
+        "name": "phase2a5-clock-mvuzarhj",
+        "namespaceId": "4c3a9ed29ce1475aae7ec0530538afca",
+        "objectId": "37bf46f731b17fa2f4ca62250d2ead234d717fe89e178a01015fffeda46f5b34",
+        "scriptVersion": "b164b42c-dba1-493f-b6f5-8a203f5ba750",
+        "status": "success",
+        "type": "http"
+      },
+      "max": { "responseBodySize": 6063, "wallTime": 8880 },
+      "quantiles": {
+        "cpuTimeP50": 5893,
+        "cpuTimeP90": 5893,
+        "cpuTimeP95": 5893,
+        "cpuTimeP99": 5893,
+        "cpuTimeP999": 5893,
+        "wallTimeP50": 8880,
+        "wallTimeP95": 8880,
+        "wallTimeP99": 8880
+      },
+      "sum": { "errors": 0, "requests": 1, "responseBodySize": 6063, "wallTime": 8880 }
+    }
+  ],
+  "interpretation": {
+    "units": "GraphQL cpuTime and wallTime values are microseconds; wrangler tail cpuTime/wallTime values are integer milliseconds.",
+    "minimumGranularity": "Per invocation. The probe runs 700,000 synchronous arithmetic iterations plus three workload snapshots; its invocation CPU is 0-5 ms in tail and 2.530-22.349 ms in the aggregated invocation rows. This is not attributable to a 50 ms room tick.",
+    "conclusion": "Cloudflare exposes invocation-level CPU quantiles and per-minute Durable Object CPU, but no in-isolate clock that advances during CPU work and no per-tick CPU field. The 10 ms per-tick headroom target remains unverified."
+  }
+}

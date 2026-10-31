@@ -3,6 +3,11 @@ node_modules/
 
 # Build output
 dist/
+dist-mp-room/
+.wrangler/
+
+# Local Worker secrets
+.dev.vars
 
 # Local dev server logs and pid files
 .dev/

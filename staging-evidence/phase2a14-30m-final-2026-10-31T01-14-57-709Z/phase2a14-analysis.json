@@ -1,0 +1,891 @@
+{
+  "phase": "2A.14",
+  "generatedAt": "2026-10-31T01:58:26.174Z",
+  "source": {
+    "evidenceDir": "staging-evidence/phase2a14-30m-final-2026-10-31T01-14-57-709Z",
+    "summary": "summary.json",
+    "finalStatus": "status-final.json",
+    "restarts": [
+      "restart-0.json",
+      "restart-1.json"
+    ],
+    "unplannedRestart": "unplanned-restart.json",
+    "events": "metrics.jsonl",
+    "platformMetrics": "platform-metrics.json (captured separately)"
+  },
+  "room": {
+    "roomId": "phase2a14-30m-final-mvvplakw",
+    "mode": "1v1",
+    "protocol": 2,
+    "matchDurationMs": 1800000,
+    "matchDeadlineAt": 1793411098373,
+    "seats": [
+      {
+        "seatId": 0,
+        "playerId": 0,
+        "team": 0
+      },
+      {
+        "seatId": 1,
+        "playerId": 1,
+        "team": 1
+      }
+    ]
+  },
+  "build": {
+    "ok": true,
+    "onlineEnabled": true,
+    "devMode": true,
+    "adminConfigured": true,
+    "reservationConfigured": true,
+    "protocol": "mca.v2",
+    "snapshotVersion": 2,
+    "build": "phase2a13-staging"
+  },
+  "observed": {
+    "matchWindow": {
+      "startedAtMs": 1793409298524,
+      "finishedAtMs": 1793411098373,
+      "matchDeadlineAt": 1793411098373,
+      "matchDurationMs": 1800000,
+      "wallElapsedMs": 1799815
+    },
+    "authoritativeTicks": {
+      "finalTick": 35477,
+      "totalTicks": 35477,
+      "processTicks": 13878,
+      "expectedTicksAt20Hz": 35997,
+      "effectiveHz": 19.711097986553316
+    },
+    "results": [
+      {
+        "outcome": "defeat",
+        "winnerTeam": 1,
+        "reason": "time-limit",
+        "tick": 35477
+      },
+      {
+        "outcome": "victory",
+        "winnerTeam": 1,
+        "reason": "time-limit",
+        "tick": 35477
+      }
+    ],
+    "outcomesMatch": true,
+    "closed": true,
+    "closedReason": "match-finished",
+    "reservation": {
+      "reservationId": "r266",
+      "status": "released",
+      "hardDeadlineAt": 1793411098373
+    },
+    "reconstruction": {
+      "ready": [
+        true,
+        true
+      ],
+      "epoch": [
+        3083,
+        3083
+      ],
+      "sequence": [
+        17743,
+        17743
+      ],
+      "tick": [
+        35477,
+        35477
+      ],
+      "serverTick": 35477,
+      "tickMatches": true,
+      "outcomesMatch": true,
+      "mapTiles": [
+        6912,
+        6912
+      ],
+      "fogTiles": [
+        6912,
+        6912
+      ]
+    },
+    "unplannedRestart": {
+      "trigger": "unplanned-runtime-restart",
+      "observedAt": "2026-10-31T01:25:56.044Z",
+      "note": "No admin restart request preceded this event. Both raw WebSockets closed with no close code at the same instant, the room restored, and both clients reconnected on the first attempt. This is separate from controlled restarts A and B and was not deliberately manufactured.",
+      "lastPersistenceSuccessAt": "2026-10-31T01:25:46.018Z",
+      "lastPersistenceSuccessAtMs": 1793409946018,
+      "observedTickAtLastPersistenceSuccess": 13024,
+      "checkpointObservedAt": "2026-10-31T01:25:52.209Z",
+      "checkpointAgeAtCloseMs": 10026,
+      "lastAcceptedCommandsBeforeClose": [
+        {
+          "seat": 0,
+          "tick": 13039,
+          "at": "2026-10-31T01:25:52.986Z",
+          "type": "move"
+        },
+        {
+          "seat": 1,
+          "tick": 13059,
+          "at": "2026-10-31T01:25:53.982Z",
+          "type": "move"
+        }
+      ],
+      "socketsClosedAt": [
+        "2026-10-31T01:25:56.044Z",
+        "2026-10-31T01:25:56.048Z"
+      ],
+      "restoredAt": "2026-10-31T01:25:56.414Z",
+      "restoredSnapshotTick": 12900,
+      "restoredSnapshotTickDerivation": "first post-restart status at 01:26:02.139Z reported totalTicks 13014 and processTicks 114; 13014 - 114 = 12900",
+      "firstPostRestartStatus": {
+        "at": "2026-10-31T01:26:02.139Z",
+        "totalTicks": 13014,
+        "processTicks": 114,
+        "snapshotCycles": 1,
+        "lastSuccessAt": 1793409956414,
+        "ageSinceSuccessMs": 5740,
+        "phase": "playing",
+        "persistenceFailures": 0
+      },
+      "rollback": {
+        "fromObservedCheckpointTicks": 124,
+        "fromObservedCheckpointMs": 6200,
+        "fromLastAcceptedCommandTicks": 159,
+        "fromLastAcceptedCommandMs": 7950,
+        "within15sCheckpointPolicy": true
+      },
+      "reconnect": [
+        {
+          "seat": 0,
+          "at": "2026-10-31T01:25:56.442Z",
+          "attempt": 1,
+          "elapsedMsAfterClose": 396,
+          "cause": "close-none"
+        },
+        {
+          "seat": 1,
+          "at": "2026-10-31T01:25:56.446Z",
+          "attempt": 1,
+          "elapsedMsAfterClose": 397,
+          "cause": "close-none"
+        }
+      ],
+      "firstPostRestartCommands": [
+        {
+          "seat": 0,
+          "tick": 12932,
+          "at": "2026-10-31T01:25:58.022Z",
+          "accepted": true,
+          "type": "move"
+        },
+        {
+          "seat": 1,
+          "tick": 12950,
+          "at": "2026-10-31T01:25:58.944Z",
+          "accepted": true,
+          "type": "move"
+        }
+      ],
+      "firstPostRestartClientUpdates": {
+        "at": "2026-10-31T01:25:59.649Z",
+        "bothSeatsReportedTick": 12964,
+        "seat0Entities": 15,
+        "seat1Entities": 9,
+        "note": "Both client metrics intervals reported the same authoritative tick after reconnecting."
+      },
+      "rejectedUpdatesObserved": 0,
+      "resyncRequestsObserved": 0,
+      "startContinuity": {
+        "startedAtMsBefore": 1793409298524,
+        "startedAtMsAfter": 1793409298524,
+        "matchDeadlineAtBefore": 1793411098373,
+        "matchDeadlineAtAfter": 1793411098373
+      },
+      "epochContinuity": {
+        "observed": false,
+        "note": "The unplanned event was not scheduled by the harness, so the pre/post protocol sync generation was not captured. Controlled restarts A and B were independently measured and remained monotonic."
+      },
+      "verdict": "Recovered cleanly through the existing lifecycle; no rejected current-epoch updates and no resync requests were observed in the 14-second window. Not counted as one of the two controlled restart trials."
+    },
+    "commands": {
+      "sent": [
+        360,
+        360
+      ],
+      "accepted": [
+        360,
+        360
+      ],
+      "rejected": [
+        0,
+        0
+      ],
+      "timeouts": [
+        0,
+        0
+      ],
+      "acceptedEvents": 720,
+      "rejectedEvents": 0,
+      "bySeatAndType": [
+        {
+          "move": 349,
+          "produce": 10,
+          "attack": 1
+        },
+        {
+          "move": 350,
+          "produce": 10
+        }
+      ],
+      "rejectionByCode": {},
+      "latencyMs": {
+        "count": 720,
+        "p50": 17,
+        "p95": 21,
+        "p99": 48,
+        "max": 118,
+        "min": 15,
+        "mean": 18.580555555555556
+      },
+      "balance": 1
+    },
+    "transport": {
+      "syncs": [
+        12,
+        12
+      ],
+      "deltas": [
+        17981,
+        17981
+      ],
+      "syncBytes": [
+        476960,
+        465211
+      ],
+      "deltaBytes": [
+        27843951,
+        25117386
+      ],
+      "firstSyncBytes": [
+        58980,
+        58974
+      ],
+      "syncMapBytes": [
+        250782,
+        250782
+      ],
+      "deltaMapBytes": 0,
+      "deltaSize": [
+        {
+          "count": 17981,
+          "p50": 1448,
+          "p95": 2340,
+          "p99": 2920,
+          "max": 9406,
+          "min": 377,
+          "mean": 1548.5207163116622
+        },
+        {
+          "count": 17981,
+          "p50": 1445,
+          "p95": 2464,
+          "p99": 2798,
+          "max": 11967,
+          "min": 391,
+          "mean": 1396.8848228685836
+        }
+      ],
+      "fogEntries": [
+        35470,
+        28089
+      ],
+      "epochs": [
+        3083,
+        3083
+      ],
+      "rejectedUpdates": 0,
+      "resyncRequests": [
+        0,
+        0
+      ],
+      "perSeat": [
+        {
+          "seat": 0,
+          "count": 17993,
+          "bytes": 28320911,
+          "frequencyHz": 9.99713859480002,
+          "longestGapMs": 999,
+          "sizes": {
+            "count": 17993,
+            "p50": 1448,
+            "p95": 2347,
+            "p99": 2940,
+            "max": 61010,
+            "min": 377,
+            "mean": 1573.9960540210081
+          },
+          "gaps": {
+            "count": 17992,
+            "p50": 100,
+            "p95": 103,
+            "p99": 123,
+            "max": 999,
+            "min": 0,
+            "mean": 100.03451534015117
+          },
+          "firstTick": 0,
+          "lastTick": 35477
+        },
+        {
+          "seat": 1,
+          "count": 17993,
+          "bytes": 25582597,
+          "frequencyHz": 9.99713859480002,
+          "longestGapMs": 581,
+          "sizes": {
+            "count": 17993,
+            "p50": 1446,
+            "p95": 2464,
+            "p99": 2799,
+            "max": 59743,
+            "min": 391,
+            "mean": 1421.8083143444674
+          },
+          "gaps": {
+            "count": 17992,
+            "p50": 100,
+            "p95": 105,
+            "p99": 125,
+            "max": 581,
+            "min": 0,
+            "mean": 100.03318141396176
+          },
+          "firstTick": 0,
+          "lastTick": 35477
+        }
+      ]
+    },
+    "keepalive": {
+      "sent": [
+        89,
+        89
+      ],
+      "acked": [
+        89,
+        89
+      ],
+      "server": {
+        "received": 68,
+        "acked": 68,
+        "rateLimited": 0
+      },
+      "ackCoverage": [
+        1,
+        1
+      ]
+    },
+    "socket": {
+      "closes": [
+        {
+          "at": "2026-10-31T01:20:00.602Z",
+          "type": "socket-close",
+          "seat": 1,
+          "code": null,
+          "reason": ""
+        },
+        {
+          "at": "2026-10-31T01:20:00.605Z",
+          "type": "socket-close",
+          "seat": 0,
+          "code": null,
+          "reason": ""
+        },
+        {
+          "at": "2026-10-31T01:25:56.044Z",
+          "type": "socket-close",
+          "seat": 0,
+          "code": null,
+          "reason": ""
+        },
+        {
+          "at": "2026-10-31T01:25:56.048Z",
+          "type": "socket-close",
+          "seat": 1,
+          "code": null,
+          "reason": ""
+        },
+        {
+          "at": "2026-10-31T01:33:24.210Z",
+          "type": "socket-close",
+          "seat": 1,
+          "code": null,
+          "reason": ""
+        },
+        {
+          "at": "2026-10-31T01:33:24.212Z",
+          "type": "socket-close",
+          "seat": 0,
+          "code": null,
+          "reason": ""
+        },
+        {
+          "at": "2026-10-31T01:44:58.362Z",
+          "type": "socket-close",
+          "seat": 0,
+          "code": 1000,
+          "reason": "match-finished"
+        },
+        {
+          "at": "2026-10-31T01:44:58.366Z",
+          "type": "socket-close",
+          "seat": 1,
+          "code": 1000,
+          "reason": "match-finished"
+        }
+      ],
+      "reconnects": [
+        {
+          "at": "2026-10-31T01:25:56.442Z",
+          "type": "reconnect",
+          "seat": 0,
+          "attempt": 1,
+          "cause": "close-none",
+          "elapsedMs": 396
+        },
+        {
+          "at": "2026-10-31T01:25:56.446Z",
+          "type": "reconnect",
+          "seat": 1,
+          "attempt": 1,
+          "cause": "close-none",
+          "elapsedMs": 397
+        }
+      ],
+      "reconnectsSummary": {
+        "counts": [
+          1,
+          1
+        ],
+        "attempts": [
+          1,
+          1
+        ],
+        "failures": [
+          0,
+          0
+        ]
+      },
+      "closeEventCount": 8,
+      "closeWithCodeCount": 2,
+      "closeWithoutCodeCount": 6,
+      "unplannedCloses": [
+        {
+          "at": "2026-10-31T01:25:56.044Z",
+          "type": "socket-close",
+          "seat": 0,
+          "code": null,
+          "reason": ""
+        },
+        {
+          "at": "2026-10-31T01:25:56.048Z",
+          "type": "socket-close",
+          "seat": 1,
+          "code": null,
+          "reason": ""
+        }
+      ],
+      "halfOpenObserved": false,
+      "halfOpenNote": "No socket stopped delivering without a close event. Every null-code close corresponds to a runtime restart (two controlled, one unplanned); the final closes were 1000 match-finished."
+    },
+    "persistence": {
+      "finalStatus": {
+        "reads": 56,
+        "writes": 418,
+        "deletes": 288,
+        "readBytes": 520308,
+        "writeBytes": 12577470,
+        "snapshotCycles": 48,
+        "metaCycles": 81,
+        "loadCycles": 1,
+        "failures": 0,
+        "lastSuccessAt": 1793411098417,
+        "lastFailureAt": null,
+        "lastFailureKind": null,
+        "lastFailure": null,
+        "chunksWritten": 288,
+        "lastSnapshotBytes": 262370,
+        "maxSnapshotBytes": 262370,
+        "maxCycleMs": 0,
+        "durationsAvailable": false,
+        "cycleDuration": {
+          "count": 130,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "p99": 0,
+          "p999": 0,
+          "max": 0,
+          "mean": 0,
+          "sum": 0,
+          "over10": 0,
+          "over50": 0,
+          "bucketWidth": 1,
+          "overflow": 0
+        },
+        "operationDuration": {
+          "count": 762,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "p99": 0,
+          "p999": 0,
+          "max": 0,
+          "mean": 0,
+          "sum": 0,
+          "over10": 0,
+          "over50": 0,
+          "bucketWidth": 1,
+          "overflow": 0
+        },
+        "ageSinceSuccessMs": 35,
+        "behind": false
+      },
+      "snapshotCycles": 48,
+      "failures": 0,
+      "behind": false,
+      "lastSnapshotBytes": 262370,
+      "maxSnapshotBytes": 262370,
+      "checkpointGapDistributionMs": {
+        "count": 151,
+        "p50": 10024,
+        "p95": 20006,
+        "p99": 20009,
+        "max": 20028,
+        "min": 2323
+      },
+      "statusSamples": 189
+    },
+    "lifecycle": {
+      "final": {
+        "connectionsAccepted": 2,
+        "seatConnects": [
+          1,
+          1
+        ],
+        "seatDisconnects": [
+          1,
+          1
+        ],
+        "reconnectAttempts": 2,
+        "reconnectSuccesses": 2,
+        "reconnectRejections": 0,
+        "socketRejections": {},
+        "deadlineHits": 1,
+        "abnormalShutdowns": 0
+      },
+      "reservations": {
+        "heartbeatSuccesses": 34,
+        "heartbeatFailures": 0,
+        "releaseSuccesses": 1,
+        "releaseFailures": 0,
+        "lastFailureCode": null
+      },
+      "capacity": null,
+      "deployedSmoke": null
+    },
+    "restarts": [
+      {
+        "index": 0,
+        "scheduledAgeMs": 1500,
+        "checkpointObservedAt": "2026-10-31T01:19:58.737Z",
+        "lastSuccessfulCheckpointAt": "2026-10-31T01:19:58.538Z",
+        "observedTickAtLastPersistenceSuccess": 6004,
+        "restartRequestedAt": "2026-10-31T01:20:00.500Z",
+        "actualCheckpointAgeAtRequestMs": 1962,
+        "harnessCheckpointAgeAtRequestMs": 1763,
+        "checkpointAgeWithin15s": true,
+        "lastAuthoritativeTickBeforeRestart": 6038,
+        "firstRestoredSnapshotTick": 5999,
+        "restoredWholeMatchTick": 5999,
+        "restoredProcessTick": 0,
+        "tickRollback": 39,
+        "elapsedRollbackMs": 1950,
+        "rollbackWithin15s": true,
+        "restoredSnapshotLagFromObservedCheckpointTicks": 5,
+        "syncGenerationBefore": [
+          2,
+          2
+        ],
+        "epochContinuity": [
+          {
+            "seat": 0,
+            "before": 2,
+            "afterRestore": 1026,
+            "monotonic": true
+          },
+          {
+            "seat": 1,
+            "before": 2,
+            "afterRestore": 1026,
+            "monotonic": true
+          }
+        ],
+        "reconnect": [
+          {
+            "seat": 0,
+            "connectMs": 159,
+            "firstSyncMsAfterClose": 483,
+            "firstSyncTick": 6001,
+            "firstSyncEpoch": 1026,
+            "firstSyncSequence": 3001,
+            "firstSyncHadMap": true,
+            "firstDeltaMsAfterSync": 4,
+            "firstDeltaTick": 6002,
+            "firstCommandAccepted": true,
+            "firstCommandTick": 6002,
+            "firstCommandMsAfterSync": 26,
+            "resyncAccepted": true,
+            "resyncRateLimited": true,
+            "staleSyncRejected": "epoch-mismatch",
+            "staleDeltaRejected": "epoch-mismatch",
+            "stateTickAfterRecovery": 6006
+          },
+          {
+            "seat": 1,
+            "connectMs": 108,
+            "firstSyncMsAfterClose": 431,
+            "firstSyncTick": 6001,
+            "firstSyncEpoch": 1026,
+            "firstSyncSequence": 3001,
+            "firstSyncHadMap": true,
+            "firstDeltaMsAfterSync": 38,
+            "firstDeltaTick": 6002,
+            "firstCommandAccepted": true,
+            "firstCommandTick": 6003,
+            "firstCommandMsAfterSync": 99,
+            "resyncAccepted": true,
+            "resyncRateLimited": true,
+            "staleSyncRejected": "epoch-mismatch",
+            "staleDeltaRejected": "epoch-mismatch",
+            "stateTickAfterRecovery": 6006
+          }
+        ],
+        "postRestartCommands": [
+          {
+            "seat": 0,
+            "accepted": true,
+            "tick": 6002
+          },
+          {
+            "seat": 1,
+            "accepted": true,
+            "tick": 6003
+          }
+        ],
+        "postCheckpointCommands": [
+          {
+            "seat": 0,
+            "purpose": "move",
+            "commandType": "move",
+            "accepted": true,
+            "tick": 6039
+          },
+          {
+            "seat": 1,
+            "purpose": "move",
+            "commandType": "move",
+            "accepted": true,
+            "tick": 6039
+          }
+        ],
+        "startContinuity": {
+          "before": 1793409298524,
+          "after": 1793409298524,
+          "deadlineBefore": 1793411098373,
+          "deadlineAfter": 1793411098373
+        },
+        "persistenceFailuresBefore": null,
+        "persistenceFailuresAfter": null,
+        "rejectedUpdates": 0
+      },
+      {
+        "index": 1,
+        "scheduledAgeMs": 12500,
+        "checkpointObservedAt": "2026-10-31T01:33:11.568Z",
+        "lastSuccessfulCheckpointAt": "2026-10-31T01:33:11.414Z",
+        "observedTickAtLastPersistenceSuccess": 21603,
+        "restartRequestedAt": "2026-10-31T01:33:24.126Z",
+        "actualCheckpointAgeAtRequestMs": 12712,
+        "harnessCheckpointAgeAtRequestMs": 12558,
+        "checkpointAgeWithin15s": true,
+        "lastAuthoritativeTickBeforeRestart": 21854,
+        "firstRestoredSnapshotTick": 21599,
+        "restoredWholeMatchTick": 21599,
+        "restoredProcessTick": 0,
+        "tickRollback": 255,
+        "elapsedRollbackMs": 12750,
+        "rollbackWithin15s": true,
+        "restoredSnapshotLagFromObservedCheckpointTicks": 4,
+        "syncGenerationBefore": [
+          2054,
+          2054
+        ],
+        "epochContinuity": [
+          {
+            "seat": 0,
+            "before": 2054,
+            "afterRestore": 3079,
+            "monotonic": true
+          },
+          {
+            "seat": 1,
+            "before": 2054,
+            "afterRestore": 3079,
+            "monotonic": true
+          }
+        ],
+        "reconnect": [
+          {
+            "seat": 0,
+            "connectMs": 98,
+            "firstSyncMsAfterClose": 357,
+            "firstSyncTick": 21601,
+            "firstSyncEpoch": 3079,
+            "firstSyncSequence": 10803,
+            "firstSyncHadMap": true,
+            "firstDeltaMsAfterSync": 30,
+            "firstDeltaTick": 21602,
+            "firstCommandAccepted": true,
+            "firstCommandTick": 21603,
+            "firstCommandMsAfterSync": 80,
+            "resyncAccepted": true,
+            "resyncRateLimited": true,
+            "staleSyncRejected": "epoch-mismatch",
+            "staleDeltaRejected": "epoch-mismatch",
+            "stateTickAfterRecovery": 21604
+          },
+          {
+            "seat": 1,
+            "connectMs": 80,
+            "firstSyncMsAfterClose": 347,
+            "firstSyncTick": 21601,
+            "firstSyncEpoch": 3079,
+            "firstSyncSequence": 10803,
+            "firstSyncHadMap": true,
+            "firstDeltaMsAfterSync": 41,
+            "firstDeltaTick": 21602,
+            "firstCommandAccepted": true,
+            "firstCommandTick": 21603,
+            "firstCommandMsAfterSync": 108,
+            "resyncAccepted": true,
+            "resyncRateLimited": true,
+            "staleSyncRejected": "epoch-mismatch",
+            "staleDeltaRejected": "epoch-mismatch",
+            "stateTickAfterRecovery": 21604
+          }
+        ],
+        "postRestartCommands": [
+          {
+            "seat": 0,
+            "accepted": true,
+            "tick": 21603
+          },
+          {
+            "seat": 1,
+            "accepted": true,
+            "tick": 21603
+          }
+        ],
+        "postCheckpointCommands": [
+          {
+            "seat": 0,
+            "purpose": "move",
+            "commandType": "move",
+            "accepted": true,
+            "tick": 21854
+          },
+          {
+            "seat": 1,
+            "purpose": "move",
+            "commandType": "move",
+            "accepted": true,
+            "tick": 21854
+          }
+        ],
+        "startContinuity": {
+          "before": 1793409298524,
+          "after": 1793409298524,
+          "deadlineBefore": 1793411098373,
+          "deadlineAfter": 1793411098373
+        },
+        "persistenceFailuresBefore": null,
+        "persistenceFailuresAfter": null,
+        "rejectedUpdates": 0
+      }
+    ],
+    "errors": [],
+    "assemblyRejects": [],
+    "unexpectedAssemblyRejects": [],
+    "serverErrors": [
+      {
+        "at": "2026-10-31T01:20:01.238Z",
+        "type": "server-error",
+        "seat": 0,
+        "code": "resync-rate-limited",
+        "message": "Resync requests are too frequent.",
+        "expected": true
+      },
+      {
+        "at": "2026-10-31T01:20:01.288Z",
+        "type": "server-error",
+        "seat": 1,
+        "code": "resync-rate-limited",
+        "message": "Resync requests are too frequent.",
+        "expected": true
+      },
+      {
+        "at": "2026-10-31T01:33:24.715Z",
+        "type": "server-error",
+        "seat": 0,
+        "code": "resync-rate-limited",
+        "message": "Resync requests are too frequent.",
+        "expected": true
+      },
+      {
+        "at": "2026-10-31T01:33:24.763Z",
+        "type": "server-error",
+        "seat": 1,
+        "code": "resync-rate-limited",
+        "message": "Resync requests are too frequent.",
+        "expected": true
+      }
+    ],
+    "statusSamples": 189,
+    "commandEvents": 720
+  },
+  "derived": {
+    "wholeMatchRateHz": 19.711097986553316,
+    "restartRollbackMaxMs": 12750,
+    "checkpointAgeMaxMs": 12712,
+    "commandAcceptanceRate": 1,
+    "transportTotalBytes": 53903508,
+    "syncsPerSeat": [
+      12,
+      12
+    ],
+    "deltasPerSeat": [
+      17981,
+      17981
+    ]
+  },
+  "limitations": [
+    "Cloudflare durableObjectsPeriodicGroups CPU is aggregate per object-minute, not individual-tick CPU.",
+    "The 10 ms individual-tick CPU target is not established by this analysis.",
+    "Platform memory is an isolate maximum per bucket, not retained application heap.",
+    "Room diagnostics reset at each Durable Object restart; processTicks is post-restart only, while totalTicks is the durable whole-match counter.",
+    "The harness samples status every 10 s normally and 250 ms around restarts; checkpoint age is derived from the last successful persistence timestamp returned by the room."
+  ]
+}

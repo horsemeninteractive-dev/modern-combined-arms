@@ -1,0 +1,45 @@
+{
+  "phase": "2A.13",
+  "capturedAt": "2026-10-31T00:17:00Z",
+  "worker": "mca-multiplayer-staging",
+  "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev",
+  "activeVersion": "9fd1dcf4-3046-438d-b72d-0c3880b0afc5",
+  "versionCreatedAt": "2026-10-31T00:02:04.043Z",
+  "deploymentCreatedAt": "2026-10-31T00:02:05.643Z",
+  "tag": "phase2a13",
+  "message": "Phase 2A.13: snapshot target integrity and finalisation ordering",
+  "deployedArtifact": "cfca794ca41719449fd827fcd06b13ddbdb806c2b7d54a02703e9c4959396f1a",
+  "artifactPath": "dist-mp-room/roomWorker.js",
+  "artifactNote": "Local bundle hash uploaded by wrangler; deployment succeeded and the health build label matches this source.",
+  "health": {
+    "ok": true,
+    "onlineEnabled": true,
+    "devMode": true,
+    "adminConfigured": true,
+    "reservationConfigured": true,
+    "protocol": "mca.v2",
+    "snapshotVersion": 2,
+    "build": "phase2a13-staging"
+  },
+  "repository": {
+    "branch": "master",
+    "head": "132ccc8363d5b5bc98b6518b4afd1738dedaad6a",
+    "workingTreePaths": 156,
+    "stagedPaths": 0,
+    "featureEnabled": false
+  },
+  "sourceHashes": {
+    "src/sim/game.ts": "83b19d865ae8f2f3ba93d3875ae5cda07fb369e4a90da89fe0afdf9008c277fe",
+    "src/multiplayer/roomMatch.ts": "ddb9646e3bf1b8d3facebbaec18cf9231b9e5ab3d0bc7c0dd9184f5b55b17b74",
+    "src/multiplayer/roomWorker.ts": "85dfc17c60bb52eb60f61cb8a42159ff157702fe3279ee07cb6da21e7d731997",
+    "tests/phase2a13-integrity.test.ts": "f94a908ef26c72d0db408fe83b2f9a52cf806f5535a8aaa78c7809755c3b3dfc"
+  },
+  "safety": {
+    "stagingOnly": true,
+    "productionDeployment": false,
+    "featureFlag": false,
+    "maxActiveRooms": 2,
+    "matchDeadlineMs": 1800000,
+    "paidServices": false
+  }
+}

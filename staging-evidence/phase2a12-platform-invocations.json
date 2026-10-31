@@ -1,0 +1,91 @@
+{
+  "source": "POST https://api.cloudflare.com/client/v4/graphql, dataset durableObjectsInvocationsAdaptiveGroups",
+  "capturedAt": "2026-10-30T23:04:00Z",
+  "account": "[redacted]",
+  "scope": {
+    "worker": "mca-multiplayer-staging",
+    "scriptVersion": "b1030bee-2c89-4a23-addd-f1567b0d818b",
+    "namespaceId": "4c3a9ed29ce1475aae7ec0530538afca",
+    "objectId": "365c773286c7e2f9a631860e267f132fa0e206f0451f75c9f0e24fb979069983",
+    "roomId": "phase2a12-dry6-mvvkj37a",
+    "window": "2026-10-30T22:53:00Z/2026-10-30T22:55:10Z",
+    "coloCode": "LHR"
+  },
+  "resolution": {
+    "cpuTimeP50Us": "median CPU per invocation in each platform minute bucket, not an individual-invocation census",
+    "wallTimeUs": "sum of invocation wall time in the bucket; WebSocket invocations can remain open for many seconds and must not be read as CPU",
+    "requests": "invocation count represented by the adaptive bucket",
+    "coverage": "61 adaptive groups returned. This is a sampled/aggregated dataset, not 178 individual records."
+  },
+  "totals": {
+    "rows": 61,
+    "requests": 178,
+    "errors": 6,
+    "wallTimeMs": 267329.488,
+    "responseBodyBytes": 4947448,
+    "averageMinuteCpuP50Us": 9407.491803278688,
+    "maxMinuteCpuP50Us": 143979,
+    "maxMinuteCpuP99Us": 197583
+  },
+  "byStatus": {
+    "success": {
+      "groups": 57,
+      "requests": 172,
+      "errors": 0,
+      "wallTimeMs": 89122.692,
+      "cpuP50MinUs": 430,
+      "cpuP50MaxUs": 143979,
+      "cpuP99MaxUs": 197583
+    },
+    "internalError": {
+      "groups": 2,
+      "requests": 4,
+      "errors": 4,
+      "wallTimeMs": 118746.248,
+      "cpuP50MinUs": 1294,
+      "cpuP50MaxUs": 3114,
+      "cpuP99MaxUs": 12145,
+      "groupsDetail": [
+        {
+          "at": "2026-10-30T22:53:17Z",
+          "requests": 2,
+          "errors": 2,
+          "wallTimeUs": 33359932,
+          "cpuP50Us": 3114,
+          "cpuP99Us": 10902,
+          "maxWallTimeUs": 16683348
+        },
+        {
+          "at": "2026-10-30T22:53:34Z",
+          "requests": 2,
+          "errors": 2,
+          "wallTimeUs": 85386316,
+          "cpuP50Us": 1294,
+          "cpuP99Us": 12145,
+          "maxWallTimeUs": 42696817
+        }
+      ]
+    },
+    "responseStreamDisconnected": {
+      "groups": 1,
+      "requests": 1,
+      "errors": 1,
+      "wallTimeMs": 29732.402,
+      "cpuP50Us": 9966,
+      "cpuP99Us": 9966
+    },
+    "clientDisconnected": {
+      "groups": 1,
+      "requests": 1,
+      "errors": 1,
+      "wallTimeMs": 29728.146,
+      "cpuP50Us": 1512,
+      "cpuP99Us": 1512
+    }
+  },
+  "interpretation": {
+    "internalErrors": "The two internalError groups coincide with the two deliberate staging aborts. They are lifecycle artefacts of the forced restart, not application simulation errors. No simulation, serialisation or persistence error was recorded by the room diagnostics in the passing trial.",
+    "clientDisconnects": "responseStreamDisconnected and clientDisconnected correspond to the forced socket closures at restart 1 and are expected.",
+    "cpu": "The adaptive CPU quantiles are per invocation and cannot be converted into per-tick CPU. The 10 ms individual-tick target remains unverified."
+  }
+}

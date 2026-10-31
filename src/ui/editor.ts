@@ -24,7 +24,7 @@ import {
   tileIndex,
   type TerrainId,
 } from '../sim/terrain';
-import { TILE_SIZE } from '../sim/constants';
+import { MAX_ELEVATION, TILE_SIZE } from '../sim/constants';
 import { pickTerrain } from '../render/terrainSurface';
 import { icon } from './icons';
 import { openModal, closeModal, escapeHtml } from './modal';
@@ -954,7 +954,7 @@ export class Editor {
         } else if (this.tool === 'raise' || this.tool === 'lower') {
           if (tile.t === Terrain.DeepWater || tile.t === Terrain.ShallowWater) continue;
           const delta = this.tool === 'raise' ? 1 : -1;
-          tile.e = Math.max(0, Math.min(4, tile.e + delta));
+          tile.e = Math.max(0, Math.min(MAX_ELEVATION, tile.e + delta));
           changed = true;
         } else if (this.tool === 'ore') {
           if (TERRAIN[tile.t as TerrainId]?.oreAllowed) {

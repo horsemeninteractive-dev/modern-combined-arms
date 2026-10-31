@@ -1,0 +1,310 @@
+{
+  "source": "staging-evidence\\phase2a3-main-30m-2026-10-30T04-20-58-814Z\\heap-m15.pprof",
+  "bytes": 2027,
+  "sampleTypes": [
+    {
+      "type": "alloc_objects",
+      "unit": "count"
+    },
+    {
+      "type": "alloc_space",
+      "unit": "bytes"
+    }
+  ],
+  "samplePeriodBytes": 524288,
+  "samples": 40,
+  "totals": [
+    {
+      "type": "alloc_objects",
+      "unit": "count",
+      "value": 8004759,
+      "percentOfSampled": 100.0
+    },
+    {
+      "type": "alloc_space",
+      "unit": "bytes",
+      "value": 288578944,
+      "percentOfSampled": 100.0
+    }
+  ],
+  "bySampleType": [
+    {
+      "type": "alloc_objects",
+      "unit": "count",
+      "total": 8004759,
+      "topSelf": [
+        {
+          "function": "next",
+          "value": 7812041,
+          "percent": 97.59
+        },
+        {
+          "function": "updateUnits",
+          "value": 49649,
+          "percent": 0.62
+        },
+        {
+          "function": "hasLineOfSight",
+          "value": 43691,
+          "percent": 0.55
+        },
+        {
+          "function": "refreshVisibleEntities",
+          "value": 32769,
+          "percent": 0.41
+        },
+        {
+          "function": "values",
+          "value": 21846,
+          "percent": 0.27
+        },
+        {
+          "function": "from",
+          "value": 14355,
+          "percent": 0.18
+        },
+        {
+          "function": "",
+          "value": 10923,
+          "percent": 0.14
+        },
+        {
+          "function": "passiveMatsFor",
+          "value": 10923,
+          "percent": 0.14
+        },
+        {
+          "function": "sort",
+          "value": 6712,
+          "percent": 0.08
+        },
+        {
+          "function": "add",
+          "value": 1543,
+          "percent": 0.02
+        },
+        {
+          "function": "sendSnapshotObject",
+          "value": 307,
+          "percent": 0.0
+        }
+      ],
+      "topInclusive": [
+        {
+          "function": "(root)",
+          "value": 8004759,
+          "percent": 100.0
+        },
+        {
+          "function": "runTick",
+          "value": 7978544,
+          "percent": 99.67
+        },
+        {
+          "function": "next",
+          "value": 7812041,
+          "percent": 97.59
+        },
+        {
+          "function": "from",
+          "value": 7800181,
+          "percent": 97.44
+        },
+        {
+          "function": "broadcast",
+          "value": 7775816,
+          "percent": 97.14
+        },
+        {
+          "function": "createTeamSnapshot",
+          "value": 7775509,
+          "percent": 97.14
+        },
+        {
+          "function": "tick",
+          "value": 6269983,
+          "percent": 78.33
+        },
+        {
+          "function": "refreshVision",
+          "value": 76460,
+          "percent": 0.96
+        },
+        {
+          "function": "updateUnits",
+          "value": 56361,
+          "percent": 0.7
+        },
+        {
+          "function": "updateGarrisons",
+          "value": 48061,
+          "percent": 0.6
+        },
+        {
+          "function": "hasLineOfSight",
+          "value": 43691,
+          "percent": 0.55
+        },
+        {
+          "function": "refreshVisibleEntities",
+          "value": 32769,
+          "percent": 0.41
+        },
+        {
+          "function": "toSave",
+          "value": 26215,
+          "percent": 0.33
+        },
+        {
+          "function": "createRoomSnapshot",
+          "value": 26215,
+          "percent": 0.33
+        },
+        {
+          "function": "snapshot",
+          "value": 26215,
+          "percent": 0.33
+        }
+      ]
+    },
+    {
+      "type": "alloc_space",
+      "unit": "bytes",
+      "total": 288578944,
+      "topSelf": [
+        {
+          "function": "next",
+          "value": 156240820,
+          "percent": 54.14
+        },
+        {
+          "function": "from",
+          "value": 108785944,
+          "percent": 37.7
+        },
+        {
+          "function": "sendSnapshotObject",
+          "value": 18308368,
+          "percent": 6.34
+        },
+        {
+          "function": "sort",
+          "value": 1049088,
+          "percent": 0.36
+        },
+        {
+          "function": "updateUnits",
+          "value": 1048596,
+          "percent": 0.36
+        },
+        {
+          "function": "add",
+          "value": 524620,
+          "percent": 0.18
+        },
+        {
+          "function": "",
+          "value": 524304,
+          "percent": 0.18
+        },
+        {
+          "function": "refreshVisibleEntities",
+          "value": 524304,
+          "percent": 0.18
+        },
+        {
+          "function": "passiveMatsFor",
+          "value": 524304,
+          "percent": 0.18
+        },
+        {
+          "function": "values",
+          "value": 524304,
+          "percent": 0.18
+        },
+        {
+          "function": "hasLineOfSight",
+          "value": 524292,
+          "percent": 0.18
+        }
+      ],
+      "topInclusive": [
+        {
+          "function": "(root)",
+          "value": 288578944,
+          "percent": 100.0
+        },
+        {
+          "function": "runTick",
+          "value": 288054644,
+          "percent": 99.82
+        },
+        {
+          "function": "broadcast",
+          "value": 282811152,
+          "percent": 98.0
+        },
+        {
+          "function": "createTeamSnapshot",
+          "value": 264502784,
+          "percent": 91.66
+        },
+        {
+          "function": "from",
+          "value": 264502464,
+          "percent": 91.66
+        },
+        {
+          "function": "tick",
+          "value": 220303540,
+          "percent": 76.34
+        },
+        {
+          "function": "next",
+          "value": 156240820,
+          "percent": 54.14
+        },
+        {
+          "function": "sendSnapshotObject",
+          "value": 18308368,
+          "percent": 6.34
+        },
+        {
+          "function": "updateUnits",
+          "value": 2097684,
+          "percent": 0.73
+        },
+        {
+          "function": "sort",
+          "value": 1049088,
+          "percent": 0.36
+        },
+        {
+          "function": "updateGarrisons",
+          "value": 1048604,
+          "percent": 0.36
+        },
+        {
+          "function": "refreshVision",
+          "value": 1048596,
+          "percent": 0.36
+        },
+        {
+          "function": "add",
+          "value": 524620,
+          "percent": 0.18
+        },
+        {
+          "function": "map",
+          "value": 524304,
+          "percent": 0.18
+        },
+        {
+          "function": "evaluateMatchResult",
+          "value": 524304,
+          "percent": 0.18
+        }
+      ]
+    }
+  ]
+}

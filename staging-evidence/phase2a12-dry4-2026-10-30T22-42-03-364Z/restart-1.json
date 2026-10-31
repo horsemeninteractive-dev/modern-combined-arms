@@ -1,0 +1,149 @@
+{
+  "index": 1,
+  "scheduledAgeMs": 12500,
+  "checkpointObservedAt": 1793400171388,
+  "checkpointObservedAtIso": "2026-10-30T22:42:51.388Z",
+  "checkpointAgeAtRequestMs": 12593,
+  "checkpointAgeAtAbortApproxMs": 12680,
+  "ageSinceAnyPersistenceSuccessMs": 2627,
+  "lastSuccessAt": 1793400171324,
+  "lastSuccessAtIso": "2026-10-30T22:42:51.324Z",
+  "lastCheckpointTick": 903,
+  "snapshotCyclesBefore": 3,
+  "snapshotCyclesAfterRestore": 1,
+  "preTick": 1155,
+  "preEpochs": [
+    1027,
+    1027
+  ],
+  "preSeqs": [
+    578,
+    578
+  ],
+  "restoredSnapshotTick": 901,
+  "restoredTotalTicks": 901,
+  "restoredProcessTicks": 0,
+  "restoredAtIso": "2026-10-30T22:43:04.326Z",
+  "postRestartTickAfterChecks": 910,
+  "processTicksAfterChecks": 9,
+  "rollbackTicks": 254,
+  "rollbackMs": 12700,
+  "withinCheckpointInterval": true,
+  "restartRequestedAt": "2026-10-30T22:43:03.981Z",
+  "restartResponseAt": "2026-10-30T22:43:04.018Z",
+  "socketsClosedAt": [
+    "2026-10-30T22:43:04.070Z",
+    "2026-10-30T22:43:04.068Z"
+  ],
+  "closedAfterRequestMs": [
+    89,
+    87
+  ],
+  "restoredStatusAfterCloseMs": 256,
+  "reconnect": [
+    {
+      "seat": 0,
+      "connectMs": 164,
+      "firstSyncAt": 1793400184485,
+      "firstSyncMsAfterClose": 415,
+      "firstSyncTick": 904,
+      "firstSyncEpoch": 2052,
+      "firstSyncSeq": 452,
+      "firstSyncHadMap": true,
+      "firstSyncFogTiles": 6912,
+      "firstSyncStateTick": 904,
+      "firstDeltaAt": 1793400184577,
+      "firstDeltaMsAfterSync": 92,
+      "firstDeltaTick": 906,
+      "firstDeltaEpoch": 2052,
+      "firstCommandAt": 1793400184666,
+      "firstCommandMsAfterSync": 181,
+      "firstCommandAccepted": true,
+      "firstCommandTick": 907,
+      "resyncAcceptedAt": 1793400184717,
+      "resyncRateLimitedAt": 1793400184737,
+      "resyncSyncEpoch": 2053,
+      "staleSyncReject": {
+        "ok": false,
+        "reason": "epoch-mismatch",
+        "detail": "Sync epoch did not advance."
+      },
+      "staleDeltaReject": {
+        "ok": false,
+        "reason": "epoch-mismatch",
+        "detail": "Delta belongs to another sync generation."
+      },
+      "stateTickAfterRecovery": 910
+    },
+    {
+      "seat": 1,
+      "connectMs": 261,
+      "firstSyncAt": 1793400184586,
+      "firstSyncMsAfterClose": 516,
+      "firstSyncTick": 904,
+      "firstSyncEpoch": 2052,
+      "firstSyncSeq": 452,
+      "firstSyncHadMap": true,
+      "firstSyncFogTiles": 6912,
+      "firstSyncStateTick": 904,
+      "firstDeltaAt": 1793400184595,
+      "firstDeltaMsAfterSync": 9,
+      "firstDeltaTick": 906,
+      "firstDeltaEpoch": 2052,
+      "firstCommandAt": 1793400184687,
+      "firstCommandMsAfterSync": 101,
+      "firstCommandAccepted": true,
+      "firstCommandTick": 908,
+      "resyncAcceptedAt": 1793400184771,
+      "resyncRateLimitedAt": 1793400184792,
+      "resyncSyncEpoch": 2053,
+      "staleSyncReject": {
+        "ok": false,
+        "reason": "epoch-mismatch",
+        "detail": "Sync epoch did not advance."
+      },
+      "staleDeltaReject": {
+        "ok": false,
+        "reason": "epoch-mismatch",
+        "detail": "Delta belongs to another sync generation."
+      },
+      "stateTickAfterRecovery": 910
+    }
+  ],
+  "postRestartCommands": [
+    {
+      "seat": 0,
+      "accepted": true,
+      "tick": 907
+    },
+    {
+      "seat": 1,
+      "accepted": true,
+      "tick": 908
+    }
+  ],
+  "postCheckpointCommands": [
+    {
+      "seat": 0,
+      "purpose": "attack",
+      "commandType": "attack",
+      "accepted": true,
+      "tick": 1155
+    },
+    {
+      "seat": 1,
+      "purpose": "attack",
+      "commandType": "attack",
+      "accepted": false,
+      "tick": null
+    }
+  ],
+  "startContinuity": {
+    "before": 1793400124213,
+    "after": 1793400124213,
+    "deadlineBefore": 1793400214017,
+    "deadlineAfter": 1793400214017
+  },
+  "rejectedUpdates": 0,
+  "lastReject": null
+}

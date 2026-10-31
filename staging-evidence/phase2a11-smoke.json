@@ -1,0 +1,37 @@
+{
+  "ok": true,
+  "origin": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev",
+  "health": {
+    "ok": true,
+    "onlineEnabled": true,
+    "devMode": true,
+    "adminConfigured": true,
+    "reservationConfigured": true,
+    "protocol": "mca.v2",
+    "snapshotVersion": 2,
+    "build": "phase2a11-staging"
+  },
+  "roomId": "deploy-mvvjbd2i",
+  "finalReservation": "released",
+  "capacityRejected": "capacity-full",
+  "resyncMs": 18,
+  "initialSyncBytes": 58967,
+  "firstDeltaBytes": 365,
+  "checks": [
+    "deployed 101 upgrade",
+    "two seats connected",
+    "team projections isolated",
+    "valid command accepted",
+    "forged authority rejected",
+    "oversized frame rejected",
+    "wrong token 401",
+    "foreign origin 403",
+    "duplicate seat 409",
+    "resync checkpoint applied",
+    "reconnect accepted on a new epoch",
+    "delta carried no map or full state",
+    "result delivered to both seats",
+    "reservation released",
+    "deployed global capacity boundary enforced"
+  ]
+}

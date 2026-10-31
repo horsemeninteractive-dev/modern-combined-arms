@@ -1,0 +1,733 @@
+{
+  "version": 1,
+  "generatedAt": "2026-10-30T14:11:48.079Z",
+  "source": {
+    "samplesPath": "staging-evidence/phase2a6-calibration-2026-10-30T13-56-52-136Z/samples.json",
+    "csvPath": "staging-evidence/phase2a6-observability-10rep.csv",
+    "attempt": 140,
+    "matched": 132,
+    "coveragePercent": 94.29,
+    "missingRuns": [
+      "p2a6-stress-5-6",
+      "p2a6-stress-50-6",
+      "p2a6-baseline-10-7",
+      "p2a6-baseline-20-7",
+      "p2a6-stress-10-7",
+      "p2a6-baseline-5-8",
+      "p2a6-baseline-10-8",
+      "p2a6-stress-10-8"
+    ],
+    "cpuResolutionMs": 1,
+    "note": "Only exact run-id matches are used. Workers Observability on the Free plan can omit individual invocation records; missing values are not imputed."
+  },
+  "profiles": {
+    "baseline": {
+      "attemptedSamples": 70,
+      "matchedSamples": 66,
+      "coveragePercent": 94.29,
+      "missingRuns": [
+        "p2a6-baseline-10-7",
+        "p2a6-baseline-20-7",
+        "p2a6-baseline-5-8",
+        "p2a6-baseline-10-8"
+      ],
+      "workload": "16 scenario units, no added force, no commands",
+      "byBatch": {
+        "0": {
+          "n": 10,
+          "meanMs": 9.5,
+          "medianMs": 4.5,
+          "minMs": 2,
+          "maxMs": 33,
+          "p95Ms": 33,
+          "stddevMs": 11.472,
+          "cv": 1.208,
+          "values": [
+            7,
+            6,
+            4,
+            29,
+            5,
+            2,
+            3,
+            3,
+            3,
+            33
+          ]
+        },
+        "1": {
+          "n": 10,
+          "meanMs": 5,
+          "medianMs": 3.5,
+          "minMs": 2,
+          "maxMs": 18,
+          "p95Ms": 18,
+          "stddevMs": 4.738,
+          "cv": 0.948,
+          "values": [
+            18,
+            6,
+            3,
+            5,
+            2,
+            2,
+            3,
+            4,
+            3,
+            4
+          ]
+        },
+        "5": {
+          "n": 9,
+          "meanMs": 5.556,
+          "medianMs": 3,
+          "minMs": 2,
+          "maxMs": 12,
+          "p95Ms": 12,
+          "stddevMs": 3.909,
+          "cv": 0.704,
+          "values": [
+            10,
+            12,
+            2,
+            4,
+            3,
+            3,
+            3,
+            3,
+            10
+          ]
+        },
+        "10": {
+          "n": 8,
+          "meanMs": 5.5,
+          "medianMs": 5,
+          "minMs": 3,
+          "maxMs": 8,
+          "p95Ms": 8,
+          "stddevMs": 2,
+          "cv": 0.364,
+          "values": [
+            7,
+            8,
+            4,
+            3,
+            6,
+            4,
+            4,
+            8
+          ]
+        },
+        "20": {
+          "n": 9,
+          "meanMs": 8.667,
+          "medianMs": 7,
+          "minMs": 4,
+          "maxMs": 26,
+          "p95Ms": 26,
+          "stddevMs": 6.69,
+          "cv": 0.772,
+          "values": [
+            26,
+            9,
+            7,
+            5,
+            4,
+            8,
+            7,
+            5,
+            7
+          ]
+        },
+        "50": {
+          "n": 10,
+          "meanMs": 11.5,
+          "medianMs": 8.5,
+          "minMs": 6,
+          "maxMs": 36,
+          "p95Ms": 36,
+          "stddevMs": 8.923,
+          "cv": 0.776,
+          "values": [
+            36,
+            13,
+            6,
+            8,
+            8,
+            6,
+            10,
+            7,
+            12,
+            9
+          ]
+        },
+        "100": {
+          "n": 10,
+          "meanMs": 20.4,
+          "medianMs": 13.5,
+          "minMs": 12,
+          "maxMs": 40,
+          "p95Ms": 40,
+          "stddevMs": 10.895,
+          "cv": 0.534,
+          "values": [
+            21,
+            40,
+            27,
+            38,
+            13,
+            13,
+            12,
+            14,
+            13,
+            13
+          ]
+        }
+      },
+      "setupControlMs": {
+        "n": 10,
+        "meanMs": 9.5,
+        "medianMs": 4.5,
+        "minMs": 2,
+        "maxMs": 33,
+        "p95Ms": 33,
+        "stddevMs": 11.472,
+        "cv": 1.208,
+        "values": [
+          7,
+          6,
+          4,
+          29,
+          5,
+          2,
+          3,
+          3,
+          3,
+          33
+        ]
+      },
+      "fits": {
+        "allBatches": {
+          "n": 66,
+          "slopeMsPerTick": 0.137,
+          "interceptMs": 5.856,
+          "r2": 0.28,
+          "maxAbsResidualMs": 27.144,
+          "slopeStdErr": 0.028,
+          "slopeCi95MsPerTick": [
+            0.083,
+            0.192
+          ]
+        },
+        "steady20Plus": {
+          "n": 29,
+          "slopeMsPerTick": 0.151,
+          "interceptMs": 4.963,
+          "r2": 0.247,
+          "maxAbsResidualMs": 23.505,
+          "slopeStdErr": 0.051,
+          "slopeCi95MsPerTick": [
+            0.052,
+            0.25
+          ]
+        },
+        "steady50Plus": {
+          "n": 20,
+          "slopeMsPerTick": 0.178,
+          "interceptMs": 2.6,
+          "r2": 0.182,
+          "maxAbsResidualMs": 24.5,
+          "slopeStdErr": 0.089,
+          "slopeCi95MsPerTick": [
+            0.003,
+            0.353
+          ]
+        }
+      },
+      "perRepSlopes": {
+        "allBatches": {
+          "n": 10,
+          "meanMsPerTick": 0.14,
+          "medianMsPerTick": 0.107,
+          "minMsPerTick": -0.026,
+          "maxMsPerTick": 0.307,
+          "stddevMsPerTick": 0.094,
+          "values": [
+            0.153,
+            0.307,
+            0.221,
+            0.236,
+            0.095,
+            0.1,
+            0.097,
+            0.105,
+            0.109,
+            -0.026
+          ]
+        },
+        "steady20Plus": {
+          "n": 10,
+          "meanMsPerTick": 0.156,
+          "medianMsPerTick": 0.102,
+          "minMsPerTick": -0.087,
+          "maxMsPerTick": 0.432,
+          "stddevMsPerTick": 0.163,
+          "values": [
+            -0.087,
+            0.403,
+            0.267,
+            0.432,
+            0.111,
+            0.07,
+            0.06,
+            0.14,
+            0.092,
+            0.076
+          ]
+        },
+        "steady50Plus": {
+          "n": 10,
+          "meanMsPerTick": 0.178,
+          "medianMsPerTick": 0.12,
+          "minMsPerTick": -0.3,
+          "maxMsPerTick": 0.6,
+          "stddevMsPerTick": 0.271,
+          "values": [
+            -0.3,
+            0.54,
+            0.42,
+            0.6,
+            0.1,
+            0.14,
+            0.04,
+            0.14,
+            0.02,
+            0.08
+          ]
+        }
+      },
+      "perRepIncremental": {
+        "delta20to50": {
+          "n": 9,
+          "meanMsPerTick": 0.111,
+          "medianMsPerTick": 0.1,
+          "minMsPerTick": -0.067,
+          "maxMsPerTick": 0.333,
+          "stddevMsPerTick": 0.122,
+          "values": [
+            0.333,
+            0.133,
+            -0.033,
+            0.1,
+            0.133,
+            -0.067,
+            0.1,
+            0.233,
+            0.067
+          ]
+        },
+        "delta50to100": {
+          "n": 10,
+          "meanMsPerTick": 0.178,
+          "medianMsPerTick": 0.12,
+          "minMsPerTick": -0.3,
+          "maxMsPerTick": 0.6,
+          "stddevMsPerTick": 0.271,
+          "values": [
+            -0.3,
+            0.54,
+            0.42,
+            0.6,
+            0.1,
+            0.14,
+            0.04,
+            0.14,
+            0.02,
+            0.08
+          ]
+        }
+      },
+      "determinism": {
+        "checksumVariants": 7,
+        "checksumsByBatch": {
+          "0": [
+            "edf2025e4e6158c8"
+          ],
+          "1": [
+            "abb91c76fc8af3e3"
+          ],
+          "5": [
+            "9c6da136517b58b7"
+          ],
+          "10": [
+            "cc19b919581d1d61"
+          ],
+          "20": [
+            "572c85ab65a1c006"
+          ],
+          "50": [
+            "403bfec5c1a90c89"
+          ],
+          "100": [
+            "d53cf1b67430683f"
+          ]
+        }
+      }
+    },
+    "stress": {
+      "attemptedSamples": 70,
+      "matchedSamples": 66,
+      "coveragePercent": 94.29,
+      "missingRuns": [
+        "p2a6-stress-5-6",
+        "p2a6-stress-50-6",
+        "p2a6-stress-10-7",
+        "p2a6-stress-10-8"
+      ],
+      "workload": "80 units (16 scenario + 64 added), 2 fixed attack-move commands",
+      "byBatch": {
+        "0": {
+          "n": 10,
+          "meanMs": 7.4,
+          "medianMs": 7,
+          "minMs": 4,
+          "maxMs": 15,
+          "p95Ms": 15,
+          "stddevMs": 3.062,
+          "cv": 0.414,
+          "values": [
+            15,
+            5,
+            5,
+            7,
+            4,
+            7,
+            7,
+            7,
+            8,
+            9
+          ]
+        },
+        "1": {
+          "n": 10,
+          "meanMs": 46.2,
+          "medianMs": 31.5,
+          "minMs": 24,
+          "maxMs": 133,
+          "p95Ms": 133,
+          "stddevMs": 33.482,
+          "cv": 0.725,
+          "values": [
+            133,
+            30,
+            32,
+            29,
+            27,
+            31,
+            41,
+            43,
+            24,
+            72
+          ]
+        },
+        "5": {
+          "n": 9,
+          "meanMs": 54,
+          "medianMs": 44,
+          "minMs": 36,
+          "maxMs": 105,
+          "p95Ms": 105,
+          "stddevMs": 22.913,
+          "cv": 0.424,
+          "values": [
+            105,
+            43,
+            79,
+            38,
+            48,
+            36,
+            50,
+            43,
+            44
+          ]
+        },
+        "10": {
+          "n": 8,
+          "meanMs": 78.25,
+          "medianMs": 61,
+          "minMs": 51,
+          "maxMs": 151,
+          "p95Ms": 151,
+          "stddevMs": 34.346,
+          "cv": 0.439,
+          "values": [
+            151,
+            58,
+            90,
+            64,
+            54,
+            51,
+            58,
+            100
+          ]
+        },
+        "20": {
+          "n": 10,
+          "meanMs": 85,
+          "medianMs": 83,
+          "minMs": 66,
+          "maxMs": 102,
+          "p95Ms": 102,
+          "stddevMs": 13.157,
+          "cv": 0.155,
+          "values": [
+            96,
+            102,
+            85,
+            74,
+            70,
+            81,
+            66,
+            79,
+            95,
+            102
+          ]
+        },
+        "50": {
+          "n": 9,
+          "meanMs": 182.778,
+          "medianMs": 147,
+          "minMs": 132,
+          "maxMs": 318,
+          "p95Ms": 318,
+          "stddevMs": 59.762,
+          "cv": 0.327,
+          "values": [
+            318,
+            206,
+            213,
+            145,
+            132,
+            199,
+            147,
+            138,
+            147
+          ]
+        },
+        "100": {
+          "n": 10,
+          "meanMs": 300.5,
+          "medianMs": 300,
+          "minMs": 237,
+          "maxMs": 355,
+          "p95Ms": 355,
+          "stddevMs": 44.278,
+          "cv": 0.147,
+          "values": [
+            355,
+            347,
+            332,
+            237,
+            275,
+            346,
+            259,
+            321,
+            279,
+            254
+          ]
+        }
+      },
+      "setupControlMs": {
+        "n": 10,
+        "meanMs": 7.4,
+        "medianMs": 7,
+        "minMs": 4,
+        "maxMs": 15,
+        "p95Ms": 15,
+        "stddevMs": 3.062,
+        "cv": 0.414,
+        "values": [
+          15,
+          5,
+          5,
+          7,
+          4,
+          7,
+          7,
+          7,
+          8,
+          9
+        ]
+      },
+      "fits": {
+        "allBatches": {
+          "n": 66,
+          "slopeMsPerTick": 2.72,
+          "interceptMs": 34.74,
+          "r2": 0.876,
+          "maxAbsResidualMs": 147.261,
+          "slopeStdErr": 0.128,
+          "slopeCi95MsPerTick": [
+            2.469,
+            2.971
+          ]
+        },
+        "steady20Plus": {
+          "n": 29,
+          "slopeMsPerTick": 2.661,
+          "interceptMs": 38.227,
+          "r2": 0.823,
+          "maxAbsResidualMs": 146.7,
+          "slopeStdErr": 0.237,
+          "slopeCi95MsPerTick": [
+            2.197,
+            3.126
+          ]
+        },
+        "steady50Plus": {
+          "n": 19,
+          "slopeMsPerTick": 2.354,
+          "interceptMs": 65.056,
+          "r2": 0.587,
+          "maxAbsResidualMs": 135.222,
+          "slopeStdErr": 0.479,
+          "slopeCi95MsPerTick": [
+            1.415,
+            3.294
+          ]
+        }
+      },
+      "perRepSlopes": {
+        "allBatches": {
+          "n": 10,
+          "meanMsPerTick": 2.719,
+          "medianMsPerTick": 2.709,
+          "minMsPerTick": 2.071,
+          "maxMsPerTick": 3.332,
+          "stddevMsPerTick": 0.461,
+          "values": [
+            3.008,
+            3.321,
+            3.051,
+            2.166,
+            2.486,
+            3.332,
+            2.341,
+            2.878,
+            2.54,
+            2.071
+          ]
+        },
+        "steady20Plus": {
+          "n": 10,
+          "meanMsPerTick": 2.668,
+          "medianMsPerTick": 2.788,
+          "minMsPerTick": 1.924,
+          "maxMsPerTick": 3.274,
+          "stddevMsPerTick": 0.475,
+          "values": [
+            2.983,
+            3.038,
+            3.015,
+            2.017,
+            2.593,
+            3.274,
+            2.413,
+            3.071,
+            2.353,
+            1.924
+          ]
+        },
+        "steady50Plus": {
+          "n": 9,
+          "meanMsPerTick": 2.447,
+          "medianMsPerTick": 2.82,
+          "minMsPerTick": 0.74,
+          "maxMsPerTick": 3.48,
+          "stddevMsPerTick": 0.802,
+          "values": [
+            0.74,
+            2.82,
+            2.38,
+            1.84,
+            2.86,
+            2.94,
+            3.48,
+            2.82,
+            2.14
+          ]
+        }
+      },
+      "perRepIncremental": {
+        "delta20to50": {
+          "n": 9,
+          "meanMsPerTick": 3.189,
+          "medianMsPerTick": 2.367,
+          "minMsPerTick": 1.433,
+          "maxMsPerTick": 7.4,
+          "stddevMsPerTick": 1.879,
+          "values": [
+            7.4,
+            3.467,
+            4.267,
+            2.367,
+            2.067,
+            3.933,
+            2.267,
+            1.433,
+            1.5
+          ]
+        },
+        "delta50to100": {
+          "n": 9,
+          "meanMsPerTick": 2.447,
+          "medianMsPerTick": 2.82,
+          "minMsPerTick": 0.74,
+          "maxMsPerTick": 3.48,
+          "stddevMsPerTick": 0.802,
+          "values": [
+            0.74,
+            2.82,
+            2.38,
+            1.84,
+            2.86,
+            2.94,
+            3.48,
+            2.82,
+            2.14
+          ]
+        }
+      },
+      "determinism": {
+        "checksumVariants": 7,
+        "checksumsByBatch": {
+          "0": [
+            "6304954b1abca61b"
+          ],
+          "1": [
+            "87f80cac6f36c97b"
+          ],
+          "5": [
+            "70bf83acecdc2149"
+          ],
+          "10": [
+            "eafac198ac5ef0be"
+          ],
+          "20": [
+            "b1b6d6d66a418434"
+          ],
+          "50": [
+            "7f43c89565faa97d"
+          ],
+          "100": [
+            "f2ebf1b38061a80f"
+          ]
+        }
+      }
+    }
+  },
+  "comparison": {
+    "phase2a4AggregateMsPerTick": 0.547,
+    "note": "Phase 2A.4 was a real 30-minute match average. This calibration is a fresh Game per invocation and includes setup, routing and response. The stress profile is deliberately heavier than the Phase 2A.4 match and is not directly comparable."
+  }
+}

@@ -1,0 +1,26 @@
+{"at":"2026-10-30T13:36:54.305Z","type":"health","build":"phase2a6-staging","protocol":"mca.v2","versionId":"local"}
+{"at":"2026-10-30T13:36:54.538Z","type":"room-created","roomId":"phase2a6-cal-mvv0nl0j"}
+{"at":"2026-10-30T13:36:54.705Z","type":"room-shutdown","roomId":"phase2a6-cal-mvv0nl0j"}
+{"at":"2026-10-30T13:36:54.730Z","type":"unauthorized-calibration","status":403}
+{"at":"2026-10-30T13:36:54.769Z","type":"invalid-calibration","profile":"unknown","batch":0,"status":400,"code":"invalid-calibration"}
+{"at":"2026-10-30T13:36:54.789Z","type":"invalid-calibration","profile":"baseline","batch":2,"status":400,"code":"invalid-calibration"}
+{"at":"2026-10-30T13:36:54.813Z","type":"invalid-calibration","profile":"baseline","batch":101,"status":400,"code":"invalid-calibration"}
+{"at":"2026-10-30T13:36:54.837Z","type":"plain-status","status":200,"hasCalibration":false}
+{"at":"2026-10-30T13:36:54.876Z","type":"warmup","index":0,"run":"warmup-0","bytes":855}
+{"at":"2026-10-30T13:36:54.987Z","type":"warmup","index":1,"run":"warmup-1","bytes":855}
+{"at":"2026-10-30T13:36:55.087Z","type":"sample","run":"p2a6-baseline-0-0","profile":"baseline","batch":0,"completedTicks":0,"checksum":"edf2025e4e6158c8","responseBytes":864}
+{"at":"2026-10-30T13:36:55.166Z","type":"sample","run":"p2a6-baseline-1-0","profile":"baseline","batch":1,"completedTicks":1,"checksum":"abb91c76fc8af3e3","responseBytes":864}
+{"at":"2026-10-30T13:36:55.242Z","type":"sample","run":"p2a6-baseline-5-0","profile":"baseline","batch":5,"completedTicks":5,"checksum":"9c6da136517b58b7","responseBytes":864}
+{"at":"2026-10-30T13:36:55.315Z","type":"sample","run":"p2a6-baseline-10-0","profile":"baseline","batch":10,"completedTicks":10,"checksum":"cc19b919581d1d61","responseBytes":868}
+{"at":"2026-10-30T13:36:55.389Z","type":"sample","run":"p2a6-baseline-20-0","profile":"baseline","batch":20,"completedTicks":20,"checksum":"572c85ab65a1c006","responseBytes":868}
+{"at":"2026-10-30T13:36:55.472Z","type":"sample","run":"p2a6-baseline-50-0","profile":"baseline","batch":50,"completedTicks":50,"checksum":"403bfec5c1a90c89","responseBytes":868}
+{"at":"2026-10-30T13:36:55.550Z","type":"sample","run":"p2a6-baseline-100-0","profile":"baseline","batch":100,"completedTicks":100,"checksum":"d53cf1b67430683f","responseBytes":872}
+{"at":"2026-10-30T13:36:55.627Z","type":"sample","run":"p2a6-stress-0-0","profile":"stress","batch":0,"completedTicks":0,"checksum":"6304954b1abca61b","responseBytes":862}
+{"at":"2026-10-30T13:36:55.781Z","type":"sample","run":"p2a6-stress-1-0","profile":"stress","batch":1,"completedTicks":1,"checksum":"87f80cac6f36c97b","responseBytes":868}
+{"at":"2026-10-30T13:36:55.896Z","type":"sample","run":"p2a6-stress-5-0","profile":"stress","batch":5,"completedTicks":5,"checksum":"70bf83acecdc2149","responseBytes":869}
+{"at":"2026-10-30T13:36:56.019Z","type":"sample","run":"p2a6-stress-10-0","profile":"stress","batch":10,"completedTicks":10,"checksum":"eafac198ac5ef0be","responseBytes":872}
+{"at":"2026-10-30T13:36:56.140Z","type":"sample","run":"p2a6-stress-20-0","profile":"stress","batch":20,"completedTicks":20,"checksum":"b1b6d6d66a418434","responseBytes":873}
+{"at":"2026-10-30T13:36:56.306Z","type":"sample","run":"p2a6-stress-50-0","profile":"stress","batch":50,"completedTicks":50,"checksum":"7f43c89565faa97d","responseBytes":873}
+{"at":"2026-10-30T13:36:56.503Z","type":"sample","run":"p2a6-stress-100-0","profile":"stress","batch":100,"completedTicks":100,"checksum":"f2ebf1b38061a80f","responseBytes":877}
+{"at":"2026-10-30T13:36:59.554Z","type":"tail-correlation","tailRows":0,"matched":0,"error":"MP_TAIL_FILE not set"}
+{"at":"2026-10-30T13:36:59.581Z","type":"final-room-status","status":200,"closed":true,"reservation":{"reservationId":"r1","status":"released","hardDeadlineAt":1793367424413}}

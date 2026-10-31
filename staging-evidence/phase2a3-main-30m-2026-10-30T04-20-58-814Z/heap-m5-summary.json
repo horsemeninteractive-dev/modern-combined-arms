@@ -1,0 +1,300 @@
+{
+  "source": "staging-evidence\\phase2a3-main-30m-2026-10-30T04-20-58-814Z\\heap-m5.pprof",
+  "bytes": 1684,
+  "sampleTypes": [
+    {
+      "type": "alloc_objects",
+      "unit": "count"
+    },
+    {
+      "type": "alloc_space",
+      "unit": "bytes"
+    }
+  ],
+  "samplePeriodBytes": 524288,
+  "samples": 28,
+  "totals": [
+    {
+      "type": "alloc_objects",
+      "unit": "count",
+      "value": 7890158,
+      "percentOfSampled": 100.0
+    },
+    {
+      "type": "alloc_space",
+      "unit": "bytes",
+      "value": 277581320,
+      "percentOfSampled": 100.0
+    }
+  ],
+  "bySampleType": [
+    {
+      "type": "alloc_objects",
+      "unit": "count",
+      "total": 7890158,
+      "topSelf": [
+        {
+          "function": "next",
+          "value": 7680966,
+          "percent": 97.35
+        },
+        {
+          "function": "hasLineOfSight",
+          "value": 131074,
+          "percent": 1.66
+        },
+        {
+          "function": "values",
+          "value": 21846,
+          "percent": 0.28
+        },
+        {
+          "function": "createTeamSnapshot",
+          "value": 18725,
+          "percent": 0.24
+        },
+        {
+          "function": "from",
+          "value": 16725,
+          "percent": 0.21
+        },
+        {
+          "function": "teamOf",
+          "value": 10923,
+          "percent": 0.14
+        },
+        {
+          "function": "sendText",
+          "value": 8193,
+          "percent": 0.1
+        },
+        {
+          "function": "sort",
+          "value": 1508,
+          "percent": 0.02
+        },
+        {
+          "function": "sendSnapshotObject",
+          "value": 196,
+          "percent": 0.0
+        },
+        {
+          "function": "persistSnapshot",
+          "value": 2,
+          "percent": 0.0
+        }
+      ],
+      "topInclusive": [
+        {
+          "function": "(root)",
+          "value": 7890158,
+          "percent": 100.0
+        },
+        {
+          "function": "tick",
+          "value": 7785260,
+          "percent": 98.67
+        },
+        {
+          "function": "runTick",
+          "value": 7785260,
+          "percent": 98.67
+        },
+        {
+          "function": "next",
+          "value": 7680966,
+          "percent": 97.35
+        },
+        {
+          "function": "from",
+          "value": 7645261,
+          "percent": 96.9
+        },
+        {
+          "function": "broadcast",
+          "value": 7567479,
+          "percent": 95.91
+        },
+        {
+          "function": "createTeamSnapshot",
+          "value": 7559090,
+          "percent": 95.8
+        },
+        {
+          "function": "refreshVision",
+          "value": 141997,
+          "percent": 1.8
+        },
+        {
+          "function": "hasLineOfSight",
+          "value": 131074,
+          "percent": 1.66
+        },
+        {
+          "function": "persistSnapshot",
+          "value": 104898,
+          "percent": 1.33
+        },
+        {
+          "function": "persistPeriodic",
+          "value": 104898,
+          "percent": 1.33
+        },
+        {
+          "function": "toSave",
+          "value": 104896,
+          "percent": 1.33
+        },
+        {
+          "function": "createRoomSnapshot",
+          "value": 104896,
+          "percent": 1.33
+        },
+        {
+          "function": "snapshot",
+          "value": 104896,
+          "percent": 1.33
+        },
+        {
+          "function": "updatePassiveIncome",
+          "value": 74276,
+          "percent": 0.94
+        }
+      ]
+    },
+    {
+      "type": "alloc_space",
+      "unit": "bytes",
+      "total": 277581320,
+      "topSelf": [
+        {
+          "function": "next",
+          "value": 153619320,
+          "percent": 55.34
+        },
+        {
+          "function": "from",
+          "value": 106597396,
+          "percent": 38.4
+        },
+        {
+          "function": "sendSnapshotObject",
+          "value": 11621568,
+          "percent": 4.19
+        },
+        {
+          "function": "hasLineOfSight",
+          "value": 1572888,
+          "percent": 0.57
+        },
+        {
+          "function": "sort",
+          "value": 1049568,
+          "percent": 0.38
+        },
+        {
+          "function": "persistSnapshot",
+          "value": 1023320,
+          "percent": 0.37
+        },
+        {
+          "function": "sendText",
+          "value": 524352,
+          "percent": 0.19
+        },
+        {
+          "function": "teamOf",
+          "value": 524304,
+          "percent": 0.19
+        },
+        {
+          "function": "values",
+          "value": 524304,
+          "percent": 0.19
+        },
+        {
+          "function": "createTeamSnapshot",
+          "value": 524300,
+          "percent": 0.19
+        }
+      ],
+      "topInclusive": [
+        {
+          "function": "(root)",
+          "value": 277581320,
+          "percent": 100.0
+        },
+        {
+          "function": "tick",
+          "value": 273389296,
+          "percent": 98.49
+        },
+        {
+          "function": "runTick",
+          "value": 273389296,
+          "percent": 98.49
+        },
+        {
+          "function": "broadcast",
+          "value": 268669632,
+          "percent": 96.79
+        },
+        {
+          "function": "from",
+          "value": 259168116,
+          "percent": 93.37
+        },
+        {
+          "function": "createTeamSnapshot",
+          "value": 256523712,
+          "percent": 92.41
+        },
+        {
+          "function": "next",
+          "value": 153619320,
+          "percent": 55.34
+        },
+        {
+          "function": "sendSnapshotObject",
+          "value": 12145920,
+          "percent": 4.38
+        },
+        {
+          "function": "persistSnapshot",
+          "value": 4192024,
+          "percent": 1.51
+        },
+        {
+          "function": "persistPeriodic",
+          "value": 4192024,
+          "percent": 1.51
+        },
+        {
+          "function": "toSave",
+          "value": 3168704,
+          "percent": 1.14
+        },
+        {
+          "function": "createRoomSnapshot",
+          "value": 3168704,
+          "percent": 1.14
+        },
+        {
+          "function": "snapshot",
+          "value": 3168704,
+          "percent": 1.14
+        },
+        {
+          "function": "refreshVision",
+          "value": 2097192,
+          "percent": 0.76
+        },
+        {
+          "function": "updatePassiveIncome",
+          "value": 1572904,
+          "percent": 0.57
+        }
+      ]
+    }
+  ]
+}

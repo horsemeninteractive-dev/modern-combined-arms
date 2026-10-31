@@ -11,8 +11,15 @@ export const NEUTRAL_TEAM_COLOR: Vec3 = [0.55, 0.6, 0.58];
  * slate, not neutral grey, so this cannot accidentally make an owned building
  * look unowned.
  */
-export function teamColorForOwner(owner: number, factionId: string | undefined): Vec3 {
+export function teamColorForOwner(
+  owner: number,
+  factionId: string | undefined,
+  override?: string,
+): Vec3 {
   if (owner < 0) return [...NEUTRAL_TEAM_COLOR];
+  // A skirmish colour choice outranks the faction palette; a map or save that
+  // carries no override still reads its nation's identity colour.
+  if (override) return hexToRgb(override);
   const faction = factionId ? tryIdentityDef(factionId) : undefined;
   return hexToRgb(faction?.color ?? '#7a8b80');
 }

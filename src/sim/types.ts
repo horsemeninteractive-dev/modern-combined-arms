@@ -19,7 +19,7 @@ export type ArmourClass =
   | 'air'
   | 'naval';
 export type TargetClass = 'ground' | 'air' | 'naval' | 'structure';
-export type WeaponFx = 'bullet' | 'shell' | 'missile' | 'sam' | 'cannon';
+export type WeaponFx = 'bullet' | 'shell' | 'missile' | 'sam' | 'cannon' | 'torpedo';
 export type EntityKind = 'unit' | 'building';
 export type Stance = 'aggressive' | 'defensive' | 'hold';
 export type VictoryState = 'playing' | 'victory' | 'defeat' | 'draw';
@@ -57,6 +57,13 @@ export interface WeaponDef {
   indirect?: boolean;
   /** Minimum range in tiles. Absent means the weapon can fire at point blank. */
   minRange?: number;
+  /**
+   * Anti-submarine weapon. It can only engage a submarine while that boat is
+   * dived, and cannot be used against surface ships.
+   */
+  asw?: boolean;
+  /** Runs at the waterline instead of the deck, as a torpedo does. */
+  underwater?: boolean;
 }
 
 export interface Cost {
@@ -128,6 +135,25 @@ export interface UnitDef {
    * Infantry and structures are handled by the medic and engineer instead.
    */
   repair?: RepairDef;
+  /**
+   * Diesel-electric boat that can submerge. Battery endurance, underwater
+   * speed and the detection radius that still sees a periscope are authored
+   * here so the simulation and HUD read the same numbers.
+   */
+  submarine?: SubmarineDef;
+  /** Passive sonar radius in tiles. Detects dived submarines through fog. */
+  sonar?: number;
+}
+
+export interface SubmarineDef {
+  /** Seconds of dived endurance on a full battery. */
+  batterySeconds: number;
+  /** Speed multiplier while dived. */
+  diveSpeed: number;
+  /** Seconds the boat is exposed after launching a torpedo. */
+  revealSeconds: number;
+  /** Enemies this close can see the periscope without sonar. */
+  closeDetect: number;
 }
 
 /** Passive field-repair envelope for a recovery vehicle. */
@@ -163,6 +189,12 @@ export interface BuildingDef {
   shipyard?: boolean;
   /** Baseline structure slot this national variant substitutes, e.g. `mgNest`. */
   variantOf?: string;
+  /**
+   * Structure families that must already stand completed for this one to be
+   * laid. Baseline ids, never variant ids: a national variant asks for the same
+   * family as the shared structure it replaces. Omitted means tier one.
+   */
+  requires?: string[];
   /** Headquarters buildings are victory objectives. */
   commandPost?: boolean;
   /** Provides the tactical minimap while operational and powered. */
@@ -371,6 +403,17 @@ export interface AircraftState {
   returningHome: boolean;
 }
 
+export interface SubmarineState {
+  dived: boolean;
+  /** Seconds of dived endurance remaining. Recharges while surfaced. */
+  battery: number;
+  maxBattery: number;
+  /** Seconds left in the launch datum that exposes the boat. */
+  revealTimer: number;
+  /** True while the launch datum is live; ordinary weapons may target it. */
+  revealed: boolean;
+}
+
 export interface Entity {
   id: number;
   kind: EntityKind;
@@ -407,6 +450,7 @@ export interface Entity {
   rallyZ: number;
   harvester?: HarvesterState;
   aircraft?: AircraftState;
+  submarine?: SubmarineState;
   /** Set for aircraft after they are ordered to return home. */
   homeId: number;
   patrolX?: number;
@@ -565,6 +609,7 @@ export type Command =
   | { type: 'hold'; team: number; ids: number[] }
   | { type: 'stance'; team: number; ids: number[]; stance: Stance }
   | { type: 'return'; team: number; ids: number[] }
+  | { type: 'dive'; team: number; ids: number[]; dive: boolean }
   | { type: 'capture'; team: number; ids: number[]; targetId: number }
   | { type: 'repair'; team: number; ids: number[]; targetId: number }
   | { type: 'garrison'; team: number; ids: number[]; targetId: number }
@@ -701,14 +746,35 @@ export interface ChartedStructure {
   entityId: number;
 }
 
+/**
+ * How much a team currently knows about a hostile it cannot see.
+ *
+ * A sighting is `confirmed` only while the unit is in vision: the exact
+ * definition is known and the position is live. Once it drops out, the record
+ * becomes `detected` — the last position is still worth acting on, but the exact
+ * type is withdrawn. After the detection window it becomes `last-known`, which
+ * is a fading marker the player can remember rather than a target. Nothing here
+ * is inferred from hidden state: every field was observed while it was visible.
+ */
+export type ContactState = 'confirmed' | 'detected' | 'last-known';
+
+/** Coarse classification available once a contact has been confirmed. */
+export type ContactBand = 'infantry' | 'armour' | 'air' | 'naval' | 'structure';
+
 export interface ContactRecord {
   team: number;
   entityId: number;
   x: number;
   z: number;
+  /** Tick of the last confirmed sighting. */
   tick: number;
-  defId: string;
-  kind: EntityKind;
+  /** Exact definition, present only while the contact is confirmed. */
+  defId?: string;
+  kind?: EntityKind;
+  /** Absent in saves written before contact states existed; read as confirmed. */
+  state?: ContactState;
+  /** Coarse class kept through the detected window, withdrawn once stale. */
+  band?: ContactBand;
 }
 
 export interface GameStats {

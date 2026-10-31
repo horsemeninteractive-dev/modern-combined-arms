@@ -169,6 +169,42 @@
         "unableToComply": "Unable."
       }
     },
+    "submarine": {
+      "name": "Attack Submarine",
+      "role": "Subsurface raider",
+      "voice": "am_santa",
+      "speed": 1.0,
+      "cues": {
+        "select": "Submarine, standing by.",
+        "move": "Under way.",
+        "attack": "Torpedoes away.",
+        "unableToComply": "Cannot comply."
+      }
+    },
+    "missileBoat": {
+      "name": "Missile Boat",
+      "role": "Fast attack",
+      "voice": "af_river",
+      "speed": 1.04,
+      "cues": {
+        "select": "Fast attack, ready.",
+        "move": "Boat moving.",
+        "attack": "Missiles away.",
+        "unableToComply": "Cannot comply."
+      }
+    },
+    "frigate": {
+      "name": "Escort Frigate",
+      "role": "Fleet escort",
+      "voice": "af_nicole",
+      "speed": 0.98,
+      "cues": {
+        "select": "Escort on station.",
+        "move": "Escort moving.",
+        "attack": "Engaging.",
+        "unableToComply": "Unable."
+      }
+    },
     "pathfinder": {
       "name": "Pathfinder Recon Team",
       "role": "Reconnaissance",

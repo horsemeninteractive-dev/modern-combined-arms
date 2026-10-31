@@ -1,0 +1,6 @@
+Production bundle staging-marker scan
+At: 2026-10-30T23:08:29Z
+Patterns: phase2a12|phase2a11-staging|MP_ADMIN_TOKEN|mp-admin-token|staging-evidence|phase2a6-batch
+Targets: dist/assets, dist/index.html, dist/sw.js
+Result:
+no matches

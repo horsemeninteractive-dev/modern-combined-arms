@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "phase": "2A.10",
+  "capturedAt": "2026-10-30T21:05:00Z",
+  "source": "POST /accounts/{account_id}/graphql, dataset durableObjectsInvocationsAdaptiveGroups",
+  "roomId": "phase2a10-30m-mvvfbtvq",
+  "versionId": "d23e416c-c755-4ec4-bfb3-373ec216c275",
+  "window": {
+    "start": "2026-10-30T20:27:00Z",
+    "end": "2026-10-30T21:00:00Z"
+  },
+  "coverage": {
+    "rows": 6,
+    "note": "The dataset collapses each long-lived WebSocket or status invocation into one row spanning its connection. It is not a per-tick sample and does not provide a complete invocation census. cpuTimeP* values are quantiles within each grouped row and are recorded in microseconds."
+  },
+  "columns": [
+    "t",
+    "version",
+    "status",
+    "type",
+    "requests",
+    "errors",
+    "responseBodyBytes",
+    "wallTimeUs",
+    "cpuTimeP50Us",
+    "cpuTimeP90Us",
+    "cpuTimeP95Us",
+    "cpuTimeP99Us",
+    "wallTimeP50Us",
+    "wallTimeP95Us",
+    "wallTimeP99Us"
+  ],
+  "rows": [
+    ["2026-10-30T20:27:40Z", "d23e416c-c755-4ec4-bfb3-373ec216c275", "success", "http", 1, 0, 311, 17445947, 73624, 73624, 73624, 73624, 17445948, 17445948, 17445948],
+    ["2026-10-30T20:27:57Z", "d23e416c-c755-4ec4-bfb3-373ec216c275", "responseStreamDisconnected", "http", 1, 1, 5952265, 1053183802, 4241, 4241, 4241, 4241, 1053183800, 1053183800, 1053183800],
+    ["2026-10-30T20:27:58Z", "d23e416c-c755-4ec4-bfb3-373ec216c275", "responseStreamDisconnected", "http", 1, 1, 6798481, 1053064718, 10255122, 10255122, 10255122, 10255122, 1053064700, 1053064700, 1053064700],
+    ["2026-10-30T20:45:31Z", "d23e416c-c755-4ec4-bfb3-373ec216c275", "clientDisconnected", "http", 2, 2, 13445897, 1492341392, 0, 1717630, 1717630, 1717630, 746166660, 746174700, 746174700],
+    ["2026-10-30T20:47:48Z", "d23e416c-c755-4ec4-bfb3-373ec216c275", "success", "http", 1, 0, 8638, 609641742, 7962928, 7962928, 7962928, 7962928, 609641700, 609641700, 609641700],
+    ["2026-10-30T20:57:57Z", "d23e416c-c755-4ec4-bfb3-373ec216c275", "success", "http", 1, 0, 8961, 1188, 848, 848, 848, 848, 1188, 1188, 1188]
+  ],
+  "interpretation": {
+    "errors": "The original long-lived WebSocket rows end with responseStreamDisconnected and errors=1 at the restart. There are no fatalInternalErrors, CPU-limit or memory-limit errors in the periodic data.",
+    "longLivedInvocations": "Wall time spans the connection lifetime, not a tick. CPU values are not used as per-tick measurements.",
+    "perTickAvailability": "No per-tick CPU dataset exists for this runtime."
+  }
+}

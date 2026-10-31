@@ -128,6 +128,17 @@ export class ThumbnailRenderer {
 
   constructor() {
     this.canvas = document.createElement('canvas');
+    // This is a second, off-screen GL context. A driver reset here must not
+    // take the battle canvas with it, and the HUD already has icon fallbacks.
+    this.canvas.addEventListener('webglcontextlost', (event) => {
+      event.preventDefault();
+      this.handleContextLost();
+    });
+    this.canvas.addEventListener('webglcontextrestored', () => this.tryInit());
+    this.tryInit();
+  }
+
+  private tryInit(): void {
     let gl: WebGL2RenderingContext | null = null;
     try {
       gl = this.canvas.getContext('webgl2', {
@@ -141,12 +152,21 @@ export class ThumbnailRenderer {
       gl = null;
     }
     if (!gl) return;
-    try {
-      this.program = createProgram(gl, MESH_VS, MESH_FS);
-    } catch {
-      return;
-    }
     this.gl = gl;
+    try {
+      this.initResources();
+    } catch {
+      // Stay unavailable rather than throwing from the HUD's paint path.
+      this.program = null;
+      this.gl = null;
+    }
+  }
+
+  private initResources(): void {
+    const gl = this.gl!;
+    this.meshes.clear();
+    this.uniforms = {};
+    this.program = createProgram(gl, MESH_VS, MESH_FS);
     for (const name of UNIFORM_NAMES) {
       this.uniforms[name] = gl.getUniformLocation(this.program, name);
     }
@@ -164,6 +184,20 @@ export class ThumbnailRenderer {
     gl.depthFunc(gl.LEQUAL);
     gl.disable(gl.CULL_FACE);
     gl.disable(gl.BLEND);
+  }
+
+  private handleContextLost(): void {
+    // Cached object URLs still hold finished PNGs, so existing cards keep
+    // their art. New cards fall back to the icon while the context is gone.
+    this.gl = null;
+    this.program = null;
+    this.materialTexture = null;
+    this.meshes.clear();
+    this.uniforms = {};
+    this.queue.length = 0;
+    this.pending.clear();
+    this.draining = false;
+    this.scheduled = false;
   }
 
   get available(): boolean {
@@ -199,11 +233,11 @@ export class ThumbnailRenderer {
    * frame; the HUD fills whichever placeholders are ready on its next update.
    */
   get(request: ThumbnailRequest): string | null {
-    if (!this.available) return null;
     const shape: ThumbnailShape = request.shape ?? 'card';
     const normalized: ThumbnailRequest = { ...request, shape };
     const cached = this.cache.get(thumbnailKey(normalized));
     if (cached) return cached;
+    if (!this.available) return null;
     this.queueRequest(normalized);
     return null;
   }

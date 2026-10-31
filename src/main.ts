@@ -1,5 +1,6 @@
 import './style.css';
 import { App } from './app';
+import { escapeHtml } from './ui/modal';
 
 // The bundled stylesheet is live by the time this module body runs, so the
 // inline first-paint plate in index.html can hand the screen over. Doing it
@@ -26,11 +27,14 @@ function fail(message: string): void {
       <div class="fatal-card">
         <span class="eyebrow">SYSTEM FAULT</span>
         <h1>MCA cannot start</h1>
-        <p>${message}</p>
+        <p>${escapeHtml(message)}</p>
         <p class="fatal-note">Modern Combined Arms needs WebGL2. Enable hardware acceleration in a current Chrome, Edge, Firefox or Safari browser, then reload the page.</p>
-        <button class="btn btn-primary" onclick="location.reload()">RELOAD</button>
+        <button class="btn btn-primary" id="fatal-reload">RELOAD</button>
       </div>
     </div>`;
+  // Keep the inline-event-handler ban in the CSP intact: the reload control is
+  // wired after the markup is inserted instead of an inline onclick attribute.
+  document.getElementById('fatal-reload')?.addEventListener('click', () => location.reload());
 }
 
 try {

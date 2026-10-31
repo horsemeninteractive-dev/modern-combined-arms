@@ -34,13 +34,79 @@ and the measurements behind both — is in
 npm install
 npm run dev        # http://127.0.0.1:5173
 npm run build      # typecheck + production bundle in dist/
-npm test           # 495 Vitest tests
+npm test           # 1116 Vitest tests
 npm run bench      # measured simulation/save/pathfinding performance
 ```
 
 No framework, no runtime dependencies: TypeScript modules, a hand-written WebGL2
 renderer, Canvas2D overlay/minimap, and a fixed-step simulation. Requires a
 WebGL2-capable browser (desktop, or landscape mobile).
+
+### Network play
+
+A 1v1 room is two processes: the game client and an isolated room worker.
+
+```bash
+npm run rooms:dev                              # room worker on 127.0.0.1:8791
+npm run dev                                    # client on 127.0.0.1:5173
+```
+
+In development the deck dials `http://127.0.0.1:8791` automatically. A
+production build takes its address from the build environment, and
+[.env.production](.env.production) supplies the live one, so `npm run build` and
+`npm run release` ship a deck that can host and join rooms with no extra steps.
+Override it for a different worker:
+
+```bash
+VITE_MULTIPLAYER_URL=https://your-room-worker.example npm run build
+```
+
+A build with no address leaves Multiplayer disabled — the menu entry stays
+dimmed, so an unconfigured bundle can never point players at nothing.
+
+### Ship the live room worker
+
+The app and the room worker are two deployments of one project. The app is the
+Pages site; the worker is a separate Worker with the room and capacity Durable
+Objects. Live play needs both, and three things must agree:
+
+| What | Where | Value |
+| --- | --- | --- |
+| Room address the deck dials | `.env.production` | `VITE_MULTIPLAYER_URL` |
+| Origin allowed to reach the worker | [mp-room-wrangler.live.jsonc](mp-room-wrangler.live.jsonc) | `MP_ALLOWED_ORIGINS` |
+| Origin allowed to open a socket | [public/_headers](public/_headers) | `connect-src` |
+
+All three already name `https://mca-multiplayer-staging.horsemeninteractive.workers.dev`
+and `https://moderncombinedarms.pages.dev`. Moving either deployment means
+editing all three in the same commit; the worker refuses an unlisted browser
+origin before it touches a room, and the browser refuses an unlisted socket
+before it opens one.
+
+```bash
+npx wrangler secret put MP_ADMIN_TOKEN     # once per worker
+npx wrangler secret put MCA_RESERVATION_TOKEN
+npm run rooms:deploy                       # build the worker and deploy it live
+npm run release                            # build the app and publish it to Pages
+```
+
+`npm run rooms:deploy` uses the live config, which has development mode off: no
+probe page, no loopback exemption. `npm run rooms:dev` keeps using
+[mp-room-wrangler.jsonc](mp-room-wrangler.jsonc) with development mode on, which
+is what admits a loopback page during local play.
+
+The deck is: host a room (the room reserves capacity, so it must be started
+before the reservation runs out), share the room code and join code, the guest
+claims the second seat, both players pick a nation and a colour, both ready up,
+and the host starts. Nothing starts automatically: connecting is never a start,
+and the room re-validates occupancy, connectivity, readiness and the remaining
+reserved window before it builds the authoritative match.
+
+The deck is: host a room (the room reserves capacity, so it must be started
+before the reservation runs out), share the room code and join code, the guest
+claims the second seat, both players pick a nation and a colour, both ready up,
+and the host starts. Nothing starts automatically: connecting is never a start,
+and the room re-validates occupancy, connectivity, readiness and the remaining
+reserved window before it builds the authoritative match.
 
 ## Install it
 
@@ -81,12 +147,19 @@ override the project, branch and verification URL.
   read through a field monitor (scanlines, a slow refresh roll, and a jamming
   burst every few seconds that kicks the picture and tears the downlink).
   Choosing a deck breaks the signal once and swaps the deck; the header and
-  footer hold still. The views are Skirmish, Map Editor and Settings, with a
-  live mission-brief map, saved battles and the briefing link in the footer.
-  One shared settings sheet feeds both the menu view and the in-battle settings
-  modal; its Fullscreen switch follows the browser state, including leaving
-  with Esc, and its Music volume rides the looping menu theme (Four-Note Motif)
-  from the first menu frame, fading out for battle and the editor.
+  footer hold still. The menu is four entries: **Singleplayer** (tutorial,
+  campaign and skirmish, with a live mission-brief map and saved battles),
+  **Multiplayer**, **Map Editor** and **Settings**. The shipped build carries a
+  room worker address (see *Network play* below), so Multiplayer opens a working
+  1v1 lobby; a build with no address marks it SOON, dimmed and `aria-disabled`
+  instead of pointing players at nothing. One shared settings sheet
+  feeds both the menu view and the in-battle settings modal — audio volumes,
+  fullscreen, interface scale, graphics quality and render scale, an FPS
+  readout, Escape behaviour, unit silhouettes and the visual-effect and
+  camera-comfort switches. Its Fullscreen switch follows the browser state,
+  including leaving with Esc, and its Music volume rides the looping menu theme
+  (Four-Note Motif) from the first menu frame, fading out for battle and the
+  editor.
   Touch devices held upright get a blocking rotate prompt instead of a broken
   portrait battlefield.
 - **Four theatres with a selector**: the Skirmish screen lists every built-in
@@ -139,11 +212,15 @@ override the project, branch and verification URL.
   shelter occupied by hostile infantry becomes a legal target, so cover is a
   tactical position rather than an invulnerable box.
 - **Fog of war**: three states, shared by ground, roads and structures. Ground
-  under vision is lit; ground the team has charted before stays visible but
-  dimmed; ground it has never seen is dark. Roads are charted the same way as
-  the buildings on them — bright under vision, faded where the team has been
-  before, and lost again in the dark — so a remembered street reads like a
-  remembered block instead of a lit strip through the fog.
+  under vision is lit; ground the team has charted before is desaturated and
+  cooled before it is dimmed, so memory reads as memory rather than night;
+  ground it has never seen is dark. The vision mask is cross-faded over one
+  update interval, so a moving boundary slides instead of stepping every third
+  tick, and ground, water, props and roads sample the same two masks through one
+  fog function. Roads are charted the same way as the buildings on them — bright
+  under vision, faded where the team has been before, and lost again in the dark
+  — so a remembered street reads like a remembered block instead of a lit strip
+  through the fog.
 - **Land**: engineer, rifleman, medic, ATGM gunner, main battle tank,
   self-propelled howitzer, recon vehicle, AA vehicle, field recovery vehicle and
   harvester. Infantry are individual soldiers, not squads; a stationary medic
@@ -155,17 +232,26 @@ override the project, branch and verification URL.
   return/rearm loop. Interceptors answer hostile aircraft; the drone provides
   22-tile vision for the army and artillery; SAM batteries and AA vehicles remain
   the ground answer to air.
-- **Sea**: missile corvette with six anti-ship missiles and a deck gun, water-only
-  pathfinding, shipyard reload/repair and shore bombardment. A static coastal
-  battery gives the shore a dedicated anti-ship missile answer on maps with
-  navigable water.
+- **Sea**: a four-hull shipyard line — cheap two-missile fast attack craft, a
+  six-missile corvette with a deck gun, a torpedo submarine that runs dived on a
+  battery, and an escort frigate whose naval SAM box screens the group against
+  aircraft while its sonar and depth charges hunt the submarine. All use
+  water-only pathfinding, shipyard reload/repair and shore bombardment; a static
+  coastal battery gives the shore a dedicated anti-ship missile answer on maps
+  with navigable water.
 - **Presentation**: a 2.5D 45°-rotated, 30°-tilted orthographic isometric view with
   2:1 diamond ground projection, procedural meshes and day-lit battlefield. Tile
   elevation levels are drawn as one continuous surface — flat tops with a ramp band
   wherever the level changes and sloped shorelines — and that same surface is what
   pointer picking, orders, placement ghosts and the editor's hover all resolve
   against. The construction grid appears only while placing a structure; the
-  editor draws its own grid.
+  editor draws its own grid. A friendly unit hidden behind a structure draws a
+  flat team-coloured silhouette (unless its own hull is visible), tall
+  structures cast a short flat shadow along the sun, the ground carries a very
+  low-frequency drift that breaks up large grass fields without touching road,
+  ore or buildable colours, and shrubs, bushes and tufts are drawn from three
+  green families at a lifted value so cover reads as vegetation rather than dark
+  spots. No shadow maps, no post-processing and no camera change.
 - **AI**: a seeded skirmish commander, not a script. The match seed picks a
   temperament (armour, infantry, air, economy or pressure), then a utility
   planner scores construction, production, scouting and attacks against its own
@@ -210,6 +296,16 @@ override the project, branch and verification URL.
   structure cards show procedural three-quarter portraits rendered from the same
   meshes as the battlefield; the selection panel shows the selected asset's
   portrait, with a count badge for a group.
+  HUD type comes from one scale (`--fs-xs` to `--fs-xl`, 11–18 px) multiplied
+  by an interface-scale property, and resource figures are set larger than their
+  labels. Command buttons carry their hotkey on desktop and drop it on touch.
+  Unaffordable and locked production and construction cards print the reason on
+  the card itself (`NO MATERIALS`, `NEEDS SHIPYARD`, `QUEUE FULL`) and separate a
+  temporary shortage from missing technology by colour. While no radar is
+  online the tactical map collapses to a slim bar that names the reason, and the
+  Radar Array card is flagged in the Base tab. A selection of more than eight
+  units collapses to one card per type with a count; clicking that card narrows
+  the selection to the type.
 - **Editor**: terrain/elevation/ore painting, water authoring, structures, units,
   player starts, objectives, ground/naval reachability previews, validation, JSON
   save/load, and one-click deploy into the real simulation. On touch and short
@@ -232,14 +328,24 @@ override the project, branch and verification URL.
 | Capture objective | RMB relay/depot/radar, or `C` | **CAPTURE** | — |
 | Garrison / exit | RMB a shelter with infantry, or **GARRISON** / **EXIT** | **GARRISON** / **EXIT BUILDING** | — |
 | Return aircraft/ship | `R` | **RETURN** | — |
+| Dive / surface submarine | `D` | **DIVE** | — |
 | Construction | `B`, or engineer + **BUILD** | **BUILD** tab | — |
 | Control groups | `Ctrl+1..9`, `1..9` | group strip | — |
 | Pan / zoom | Arrow keys, screen edge, RMB/middle drag, wheel | one-finger pan, pinch | left/right stick |
 | Pause / speed | `P` / `+` `-` | **PAUSE** | Start |
 | Debug overlay | `F3` | **DIAG** | — |
+| Select all army | `Ctrl+A` | — | — |
+| Select every visible unit of a type | double-click it | double-tap | — |
+| Next idle harvester / engineer | `F8` / `F9` | — | — |
+| Jump to last alert | `F2`, or click a critical toast | tap the toast | — |
+| Camera bookmarks | `Ctrl+Shift+1..4` save, `Shift+1..4` recall | — | — |
 
 Attack-move and stop deliberately own `A` and `S`; camera panning uses the arrow
-keys, screen edge, drag and the wheel so keyboard orders never conflict.
+keys, screen edge, drag and the wheel so keyboard orders never conflict. The
+briefing stays on `F1` and the debug overlay on `F3`, so camera bookmarks use
+`Shift+1..4` rather than the function row, and `Ctrl+1..9` remain control groups.
+Escape pauses the battle or opens the menu, according to the setting; an active
+command mode always cancels first.
 
 ## Layout
 
@@ -280,12 +386,12 @@ legacy presets, old maps and existing saves keep the unmodified baseline. See
 
 ## Tests and measurements
 
-`npm test` runs 455 tests across 42 files, including nation identity, roster
+`npm test` runs 1116 tests across 104 files, including nation identity, roster
 gating and national substitutions, national counterplay fixtures, two-run
 state-hash determinism, batch-size
 invariance, save/load round-trip, blocked paths,
-aircraft recovery, naval navigation and reload, full-ammo ship repair, AI
-shipyard/corvette and airfield/fighter production, indirect-fire minimum range
+aircraft recovery, naval navigation, reload and the three-hull fleet, full-ammo
+ship repair, AI shipyard/naval and airfield/fighter production, indirect-fire minimum range
 and lobbed-projectile round-trip, recovery repair, interceptor/drone/coastal
 roles, scenario validation, terrain-surface picking and measured performance. The infrastructure suite
 covers relay/depot/radar capture, passive income, brownout, multiple depots and
@@ -352,9 +458,14 @@ The renderer and the art pipeline are audited in
 [docs/VISUAL_AUDIT_PHASE_1.md](docs/VISUAL_AUDIT_PHASE_1.md), with twelve reference
 captures under `docs/visual-audit/`, the measured frame budget and one recommended
 first slice. Phase 2 fixes the road fog binding, records the matched before/after
-luminance and adds `tools/visual-probe.js`, the deterministic Kestrel Bay baseline. `npm run
-bench`
-prints the performance numbers; the latest runs are recorded in
+luminance and adds `tools/visual-probe.js`, the deterministic Kestrel Bay baseline.
+The interface and renderer suites pin the review's pure logic: type scale and
+layout resolution, interface scaling, graphics presets and render scale, Escape
+behaviour, idle cycling and roster grouping in `tests/ui-settings.test.ts` and
+`tests/hud-layout.test.ts`, and the fog cross-fade, silhouette pass, structure
+shadows and vegetation variants in `tests/presentation.test.ts` and
+`tests/terrain-props.test.ts`. `npm run bench` prints the performance numbers; the
+latest runs are recorded in
 [docs/VERIFICATION_REPORT.md](docs/VERIFICATION_REPORT.md) §34–§38.
 
 ## Known limitations
@@ -369,9 +480,12 @@ prints the performance numbers; the latest runs are recorded in
 - Audio is generated with Web Audio and has not been auditioned in automated runs.
 - The renderer is validated by shader compilation, a live WebGL2 context, frame
   timing and DOM checks, not pixel-diff screenshots.
-- One AI opponent; no multiplayer, campaign or mod SDK yet. The six launch
-  nations are selectable in skirmish and each substitutes one shared baseline
-  slot with a national variant, but they have no national upgrades or signature
+- One AI opponent. The campaign is a short linear prologue over the built-in
+  theatres rather than a full campaign; online play is 1v1 only, joined by room
+  code with no room browser, accounts or matchmaking (`MULTIPLAYER_FEATURE`
+  keeps `roomDiscovery` and `accountLinking` off); there is no mod SDK. The six launch nations are selectable in skirmish and each substitutes
+  one shared baseline slot with a national variant, but they have no national
+  upgrades or signature
   abilities yet; every other slot is common. The national values are not
   balance-tuned against human play, and no human match has been played with each
   of the six nations.
@@ -393,7 +507,12 @@ prints the performance numbers; the latest runs are recorded in
   §9.4 (HUD-10, HUD-11, HUD-12).
 - At 1280×720 the persistent desktop HUD leaves 62.1% clear battlefield (chrome
   37.9%), and at 1920×1080 it leaves 72.1% (chrome 27.9%). These are CSS-pixel
-  measurements from a Chromium viewport, not a pixel-diff review.
+  measurements from a Chromium viewport, not a pixel-diff review, and they were
+  taken before the type-scale and interface-scale pass changed the panel sizes.
+- The interface and renderer changes were verified by typecheck, the full suite,
+  a production build, shader compilation and a live WebGL2 context. No scripted
+  in-battle capture exercised the silhouettes or the fog cross-fade; the shared
+  browser tab was under manual control during the check.
 - The harvesting/ore/refinery economy is retained for this slice. A later
   extension will build on it; R-01's removal model is deferred, not implemented.
 - The infrastructure/garrison balance is first-pass. Depot income is fixed at

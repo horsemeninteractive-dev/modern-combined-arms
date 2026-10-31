@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "phase": "2A.9",
+  "session": "B2",
+  "build": "B",
+  "versionId": "d23e416c-c755-4ec4-bfb3-373ec216c275",
+  "sourceRevision": "132ccc8",
+  "artifactSha256": "05b2b2465d639852f24d1561c6d300362bf8aae9bcc464c0e1607c46717b87c7",
+  "startedAt": "2026-10-30T19:48:57.611Z",
+  "finishedAt": "2026-10-30T19:49:22.525Z",
+  "base": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev",
+  "roomId": "p2a9-b2-mvvdy1yr",
+  "batches": [
+    0,
+    1,
+    5,
+    20,
+    100
+  ],
+  "profiles": [
+    "baseline",
+    "stress"
+  ],
+  "reps": 6,
+  "extraBatch1": 12,
+  "sampleIntervalMs": 250,
+  "sampleCount": 72,
+  "uniqueChecksumsByCell": {
+    "baseline/0": {
+      "n": 6,
+      "checksums": [
+        "edf2025e4e6158c8"
+      ]
+    },
+    "stress/0": {
+      "n": 6,
+      "checksums": [
+        "6304954b1abca61b"
+      ]
+    },
+    "baseline/1": {
+      "n": 6,
+      "checksums": [
+        "abb91c76fc8af3e3"
+      ]
+    },
+    "stress/1": {
+      "n": 6,
+      "checksums": [
+        "87f80cac6f36c97b"
+      ]
+    },
+    "baseline/5": {
+      "n": 6,
+      "checksums": [
+        "9c6da136517b58b7"
+      ]
+    },
+    "stress/5": {
+      "n": 6,
+      "checksums": [
+        "70bf83acecdc2149"
+      ]
+    },
+    "baseline/20": {
+      "n": 6,
+      "checksums": [
+        "572c85ab65a1c006"
+      ]
+    },
+    "stress/20": {
+      "n": 6,
+      "checksums": [
+        "b1b6d6d66a418434"
+      ]
+    },
+    "baseline/100": {
+      "n": 6,
+      "checksums": [
+        "d53cf1b67430683f"
+      ]
+    },
+    "stress/100": {
+      "n": 6,
+      "checksums": [
+        "f2ebf1b38061a80f"
+      ]
+    },
+    "stress/1/extra": {
+      "n": 12,
+      "checksums": [
+        "87f80cac6f36c97b"
+      ]
+    }
+  },
+  "finalReservation": {
+    "reservationId": "r156",
+    "status": "released",
+    "hardDeadlineAt": 1793389748261
+  },
+  "measurementSource": "Cloudflare Workers Observability events, $workers.cpuTimeMs, exact run-id and scriptVersion match; integer milliseconds per Durable Object invocation.",
+  "notes": "Invocation CPU includes fresh Game construction, command setup, ticks, checksum and response. Batch 0 is setup only. No per-tick CPU is measured."
+}

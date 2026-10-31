@@ -1,0 +1,41 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mca-multiplayer-staging",
+  "main": "dist-mp-room/roomWorker.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "preview_urls": true,
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "MP_ONLINE_ENABLED": "1",
+    "MP_DEV_MODE": "1",
+    "MP_DEFAULT_MATCH_SECONDS": "60",
+    "MP_MAX_MATCH_SECONDS": "1800",
+    "MP_ABANDON_AFTER_MS": "30000",
+    // The live Pages app and the worker's own origin. The worker's origin is
+    // implied anyway; the Pages entry is what lets the deployed deck open a
+    // room and upgrade the seat socket. Comma separated, exact origins only.
+    "MP_ALLOWED_ORIGINS": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev,https://moderncombinedarms.pages.dev"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ROOMS",
+        "class_name": "MatchRoomDurableObject"
+      },
+      {
+        "name": "CAPACITY",
+        "class_name": "CapacityCoordinatorDurableObject"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["MatchRoomDurableObject", "CapacityCoordinatorDurableObject"]
+    }
+  ]
+}

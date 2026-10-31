@@ -1,0 +1,19 @@
+{
+  "roomId": "local-keepalive-mvuglgy6",
+  "mode": "1v1",
+  "protocol": 1,
+  "matchDurationMs": 80000,
+  "matchDeadlineAt": 1793333803470,
+  "seats": [
+    {
+      "seatId": 0,
+      "playerId": 0,
+      "team": 0
+    },
+    {
+      "seatId": 1,
+      "playerId": 1,
+      "team": 1
+    }
+  ]
+}

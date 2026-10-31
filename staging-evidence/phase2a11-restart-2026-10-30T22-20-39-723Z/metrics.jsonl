@@ -1,0 +1,14 @@
+{"at":"2026-10-30T22:20:40.502Z","event":"initial-connect","seat":0,"status":101,"epoch":1,"seq":1,"tick":0,"connectMs":115}
+{"at":"2026-10-30T22:20:40.627Z","event":"initial-connect","seat":1,"status":101,"epoch":1,"seq":1,"tick":0,"connectMs":124}
+{"at":"2026-10-30T22:20:40.725Z","event":"pre-restart-command","seat":0,"type":"commandAccepted","tick":2}
+{"at":"2026-10-30T22:20:40.741Z","event":"pre-restart-command","seat":1,"type":"commandAccepted","tick":2}
+{"at":"2026-10-30T22:20:57.352Z","event":"pre-restart","start":1793398840606,"deadline":1793398885348,"tick":334,"epochs":[1,1],"seqs":[1,1]}
+{"at":"2026-10-30T22:20:57.410Z","event":"restart-requested","status":200,"data":{"ok":true,"restarting":true,"roomId":"restart-mvvjd560"}}
+{"at":"2026-10-30T22:20:57.460Z","event":"restart-closed","afterMs":106}
+{"at":"2026-10-30T22:20:57.732Z","event":"restored-connect","seat":0,"epoch":1026,"seq":151,"tick":299,"connectMs":272}
+{"at":"2026-10-30T22:20:57.740Z","event":"restored-delta","seat":0,"epoch":1026,"seq":152,"base":151,"tick":300}
+{"at":"2026-10-30T22:20:57.755Z","event":"restored-command","seat":0,"type":"commandAccepted","tick":300}
+{"at":"2026-10-30T22:20:57.845Z","event":"restored-connect","seat":1,"epoch":1026,"seq":151,"tick":301,"connectMs":88}
+{"at":"2026-10-30T22:20:57.875Z","event":"restored-delta","seat":1,"epoch":1026,"seq":152,"base":151,"tick":302}
+{"at":"2026-10-30T22:20:57.893Z","event":"restored-command","seat":1,"type":"commandAccepted","tick":302}
+{"at":"2026-10-30T22:20:57.943Z","event":"post-restart-status","phase":"playing","start":1793398840606,"startDerived":false,"deadline":1793398885348,"tick":303,"totalTicks":303,"processTicks":4,"epochs":[1026,1026],"seqs":[153,152]}

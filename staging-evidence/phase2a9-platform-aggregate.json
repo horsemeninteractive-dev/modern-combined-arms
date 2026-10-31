@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "phase": "2A.9",
+  "capturedAt": "2026-10-30T19:58:00Z",
+  "source": "POST /accounts/{account_id}/workers/observability/telemetry/query",
+  "queryRunId": "0h0wykt3cx8oilr62gc4lim9",
+  "queryStatus": "COMPLETED",
+  "view": "calculations",
+  "timeframe": "2026-10-30T19:46:30Z/2026-10-30T19:53:30Z",
+  "filters": [
+    "$workers.event.request.url includes run=p2a9-",
+    "$workers.event.request.url not_includes warmup",
+    "$workers.executionModel eq durableObject"
+  ],
+  "calculations": [
+    "sum($workers.cpuTimeMs) as cpu_ms",
+    "count as events"
+  ],
+  "groupBys": [
+    "$workers.scriptVersion.id",
+    "$workers.durableObjectId"
+  ],
+  "statistics": {
+    "elapsedSeconds": 0.126609611,
+    "rowsRead": 2980132,
+    "bytesRead": 928699670,
+    "abrLevel": 1
+  },
+  "groups": [
+    {
+      "versionId": "e5aef673-bf6f-461c-8539-5605c5ddf908",
+      "label": "A: pre-2A.8 pathfinding",
+      "durableObjectId": "b4f1149ef9a09bfd618d256006e40e3315f0c5ae3ba8b3b9c3366ae986a44f53",
+      "events": 72,
+      "cpuMs": 2895
+    },
+    {
+      "versionId": "e5aef673-bf6f-461c-8539-5605c5ddf908",
+      "label": "A: pre-2A.8 pathfinding",
+      "durableObjectId": "147ed9752cc8d91a5aaa2e97e2501a21b2fb1ad35fcf24a1449536526e2a784b",
+      "events": 72,
+      "cpuMs": 2502
+    },
+    {
+      "versionId": "e5aef673-bf6f-461c-8539-5605c5ddf908",
+      "label": "A: pre-2A.8 pathfinding",
+      "durableObjectId": "1a2027645bcb3afda1d5c0ae8284cb25be5284d91a7cf3a56d62bd3eb8e2aae7",
+      "events": 72,
+      "cpuMs": 3116
+    },
+    {
+      "versionId": "d23e416c-c755-4ec4-bfb3-373ec216c275",
+      "label": "B: Phase 2A.8 optimised pathfinding",
+      "durableObjectId": "7a521119dd366a6db6da85933db7e244b4d0d98c14baee72b3b366a52ab2f3fd",
+      "events": 72,
+      "cpuMs": 1981
+    },
+    {
+      "versionId": "d23e416c-c755-4ec4-bfb3-373ec216c275",
+      "label": "B: Phase 2A.8 optimised pathfinding",
+      "durableObjectId": "015191d07e76dcd14735e6c9e68fec7dac53e97a9f67715f06c00337b96c40a8",
+      "events": 72,
+      "cpuMs": 1648
+    },
+    {
+      "versionId": "d23e416c-c755-4ec4-bfb3-373ec216c275",
+      "label": "B: Phase 2A.8 optimised pathfinding",
+      "durableObjectId": "231ae50a82f8506c0d260f2f85ca221d42be38652ed75fa87f9fc912a1e9f6bf",
+      "events": 72,
+      "cpuMs": 2113
+    }
+  ],
+  "versionTotals": {
+    "e5aef673-bf6f-461c-8539-5605c5ddf908": {
+      "events": 216,
+      "cpuMs": 8513
+    },
+    "d23e416c-c755-4ec4-bfb3-373ec216c275": {
+      "events": 216,
+      "cpuMs": 5742
+    }
+  },
+  "crossCheck": {
+    "perInvocationObservedSamples": {
+      "A": 216,
+      "B": 216
+    },
+    "exactSumMatches": true,
+    "note": "Platform aggregate sum matches the sum of the 216 exact run-id samples for each build, with no missing sample records."
+  }
+}

@@ -49,9 +49,11 @@ describe('completed unit roster visual pass', () => {
       expect(scale, id).toBeGreaterThanOrEqual(0.4);
       expect(scale, id).toBeLessThanOrEqual(1);
     }
-    // The corvette is the only remaining presentation multiplier: its hull is
-    // authored around a shipyard slip, not a 2 m soldier.
-    expect(unitVisualScale('corvette')).toBe(0.7);
+    // The ships keep a presentation multiplier: their hulls are authored
+    // around a shipyard slip, not a 2 m soldier.
+    for (const id of ['missileBoat', 'corvette', 'frigate']) {
+      expect(unitVisualScale(id), id).toBe(0.7);
+    }
     for (const id of [
       'engineer',
       'spearhead',
@@ -164,6 +166,45 @@ describe('completed unit roster visual pass', () => {
     expect(span('deepReconUAV')).toBeGreaterThan(span('uav'));
     for (const id of ['engineer', 'recovery', 'fighter', 'interceptor', 'uav', 'deepReconUAV']) {
       expect(unitStyle(id)!.body.teamMask.some((v) => v >= 0.5), id).toBe(true);
+    }
+  });
+
+  it('gives the new naval hulls distinct silhouettes and aligned deck guns', () => {
+    const boat = unitStyle('missileBoat')!;
+    const corvette = unitStyle('corvette')!;
+    const frigate = unitStyle('frigate')!;
+    const submarine = unitStyle('submarine')!;
+    expect(boat.body).not.toBe(corvette.body);
+    expect(frigate.body).not.toBe(corvette.body);
+    expect(submarine.body).not.toBe(corvette.body);
+    expect(submarine.periscope).toBeDefined();
+    expect(submarine.turret).toBeUndefined();
+    expect(frigate.turret).toBe(corvette.turret);
+
+    const length = (id: string): number => {
+      const b = bounds(unitStyle(id)!.body);
+      return (b.maxX - b.minX) * unitVisualScale(id);
+    };
+    expect(length('missileBoat')).toBeLessThan(length('corvette'));
+    expect(length('frigate')).toBeGreaterThan(length('corvette'));
+    expect(length('submarine')).toBeGreaterThan(0);
+
+    for (const id of ['missileBoat', 'frigate']) {
+      const style = unitStyle(id)!;
+      const turret = style.turret!;
+      const b = bounds(turret);
+      const scale = unitVisualScale(id);
+      expect((style.turretOffset[0] + b.maxX) * scale).toBeCloseTo(
+        UNITS[id].muzzle!.forward,
+        1,
+      );
+      expect((style.turretOffset[1] + tipHeight(turret)) * scale).toBeCloseTo(
+        UNITS[id].muzzle!.height,
+        1,
+      );
+      expect(style.body.teamMask.some((v) => v >= 0.5), id).toBe(true);
+      expect(turret.teamMask.some((v) => v >= 0.5), id).toBe(true);
+      expect(unitBannerHeight(id), id).toBeGreaterThan(bounds(style.body).maxY * scale + 0.05);
     }
   });
 

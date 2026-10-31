@@ -1,0 +1,26 @@
+{
+  "worker": "mca-multiplayer-staging",
+  "url": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev",
+  "activeVersion": "9fd1dcf4-3046-438d-b72d-0c3880b0afc5",
+  "tag": "phase2a13",
+  "versionCreated": "2026-10-31T00:02:04.043Z",
+  "deploymentCreated": "2026-10-31T00:02:05.643Z",
+  "artifactSha256": "cfca794ca41719449fd827fcd06b13ddbdb806c2b7d54a02703e9c4959396f1a",
+  "artifactPath": "dist-mp-room/roomWorker.js",
+  "health": {
+    "ok": true,
+    "onlineEnabled": true,
+    "devMode": true,
+    "adminConfigured": true,
+    "reservationConfigured": true,
+    "protocol": "mca.v2",
+    "snapshotVersion": 2,
+    "build": "phase2a13-staging"
+  },
+  "verifiedAt": "2026-10-31T02:02:15.466Z",
+  "verification": {
+    "version": "wrangler deployments list + wrangler versions view",
+    "artifact": "sha256sum of the local uploaded bundle recorded in phase2a13-deployment.txt",
+    "caveat": "Cloudflare version metadata does not expose a downloadable module digest. The version id, tag, creation time and health build label were checked; the local uploaded bundle still hashes to the recorded digest. No deployment occurred after Phase 2A.13 before or during this soak."
+  }
+}

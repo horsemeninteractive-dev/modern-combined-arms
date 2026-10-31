@@ -1,0 +1,4594 @@
+{
+  "version": 1,
+  "generatedAt": "2026-10-30T18:17:42.630Z",
+  "method": "Reconstructed pre-optimisation source tree loaded through Vite SSR.",
+  "paths": [
+    {
+      "name": "open-terrain",
+      "path": [
+        {
+          "x": 42,
+          "z": 34
+        }
+      ]
+    },
+    {
+      "name": "obstacle-with-gap",
+      "path": [
+        {
+          "x": 42,
+          "z": 18
+        },
+        {
+          "x": 50,
+          "z": 22
+        }
+      ]
+    },
+    {
+      "name": "diagonal-corner-block",
+      "path": [
+        {
+          "x": 26,
+          "z": 18
+        },
+        {
+          "x": 26,
+          "z": 26
+        }
+      ]
+    },
+    {
+      "name": "narrow-corridor",
+      "path": [
+        {
+          "x": 50,
+          "z": 22
+        }
+      ]
+    },
+    {
+      "name": "unreachable-wall",
+      "path": null
+    },
+    {
+      "name": "equal-cost-detour",
+      "path": [
+        {
+          "x": 14,
+          "z": 34
+        },
+        {
+          "x": 34,
+          "z": 34
+        },
+        {
+          "x": 42,
+          "z": 26
+        }
+      ]
+    },
+    {
+      "name": "terrain-forest-foot",
+      "path": [
+        {
+          "x": 46,
+          "z": 22
+        }
+      ]
+    },
+    {
+      "name": "terrain-forest-tracked",
+      "path": [
+        {
+          "x": 46,
+          "z": 22
+        }
+      ]
+    },
+    {
+      "name": "terrain-road-wheeled",
+      "path": [
+        {
+          "x": 46,
+          "z": 22
+        }
+      ]
+    },
+    {
+      "name": "naval-shallow-to-deep",
+      "path": [
+        {
+          "x": 50,
+          "z": 22
+        }
+      ]
+    },
+    {
+      "name": "dynamic-traffic",
+      "path": [
+        {
+          "x": 50,
+          "z": 22
+        }
+      ]
+    },
+    {
+      "name": "blocked-goal-nearest",
+      "path": [
+        {
+          "x": 22,
+          "z": 14
+        }
+      ]
+    },
+    {
+      "name": "start-equals-goal",
+      "path": []
+    },
+    {
+      "name": "node-limit",
+      "path": null
+    }
+  ],
+  "stress": {
+    "ticks": [
+      {
+        "tick": 0,
+        "checksum": "6304954b1abca61b"
+      },
+      {
+        "tick": 1,
+        "checksum": "87f80cac6f36c97b"
+      },
+      {
+        "tick": 2,
+        "checksum": "ca4d3026c33411f5"
+      },
+      {
+        "tick": 3,
+        "checksum": "9522a707e3d71df7"
+      },
+      {
+        "tick": 10,
+        "checksum": "eafac198ac5ef0be"
+      },
+      {
+        "tick": 30,
+        "checksum": "7e9b851a20ad796f"
+      },
+      {
+        "tick": 60,
+        "checksum": "35094cc41c5b778b"
+      },
+      {
+        "tick": 100,
+        "checksum": "f2ebf1b38061a80f"
+      }
+    ],
+    "firstTickPaths": [
+      {
+        "id": 8,
+        "defId": "engineer",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 154.4,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 138,
+            "z": 150
+          },
+          {
+            "x": 154,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 161.6,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 150,
+            "z": 150
+          },
+          {
+            "x": 162,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 168.8,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 154,
+            "z": 150
+          },
+          {
+            "x": 170,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 11,
+        "defId": "rifle",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 176,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 118,
+            "z": 150
+          },
+          {
+            "x": 166,
+            "z": 150
+          },
+          {
+            "x": 178,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "defId": "rifle",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 183.2,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 122,
+            "z": 150
+          },
+          {
+            "x": 170,
+            "z": 150
+          },
+          {
+            "x": 182,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 13,
+        "defId": "rifle",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 190.4,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 126,
+            "z": 150
+          },
+          {
+            "x": 174,
+            "z": 154
+          },
+          {
+            "x": 190,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 15,
+        "defId": "rifle",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 154.4,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 146,
+            "z": 170
+          },
+          {
+            "x": 154,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 16,
+        "defId": "engineer",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 122.4,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 262,
+            "z": 150
+          },
+          {
+            "x": 214,
+            "z": 146
+          },
+          {
+            "x": 166,
+            "z": 146
+          },
+          {
+            "x": 122,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 17,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 129.6,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 266,
+            "z": 150
+          },
+          {
+            "x": 218,
+            "z": 146
+          },
+          {
+            "x": 170,
+            "z": 146
+          },
+          {
+            "x": 130,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 18,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 136.8,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 274,
+            "z": 150
+          },
+          {
+            "x": 226,
+            "z": 146
+          },
+          {
+            "x": 178,
+            "z": 146
+          },
+          {
+            "x": 138,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 144,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 246,
+            "z": 126
+          },
+          {
+            "x": 222,
+            "z": 146
+          },
+          {
+            "x": 174,
+            "z": 146
+          },
+          {
+            "x": 146,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 151.2,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 246,
+            "z": 130
+          },
+          {
+            "x": 198,
+            "z": 146
+          },
+          {
+            "x": 150,
+            "z": 154
+          },
+          {
+            "x": 150,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 21,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 158.4,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 254,
+            "z": 150
+          },
+          {
+            "x": 206,
+            "z": 150
+          },
+          {
+            "x": 158,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 22,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 165.6,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 254,
+            "z": 150
+          },
+          {
+            "x": 206,
+            "z": 150
+          },
+          {
+            "x": 166,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 23,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 122.4,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 246,
+            "z": 150
+          },
+          {
+            "x": 198,
+            "z": 150
+          },
+          {
+            "x": 150,
+            "z": 150
+          },
+          {
+            "x": 122,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 24,
+        "defId": "spg",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 161.6,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 162,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 25,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 168.8,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 170,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 26,
+        "defId": "rifle",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 176,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 178,
+            "z": 162
+          },
+          {
+            "x": 178,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 27,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 183.2,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 182,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 28,
+        "defId": "rifle",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 190.4,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 190,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 30,
+        "defId": "rifle",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 154.4,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 154,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 31,
+        "defId": "spg",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 161.6,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 162,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 32,
+        "defId": "rifle",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 168.8,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 170,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 33,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 176,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 170,
+            "z": 166
+          },
+          {
+            "x": 178,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 34,
+        "defId": "atgm",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 183.2,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 170,
+            "z": 170
+          },
+          {
+            "x": 182,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 35,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 190.4,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 182,
+            "z": 162
+          },
+          {
+            "x": 190,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 37,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 154.4,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 154,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "defId": "spg",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 161.6,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 162,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 39,
+        "defId": "atgm",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 168.8,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 170,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 42,
+        "defId": "rifle",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 190.4,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 174,
+            "z": 174
+          },
+          {
+            "x": 190,
+            "z": 174
+          },
+          {
+            "x": 190,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 44,
+        "defId": "atgm",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 154.4,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 154,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 45,
+        "defId": "spg",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 161.6,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 162,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 46,
+        "defId": "rifle",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 168.8,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 170,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 47,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 176,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 178,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 49,
+        "defId": "atgm",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 190.4,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 182,
+            "z": 174
+          },
+          {
+            "x": 190,
+            "z": 174
+          },
+          {
+            "x": 190,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 51,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 154.4,
+          "z": 194
+        },
+        "path": [
+          {
+            "x": 154,
+            "z": 194
+          }
+        ]
+      },
+      {
+        "id": 52,
+        "defId": "spg",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 161.6,
+          "z": 194
+        },
+        "path": [
+          {
+            "x": 162,
+            "z": 194
+          }
+        ]
+      },
+      {
+        "id": 53,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 168.8,
+          "z": 194
+        },
+        "path": [
+          {
+            "x": 170,
+            "z": 194
+          }
+        ]
+      },
+      {
+        "id": 54,
+        "defId": "atgm",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 176,
+          "z": 194
+        },
+        "path": [
+          {
+            "x": 178,
+            "z": 194
+          }
+        ]
+      },
+      {
+        "id": 55,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 183.2,
+          "z": 194
+        },
+        "path": [
+          {
+            "x": 182,
+            "z": 194
+          }
+        ]
+      },
+      {
+        "id": 56,
+        "defId": "spg",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 129.6,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 130,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 57,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 136.8,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 138,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 58,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 144,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 146,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 59,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 151.2,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 150,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 60,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 158.4,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 158,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 61,
+        "defId": "atgm",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 165.6,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 166,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 62,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 122.4,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 142,
+            "z": 154
+          },
+          {
+            "x": 122,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 63,
+        "defId": "spg",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 129.6,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 146,
+            "z": 150
+          },
+          {
+            "x": 130,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 64,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 136.8,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 150,
+            "z": 166
+          },
+          {
+            "x": 138,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 65,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 144,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 146,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 66,
+        "defId": "atgm",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 151.2,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 150,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 67,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 158.4,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 158,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 68,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 165.6,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 166,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 69,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 122.4,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 134,
+            "z": 162
+          },
+          {
+            "x": 122,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 70,
+        "defId": "spg",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 129.6,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 142,
+            "z": 182
+          },
+          {
+            "x": 130,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 71,
+        "defId": "atgm",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 136.8,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 154,
+            "z": 182
+          },
+          {
+            "x": 138,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 72,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 144,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 146,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 73,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 151.2,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 150,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 74,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 158.4,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 158,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 75,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 165.6,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 166,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 76,
+        "defId": "atgm",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 122.4,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 138,
+            "z": 186
+          },
+          {
+            "x": 122,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 77,
+        "defId": "spg",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 129.6,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 150,
+            "z": 182
+          },
+          {
+            "x": 130,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 78,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 136.8,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 150,
+            "z": 182
+          },
+          {
+            "x": 138,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 79,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 144,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 190,
+            "z": 162
+          },
+          {
+            "x": 150,
+            "z": 182
+          },
+          {
+            "x": 146,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 80,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 151.2,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 150,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 81,
+        "defId": "atgm",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 158.4,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 158,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 82,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 165.6,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 166,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 83,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 122.4,
+          "z": 194
+        },
+        "path": [
+          {
+            "x": 134,
+            "z": 186
+          },
+          {
+            "x": 122,
+            "z": 194
+          }
+        ]
+      },
+      {
+        "id": 84,
+        "defId": "spg",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 129.6,
+          "z": 194
+        },
+        "path": [
+          {
+            "x": 138,
+            "z": 186
+          },
+          {
+            "x": 130,
+            "z": 194
+          }
+        ]
+      },
+      {
+        "id": 85,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 136.8,
+          "z": 194
+        },
+        "path": [
+          {
+            "x": 186,
+            "z": 174
+          },
+          {
+            "x": 174,
+            "z": 174
+          },
+          {
+            "x": 138,
+            "z": 194
+          }
+        ]
+      },
+      {
+        "id": 86,
+        "defId": "atgm",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 144,
+          "z": 194
+        },
+        "path": [
+          {
+            "x": 186,
+            "z": 174
+          },
+          {
+            "x": 174,
+            "z": 174
+          },
+          {
+            "x": 146,
+            "z": 194
+          }
+        ]
+      },
+      {
+        "id": 87,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 151.2,
+          "z": 194
+        },
+        "path": [
+          {
+            "x": 150,
+            "z": 194
+          }
+        ]
+      }
+    ],
+    "firstTickSummary": {
+      "units": 80,
+      "buildings": 7,
+      "projectiles": 23,
+      "nextEntityId": 88,
+      "nextProjectileId": 32,
+      "eventSeq": 42,
+      "rngState": 2768728179,
+      "victory": "playing",
+      "unitsLost": [
+        0,
+        0
+      ],
+      "kills": [
+        0,
+        0
+      ],
+      "eventCounts": {
+        "orderFailed": 1,
+        "orderAck": 1,
+        "shot": 31,
+        "impact": 5,
+        "explosion": 3
+      }
+    },
+    "finalSummary": {
+      "units": 72,
+      "buildings": 7,
+      "projectiles": 0,
+      "nextEntityId": 88,
+      "nextProjectileId": 161,
+      "eventSeq": 331,
+      "rngState": 131986502,
+      "victory": "playing",
+      "unitsLost": [
+        5,
+        3
+      ],
+      "kills": [
+        3,
+        5
+      ],
+      "eventCounts": {
+        "unitLost": 8,
+        "explosion": 30,
+        "impact": 94,
+        "shot": 108
+      }
+    },
+    "finalPaths": [
+      {
+        "id": 8,
+        "defId": "engineer",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 154.4,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 138,
+            "z": 150
+          },
+          {
+            "x": 154,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 161.6,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 150,
+            "z": 150
+          },
+          {
+            "x": 162,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 168.8,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 154,
+            "z": 150
+          },
+          {
+            "x": 170,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 11,
+        "defId": "rifle",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 176,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 118,
+            "z": 150
+          },
+          {
+            "x": 166,
+            "z": 150
+          },
+          {
+            "x": 178,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "defId": "rifle",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 183.2,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 122,
+            "z": 150
+          },
+          {
+            "x": 170,
+            "z": 150
+          },
+          {
+            "x": 182,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 13,
+        "defId": "rifle",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 190.4,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 126,
+            "z": 150
+          },
+          {
+            "x": 174,
+            "z": 154
+          },
+          {
+            "x": 190,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 15,
+        "defId": "rifle",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 154.4,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 146,
+            "z": 170
+          },
+          {
+            "x": 154,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 16,
+        "defId": "engineer",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 122.4,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 262,
+            "z": 150
+          },
+          {
+            "x": 214,
+            "z": 146
+          },
+          {
+            "x": 166,
+            "z": 146
+          },
+          {
+            "x": 122,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 17,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 129.6,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 266,
+            "z": 150
+          },
+          {
+            "x": 218,
+            "z": 146
+          },
+          {
+            "x": 170,
+            "z": 146
+          },
+          {
+            "x": 130,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 18,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 136.8,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 274,
+            "z": 150
+          },
+          {
+            "x": 226,
+            "z": 146
+          },
+          {
+            "x": 178,
+            "z": 146
+          },
+          {
+            "x": 138,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 19,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 144,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 246,
+            "z": 126
+          },
+          {
+            "x": 222,
+            "z": 146
+          },
+          {
+            "x": 174,
+            "z": 146
+          },
+          {
+            "x": 146,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 20,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 151.2,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 246,
+            "z": 130
+          },
+          {
+            "x": 198,
+            "z": 146
+          },
+          {
+            "x": 150,
+            "z": 154
+          },
+          {
+            "x": 150,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 21,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 158.4,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 254,
+            "z": 150
+          },
+          {
+            "x": 206,
+            "z": 150
+          },
+          {
+            "x": 158,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 22,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 165.6,
+          "z": 158
+        },
+        "path": [
+          {
+            "x": 254,
+            "z": 150
+          },
+          {
+            "x": 206,
+            "z": 150
+          },
+          {
+            "x": 166,
+            "z": 158
+          }
+        ]
+      },
+      {
+        "id": 23,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 122.4,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 246,
+            "z": 150
+          },
+          {
+            "x": 198,
+            "z": 150
+          },
+          {
+            "x": 150,
+            "z": 150
+          },
+          {
+            "x": 122,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 24,
+        "defId": "spg",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 161.6,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 162,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 25,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 168.8,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 170,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 26,
+        "defId": "rifle",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 176,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 178,
+            "z": 162
+          },
+          {
+            "x": 178,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 28,
+        "defId": "rifle",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 190.4,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 190,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 30,
+        "defId": "rifle",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 154.4,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 154,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 33,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 176,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 170,
+            "z": 166
+          },
+          {
+            "x": 178,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 34,
+        "defId": "atgm",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 183.2,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 170,
+            "z": 170
+          },
+          {
+            "x": 182,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 35,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 190.4,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 182,
+            "z": 162
+          },
+          {
+            "x": 190,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 37,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 154.4,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 154,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 38,
+        "defId": "spg",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 161.6,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 162,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 39,
+        "defId": "atgm",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 168.8,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 170,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 42,
+        "defId": "rifle",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 190.4,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 174,
+            "z": 174
+          },
+          {
+            "x": 190,
+            "z": 174
+          },
+          {
+            "x": 190,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 44,
+        "defId": "atgm",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 154.4,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 154,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 45,
+        "defId": "spg",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 161.6,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 162,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 46,
+        "defId": "rifle",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 168.8,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 170,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 47,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 176,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 178,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 51,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 154.4,
+          "z": 194
+        },
+        "path": [
+          {
+            "x": 154,
+            "z": 194
+          }
+        ]
+      },
+      {
+        "id": 52,
+        "defId": "spg",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 161.6,
+          "z": 194
+        },
+        "path": [
+          {
+            "x": 162,
+            "z": 194
+          }
+        ]
+      },
+      {
+        "id": 53,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 168.8,
+          "z": 194
+        },
+        "path": [
+          {
+            "x": 170,
+            "z": 194
+          }
+        ]
+      },
+      {
+        "id": 54,
+        "defId": "atgm",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 176,
+          "z": 194
+        },
+        "path": [
+          {
+            "x": 178,
+            "z": 194
+          }
+        ]
+      },
+      {
+        "id": 55,
+        "defId": "tank",
+        "owner": 0,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 183.2,
+          "z": 194
+        },
+        "path": [
+          {
+            "x": 182,
+            "z": 194
+          }
+        ]
+      },
+      {
+        "id": 58,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 144,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 146,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 59,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 151.2,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 150,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 60,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 158.4,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 158,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 61,
+        "defId": "atgm",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 165.6,
+          "z": 165.2
+        },
+        "path": [
+          {
+            "x": 166,
+            "z": 166
+          }
+        ]
+      },
+      {
+        "id": 62,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 122.4,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 142,
+            "z": 154
+          },
+          {
+            "x": 122,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 63,
+        "defId": "spg",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 129.6,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 146,
+            "z": 150
+          },
+          {
+            "x": 130,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 64,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 136.8,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 150,
+            "z": 166
+          },
+          {
+            "x": 138,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 65,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 144,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 146,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 66,
+        "defId": "atgm",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 151.2,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 150,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 67,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 158.4,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 158,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 68,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 165.6,
+          "z": 172.4
+        },
+        "path": [
+          {
+            "x": 166,
+            "z": 174
+          }
+        ]
+      },
+      {
+        "id": 69,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 122.4,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 134,
+            "z": 162
+          },
+          {
+            "x": 122,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 70,
+        "defId": "spg",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 129.6,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 142,
+            "z": 182
+          },
+          {
+            "x": 130,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 71,
+        "defId": "atgm",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 136.8,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 154,
+            "z": 182
+          },
+          {
+            "x": 138,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 73,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 151.2,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 150,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 74,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 158.4,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 158,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 75,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 165.6,
+          "z": 179.6
+        },
+        "path": [
+          {
+            "x": 166,
+            "z": 178
+          }
+        ]
+      },
+      {
+        "id": 76,
+        "defId": "atgm",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 122.4,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 138,
+            "z": 186
+          },
+          {
+            "x": 122,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 77,
+        "defId": "spg",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 129.6,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 150,
+            "z": 182
+          },
+          {
+            "x": 130,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 78,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 136.8,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 150,
+            "z": 182
+          },
+          {
+            "x": 138,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 79,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 144,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 190,
+            "z": 162
+          },
+          {
+            "x": 150,
+            "z": 182
+          },
+          {
+            "x": 146,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 80,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 151.2,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 150,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 81,
+        "defId": "atgm",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 158.4,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 158,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 82,
+        "defId": "rifle",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 165.6,
+          "z": 186.8
+        },
+        "path": [
+          {
+            "x": 166,
+            "z": 186
+          }
+        ]
+      },
+      {
+        "id": 83,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 122.4,
+          "z": 194
+        },
+        "path": [
+          {
+            "x": 134,
+            "z": 186
+          },
+          {
+            "x": 122,
+            "z": 194
+          }
+        ]
+      },
+      {
+        "id": 84,
+        "defId": "spg",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 129.6,
+          "z": 194
+        },
+        "path": [
+          {
+            "x": 138,
+            "z": 186
+          },
+          {
+            "x": 130,
+            "z": 194
+          }
+        ]
+      },
+      {
+        "id": 85,
+        "defId": "tank",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 136.8,
+          "z": 194
+        },
+        "path": [
+          {
+            "x": 186,
+            "z": 174
+          },
+          {
+            "x": 174,
+            "z": 174
+          },
+          {
+            "x": 138,
+            "z": 194
+          }
+        ]
+      },
+      {
+        "id": 86,
+        "defId": "atgm",
+        "owner": 1,
+        "state": "moving",
+        "order": {
+          "type": "attackMove",
+          "x": 144,
+          "z": 194
+        },
+        "path": [
+          {
+            "x": 186,
+            "z": 174
+          },
+          {
+            "x": 174,
+            "z": 174
+          },
+          {
+            "x": 146,
+            "z": 194
+          }
+        ]
+      }
+    ]
+  },
+  "baseline": {
+    "ticks": [
+      {
+        "tick": 0,
+        "checksum": "edf2025e4e6158c8"
+      },
+      {
+        "tick": 1,
+        "checksum": "abb91c76fc8af3e3"
+      },
+      {
+        "tick": 2,
+        "checksum": "4a7f1ecfe3990cee"
+      },
+      {
+        "tick": 10,
+        "checksum": "cc19b919581d1d61"
+      },
+      {
+        "tick": 30,
+        "checksum": "62d3f2c82657ee97"
+      },
+      {
+        "tick": 100,
+        "checksum": "d53cf1b67430683f"
+      }
+    ],
+    "firstTickPaths": []
+  },
+  "scaling": [
+    {
+      "count": 9,
+      "ordered": 9,
+      "checksum": "ae5feae23f1a6f0d",
+      "summary": {
+        "units": 80,
+        "buildings": 7,
+        "projectiles": 0,
+        "nextEntityId": 88,
+        "nextProjectileId": 1,
+        "eventSeq": 2,
+        "rngState": 773311,
+        "victory": "playing",
+        "unitsLost": [
+          0,
+          0
+        ],
+        "kills": [
+          0,
+          0
+        ],
+        "eventCounts": {
+          "orderFailed": 1
+        }
+      },
+      "paths": [
+        {
+          "id": 8,
+          "defId": "engineer",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 168.8,
+            "z": 168.8
+          },
+          "path": [
+            {
+              "x": 138,
+              "z": 150
+            },
+            {
+              "x": 170,
+              "z": 170
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "defId": "tank",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 176,
+            "z": 168.8
+          },
+          "path": [
+            {
+              "x": 150,
+              "z": 150
+            },
+            {
+              "x": 178,
+              "z": 170
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 168.8,
+            "z": 176
+          },
+          "path": [
+            {
+              "x": 118,
+              "z": 174
+            },
+            {
+              "x": 166,
+              "z": 182
+            },
+            {
+              "x": 170,
+              "z": 178
+            }
+          ]
+        },
+        {
+          "id": 14,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 168.8,
+            "z": 183.2
+          },
+          "path": [
+            {
+              "x": 134,
+              "z": 186
+            },
+            {
+              "x": 170,
+              "z": 182
+            }
+          ]
+        },
+        {
+          "id": 15,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 176,
+            "z": 183.2
+          },
+          "path": [
+            {
+              "x": 146,
+              "z": 182
+            },
+            {
+              "x": 178,
+              "z": 182
+            }
+          ]
+        },
+        {
+          "id": 24,
+          "defId": "spg",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 183.2,
+            "z": 183.2
+          },
+          "path": [
+            {
+              "x": 170,
+              "z": 166
+            },
+            {
+              "x": 174,
+              "z": 182
+            },
+            {
+              "x": 182,
+              "z": 182
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "count": 18,
+      "ordered": 18,
+      "checksum": "1ceb5514a37b00a5",
+      "summary": {
+        "units": 80,
+        "buildings": 7,
+        "projectiles": 0,
+        "nextEntityId": 88,
+        "nextProjectileId": 1,
+        "eventSeq": 2,
+        "rngState": 773311,
+        "victory": "playing",
+        "unitsLost": [
+          0,
+          0
+        ],
+        "kills": [
+          0,
+          0
+        ],
+        "eventCounts": {
+          "orderFailed": 1
+        }
+      },
+      "paths": [
+        {
+          "id": 8,
+          "defId": "engineer",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 161.6,
+            "z": 165.2
+          },
+          "path": [
+            {
+              "x": 138,
+              "z": 150
+            },
+            {
+              "x": 162,
+              "z": 166
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "defId": "tank",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 168.8,
+            "z": 165.2
+          },
+          "path": [
+            {
+              "x": 150,
+              "z": 150
+            },
+            {
+              "x": 170,
+              "z": 166
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "defId": "tank",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 176,
+            "z": 165.2
+          },
+          "path": [
+            {
+              "x": 154,
+              "z": 150
+            },
+            {
+              "x": 178,
+              "z": 166
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 183.2,
+            "z": 165.2
+          },
+          "path": [
+            {
+              "x": 118,
+              "z": 150
+            },
+            {
+              "x": 166,
+              "z": 150
+            },
+            {
+              "x": 182,
+              "z": 166
+            }
+          ]
+        },
+        {
+          "id": 12,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 190.4,
+            "z": 165.2
+          },
+          "path": [
+            {
+              "x": 122,
+              "z": 150
+            },
+            {
+              "x": 170,
+              "z": 150
+            },
+            {
+              "x": 190,
+              "z": 166
+            }
+          ]
+        },
+        {
+          "id": 13,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 161.6,
+            "z": 172.4
+          },
+          "path": [
+            {
+              "x": 126,
+              "z": 186
+            },
+            {
+              "x": 162,
+              "z": 174
+            }
+          ]
+        },
+        {
+          "id": 14,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 168.8,
+            "z": 172.4
+          },
+          "path": [
+            {
+              "x": 134,
+              "z": 150
+            },
+            {
+              "x": 170,
+              "z": 174
+            }
+          ]
+        },
+        {
+          "id": 15,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 176,
+            "z": 172.4
+          },
+          "path": [
+            {
+              "x": 146,
+              "z": 182
+            },
+            {
+              "x": 178,
+              "z": 174
+            }
+          ]
+        },
+        {
+          "id": 24,
+          "defId": "spg",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 183.2,
+            "z": 172.4
+          },
+          "path": [
+            {
+              "x": 170,
+              "z": 166
+            },
+            {
+              "x": 178,
+              "z": 174
+            },
+            {
+              "x": 182,
+              "z": 174
+            }
+          ]
+        },
+        {
+          "id": 25,
+          "defId": "tank",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 190.4,
+            "z": 172.4
+          },
+          "path": [
+            {
+              "x": 178,
+              "z": 158
+            },
+            {
+              "x": 190,
+              "z": 170
+            },
+            {
+              "x": 190,
+              "z": 174
+            }
+          ]
+        },
+        {
+          "id": 26,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 161.6,
+            "z": 179.6
+          },
+          "path": [
+            {
+              "x": 166,
+              "z": 174
+            },
+            {
+              "x": 162,
+              "z": 178
+            }
+          ]
+        },
+        {
+          "id": 27,
+          "defId": "tank",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 168.8,
+            "z": 179.6
+          },
+          "path": [
+            {
+              "x": 170,
+              "z": 178
+            }
+          ]
+        },
+        {
+          "id": 30,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 190.4,
+            "z": 179.6
+          },
+          "path": [
+            {
+              "x": 186,
+              "z": 166
+            },
+            {
+              "x": 190,
+              "z": 178
+            }
+          ]
+        },
+        {
+          "id": 31,
+          "defId": "spg",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 161.6,
+            "z": 186.8
+          },
+          "path": [
+            {
+              "x": 162,
+              "z": 186
+            }
+          ]
+        },
+        {
+          "id": 32,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 168.8,
+            "z": 186.8
+          },
+          "path": [
+            {
+              "x": 170,
+              "z": 186
+            }
+          ]
+        },
+        {
+          "id": 33,
+          "defId": "tank",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 176,
+            "z": 186.8
+          },
+          "path": [
+            {
+              "x": 162,
+              "z": 182
+            },
+            {
+              "x": 178,
+              "z": 186
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "count": 27,
+      "ordered": 27,
+      "checksum": "e75a9dafea8cd1d9",
+      "summary": {
+        "units": 80,
+        "buildings": 7,
+        "projectiles": 0,
+        "nextEntityId": 88,
+        "nextProjectileId": 1,
+        "eventSeq": 2,
+        "rngState": 773311,
+        "victory": "playing",
+        "unitsLost": [
+          0,
+          0
+        ],
+        "kills": [
+          0,
+          0
+        ],
+        "eventCounts": {
+          "orderFailed": 1
+        }
+      },
+      "paths": [
+        {
+          "id": 8,
+          "defId": "engineer",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 158,
+            "z": 161.6
+          },
+          "path": [
+            {
+              "x": 138,
+              "z": 150
+            },
+            {
+              "x": 158,
+              "z": 162
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "defId": "tank",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 165.2,
+            "z": 161.6
+          },
+          "path": [
+            {
+              "x": 150,
+              "z": 150
+            },
+            {
+              "x": 166,
+              "z": 162
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "defId": "tank",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 172.4,
+            "z": 161.6
+          },
+          "path": [
+            {
+              "x": 154,
+              "z": 150
+            },
+            {
+              "x": 174,
+              "z": 162
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 179.6,
+            "z": 161.6
+          },
+          "path": [
+            {
+              "x": 118,
+              "z": 150
+            },
+            {
+              "x": 166,
+              "z": 150
+            },
+            {
+              "x": 178,
+              "z": 162
+            }
+          ]
+        },
+        {
+          "id": 12,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 186.8,
+            "z": 161.6
+          },
+          "path": [
+            {
+              "x": 122,
+              "z": 150
+            },
+            {
+              "x": 170,
+              "z": 150
+            },
+            {
+              "x": 186,
+              "z": 162
+            }
+          ]
+        },
+        {
+          "id": 13,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 194,
+            "z": 161.6
+          },
+          "path": [
+            {
+              "x": 126,
+              "z": 150
+            },
+            {
+              "x": 174,
+              "z": 154
+            },
+            {
+              "x": 194,
+              "z": 162
+            }
+          ]
+        },
+        {
+          "id": 14,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 158,
+            "z": 168.8
+          },
+          "path": [
+            {
+              "x": 134,
+              "z": 186
+            },
+            {
+              "x": 158,
+              "z": 170
+            }
+          ]
+        },
+        {
+          "id": 15,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 165.2,
+            "z": 168.8
+          },
+          "path": [
+            {
+              "x": 146,
+              "z": 182
+            },
+            {
+              "x": 166,
+              "z": 170
+            }
+          ]
+        },
+        {
+          "id": 24,
+          "defId": "spg",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 172.4,
+            "z": 168.8
+          },
+          "path": [
+            {
+              "x": 170,
+              "z": 166
+            },
+            {
+              "x": 174,
+              "z": 170
+            }
+          ]
+        },
+        {
+          "id": 25,
+          "defId": "tank",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 179.6,
+            "z": 168.8
+          },
+          "path": [
+            {
+              "x": 178,
+              "z": 158
+            },
+            {
+              "x": 178,
+              "z": 170
+            }
+          ]
+        },
+        {
+          "id": 26,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 186.8,
+            "z": 168.8
+          },
+          "path": [
+            {
+              "x": 182,
+              "z": 162
+            },
+            {
+              "x": 186,
+              "z": 166
+            },
+            {
+              "x": 186,
+              "z": 170
+            }
+          ]
+        },
+        {
+          "id": 28,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 158,
+            "z": 176
+          },
+          "path": [
+            {
+              "x": 158,
+              "z": 178
+            }
+          ]
+        },
+        {
+          "id": 29,
+          "defId": "atgm",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 165.2,
+            "z": 176
+          },
+          "path": [
+            {
+              "x": 166,
+              "z": 178
+            }
+          ]
+        },
+        {
+          "id": 30,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 172.4,
+            "z": 176
+          },
+          "path": [
+            {
+              "x": 174,
+              "z": 178
+            }
+          ]
+        },
+        {
+          "id": 34,
+          "defId": "atgm",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 158,
+            "z": 183.2
+          },
+          "path": [
+            {
+              "x": 158,
+              "z": 182
+            }
+          ]
+        },
+        {
+          "id": 35,
+          "defId": "tank",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 165.2,
+            "z": 183.2
+          },
+          "path": [
+            {
+              "x": 166,
+              "z": 182
+            }
+          ]
+        },
+        {
+          "id": 36,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 172.4,
+            "z": 183.2
+          },
+          "path": [
+            {
+              "x": 174,
+              "z": 178
+            },
+            {
+              "x": 174,
+              "z": 182
+            }
+          ]
+        },
+        {
+          "id": 37,
+          "defId": "tank",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 179.6,
+            "z": 183.2
+          },
+          "path": [
+            {
+              "x": 174,
+              "z": 182
+            },
+            {
+              "x": 178,
+              "z": 182
+            }
+          ]
+        },
+        {
+          "id": 40,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 158,
+            "z": 190.4
+          },
+          "path": [
+            {
+              "x": 158,
+              "z": 190
+            }
+          ]
+        },
+        {
+          "id": 41,
+          "defId": "tank",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 165.2,
+            "z": 190.4
+          },
+          "path": [
+            {
+              "x": 166,
+              "z": 190
+            }
+          ]
+        },
+        {
+          "id": 42,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 172.4,
+            "z": 190.4
+          },
+          "path": [
+            {
+              "x": 174,
+              "z": 190
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "count": 36,
+      "ordered": 36,
+      "checksum": "76b7835d4a8c8a3f",
+      "summary": {
+        "units": 80,
+        "buildings": 7,
+        "projectiles": 0,
+        "nextEntityId": 88,
+        "nextProjectileId": 1,
+        "eventSeq": 2,
+        "rngState": 773311,
+        "victory": "playing",
+        "unitsLost": [
+          0,
+          0
+        ],
+        "kills": [
+          0,
+          0
+        ],
+        "eventCounts": {
+          "orderFailed": 1
+        }
+      },
+      "paths": [
+        {
+          "id": 8,
+          "defId": "engineer",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 158,
+            "z": 158
+          },
+          "path": [
+            {
+              "x": 138,
+              "z": 150
+            },
+            {
+              "x": 158,
+              "z": 158
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "defId": "tank",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 165.2,
+            "z": 158
+          },
+          "path": [
+            {
+              "x": 150,
+              "z": 150
+            },
+            {
+              "x": 166,
+              "z": 158
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "defId": "tank",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 172.4,
+            "z": 158
+          },
+          "path": [
+            {
+              "x": 154,
+              "z": 150
+            },
+            {
+              "x": 174,
+              "z": 158
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 179.6,
+            "z": 158
+          },
+          "path": [
+            {
+              "x": 118,
+              "z": 150
+            },
+            {
+              "x": 166,
+              "z": 150
+            },
+            {
+              "x": 178,
+              "z": 158
+            }
+          ]
+        },
+        {
+          "id": 12,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 186.8,
+            "z": 158
+          },
+          "path": [
+            {
+              "x": 122,
+              "z": 150
+            },
+            {
+              "x": 170,
+              "z": 150
+            },
+            {
+              "x": 186,
+              "z": 158
+            }
+          ]
+        },
+        {
+          "id": 14,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 158,
+            "z": 165.2
+          },
+          "path": [
+            {
+              "x": 134,
+              "z": 150
+            },
+            {
+              "x": 158,
+              "z": 166
+            }
+          ]
+        },
+        {
+          "id": 15,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 165.2,
+            "z": 165.2
+          },
+          "path": [
+            {
+              "x": 146,
+              "z": 150
+            },
+            {
+              "x": 166,
+              "z": 166
+            }
+          ]
+        },
+        {
+          "id": 24,
+          "defId": "spg",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 172.4,
+            "z": 165.2
+          },
+          "path": [
+            {
+              "x": 170,
+              "z": 166
+            },
+            {
+              "x": 174,
+              "z": 166
+            }
+          ]
+        },
+        {
+          "id": 25,
+          "defId": "tank",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 179.6,
+            "z": 165.2
+          },
+          "path": [
+            {
+              "x": 178,
+              "z": 158
+            },
+            {
+              "x": 178,
+              "z": 166
+            }
+          ]
+        },
+        {
+          "id": 26,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 186.8,
+            "z": 165.2
+          },
+          "path": [
+            {
+              "x": 182,
+              "z": 162
+            },
+            {
+              "x": 186,
+              "z": 166
+            }
+          ]
+        },
+        {
+          "id": 28,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 158,
+            "z": 172.4
+          },
+          "path": [
+            {
+              "x": 158,
+              "z": 174
+            }
+          ]
+        },
+        {
+          "id": 29,
+          "defId": "atgm",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 165.2,
+            "z": 172.4
+          },
+          "path": [
+            {
+              "x": 166,
+              "z": 174
+            }
+          ]
+        },
+        {
+          "id": 30,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 172.4,
+            "z": 172.4
+          },
+          "path": [
+            {
+              "x": 174,
+              "z": 174
+            }
+          ]
+        },
+        {
+          "id": 31,
+          "defId": "spg",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 179.6,
+            "z": 172.4
+          },
+          "path": [
+            {
+              "x": 178,
+              "z": 174
+            }
+          ]
+        },
+        {
+          "id": 32,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 186.8,
+            "z": 172.4
+          },
+          "path": [
+            {
+              "x": 186,
+              "z": 166
+            },
+            {
+              "x": 186,
+              "z": 174
+            }
+          ]
+        },
+        {
+          "id": 34,
+          "defId": "atgm",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 158,
+            "z": 179.6
+          },
+          "path": [
+            {
+              "x": 158,
+              "z": 178
+            }
+          ]
+        },
+        {
+          "id": 35,
+          "defId": "tank",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 165.2,
+            "z": 179.6
+          },
+          "path": [
+            {
+              "x": 166,
+              "z": 178
+            }
+          ]
+        },
+        {
+          "id": 36,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 172.4,
+            "z": 179.6
+          },
+          "path": [
+            {
+              "x": 174,
+              "z": 178
+            }
+          ]
+        },
+        {
+          "id": 40,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 158,
+            "z": 186.8
+          },
+          "path": [
+            {
+              "x": 158,
+              "z": 186
+            }
+          ]
+        },
+        {
+          "id": 41,
+          "defId": "tank",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 165.2,
+            "z": 186.8
+          },
+          "path": [
+            {
+              "x": 166,
+              "z": 186
+            }
+          ]
+        },
+        {
+          "id": 42,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 172.4,
+            "z": 186.8
+          },
+          "path": [
+            {
+              "x": 174,
+              "z": 186
+            }
+          ]
+        },
+        {
+          "id": 43,
+          "defId": "tank",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 179.6,
+            "z": 186.8
+          },
+          "path": [
+            {
+              "x": 174,
+              "z": 186
+            },
+            {
+              "x": 178,
+              "z": 186
+            }
+          ]
+        },
+        {
+          "id": 44,
+          "defId": "atgm",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 186.8,
+            "z": 186.8
+          },
+          "path": [
+            {
+              "x": 174,
+              "z": 186
+            },
+            {
+              "x": 178,
+              "z": 190
+            },
+            {
+              "x": 186,
+              "z": 190
+            },
+            {
+              "x": 186,
+              "z": 186
+            }
+          ]
+        },
+        {
+          "id": 46,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 158,
+            "z": 194
+          },
+          "path": [
+            {
+              "x": 158,
+              "z": 194
+            }
+          ]
+        },
+        {
+          "id": 47,
+          "defId": "tank",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 165.2,
+            "z": 194
+          },
+          "path": [
+            {
+              "x": 166,
+              "z": 194
+            }
+          ]
+        },
+        {
+          "id": 48,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 172.4,
+            "z": 194
+          },
+          "path": [
+            {
+              "x": 174,
+              "z": 194
+            }
+          ]
+        },
+        {
+          "id": 49,
+          "defId": "atgm",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 179.6,
+            "z": 194
+          },
+          "path": [
+            {
+              "x": 178,
+              "z": 194
+            }
+          ]
+        },
+        {
+          "id": 50,
+          "defId": "rifle",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 186.8,
+            "z": 194
+          },
+          "path": [
+            {
+              "x": 178,
+              "z": 190
+            },
+            {
+              "x": 186,
+              "z": 194
+            }
+          ]
+        },
+        {
+          "id": 51,
+          "defId": "tank",
+          "owner": 0,
+          "state": "moving",
+          "order": {
+            "type": "attackMove",
+            "x": 194,
+            "z": 194
+          },
+          "path": [
+            {
+              "x": 170,
+              "z": 186
+            },
+            {
+              "x": 194,
+              "z": 194
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,447 @@
+{
+  "test": {
+    "label": "phase2a16-dry",
+    "base": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev",
+    "isMain": false,
+    "targetMs": 120000,
+    "startedAt": "2026-10-31T18:56:10.046Z",
+    "endedAt": "2026-10-31T18:56:10.046Z",
+    "wallElapsedMs": 0,
+    "intervalMs": 30000,
+    "commandEveryMs": 5000,
+    "productionEveryMs": 180000,
+    "statusPollMs": 5000,
+    "fastStatusPollMs": 250,
+    "restartOffsets": [
+      20000,
+      70000
+    ],
+    "restartAges": [
+      1500,
+      12500
+    ],
+    "evidenceDir": "staging-evidence\\phase2a16-dry-2026-10-31T18-56-07-132Z"
+  },
+  "health": null,
+  "room": {
+    "roomId": "phase2a16-dry-mvwrhy9v",
+    "mode": "1v1",
+    "protocol": 2,
+    "matchDurationMs": 130000,
+    "matchDeadlineAt": 1793473097832,
+    "seats": [
+      {
+        "seatId": 0,
+        "playerId": 0,
+        "team": 0
+      },
+      {
+        "seatId": 1,
+        "playerId": 1,
+        "team": 1
+      }
+    ]
+  },
+  "results": [
+    null,
+    null
+  ],
+  "resultAtMs": null,
+  "abortReason": "visibleEnemyCombat is not defined",
+  "server": null,
+  "reservation": null,
+  "closed": null,
+  "restarts": [],
+  "snapshots": [
+    {
+      "seat": 0,
+      "count": 21,
+      "bytes": 66677,
+      "frequencyHz": null,
+      "sizes": {
+        "count": 21,
+        "p50": 388,
+        "p95": 390,
+        "p99": 58974,
+        "max": 58974,
+        "min": 371,
+        "mean": 3175.095238095238
+      },
+      "gaps": {
+        "count": 20,
+        "p50": 98,
+        "p95": 107,
+        "p99": 131,
+        "max": 131,
+        "min": 89,
+        "mean": 100.1
+      },
+      "longestGapMs": 131,
+      "firstTick": 0,
+      "lastTick": 40,
+      "tickDeltas": {
+        "2": 20
+      }
+    },
+    {
+      "seat": 1,
+      "count": 21,
+      "bytes": 66951,
+      "frequencyHz": null,
+      "sizes": {
+        "count": 21,
+        "p50": 402,
+        "p95": 404,
+        "p99": 58968,
+        "max": 58968,
+        "min": 385,
+        "mean": 3188.1428571428573
+      },
+      "gaps": {
+        "count": 20,
+        "p50": 98,
+        "p95": 104,
+        "p99": 105,
+        "max": 105,
+        "min": 73,
+        "mean": 97.6
+      },
+      "longestGapMs": 105,
+      "firstTick": 0,
+      "lastTick": 40,
+      "tickDeltas": {
+        "2": 20
+      }
+    }
+  ],
+  "protocol": {
+    "version": 2,
+    "syncs": [
+      1,
+      1
+    ],
+    "deltas": [
+      20,
+      20
+    ],
+    "syncBytes": [
+      58974,
+      58968
+    ],
+    "deltaBytes": [
+      7703,
+      7983
+    ],
+    "firstSyncBytes": [
+      58974,
+      58968
+    ],
+    "syncMapBytes": [
+      41797,
+      41797
+    ],
+    "syncFogBytes": [
+      13825,
+      13825
+    ],
+    "deltaMapBytes": 0,
+    "deltaSize": [
+      {
+        "count": 20,
+        "p50": 388,
+        "p95": 390,
+        "p99": 390,
+        "max": 390,
+        "min": 371,
+        "mean": 385.15
+      },
+      {
+        "count": 20,
+        "p50": 402,
+        "p95": 404,
+        "p99": 404,
+        "max": 404,
+        "min": 385,
+        "mean": 399.15
+      }
+    ],
+    "fogEntries": [
+      0,
+      0
+    ],
+    "deltaFieldBytes": [
+      {
+        "players": 5184
+      },
+      {
+        "players": 5464
+      }
+    ],
+    "epochs": [
+      1,
+      1
+    ],
+    "resyncRequests": [
+      0,
+      0
+    ],
+    "rejectedUpdates": 0,
+    "lastReject": null
+  },
+  "reconstruction": {
+    "ready": [
+      true,
+      true
+    ],
+    "epoch": [
+      1,
+      1
+    ],
+    "seq": [
+      21,
+      21
+    ],
+    "tick": [
+      40,
+      40
+    ],
+    "phase": [
+      "playing",
+      "playing"
+    ],
+    "entities": [
+      9,
+      9
+    ],
+    "fogTiles": [
+      6912,
+      6912
+    ],
+    "mapTiles": [
+      6912,
+      6912
+    ],
+    "serverTick": null,
+    "serverPhase": null,
+    "tickMatches": false,
+    "outcomesMatch": false
+  },
+  "stateSamples": [
+    {
+      "seat": 0,
+      "at": "2026-10-31T18:56:07.967Z",
+      "tick": 0,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3000,
+      "breakdown": {
+        "total": 58855,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2684,
+        "players": 206,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.710169059553139,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-31T18:56:08.011Z",
+      "tick": 0,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3000,
+      "breakdown": {
+        "total": 58849,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 220,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7102414654454621,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    }
+  ],
+  "combat": {
+    "at": "2026-10-31T18:56:10.048Z",
+    "issued": [
+      {},
+      {}
+    ],
+    "attackOrders": [
+      0,
+      0
+    ],
+    "attackMoveOrders": [
+      0,
+      0
+    ],
+    "orderReplacements": [
+      0,
+      0
+    ],
+    "hits": [
+      0,
+      0
+    ],
+    "enemyUnitsLost": [
+      0,
+      0
+    ],
+    "enemyBuildingsLost": [
+      0,
+      0
+    ],
+    "ownUnitsLost": [
+      0,
+      0
+    ],
+    "replacements": [
+      0,
+      0
+    ],
+    "disengages": [
+      0,
+      0
+    ],
+    "acceptedByPurpose": [
+      {},
+      {}
+    ]
+  },
+  "combatContinuity": {
+    "windows": [],
+    "activeWindows": {
+      "seat0": 0,
+      "seat1": 0,
+      "either": 0,
+      "total": 0
+    },
+    "longestGapMs": [
+      null,
+      null
+    ],
+    "gapNote": [
+      "no hits observed",
+      "no hits observed"
+    ],
+    "lastHitAtMs": [
+      null,
+      null
+    ],
+    "lastDestroyAtMs": [
+      null,
+      null
+    ],
+    "restarts": [],
+    "replacements": [
+      0,
+      0
+    ],
+    "disengages": [
+      0,
+      0
+    ]
+  },
+  "snapshotReadback": null,
+  "commands": {
+    "sent": [
+      0,
+      0
+    ],
+    "accepted": [
+      0,
+      0
+    ],
+    "rejected": [
+      0,
+      0
+    ],
+    "timeouts": [
+      0,
+      0
+    ],
+    "byType": [
+      {},
+      {}
+    ],
+    "rejectionByCode": {},
+    "latencyMs": {
+      "count": 0,
+      "p50": null,
+      "p95": null,
+      "p99": null,
+      "max": null,
+      "min": null,
+      "mean": null
+    },
+    "ackAnomalies": 0
+  },
+  "socketCloses": [],
+  "reconnects": {
+    "counts": [
+      0,
+      0
+    ],
+    "attempts": [
+      0,
+      0
+    ],
+    "failures": [
+      0,
+      0
+    ]
+  },
+  "keepalive": {
+    "sent": [
+      0,
+      0
+    ],
+    "acked": [
+      0,
+      0
+    ],
+    "server": null
+  },
+  "checkpoints": {
+    "observed": 1,
+    "last": {
+      "snapshotCycles": 2,
+      "lastSuccessAt": 1793472968030,
+      "observedAt": 1793472968082,
+      "totalTicks": 1,
+      "processTicks": 1,
+      "ageSinceSuccessMs": 95
+    }
+  },
+  "errors": [
+    {
+      "at": "2026-10-31T18:56:10.045Z",
+      "scope": "run",
+      "message": "visibleEnemyCombat is not defined"
+    }
+  ],
+  "clientMemory": {
+    "note": "Node client heap only; not server memory.",
+    "heapUsedMb": 13.8,
+    "rssMb": 90
+  }
+}

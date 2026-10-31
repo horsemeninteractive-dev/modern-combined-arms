@@ -8,8 +8,14 @@ import { BUILDINGS } from '../src/data/buildings';
 import { Game } from '../src/sim/game';
 import { createIslandAssault } from '../src/data/scenarios';
 import type { Entity } from '../src/sim/types';
-import { MESH_FS, TERRAIN_FS, TERRAIN_VS } from '../src/render/shaders';
-import { bindTextureUnit, MESH_FLAG_TEXTURE_UNIT, MESH_FOG_TEXTURE_UNIT } from '../src/render/gl';
+import { MESH_FS, MESH_VS, PROP_FS, TERRAIN_FS, TERRAIN_VS, WATER_FS } from '../src/render/shaders';
+import {
+  bindTextureUnit,
+  MESH_FLAG_TEXTURE_UNIT,
+  MESH_FOG_OLD_TEXTURE_UNIT,
+  MESH_FOG_TEXTURE_UNIT,
+  MESH_MATERIAL_TEXTURE_UNIT,
+} from '../src/render/gl';
 import { readFileSync } from 'node:fs';
 
 const styleCss = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
@@ -159,15 +165,35 @@ describe('ground materials', () => {
     expect(a.indices).toEqual(b.indices);
   });
 
-  it('applies ground materials before the unchanged fog treatment', () => {
+  it('applies ground materials before the fog treatment', () => {
     expect(TERRAIN_VS).toContain('layout(location=4) in vec4 aGround');
     expect(TERRAIN_FS).toContain('in vec4 vGround');
-    // Material shading must finish before the fog branch, so hidden ground
-    // cannot reveal cover or shore detail.
+    // Material shading — including the field-scale macro variation — must
+    // finish before the fog is applied, so hidden ground cannot reveal cover
+    // or shore detail.
     expect(TERRAIN_FS.indexOf('base *= broad * aggregate')).toBeLessThan(
       TERRAIN_FS.indexOf('float fog = uUseFog'),
     );
-    expect(TERRAIN_FS).toContain('mix(dark, lit * 0.12, 0.22)');
+    expect(TERRAIN_FS.indexOf('float fieldDrift')).toBeLessThan(
+      TERRAIN_FS.indexOf('float fog = uUseFog'),
+    );
+    // The three fog states, in one place rather than per shader.
+    expect(TERRAIN_FS).toContain('lit = applyFog(lit, fog)');
+    expect(TERRAIN_FS).toContain('vec3 unseen = vec3(0.012, 0.027, 0.038);');
+  });
+
+  it('breaks up flat grass without touching readable ground', () => {
+    // The field-scale drift multiplies the authored tile colour and is gated to
+    // grass cover away from stone, so roads, ore and buildable ground keep
+    // their terrain colour.
+    const drift = TERRAIN_FS.slice(
+      TERRAIN_FS.indexOf('float fieldDrift'),
+      TERRAIN_FS.indexOf('float broad ='),
+    );
+    expect(drift).toContain('noise2(p * 0.014');
+    expect(drift).toContain('g.x * (1.0 - g.w)');
+    expect(drift).toContain('base *= mix(');
+    expect(drift).not.toContain('vec3');
   });
 });
 
@@ -326,18 +352,41 @@ describe('road fog', () => {
   it('charts roads like the ground and structures, not as paint over the dark', () => {
     expect(MESH_FS).toContain('uFogTex');
     expect(MESH_FS).toContain('uUseFog');
-    expect(MESH_FS).toMatch(/texture\(uFogTex,\s*vWorld\.xz \/ uWorldSize\)/);
-    // Never seen reads as the terrain's near-black; charted ground is dimmed.
-    expect(MESH_FS).toMatch(/fog < 0\.08/);
-    expect(MESH_FS).toMatch(/mix\(lit \* 0\.34, lit, smoothstep\(0\.18, 0\.92, fog\)\)/);
+    expect(MESH_FS).toMatch(/fogField\(vWorld\.xz \/ uWorldSize\)/);
+    expect(MESH_FS).toContain('applyFog(lit, fog)');
+    // All three authored states survive: unseen ground keeps the terrain's
+    // near-black, charted ground is desaturated and cooled rather than just
+    // dimmed, and only vision clears the mask.
+    expect(MESH_FS).toContain('float fogSeen(float fog)');
+    expect(MESH_FS).toContain('float fogCharted(float fog)');
+    expect(MESH_FS).toContain('chartedTone');
+    expect(MESH_FS).toContain('vec3 unseen = vec3(0.012, 0.027, 0.038);');
+  });
+
+  it('cross-fades two fog fields so the vision boundary does not step', () => {
+    // The mask is rebuilt every third tick. Both uploads are sampled and mixed
+    // by a weight the renderer ramps across exactly one interval.
+    for (const shader of [MESH_FS, TERRAIN_FS, WATER_FS, PROP_FS]) {
+      expect(shader).toContain('uniform sampler2D uFogTexOld');
+      expect(shader).toContain('uniform float uFogBlend');
+      expect(shader).toMatch(/mix\(texture\(uFogTexOld, uv\)\.r, texture\(uFogTex, uv\)\.r, uFogBlend\)/);
+    }
+    const renderer = readFileSync(new URL('../src/render/renderer.ts', import.meta.url), 'utf8');
+    expect(renderer).toContain('this.fogTextureOld = this.createTexture()');
+    // A new mask rotates the pair and restarts the blend instead of replacing
+    // the only field, which is what made the edge jump.
+    const upload = renderer.slice(renderer.indexOf('private uploadFogField'), renderer.indexOf('private updateFog'));
+    expect(upload).toContain('this.uploadTexture(this.fogTextureOld');
+    expect(upload).toContain('this.fogBlend = 0');
+    expect(renderer).toContain('this.fogBlend + dt / FOG_UPDATE_SECONDS');
   });
 
   it('feeds the road pass the fog texture and leaves entity passes unfogged', () => {
     const renderer = readFileSync(new URL('../src/render/renderer.ts', import.meta.url), 'utf8');
     const road = renderer.slice(renderer.indexOf('this.roadMesh.draw()') - 900, renderer.indexOf('this.roadMesh.draw()'));
     expect(road).toContain('uUseFog');
-    expect(road).toContain('uFogTex');
-    expect(road).toContain('this.fogTexture');
+    expect(road).toContain('MESH_FOG_TEXTURE_UNIT');
+    expect(road).toContain('this.bindFogFields(');
     // Buildings and units carry their own charting alpha instead.
     const entityPasses = renderer.match(/gl\.uniform1f\(mp\.u\.uUseFog, 0\)/g) ?? [];
     expect(entityPasses.length).toBeGreaterThanOrEqual(2);
@@ -375,10 +424,13 @@ describe('road fog', () => {
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
     const block = renderer.slice(start, end);
-    expect(block).toContain('bindTextureUnit(gl, MESH_FOG_TEXTURE_UNIT, this.fogTexture, mp.u.uFogTex)');
+    expect(block).toContain('this.bindFogFields(mp.u, MESH_FOG_TEXTURE_UNIT, MESH_FOG_OLD_TEXTURE_UNIT)');
     // Flags stay on their own unit and are bound after, as entity passes expect.
     expect(block).toContain('this.bindFlagTexture()');
     expect(block).not.toContain('uFogTex, 0');
+    // Fog, its previous field, the material LUT and the flag texture must all
+    // sit on distinct units; the helper names each sampler's own unit.
+    expect(new Set([MESH_FLAG_TEXTURE_UNIT, MESH_FOG_TEXTURE_UNIT, MESH_MATERIAL_TEXTURE_UNIT, MESH_FOG_OLD_TEXTURE_UNIT]).size).toBe(4);
   });
 });
 
@@ -421,6 +473,45 @@ describe('intro beats', () => {
   });
 });
 
+describe('HUD legibility floor', () => {
+  const hudStart = styleCss.indexOf('/* Battle HUD');
+  const hudEnd = styleCss.indexOf('/* Mobile landscape composition');
+  const hudCss = styleCss.slice(hudStart, hudEnd);
+
+  it('defines the shared type scale and drives it from the UI scale', () => {
+    // The scale is still anchored to the Phase 1 floor; the multiplier is what
+    // lets the Settings slider resize the HUD without a second stylesheet.
+    expect(styleCss).toContain('--ui-scale: 1');
+    expect(styleCss).toContain('--fs-xs: calc(11px * var(--ui-scale))');
+    expect(styleCss).toContain('--fs-sm: calc(12px * var(--ui-scale))');
+    expect(styleCss).toContain('--fs-md: calc(13px * var(--ui-scale))');
+    expect(styleCss).toContain('--fs-lg: calc(15px * var(--ui-scale))');
+    expect(styleCss).toContain('--fs-xl: calc(18px * var(--ui-scale))');
+  });
+
+  it('declares no raw HUD font size below 11px', () => {
+    const belowFloor = [...hudCss.matchAll(/font-size:\s*([0-9.]+)px/g)]
+      .map((match) => Number(match[1]))
+      .filter((size) => size < 11);
+    expect(belowFloor).toEqual([]);
+  });
+
+  it('keeps the type floor override block from reintroducing small text', () => {
+    const floorStart = styleCss.indexOf('/* Legibility floor');
+    expect(floorStart).toBeGreaterThan(hudStart);
+    const floorCss = styleCss.slice(floorStart);
+    const belowFloor = [...floorCss.matchAll(/font-size:\s*([0-9.]+)px/g)]
+      .map((match) => Number(match[1]))
+      .filter((size) => size < 11);
+    expect(belowFloor).toEqual([]);
+  });
+
+  it('shows desktop command hotkeys and hides them on touch layouts', () => {
+    expect(styleCss).toMatch(/\.cmd-key\s*\{[^}]*font-size:\s*var\(--fs-xs\)/);
+    expect(styleCss).toMatch(/\.layout-mobile \.cmd-key\s*\{\s*display:\s*none/);
+  });
+});
+
 describe('production apron', () => {
   it('places a finished vehicle on the apron in front of the factory', () => {
     const scenario = createIslandAssault();
@@ -442,5 +533,58 @@ describe('production apron', () => {
     }
     expect(produced).toBeDefined();
     expect(Math.hypot(produced!.x - apronX, produced!.z - apronZ)).toBeLessThan(TILE_SIZE);
+  });
+});
+
+describe('occlusion and cast shadows', () => {
+  const renderer = () => readFileSync(new URL('../src/render/renderer.ts', import.meta.url), 'utf8');
+
+  it('draws hidden units as a flat team silhouette only where a structure covers them', () => {
+    const source = renderer();
+    const start = source.indexOf('private drawOccludedUnits');
+    const end = source.indexOf('private drawEntityMesh', start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const pass = source.slice(start, end);
+    // A GREATER test writes only pixels something else already covers, the
+    // depth pull limits that to surfaces just in front of the unit, and the
+    // state is restored before the next pass.
+    expect(pass).toContain('gl.depthFunc(gl.GREATER)');
+    expect(pass).toContain('gl.depthFunc(gl.LEQUAL)');
+    expect(pass).toContain('gl.depthMask(false)');
+    expect(pass).toContain('gl.depthMask(true)');
+    expect(pass).toContain('uDepthPull');
+    // Vision is the same gate the main pass uses, so no silhouette can reveal
+    // fog or an unseen tile. Only units take part; flags and wrecks do not.
+    expect(pass).toContain("game.visionStateOf(team, e.id) !== 'visible'");
+    expect(pass).toContain("e.kind !== 'unit'");
+    expect(pass).not.toContain('bindFlagTexture');
+    // The whole pass is behind its own setting.
+    expect(source).toContain('if (this.settings.silhouettes) this.drawOccludedUnits(this.game)');
+  });
+
+  it('keeps the silhouette unlit and untextured in the mesh shader', () => {
+    expect(MESH_FS).toContain('uniform float uSilhouette');
+    const early = MESH_FS.slice(MESH_FS.indexOf('if (uSilhouette > 0.5)'), MESH_FS.indexOf('vec3 n = normalize(vNormal)'));
+    expect(early).toContain('outColor = vec4(uTeamColor');
+    expect(early).toContain('return');
+    // The pull is view depth only: the on-screen position is untouched.
+    expect(MESH_VS).toContain('clip.z -= (2.0 * uDepthPull) / (uFar - uNear)');
+  });
+
+  it('casts a flat shadow from tall structures along the sun', () => {
+    const source = renderer();
+    // Both the live battle and the menu backdrop get the cast.
+    const calls = source.match(/this\.pushCastShadow\(/g) ?? [];
+    expect(calls.length).toBeGreaterThanOrEqual(2);
+    const push = source.slice(source.indexOf('private pushCastShadow'), source.indexOf('private castShadowStrength'));
+    // Height comes from the authored mesh, not a per-building constant.
+    expect(push).toContain('buildingTopHeight(defId)');
+    expect(push).toContain('this.airShadowOffset(height * 0.85)');
+    expect(push).toContain('const strength = this.castShadowStrength()');
+    // Subtle at dusk and night, strongest at midday.
+    const strength = source.slice(source.indexOf('private castShadowStrength'), source.indexOf('private shadowGroundY'));
+    expect(strength).toContain("if (tod === 'night') return 0.3");
+    expect(strength).toContain("if (tod === 'day') return 1");
   });
 });

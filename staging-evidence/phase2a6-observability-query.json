@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "capturedAt": "2026-10-30T14:20:00Z",
+  "scope": {
+    "worker": "mca-multiplayer-staging",
+    "versionId": "febd117e-8d8e-481e-ba88-c212df262073",
+    "deployedAt": "2026-10-30T13:42:47.065Z",
+    "roomId": "phase2a6-cal-mvv1d9jg",
+    "account": "[redacted]",
+    "timeframe": "2026-10-30T13:56:45Z/2026-10-30T13:59:00Z"
+  },
+  "query": {
+    "endpoint": "POST /accounts/{account_id}/workers/observability/telemetry/query",
+    "queryId": "phase2a6-calibration-export",
+    "view": "events",
+    "limit": 2000,
+    "datasets": [],
+    "filters": [
+      {
+        "key": "$workers.event.request.url",
+        "operation": "includes",
+        "type": "string",
+        "value": "run=p2a6-"
+      },
+      {
+        "key": "$workers.durableObjectId",
+        "operation": "exists",
+        "type": "string"
+      }
+    ],
+    "fieldsUsed": [
+      "$workers.cpuTimeMs",
+      "$workers.wallTimeMs",
+      "$workers.durableObjectId",
+      "event.request.url",
+      "eventTimestamp"
+    ]
+  },
+  "resolution": {
+    "cpuTimeMs": "integer milliseconds per invocation",
+    "wallTimeMs": "integer milliseconds per invocation",
+    "scope": "Durable Object invocation, which includes batch setup, routing and response as well as the requested ticks",
+    "not": "per-tick CPU or per-tick maximum"
+  },
+  "platformSampling": {
+    "sampleInterval": 1.0681818181818181,
+    "observedSampleEvents": 132,
+    "estimatedSampleEvents": 141,
+    "estimatedSampleCpuMs": 10295,
+    "estimatedSampleWallMs": 10542,
+    "allCalibrateEvents": {
+      "observed": 138,
+      "estimatedCount": 144,
+      "sampleInterval": 1.0666666666666667,
+      "estimatedCpuMs": 10322
+    },
+    "note": "Workers Observability can omit individual invocation records on the Free plan with the staging Worker's observability enabled. The platform aggregate is weighted, not an exact sum. The analysis uses only the 132 exact run-id matches and does not impute the 8 missing sample runs."
+  },
+  "export": {
+    "path": "staging-evidence/phase2a6-observability-10rep.csv",
+    "rows": 132,
+    "bytes": 4950,
+    "sha256": "9da78c99251c31b5f98bd63d400e415c52cef9bb48cd0f7744fc012ad2ce4805",
+    "columns": ["run", "cpu_ms", "wall_ms", "timestamp"]
+  },
+  "matchedTotals": {
+    "cpuMs": 7784,
+    "wallMs": 7986,
+    "meanCpuMs": 58.97,
+    "meanWallMs": 60.5
+  }
+}

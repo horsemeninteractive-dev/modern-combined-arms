@@ -11,7 +11,12 @@ import {
 import { angleTo, dist, dist2, normalizeAngle, rotateLocalOffset, turnToward, clamp } from '../core/math';
 import { muzzleHeight, muzzleReach, muzzleWorldOffset } from './hardpoints';
 import { Rng } from '../core/rng';
-import { BUILDINGS, isIndestructibleStructure } from '../data/buildings';
+import {
+  BUILDINGS,
+  buildingFamily,
+  buildingRequirements,
+  isIndestructibleStructure,
+} from '../data/buildings';
 import { UNITS } from '../data/units';
 import { WEAPONS } from '../data/weapons';
 import {
@@ -28,6 +33,7 @@ import {
 import { buildingDef } from '../data/buildings';
 import { unitDef } from '../data/units';
 import { findPath, nearestWalkable, type NavGrid } from './pathfinding';
+import { NavBatch, type NavBatchMember } from './navBatch';
 import {
   adjacentWater,
   checkPlacement,
@@ -36,6 +42,7 @@ import {
   type ScenarioStructure,
 } from './scenario';
 import { createRuntimeMap, footprintCenter, stampFootprint } from './map';
+import { TUTORIAL_SCENARIO_ID } from '../data/tutorial';
 
 /**
  * What one replacement drop-off costs. A base with no refinery and less than
@@ -92,10 +99,15 @@ import type {
   WeaponDef,
   AIControlState,
   AIDifficulty,
+  ChartedStructure,
   ContactRecord,
+  ContactBand,
+  ContactState,
   PathPoint,
   VisionState,
 } from './types';
+
+import { CONTACT_DETECTED_TICKS, CONTACT_EXPIRE_TICKS } from './contacts';
 
 export interface GameOptions {
   localPlayerId?: number;
@@ -274,6 +286,9 @@ export class Game {
   }
 
   private objectiveText(): string {
+    if (this.state.scenario.meta.id === TUTORIAL_SCENARIO_ID) {
+      return 'Complete the training lanes.';
+    }
     if (this.state.scenario.settings.victory === 'annihilation') {
       return 'Destroy every enemy unit and structure.';
     }
@@ -390,6 +405,15 @@ export class Game {
       e.homeId = home?.id ?? 0;
       e.state = 'idle';
     }
+    if (def.submarine) {
+      e.submarine = {
+        dived: false,
+        battery: def.submarine.batterySeconds,
+        maxBattery: def.submarine.batterySeconds,
+        revealTimer: 0,
+        revealed: false,
+      };
+    }
     this.addEntity(e);
     if (!opts.starting) {
       const player = this.player(owner);
@@ -504,6 +528,30 @@ export class Game {
     return rosterIncludes(this.rosterFor(owner), 'building', defId);
   }
 
+  /**
+   * Structure families that still block this structure, in declaration order,
+   * resolved to the names this player would actually field. Only operational
+   * structures count: a foundation does not satisfy a gate, and losing the
+   * prerequisite closes the tier again. Presentation-only callers get the same
+   * answer the placement command will give them.
+   */
+  missingTech(owner: number, defId: string): Array<{ family: string; defId: string; name: string }> {
+    const required = buildingRequirements(defId);
+    if (required.length === 0) return [];
+    const complete = new Set(
+      this.state.entities
+        .filter((e) => e.owner === owner && e.kind === 'building' && e.hp > 0 && !e.construction)
+        .map((e) => buildingFamily(e.defId)),
+    );
+    const roster = this.rosterFor(owner);
+    return required
+      .filter((family) => !complete.has(family))
+      .map((family) => {
+        const actual = buildingSlotId(roster, family) ?? family;
+        return { family, defId: actual, name: BUILDINGS[actual]?.name ?? family };
+      });
+  }
+
   /** Actual unit in a baseline slot for this player (national variant or base). */
   unitIdFor(owner: number, slotId: string): string | undefined {
     return unitSlotId(this.rosterFor(owner), slotId);
@@ -587,6 +635,9 @@ export class Game {
         case 'return':
           this.commandReturn(cmd.team, cmd.ids);
           break;
+        case 'dive':
+          this.commandDive(cmd.team, cmd.ids, cmd.dive);
+          break;
         case 'capture':
           this.commandCapture(cmd.team, cmd.ids, cmd.targetId);
           break;
@@ -660,6 +711,12 @@ export class Game {
       return;
     }
     const destinations = this.formationPoints(entities, x, z);
+    // Below a small batch the one shared scan and per-domain bookkeeping cost
+    // more than the per-request mask it replaces. All-air orders never consult
+    // the traffic mask, so they must not pay for one either.
+    const needsTraffic = entities.some((e) => unitDef(e.defId).domain !== 'air');
+    const navBatch =
+      needsTraffic && entities.length >= 4 ? this.beginNavBatch(owner) : undefined;
     let failed = 0;
     for (let i = 0; i < entities.length; i++) {
       const e = entities[i];
@@ -667,6 +724,12 @@ export class Game {
       const def = unitDef(e.defId);
       // A player order takes an engineer off its site; construction pauses.
       this.releaseBuildTarget(e);
+      // A movement order replaces any combat order. The direct target is part
+      // of the old order, so it must not outlive it: a target destroyed later
+      // would otherwise leave an entity id that no longer exists in the saved
+      // state, and the strict room-snapshot validator would reject the room.
+      e.targetId = 0;
+      e.aimTargetId = 0;
       if (def.domain === 'air') {
         e.order = { type: attackMove ? 'attackMove' : 'move', x: dest.x, z: dest.z };
         e.path = [{ x: dest.x, z: dest.z }];
@@ -688,6 +751,7 @@ export class Game {
           // into its footprint.
           e.harvester.refineId = refinery.id;
           this.sendHarvesterToRefinery(e);
+          navBatch?.refresh(e.id, e.state === 'moving' || e.path.length > 0);
           continue;
         }
         e.harvester.phase = 'seek';
@@ -702,14 +766,16 @@ export class Game {
         e.order = null;
         e.path = [];
         e.state = 'idle';
+        navBatch?.refresh(e.id, false);
         continue;
       }
-      const path = this.findPathFor(e, dest.x, dest.z);
+      const path = this.findPathFor(e, dest.x, dest.z, navBatch);
       if (!path) {
         failed++;
         e.order = null;
         e.path = [];
         e.state = 'idle';
+        navBatch?.refresh(e.id, false);
         continue;
       }
       e.order = { type: attackMove ? 'attackMove' : 'move', x: dest.x, z: dest.z };
@@ -719,11 +785,10 @@ export class Game {
       e.destZ = dest.z;
       e.state = path.length > 0 ? 'moving' : 'idle';
       e.blockedTicks = 0;
-      // A new move order drops the old aim; the turret settles onto the hull
-      // rather than tracking a target the unit has left behind.
-      e.aimTargetId = 0;
+      // The aim was already dropped when the order replaced the old one.
       e.captureTargetId = 0;
       e.captureProgress = 0;
+      navBatch?.refresh(e.id, e.state === 'moving' || e.path.length > 0);
     }
     if (failed > 0) {
       this.emit('orderFailed', {
@@ -790,12 +855,18 @@ export class Game {
       }
     }
     // Tile tests are cheap and reject most of the walk; only a slot that
-    // survives them is worth an actual route search.
+    // survives them is worth an actual route search. The routes are a
+    // feasibility check, not state changes, so one traffic mask serves them all.
+    const needsTraffic = entities.some(
+      (e) => unitDef(e.defId).domain !== 'air' && !e.harvester,
+    );
+    const navBatch =
+      needsTraffic && entities.length >= 4 ? this.beginNavBatch(owner) : undefined;
     for (let i = 0; i < entities.length; i++) {
       const e = entities[i];
       if (unitDef(e.defId).domain === 'air' || e.harvester) continue;
       const dest = destinations[i];
-      if (!this.findPathFor(e, dest.x, dest.z)) return false;
+      if (!this.findPathFor(e, dest.x, dest.z, navBatch)) return false;
     }
     return true;
   }
@@ -821,9 +892,12 @@ export class Game {
       stamp(e.defId, e.x, e.z);
     }
     // A contact is memory too: the team saw this structure and knows where it
-    // stands, even if it has not been charted as a silhouette.
+    // stands, even if it has not been charted as a silhouette. Only a contact
+    // that still carries its identification can stamp a footprint; a degraded
+    // one has already lost its definition, and the charted silhouettes above
+    // cover any structure the team has genuinely seen.
     for (const c of this.state.contacts) {
-      if (c.team !== team || c.kind !== 'building') continue;
+      if (c.team !== team || c.kind !== 'building' || !c.defId) continue;
       stamp(c.defId, c.x, c.z);
     }
     return mask;
@@ -1116,6 +1190,62 @@ export class Game {
         }
       } else if (e.harvester) {
         this.sendHarvesterToRefinery(e);
+      }
+    }
+  }
+
+  /**
+   * Dive or surface a submarine. Diving is refused on a depleted battery so a
+   * player cannot cycle the stealth state faster than the endurance model
+   * allows. The order does not cancel movement: a boat can dive while it runs.
+   */
+  private commandDive(owner: number, ids: number[], dive: boolean): void {
+    for (const e of this.ownedEntities(owner, ids)) {
+      if (e.kind !== 'unit' || e.garrisonId) continue;
+      const def = unitDef(e.defId);
+      const sub = e.submarine;
+      if (!def.submarine || !sub) continue;
+      if (dive) {
+        if (sub.dived) continue;
+        if (sub.battery < sub.maxBattery * 0.2) {
+          this.emit('orderFailed', {
+            team: owner,
+            x: e.x,
+            z: e.z,
+            text: `${def.name} battery too low to dive.`,
+            entityId: e.id,
+            defId: e.defId,
+            level: 'warning',
+            sound: 'denied',
+          });
+          continue;
+        }
+        sub.dived = true;
+        this.emit('orderAck', {
+          team: owner,
+          x: e.x,
+          z: e.z,
+          text: `${def.name} diving`,
+          entityId: e.id,
+          defId: e.defId,
+          code: 'moveOrder',
+          level: 'info',
+        });
+      } else {
+        if (!sub.dived) continue;
+        sub.dived = false;
+        sub.revealed = false;
+        sub.revealTimer = 0;
+        this.emit('orderAck', {
+          team: owner,
+          x: e.x,
+          z: e.z,
+          text: `${def.name} surfacing`,
+          entityId: e.id,
+          defId: e.defId,
+          code: 'moveOrder',
+          level: 'info',
+        });
       }
     }
   }
@@ -1909,7 +2039,7 @@ export class Game {
       );
       if (!hasAirfield) return { ok: false, reason: 'Requires an operational airfield.' };
     }
-    if (def.id === 'corvette') {
+    if (def.domain === 'naval') {
       const hasYard = this.state.entities.some(
         (e) => e.owner === owner && e.defId === 'shipyard' && e.hp > 0 && !e.construction,
       );
@@ -2074,6 +2204,14 @@ export class Game {
         (e) => e.owner === owner && e.defId === 'commandPost' && e.hp > 0,
       );
       if (existing) return { ok: false, code: 'hq', reason: 'Only one Command Post per battlegroup.' };
+    }
+    const missing = this.missingTech(owner, defId);
+    if (missing.length > 0) {
+      return {
+        ok: false,
+        code: 'tech',
+        reason: `Requires ${missing.map((m) => m.name).join(' and ')}.`,
+      };
     }
     if (builderId !== undefined) {
       const builder = this.getEntity(builderId);
@@ -2822,7 +2960,7 @@ export class Game {
       }
     }
     for (let team = 0; team < 2; team++) this.refreshVisibleEntities(team, initial);
-    this.cleanContacts();
+    this.ageContacts();
   }
 
   private stampVision(fog: Uint8Array, x: number, z: number, visionTiles: number): void {
@@ -2864,8 +3002,19 @@ export class Game {
       if (brownout) continue;
       radars.push({ x: e.x, z: e.z, radius: scan, owner: e.owner });
     }
+    // Sonar is a unit sensor, not a powered structure: an escort's set works
+    // even when the grid is browned out. It is the only sensor that can find a
+    // dived boat through fog without the boat revealing itself.
+    const sonars: Array<{ x: number; z: number; radius: number; owner: number }> = [];
+    for (const e of this.state.entities) {
+      if (e.hp <= 0 || e.kind !== 'unit' || e.garrisonId) continue;
+      if (e.owner < 0 || this.teamOf(e.owner) !== team) continue;
+      const sonar = UNITS[e.defId]?.sonar ?? 0;
+      if (sonar > 0) sonars.push({ x: e.x, z: e.z, radius: sonar, owner: e.owner });
+    }
     let radarContacts = 0;
     let radarSource: { x: number; z: number; owner: number } | null = null;
+    let sonarContact: Entity | null = null;
     let newHostile: Entity | null = null;
     for (const e of this.state.entities) {
       if (e.hp <= 0) continue;
@@ -2879,15 +3028,22 @@ export class Game {
       const radar = radars.find(
         (r) => dist(r.x, r.z, e.x, e.z) <= r.radius * TILE_SIZE,
       );
+      const sub = e.submarine;
+      const dived = !!sub?.dived;
+      const datum = dived && !!sub?.revealed;
+      const sonar = dived && !datum
+        ? sonars.find((s) => dist(s.x, s.z, e.x, e.z) <= s.radius * TILE_SIZE)
+        : undefined;
       const tx = Math.floor(e.x / TILE_SIZE);
       const tz = Math.floor(e.z / TILE_SIZE);
       if (!inBounds(map.width, map.height, tx, tz)) continue;
       const idx = tileIndex(map.width, tx, tz);
       const fogValue = this.state.scenario.settings.fog ? fog[idx] : 2;
-      if (fogValue !== 2 && !radar) continue;
+      if (fogValue !== 2 && !radar && !sonar && !datum) continue;
       // Aircraft are large, noisy and above the canopy: forest concealment
-      // applies to ground units, not to any airframe.
-      if (!radar && e.kind === 'unit' && UNITS[e.defId]?.domain !== 'air') {
+      // applies to ground units, not to any airframe. A dived boat is under
+      // the water, so the canopy is irrelevant to it as well.
+      if (!radar && !dived && e.kind === 'unit' && UNITS[e.defId]?.domain !== 'air') {
         const terrain = this.state.map.terrain[idx] as TerrainId;
         const concealment = TERRAIN[terrain].concealment;
         if (concealment > 0.5) {
@@ -2903,7 +3059,22 @@ export class Game {
           if (!close) continue;
         }
       }
+      // A dived boat is invisible outside periscope range and an escort's
+      // sonar. A launch datum or a depth-charge hit bypasses both.
+      if (dived && !datum && !sonar) {
+        const def = UNITS[e.defId]?.submarine;
+        let close = false;
+        for (const source of this.state.entities) {
+          if (source.hp <= 0 || source.owner < 0 || this.teamOf(source.owner) !== team) continue;
+          if (dist(source.x, source.z, e.x, e.z) <= (def?.closeDetect ?? 4.5) * TILE_SIZE) {
+            close = true;
+            break;
+          }
+        }
+        if (!close) continue;
+      }
       set.add(e.id);
+      if (sonar && !previous.has(e.id) && e.kind === 'unit') sonarContact ??= e;
       // A newly visible hostile is a genuine detection. The event is emitted
       // only for the local team and only after visibility, fog and concealment
       // have already approved the sighting, so it cannot reveal hidden units.
@@ -2914,6 +3085,7 @@ export class Game {
         e.owner >= 0 &&
         this.isHostile(e.owner, this.localPlayerId) &&
         !previous.has(e.id) &&
+        !sonar &&
         !newHostile
       ) {
         newHostile = e;
@@ -2954,6 +3126,30 @@ export class Game {
         });
       }
     }
+    if (sonarContact) {
+      const owner = this.state.players.find((p) => p.team === team)?.id;
+      if (owner !== undefined) {
+        this.emit('notice', {
+          team: owner,
+          x: sonarContact.x,
+          z: sonarContact.z,
+          text: `Sonar contact — ${entityName(sonarContact)}`,
+          entityId: sonarContact.id,
+          level: 'warning',
+          sound: 'radar',
+        });
+      }
+    }
+  }
+
+  /** Coarse class for a sighting; the exact definition is withheld afterwards. */
+  private contactBand(e: Entity): ContactBand {
+    if (e.kind === 'building') return 'structure';
+    const def = UNITS[e.defId];
+    if (!def) return 'armour';
+    if (def.domain === 'air') return 'air';
+    if (def.domain === 'naval') return 'naval';
+    return def.armour === 'infantry' ? 'infantry' : 'armour';
   }
 
   private recordContact(team: number, e: Entity): void {
@@ -2966,6 +3162,8 @@ export class Game {
       existing.tick = this.state.tick;
       existing.defId = e.defId;
       existing.kind = e.kind;
+      existing.state = 'confirmed';
+      existing.band = this.contactBand(e);
     } else {
       this.state.contacts.push({
         team,
@@ -2975,20 +3173,103 @@ export class Game {
         tick: this.state.tick,
         defId: e.defId,
         kind: e.kind,
+        state: 'confirmed',
+        band: this.contactBand(e),
       });
     }
   }
 
-  private cleanContacts(): void {
-    const stale = this.state.tick - 20 * 30;
-    this.state.contacts = this.state.contacts.filter(
-      (c) => c.tick > stale && this.state.entities.some((e) => e.id === c.entityId && e.hp > 0),
-    );
+  /**
+   * Age every contact the team can no longer see. A sighting is confirmed only
+   * while the unit is in vision; the tick vision drops it becomes detected — the
+   * last position is still usable, the exact type is withdrawn — and after the
+   * detection window it degrades to a fading last-known mark. A contact is
+   * dropped when its source is gone or it has been unseen for the expiry window,
+   * so a memory never outlives the thing that produced it. Only observed state is
+   * ever stored: nothing here reads an unseen entity's current position.
+   */
+  private ageContacts(): void {
+    const tick = this.state.tick;
+    const alive = new Set<number>();
+    for (const e of this.state.entities) if (e.hp > 0) alive.add(e.id);
+    const kept: ContactRecord[] = [];
+    for (const c of this.state.contacts) {
+      if (!alive.has(c.entityId)) continue;
+      const age = Math.max(0, tick - c.tick);
+      if (age > CONTACT_EXPIRE_TICKS) continue;
+      const state: ContactState = c.state ?? 'confirmed';
+      if (this.isVisibleTo(c.team, c.entityId)) {
+        // The vision refresh owns confirmed records; this only repairs a record
+        // that survived a settings change or a load without being refreshed.
+        c.state = 'confirmed';
+      } else if (c.kind === 'building') {
+        // Structures do not move and are held by the charted silhouettes, so a
+        // building contact keeps its identification rather than degrading.
+        kept.push(c);
+        continue;
+      } else if (state === 'confirmed') {
+        c.state = 'detected';
+        delete c.defId;
+      } else if (state === 'detected' && age > CONTACT_DETECTED_TICKS) {
+        c.state = 'last-known';
+        delete c.defId;
+        delete c.band;
+        delete c.kind;
+      }
+      kept.push(c);
+    }
+    this.state.contacts = kept;
   }
 
   isVisibleTo(team: number, entityId: number): boolean {
     if (!this.state.scenario.settings.fog) return true;
     return this.visible[team]?.has(entityId) ?? false;
+  }
+
+  /**
+   * Adopt a presentation-only view of the world.
+   *
+   * A networked client never simulates: it draws the team-visible projection
+   * the room sends. The shell owns entity identity (so presentation smoothing
+   * survives an update), and this replaces the buffers the renderer and HUD
+   * read while rebuilding the indexes they look things up through — the id map,
+   * the charted index and the local team's visible set. The simulation clock,
+   * RNG, AI and command queue are untouched because nothing here ticks.
+   */
+  adoptNetworkView(view: {
+    entities: Entity[];
+    players: PlayerState[];
+    projectiles: Projectile[];
+    contacts: ContactRecord[];
+    charted: ChartedStructure[];
+    fog: Uint8Array;
+    tick: number;
+    victory: VictoryState;
+    events: SimEvent[];
+    visibleIds: Iterable<number>;
+  }): void {
+    this.state.entities = view.entities;
+    this.state.players = view.players;
+    this.state.projectiles = view.projectiles;
+    this.state.contacts = view.contacts;
+    this.state.charted = view.charted;
+    this.state.tick = view.tick;
+    this.state.victory = view.victory;
+    this.state.events = view.events;
+    this.byId.clear();
+    for (const entity of view.entities) this.byId.set(entity.id, entity);
+    this.rebuildChartedIndex();
+    // The adopted view is complete for drawing, even though nothing simulated it.
+    this.state.ready = true;
+    const team = this.teamOf(this.localPlayerId);
+    if (team >= 0 && team < this.visible.length) {
+      this.visible[team] = new Set(view.visibleIds);
+      const fog = this.state.fog[team];
+      if (fog && fog.length === view.fog.length) fog.set(view.fog);
+      else this.state.fog[team] = view.fog;
+    }
+    const last = view.events[view.events.length - 1];
+    if (last) this.state.eventSeq = Math.max(this.state.eventSeq, last.seq + 1);
   }
 
   /** Record a structure as seen by a team; safe to call every vision refresh. */
@@ -3067,6 +3348,7 @@ export class Game {
         this.updateAircraft(e, def, dt);
         continue;
       }
+      if (e.submarine) this.updateSubmarine(e, dt);
       if (def.domain === 'naval') {
         this.updateNaval(e, dt);
       }
@@ -3101,6 +3383,53 @@ export class Game {
     this.persistRng();
   }
 
+  /**
+   * Diesel-electric endurance. A dived boat burns battery and is forced up
+   * when it runs dry; a surfaced boat recharges. The launch datum is a short
+   * timer, not a permanent reveal, so stealth is a cycle rather than a switch.
+   */
+  private updateSubmarine(e: Entity, dt: number): void {
+    const sub = e.submarine;
+    if (!sub) return;
+    if (sub.revealTimer > 0) {
+      sub.revealTimer = Math.max(0, sub.revealTimer - dt);
+      if (sub.revealTimer <= 0) sub.revealed = false;
+    }
+    if (sub.dived) {
+      sub.battery = Math.max(0, sub.battery - dt);
+      if (sub.battery <= 0) {
+        sub.dived = false;
+        sub.revealed = false;
+        sub.revealTimer = 0;
+        this.emit('alert', {
+          team: e.owner,
+          x: e.x,
+          z: e.z,
+          text: `${UNITS[e.defId]?.name ?? 'Submarine'} battery exhausted — surfacing`,
+          entityId: e.id,
+          level: 'warning',
+          sound: 'alert',
+        });
+      }
+    } else {
+      // A full recharge takes about 28 s, so a forced surfacing is a real
+      // operational pause instead of a one-second dip back under the surface.
+      sub.battery = Math.min(sub.maxBattery, sub.battery + dt * 1.6);
+    }
+  }
+
+  /** Expose a submarine for a few seconds after a launch or a depth-charge hit. */
+  private revealSubmarine(e: Entity, seconds: number): void {
+    const sub = e.submarine;
+    if (!sub || !sub.dived) return;
+    sub.revealed = true;
+    sub.revealTimer = Math.max(sub.revealTimer, seconds);
+    // The launch datum is immediate. Without this, a boat firing in a fogged
+    // tile would stay out of the visible set until the next half-second vision
+    // refresh, hiding its own muzzle flash and torpedo launch.
+    for (const team of this.visible) team.add(e.id);
+  }
+
   private updateNaval(e: Entity, dt: number): void {
     const home = this.getEntity(e.homeId);
     const docked =
@@ -3122,7 +3451,7 @@ export class Game {
             team: e.owner,
             x: e.x,
             z: e.z,
-            text: `Corvette reloaded (${e.ammo}/${e.maxAmmo})`,
+            text: `${UNITS[e.defId]?.name ?? 'Vessel'} reloaded (${e.ammo}/${e.maxAmmo})`,
             level: 'info',
           });
         }
@@ -3135,7 +3464,7 @@ export class Game {
           team: e.owner,
           x: e.x,
           z: e.z,
-          text: 'Corvette out of missiles — returning to shipyard',
+          text: `${UNITS[e.defId]?.name ?? 'Vessel'} out of missiles — returning to shipyard`,
           level: 'warning',
           entityId: e.id,
           sound: 'alert',
@@ -3607,6 +3936,16 @@ export class Game {
   }
 
   private chooseWeapon(e: Entity, target: Entity, weapons: WeaponDef[]): WeaponDef | null {
+    // A dived boat is an ASW problem before it is a missile target. Without
+    // this preference an escort spends its anti-ship missiles on an empty
+    // patch of sea while its depth charges stay in the rack.
+    if (target.kind === 'unit' && target.submarine?.dived) {
+      for (const w of weapons) {
+        if (!w.asw || !canWeaponTarget(w, target)) continue;
+        if (usesPrimaryAmmo(e, w) && e.ammo <= 0) continue;
+        return w;
+      }
+    }
     let fallback: WeaponDef | null = null;
     for (const w of weapons) {
       if (!canWeaponTarget(w, target)) continue;
@@ -3762,6 +4101,9 @@ export class Game {
       e.ammo--;
     }
     e.cooldown = weapon.cooldown;
+    // A submarine launch is a datum: the boat is briefly exposed, which gives
+    // the target a chance to answer with sonar, guns or depth charges.
+    if (shooterDef?.submarine) this.revealSubmarine(e, shooterDef.submarine.revealSeconds);
     // A shot always leaves the barrel on bearing, even if the turret was still
     // traversing, so the projectile origin and direction cannot disagree.
     e.turretFacing = angleTo(e.x, e.z, target.x, target.z);
@@ -3773,8 +4115,11 @@ export class Game {
     const spread = hit ? 0 : (1.5 + this.rng.next() * 2.5) * TILE_SIZE;
     const scatterAngle = this.rng.next() * Math.PI * 2;
     const start = this.muzzlePoint(e);
-    const targetHeight =
-      entityTargetClass(target) === 'air' ? AIRCRAFT_ALTITUDE : this.heightAt(target.x, target.z) + 1.3;
+    const targetHeight = weapon.underwater
+      ? 0.18
+      : entityTargetClass(target) === 'air'
+        ? AIRCRAFT_ALTITUDE
+        : this.heightAt(target.x, target.z) + 1.3;
     const lob = weapon.indirect === true;
     const shotDistance = Math.hypot(target.x - start.x, target.z - start.z);
     const projectile: Projectile = {
@@ -3794,7 +4139,10 @@ export class Game {
       speed: weapon.speed,
       splash: weapon.splash ?? 0,
       kind: weapon.projectile,
-      homing: weapon.projectile === 'missile' || weapon.projectile === 'sam',
+      homing:
+        weapon.projectile === 'missile' ||
+        weapon.projectile === 'sam' ||
+        weapon.projectile === 'torpedo',
       damage: weapon.damage,
       armourMul: weapon.multipliers,
       suppression: weapon.suppression,
@@ -3814,7 +4162,14 @@ export class Game {
       text: '',
       entityId: e.id,
       weaponId: weapon.id,
-      sound: weapon.projectile === 'sam' ? 'sam' : weapon.projectile === 'missile' ? 'missile' : weapon.projectile === 'shell' ? 'cannon' : 'rifle',
+      sound:
+        weapon.projectile === 'sam'
+          ? 'sam'
+          : weapon.projectile === 'missile' || weapon.projectile === 'torpedo'
+            ? 'missile'
+            : weapon.projectile === 'shell'
+              ? 'cannon'
+              : 'rifle',
     });
     void weapons;
   }
@@ -3977,12 +4332,17 @@ export class Game {
   /* Movement                                                           */
   /* ------------------------------------------------------------------ */
 
-  private findPathFor(e: Entity, tx: number, tz: number): import('./types').PathPoint[] | null {
+  private findPathFor(
+    e: Entity,
+    tx: number,
+    tz: number,
+    navBatch?: NavBatch,
+  ): import('./types').PathPoint[] | null {
     const def = unitDef(e.defId);
     if (def.domain === 'air') {
       return [{ x: tx, z: tz }];
     }
-    const nav = this.navFor(e);
+    const nav = this.navFor(e, navBatch);
     const startX = Math.floor(e.x / TILE_SIZE);
     const startZ = Math.floor(e.z / TILE_SIZE);
     let goalX = worldToTile(tx);
@@ -3997,7 +4357,38 @@ export class Game {
     return findPath(nav, startX, startZ, goalX, goalZ);
   }
 
-  private navFor(e: Entity): NavGrid {
+  /**
+   * One traffic scan for a whole command. Old per-request masks filtered to the
+   * requesting unit's domain and excluded hostile units. Domains are kept
+   * separate because they are genuinely different masks; air is omitted since
+   * aircraft paths never consult traffic. The batch lives only for this call.
+   */
+  private beginNavBatch(owner: number): NavBatch {
+    const width = this.state.map.width;
+    const height = this.state.map.height;
+    const members: NavBatchMember[] = [];
+    for (const other of this.state.entities) {
+      if (other.kind !== 'unit' || other.hp <= 0 || other.garrisonId) continue;
+      const def = unitDef(other.defId);
+      if (def.domain === 'air') continue;
+      if (this.isHostile(owner, other.owner)) continue;
+      const tx = Math.floor(other.x / TILE_SIZE);
+      const tz = Math.floor(other.z / TILE_SIZE);
+      if (!inBounds(width, height, tx, tz)) continue;
+      // A moving unit is lighter traffic than one holding position, but it is
+      // still traffic: a repath should prefer a clear lane over a column that
+      // is itself waiting on the unit ahead.
+      members.push({
+        id: other.id,
+        tile: tileIndex(width, tx, tz),
+        domain: def.domain,
+        moving: other.state === 'moving' || other.path.length > 0,
+      });
+    }
+    return new NavBatch(width, height, members);
+  }
+
+  private navFor(e: Entity, batch?: NavBatch): NavGrid {
     const def = unitDef(e.defId);
     const nav: NavGrid = {
       width: this.state.map.width,
@@ -4008,24 +4399,26 @@ export class Game {
       occupied: this.blocked,
     };
     if (def.domain !== 'air') {
-      // Idle friendly units are soft traffic: a fresh route steps around a
-      // formation instead of walking into the back of it, while a corridor
-      // still remains passable when there is no alternative.
-      const soft = new Uint8Array(this.state.map.width * this.state.map.height);
-      for (const other of this.state.entities) {
-        if (other === e || other.kind !== 'unit' || other.hp <= 0 || other.garrisonId) continue;
-        if (unitDef(other.defId).domain !== def.domain) continue;
-        if (this.isHostile(e.owner, other.owner)) continue;
-        // A moving unit is lighter traffic than one holding position, but it
-        // is still traffic: a repath should prefer a clear lane over a column
-        // that is itself waiting on the unit ahead.
-        const moving = other.state === 'moving' || other.path.length > 0;
-        const tx = Math.floor(other.x / TILE_SIZE);
-        const tz = Math.floor(other.z / TILE_SIZE);
-        if (!inBounds(this.state.map.width, this.state.map.height, tx, tz)) continue;
-        soft[tileIndex(this.state.map.width, tx, tz)] = moving ? 2 : 1;
+      const batchSoft = batch?.softFor(def.domain);
+      if (batchSoft) {
+        nav.soft = batchSoft;
+      } else {
+        // Idle friendly units are soft traffic: a fresh route steps around a
+        // formation instead of walking into the back of it, while a corridor
+        // still remains passable when there is no alternative.
+        const soft = new Uint8Array(this.state.map.width * this.state.map.height);
+        for (const other of this.state.entities) {
+          if (other === e || other.kind !== 'unit' || other.hp <= 0 || other.garrisonId) continue;
+          if (unitDef(other.defId).domain !== def.domain) continue;
+          if (this.isHostile(e.owner, other.owner)) continue;
+          const moving = other.state === 'moving' || other.path.length > 0;
+          const tx = Math.floor(other.x / TILE_SIZE);
+          const tz = Math.floor(other.z / TILE_SIZE);
+          if (!inBounds(this.state.map.width, this.state.map.height, tx, tz)) continue;
+          soft[tileIndex(this.state.map.width, tx, tz)] = moving ? 2 : 1;
+        }
+        nav.soft = soft;
       }
-      nav.soft = soft;
     }
     return nav;
   }
@@ -4104,7 +4497,9 @@ export class Game {
       }
     }
     const suppressionFactor = 1 - e.suppression * 0.2;
-    const speed = def.speed * TILE_SIZE * Math.max(0.08, turnFactor) * terrainFactor * suppressionFactor;
+    const diveFactor = e.submarine?.dived ? def.submarine?.diveSpeed ?? 1 : 1;
+    const speed =
+      def.speed * TILE_SIZE * Math.max(0.08, turnFactor) * terrainFactor * suppressionFactor * diveFactor;
     // Ground and naval movers travel where the hull points. A vehicle waiting
     // for its turn therefore pivots instead of sliding sideways, and a track
     // that has not come round yet covers less ground.
@@ -4420,7 +4815,11 @@ export class Game {
         p.tx = target.x;
         p.tz = target.z;
         p.ty =
-          entityTargetClass(target) === 'air' ? AIRCRAFT_ALTITUDE : this.heightAt(target.x, target.z) + 1.3;
+          p.kind === 'torpedo'
+            ? 0.18
+            : entityTargetClass(target) === 'air'
+              ? AIRCRAFT_ALTITUDE
+              : this.heightAt(target.x, target.z) + 1.3;
       }
       if (
         p.lob &&
@@ -4467,6 +4866,14 @@ export class Game {
       // Garrisoned infantry are not exposed targets; hits on their shelter
       // pass through damageGarrison below.
       if (e.kind === 'unit' && e.garrisonId) continue;
+      // A dived boat is immune to ordinary fire until its launch datum exposes
+      // it; depth charges are the only weapon that can reach it while hidden.
+      const submerged = !!e.submarine?.dived;
+      if (weapon.asw) {
+        if (!submerged) continue;
+      } else if (submerged && !e.submarine?.revealed) {
+        continue;
+      }
       const targetClass = entityTargetClass(e);
       if (!weapon.targets.includes(targetClass)) continue;
       const d = dist(p.x, p.z, e.x, e.z);
@@ -4531,6 +4938,12 @@ export class Game {
     if (isIndestructibleStructure(target.defId)) return;
     target.hp -= damage;
     target.lastHitTick = this.state.tick;
+    // A depth-charge hit is a datum of its own: the boat is briefly exposed
+    // even if it was not the one that launched.
+    if (target.submarine?.dived) {
+      target.submarine.revealed = true;
+      target.submarine.revealTimer = Math.max(target.submarine.revealTimer, 3);
+    }
     if (target.hp > 0) {
       this.expelFromCollapsingShelter(target);
       this.noteUnderAttack(target, attackerOwner);
@@ -4658,8 +5071,17 @@ export class Game {
         e.aimTargetId = 0;
         e.state = 'idle';
       }
+      // A direct target can outlive the order that created it. Clear it from
+      // the authoritative state here, whatever order the unit now holds, so a
+      // checkpoint can never serialise an entity id that has just been removed.
+      if (e.targetId && !this.byId.has(e.targetId)) e.targetId = 0;
       if (e.aimTargetId && !this.byId.has(e.aimTargetId)) e.aimTargetId = 0;
       if (e.healTargetId && !this.byId.has(e.healTargetId)) e.healTargetId = 0;
+      if (e.buildTargetId && !this.byId.has(e.buildTargetId)) this.releaseBuildTarget(e);
+      if (e.repairTargetId && !this.byId.has(e.repairTargetId)) {
+        e.repairTargetId = 0;
+        if (e.state === 'repairing') e.state = 'idle';
+      }
       if (e.garrisonId && !this.byId.has(e.garrisonId)) {
         // Defensive fallback: a missing shelter must never leave an
         // inaccessible occupant with a stale reference.
@@ -4670,6 +5092,7 @@ export class Game {
         e.captureTargetId = 0;
         e.captureProgress = 0;
       }
+      if (e.homeId && !this.byId.has(e.homeId)) e.homeId = 0;
     }
   }
 
@@ -4970,6 +5393,32 @@ export class Game {
       e.hp = Number(e.hp);
       e.buildTargetId = Number(e.buildTargetId ?? 0);
       e.healTargetId = Number(e.healTargetId ?? 0);
+      // Saves written before the submarine phase have no dive state. Rebuild it
+      // rather than treating the boat as a permanent surface ship.
+      const subDef = UNITS[e.defId]?.submarine;
+      if (subDef && !e.submarine) {
+        e.submarine = {
+          dived: false,
+          battery: subDef.batterySeconds,
+          maxBattery: subDef.batterySeconds,
+          revealTimer: 0,
+          revealed: false,
+        };
+      }
+      if (e.submarine) {
+        const maxBattery = Number(e.submarine.maxBattery);
+        e.submarine.maxBattery =
+          Number.isFinite(maxBattery) && maxBattery > 0
+            ? maxBattery
+            : (subDef?.batterySeconds ?? 45);
+        const battery = Number(e.submarine.battery);
+        e.submarine.battery = Math.max(
+          0,
+          Math.min(e.submarine.maxBattery, Number.isFinite(battery) ? battery : e.submarine.maxBattery),
+        );
+        e.submarine.revealTimer = Math.max(0, Number(e.submarine.revealTimer ?? 0));
+        e.submarine.revealed = !!e.submarine.revealed && e.submarine.revealTimer > 0;
+      }
       game.byId.set(e.id, e);
       if (e.kind === 'building' && e.hp > 0) {
         const def = buildingDef(e.defId);
@@ -5021,6 +5470,9 @@ export class Game {
           e.garrisonId,
           e.captureTargetId,
           e.captureProgress.toFixed(3),
+          e.submarine
+            ? `s${e.submarine.dived ? 1 : 0}:${e.submarine.battery.toFixed(1)}:${e.submarine.revealTimer.toFixed(1)}:${e.submarine.revealed ? 1 : 0}`
+            : '-',
         ].join(','),
       );
     }

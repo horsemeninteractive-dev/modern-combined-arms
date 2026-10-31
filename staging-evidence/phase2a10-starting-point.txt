@@ -1,0 +1,205 @@
+# Phase 2A.10 starting point
+captured: 2026-10-30T20:27:38Z
+
+## Source revision
+132ccc8363d5b5bc98b6518b4afd1738dedaad6a
+
+## Working tree
+ M .gitignore
+ M README.md
+ M docs/UNIT_VOICE_SET.md
+ M index.html
+ M node-builtins.d.ts
+ M public/_headers
+ M public/audio/unit-voice/manifest.json
+ M public/sw.js
+ M src/app.ts
+ M src/data/buildings.ts
+ M src/data/factions.ts
+ M src/data/scenarios.ts
+ M src/data/units.ts
+ M src/data/weapons.ts
+ M src/main.ts
+ M src/render/combatFx.ts
+ M src/render/flags.ts
+ M src/render/geometry.ts
+ M src/render/particles.ts
+ M src/render/renderer.ts
+ M src/render/shaders.ts
+ M src/render/teamColor.ts
+ M src/render/terrainMesh.ts
+ M src/render/unitMeshes.ts
+ M src/sim/ai.ts
+ M src/sim/combat.ts
+ M src/sim/constants.ts
+ M src/sim/game.ts
+ M src/sim/pathfinding.ts
+ M src/sim/scenario.ts
+ M src/sim/types.ts
+ M src/style.css
+ M src/ui/editor.ts
+ M src/ui/hud.ts
+ M src/ui/hudLayout.ts
+ M src/ui/icons.ts
+ M src/ui/input.ts
+ M src/ui/overlay.ts
+ M tests/combat-feedback.test.ts
+ M tests/flags.test.ts
+ M tests/hud-layout.test.ts
+ M tests/match-music.test.ts
+ M tests/nation-setup.test.ts
+ M tests/roster-visual-pass.test.ts
+ M tests/scenario.test.ts
+ M tests/shipyard-facing.test.ts
+ M tools/unit-voice/README.md
+ M tools/unit-voice/lines.json
+ M tsconfig.json
+?? MULTIPLAYER_PHASE_0_REPORT.md
+?? MULTIPLAYER_PHASE_1_REPORT.md
+?? MULTIPLAYER_PHASE_2A_1_SOAK_REPORT.md
+?? MULTIPLAYER_PHASE_2A_2_RESOURCE_REPORT.md
+?? MULTIPLAYER_PHASE_2A_3_REPORT.md
+?? MULTIPLAYER_PHASE_2A_4_REPORT.md
+?? MULTIPLAYER_PHASE_2A_5_REPORT.md
+?? MULTIPLAYER_PHASE_2A_6_REPORT.md
+?? MULTIPLAYER_PHASE_2A_7_REPORT.md
+?? MULTIPLAYER_PHASE_2A_8_REPORT.md
+?? MULTIPLAYER_PHASE_2A_9_REPORT.md
+?? MULTIPLAYER_PHASE_2A_REPORT.md
+?? SECURITY-REVIEW.md
+?? docs/MULTIPLAYER_PHASE_1_INTERFACES.md
+?? docs/MULTIPLAYER_PHASE_2A_PLAN.md
+?? docs/MULTIPLAYER_READINESS_AUDIT.md
+?? docs/SUBMARINE_ASW_PHASE.md
+?? docs/visual-audit/naval-fleet-battlezoom.png
+?? docs/visual-audit/naval-fleet-close.png
+?? docs/visual-audit/naval-frigate-close.png
+?? docs/visual-audit/naval-frigate-probe.png
+?? docs/visual-audit/naval-missileboat-close.png
+?? mp-room-vite.config.ts
+?? mp-room-wrangler.jsonc
+?? phase0/
+?? public/audio/unit-voice/frigate/
+?? public/audio/unit-voice/missileBoat/
+?? public/audio/unit-voice/submarine/
+?? src/data/campaign.ts
+?? src/data/tutorial.ts
+?? src/multiplayer/
+?? src/render/buildingWireframe.ts
+?? src/render/decalGpu.ts
+?? src/render/decalStore.ts
+?? src/sim/navBatch.ts
+?? src/ui/menuAttract.ts
+?? src/ui/nationPicker.ts
+?? src/ui/tutorial.ts
+?? staging-evidence/
+?? tests/build-progression.test.ts
+?? tests/campaign.test.ts
+?? tests/fixtures/
+?? tests/ground-decals.test.ts
+?? tests/naval-roster.test.ts
+?? tests/pathfinding-fixtures.ts
+?? tests/pathfinding-reference.ts
+?? tests/phase0-command-gate.test.ts
+?? tests/phase0-projection.test.ts
+?? tests/phase1-command-gate.test.ts
+?? tests/phase1-helpers.ts
+?? tests/phase1-isolation.test.ts
+?? tests/phase1-match-result.test.ts
+?? tests/phase1-projection.test.ts
+?? tests/phase1-reservation-do.test.ts
+?? tests/phase1-reservation.test.ts
+?? tests/phase1-room-snapshot.test.ts
+?? tests/phase2a-capacity.test.ts
+?? tests/phase2a-protocol.test.ts
+?? tests/phase2a-room-match.test.ts
+?? tests/phase2a2-diagnostics.test.ts
+?? tests/phase2a3-keepalive.test.ts
+?? tests/phase2a4-delta.test.ts
+?? tests/phase2a4-helpers.ts
+?? tests/phase2a4-room-sync.test.ts
+?? tests/phase2a5-clock-probe.test.ts
+?? tests/phase2a6-batch-calibration.test.ts
+?? tests/phase2a7-first-tick-profiling.test.ts
+?? tests/phase2a8-nav-batch.test.ts
+?? tests/phase2a8-path-equivalence.test.ts
+?? tests/phase2a8-simulation-equivalence.test.ts
+?? tests/phase2a9-ab-calibration.test.ts
+?? tests/security-headers.test.ts
+?? tests/service-worker.test.ts
+?? tests/submarine.test.ts
+?? tests/terrain-props.test.ts
+?? tests/tutorial.test.ts
+?? tools/phase2a-deployed-smoke.mjs
+?? tools/phase2a-local-smoke.mjs
+?? tools/phase2a-raw-client.mjs
+?? tools/phase2a1-failure-tests.mjs
+?? tools/phase2a1-soak.mjs
+?? tools/phase2a2-heap-summary.py
+?? tools/phase2a2-metrics.mjs
+?? tools/phase2a2-pprof-summary.py
+?? tools/phase2a3-idle-memory.mjs
+?? tools/phase2a3-memory-probe.mjs
+?? tools/phase2a3-profile-schedule.sh
+?? tools/phase2a4-tail-events.mjs
+?? tools/phase2a4-tail-summary.mjs
+?? tools/phase2a5-clock-probe.mjs
+?? tools/phase2a6-analyse.mjs
+?? tools/phase2a6-batch-calibration.mjs
+?? tools/phase2a7-first-tick-profile.mjs
+?? tools/phase2a8-capture-baseline.mjs
+?? tools/phase2a8-pathfinding-benchmark.mjs
+?? tools/phase2a9-ab-calibration.mjs
+?? tools/phase2a9-analyse.mjs
+
+## Diff stat
+ .gitignore                            |   5 +
+ README.md                             |  18 +-
+ docs/UNIT_VOICE_SET.md                |  21 +-
+ index.html                            | 245 +++++++--
+ node-builtins.d.ts                    |   4 +
+ public/_headers                       |  38 +-
+ public/audio/unit-voice/manifest.json |  87 +++
+ public/sw.js                          |  47 +-
+ src/app.ts                            | 971 +++++++++++++++++++++++++++++++---
+ src/data/buildings.ts                 |  22 +-
+ src/data/factions.ts                  |  19 +
+ src/data/scenarios.ts                 |   4 +-
+ src/data/units.ts                     |  82 +++
+ src/data/weapons.ts                   |  58 ++
+ src/main.ts                           |   8 +-
+ src/render/combatFx.ts                |  43 +-
+ src/render/flags.ts                   |  13 +
+ src/render/geometry.ts                | 106 ++++
+ src/render/particles.ts               |   6 +-
+ src/render/renderer.ts                | 325 ++++++++++--
+ src/render/shaders.ts                 |  84 +++
+ src/render/teamColor.ts               |   9 +-
+ src/render/terrainMesh.ts             | 150 +++++-
+ src/render/unitMeshes.ts              | 300 ++++++++++-
+ src/sim/ai.ts                         | 102 +++-
+ src/sim/combat.ts                     |   6 +
+ src/sim/constants.ts                  |   9 +
+ src/sim/game.ts                       | 407 ++++++++++++--
+ src/sim/pathfinding.ts                |  90 +++-
+ src/sim/scenario.ts                   |  38 ++
+ src/sim/types.ts                      |  47 +-
+ src/style.css                         | 680 ++++++++++++++++++++++--
+ src/ui/editor.ts                      |   4 +-
+ src/ui/hud.ts                         | 230 +++++++-
+ src/ui/hudLayout.ts                   |  27 +
+ src/ui/icons.ts                       |   3 +
+ src/ui/input.ts                       |   4 +
+ src/ui/overlay.ts                     | 250 ++++++++-
+ tests/combat-feedback.test.ts         |   1 +
+ tests/flags.test.ts                   |  26 +
+ tests/hud-layout.test.ts              |  13 +
+ tests/match-music.test.ts             |   2 +-
+ tests/nation-setup.test.ts            |  24 +
+ tests/roster-visual-pass.test.ts      |  47 +-
+ tests/scenario.test.ts                |  19 +
+ tests/shipyard-facing.test.ts         |   3 +
+ tools/unit-voice/README.md            |   5 +-
+ tools/unit-voice/lines.json           |  36 ++
+ tsconfig.json                         |   2 +-
+ 49 files changed, 4367 insertions(+), 373 deletions(-)

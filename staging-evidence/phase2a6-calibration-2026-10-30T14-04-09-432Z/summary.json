@@ -1,0 +1,218 @@
+{
+  "version": 1,
+  "generatedAt": "2026-10-30T14:04:45.828Z",
+  "base": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev",
+  "versionId": "febd117e-8d8e-481e-ba88-c212df262073",
+  "batches": [
+    0,
+    1,
+    5,
+    10,
+    20,
+    50,
+    100
+  ],
+  "profiles": [
+    "baseline",
+    "stress"
+  ],
+  "reps": 2,
+  "sampleCount": 19,
+  "byProfile": {
+    "baseline": {
+      "samples": 7,
+      "byBatch": {
+        "0": {
+          "n": 1,
+          "values": [
+            3
+          ],
+          "meanMs": 3,
+          "p50Ms": 3,
+          "p95Ms": 3,
+          "maxMs": 3
+        },
+        "1": {
+          "n": 1,
+          "values": [
+            3
+          ],
+          "meanMs": 3,
+          "p50Ms": 3,
+          "p95Ms": 3,
+          "maxMs": 3
+        },
+        "5": {
+          "n": 1,
+          "values": [
+            2
+          ],
+          "meanMs": 2,
+          "p50Ms": 2,
+          "p95Ms": 2,
+          "maxMs": 2
+        },
+        "10": {
+          "n": 1,
+          "values": [
+            3
+          ],
+          "meanMs": 3,
+          "p50Ms": 3,
+          "p95Ms": 3,
+          "maxMs": 3
+        },
+        "20": {
+          "n": 1,
+          "values": [
+            4
+          ],
+          "meanMs": 4,
+          "p50Ms": 4,
+          "p95Ms": 4,
+          "maxMs": 4
+        },
+        "50": {
+          "n": 1,
+          "values": [
+            6
+          ],
+          "meanMs": 6,
+          "p50Ms": 6,
+          "p95Ms": 6,
+          "maxMs": 6
+        },
+        "100": {
+          "n": 1,
+          "values": [
+            18
+          ],
+          "meanMs": 18,
+          "p50Ms": 18,
+          "p95Ms": 18,
+          "maxMs": 18
+        }
+      },
+      "linearFit": {
+        "slope": 0.14680309617219808,
+        "intercept": 1.6706605874244507,
+        "r2": 0.9182931625771457,
+        "maxAbsResidual": 3.0108153960343547,
+        "residualMean": 3.1720657846433045e-16,
+        "n": 7
+      },
+      "estimatedMarginalMsPerTick": 0.14680309617219808,
+      "estimatedFixedOverheadMs": 1.6706605874244507
+    },
+    "stress": {
+      "samples": 12,
+      "byBatch": {
+        "0": {
+          "n": 1,
+          "values": [
+            2
+          ],
+          "meanMs": 2,
+          "p50Ms": 2,
+          "p95Ms": 2,
+          "maxMs": 2
+        },
+        "1": {
+          "n": 1,
+          "values": [
+            28
+          ],
+          "meanMs": 28,
+          "p50Ms": 28,
+          "p95Ms": 28,
+          "maxMs": 28
+        },
+        "5": {
+          "n": 2,
+          "values": [
+            75,
+            26
+          ],
+          "meanMs": 50.5,
+          "p50Ms": 26,
+          "p95Ms": 75,
+          "maxMs": 75
+        },
+        "10": {
+          "n": 2,
+          "values": [
+            104,
+            27
+          ],
+          "meanMs": 65.5,
+          "p50Ms": 27,
+          "p95Ms": 104,
+          "maxMs": 104
+        },
+        "20": {
+          "n": 2,
+          "values": [
+            87,
+            42
+          ],
+          "meanMs": 64.5,
+          "p50Ms": 42,
+          "p95Ms": 87,
+          "maxMs": 87
+        },
+        "50": {
+          "n": 2,
+          "values": [
+            152,
+            87
+          ],
+          "meanMs": 119.5,
+          "p50Ms": 87,
+          "p95Ms": 152,
+          "maxMs": 152
+        },
+        "100": {
+          "n": 2,
+          "values": [
+            196,
+            123
+          ],
+          "meanMs": 159.5,
+          "p50Ms": 123,
+          "p95Ms": 196,
+          "maxMs": 196
+        }
+      },
+      "linearFit": {
+        "slope": 1.2984837487355048,
+        "intercept": 38.938544101593976,
+        "r2": 0.6620265569050254,
+        "maxAbsResidual": 52.07661841105097,
+        "residualMean": -3.552713678800501e-15,
+        "n": 12
+      },
+      "estimatedMarginalMsPerTick": 1.2984837487355048,
+      "estimatedFixedOverheadMs": 38.938544101593976
+    }
+  },
+  "resolution": "wrangler tail cpuTime is integer milliseconds per invocation.",
+  "notes": "Derived marginal cost is a linear fit of invocation CPU against batch size. It is not an individual tick measurement and cannot establish a per-tick maximum.",
+  "tailFile": "staging-evidence/phase2a6-tail-paced-test2/tail.jsonl",
+  "tailRows": 42,
+  "durableTailRows": 19,
+  "duplicateTailRuns": [],
+  "sampleIntervalMs": 1000,
+  "matchedSamples": 19,
+  "totalSamples": 28,
+  "missingTailSamples": [
+    "p2a6-baseline-0-0",
+    "p2a6-baseline-1-0",
+    "p2a6-baseline-5-0",
+    "p2a6-baseline-10-0",
+    "p2a6-baseline-20-0",
+    "p2a6-baseline-50-0",
+    "p2a6-baseline-100-0",
+    "p2a6-stress-0-0",
+    "p2a6-stress-1-0"
+  ]
+}

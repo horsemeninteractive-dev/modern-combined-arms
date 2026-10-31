@@ -1,0 +1,62 @@
+{
+  "phase": "2A.14",
+  "capturedAt": "2026-10-31T02:05:00Z",
+  "deployment": {
+    "worker": "mca-multiplayer-staging",
+    "version": "9fd1dcf4-3046-438d-b72d-0c3880b0afc5",
+    "tag": "phase2a13",
+    "artifactSha256": "cfca794ca41719449fd827fcd06b13ddbdb806c2b7d54a02703e9c4959396f1a",
+    "healthBuild": "phase2a13-staging"
+  },
+  "typecheck": {
+    "pre": { "command": "npm run typecheck", "exitCode": 0, "log": "staging-evidence/phase2a14-typecheck-pre.log" },
+    "post": { "command": "npm run typecheck", "exitCode": 0, "log": "staging-evidence/phase2a14-typecheck-post.log" }
+  },
+  "build": {
+    "pre": { "command": "npm run build", "exitCode": 0, "log": "staging-evidence/phase2a14-build-pre.log" },
+    "post": { "command": "npm run build", "exitCode": 0, "log": "staging-evidence/phase2a14-build-post.log" }
+  },
+  "vitest": {
+    "pre": { "testFiles": 97, "tests": 980, "failed": 0, "log": "staging-evidence/phase2a14-vitest-pre.log" },
+    "post": { "testFiles": 97, "tests": 980, "failed": 0, "log": "staging-evidence/phase2a14-vitest-post.log" }
+  },
+  "deployedSmoke": {
+    "pre": { "checks": 15, "passed": true, "build": "phase2a13-staging", "log": "staging-evidence/phase2a14-smoke-pre.log" },
+    "post": { "checks": 15, "passed": true, "build": "phase2a13-staging", "log": "staging-evidence/phase2a14-smoke-post.log" }
+  },
+  "lifecycleChecks": {
+    "pre": {
+      "passed": true,
+      "checks": ["reconnect", "abandon", "shutdown", "deadline", "resync", "capacity"],
+      "capacityStatuses": [200, 200, 503, 200],
+      "log": "staging-evidence/phase2a14-lifecycle-pre.log"
+    },
+    "post": {
+      "passed": true,
+      "checks": ["reconnect", "abandon", "shutdown", "deadline", "resync", "capacity"],
+      "capacityStatuses": [200, 200, 503, 200],
+      "log": "staging-evidence/phase2a14-lifecycle-post.log"
+    }
+  },
+  "phase2a11RecoveryTests": { "tests": 14, "passed": true },
+  "phase2a13IntegrityTests": { "tests": 17, "passed": true },
+  "productionBundleScan": {
+    "bundle": "dist/assets/index-D2t9Wdf0.js",
+    "sha256": "65eced623281f8b906a398be7ce429c399fa38e7bc3f9d7bff98fec8b34e946a",
+    "markers": {
+      "batchCalibration": 0,
+      "phase2a": 0,
+      "MP_ADMIN_TOKEN": 0,
+      "calibration": 0,
+      "MULTIPLAYER_FEATURE": 0,
+      "adminToken": 0,
+      "staging": 0
+    },
+    "log": "staging-evidence/phase2a14-bundle-scan-post.txt"
+  },
+  "notClaimed": [
+    "No individual-tick CPU measurement was available; aggregate platform CPU is not a per-tick measurement.",
+    "The 10 ms individual-tick CPU target remains unverified.",
+    "The deployed final snapshot bytes were not independently re-read because closed rooms are intentionally not restored; strict finalisation validation is covered by the Phase 2A.13 integrity tests."
+  ]
+}

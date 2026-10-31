@@ -1,0 +1,14 @@
+{"at":"2026-10-30T22:05:05.303Z","event":"initial-connect","seat":0,"status":101,"epoch":1,"seq":1,"tick":0,"connectMs":95}
+{"at":"2026-10-30T22:05:05.433Z","event":"initial-connect","seat":1,"status":101,"epoch":1,"seq":1,"tick":0,"connectMs":128}
+{"at":"2026-10-30T22:05:05.510Z","event":"pre-restart-command","seat":0,"type":"commandAccepted","tick":2}
+{"at":"2026-10-30T22:05:05.523Z","event":"pre-restart-command","seat":1,"type":"commandAccepted","tick":2}
+{"at":"2026-10-30T22:05:07.078Z","event":"pre-restart","start":1793397905394,"deadline":1793397935143,"tick":33,"epochs":[1,1],"seqs":[1,1]}
+{"at":"2026-10-30T22:05:07.125Z","event":"restart-requested","status":200,"data":{"ok":true,"restarting":true,"roomId":"restart-mvvit3ln"}}
+{"at":"2026-10-30T22:05:07.174Z","event":"restart-closed","afterMs":95}
+{"at":"2026-10-30T22:05:07.417Z","event":"restored-connect","seat":0,"epoch":1026,"seq":2,"tick":0,"connectMs":242}
+{"at":"2026-10-30T22:05:07.469Z","event":"restored-delta","seat":0,"epoch":1026,"seq":3,"base":2,"tick":2}
+{"at":"2026-10-30T22:05:07.484Z","event":"restored-command","seat":0,"type":"commandAccepted","tick":2}
+{"at":"2026-10-30T22:05:07.572Z","event":"restored-connect","seat":1,"epoch":1026,"seq":2,"tick":3,"connectMs":87}
+{"at":"2026-10-30T22:05:07.609Z","event":"restored-delta","seat":1,"epoch":1026,"seq":3,"base":2,"tick":4}
+{"at":"2026-10-30T22:05:07.628Z","event":"restored-command","seat":1,"type":"commandAccepted","tick":4}
+{"at":"2026-10-30T22:05:07.664Z","event":"fatal","message":"whole-match tick count does not regress"}

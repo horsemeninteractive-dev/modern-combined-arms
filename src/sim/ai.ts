@@ -63,7 +63,9 @@ export function scoutedForceMix(game: Game, aiId: number): ScoutedForceMix {
     if (e.kind === 'unit') count(e.id, e.defId);
   }
   for (const c of game.contactsFor(aiId)) {
-    if (c.kind === 'unit') count(c.entityId, c.defId);
+    // A detected or last-known contact has lost its classification, so the
+    // scouting report counts only what the commander actually identified.
+    if (c.kind === 'unit' && c.defId) count(c.entityId, c.defId);
   }
   return mix;
 }
@@ -624,6 +626,10 @@ export class AIController {
     }
     for (const c of game.contactsFor(aiId)) {
       if (seen.has(c.entityId) || c.defId === 'relay') continue;
+      // Without a confirmed identification there is no defId or kind to reason
+      // about; the commander keeps the position in memory but not as a target
+      // class, so a detected contact never drives counters or targeting.
+      if (!c.defId || !c.kind) continue;
       seen.add(c.entityId);
       known.push({
         id: c.entityId,
@@ -1026,6 +1032,11 @@ export class AIController {
       // that excludes it returns undefined, so the option simply disappears.
       const defId = ctx.game.buildingIdFor(ctx.aiId, slotId);
       if (!defId) return;
+      // A locked structure is not a build option: leaving it in the list would
+      // let an essential high scorer reserve materials for a foundation the
+      // placement check will refuse. The prerequisite keeps its own option and
+      // therefore earns the bank first.
+      if (ctx.game.missingTech(ctx.aiId, defId).length > 0) return;
       options.push({ defId, score, reason, essential });
     };
     const counts = ctx.counts;
@@ -1498,7 +1509,21 @@ export class AIController {
       // once hostile air has actually been seen or remembered.
       if (ctx.enemyAir > 0) need('interceptor', Math.min(2, 1 + ctx.enemyAir), 148);
     }
-    if ((ctx.counts.get('shipyard') ?? 0) > 0) need('corvette', 1, 136);
+    if ((ctx.counts.get('shipyard') ?? 0) > 0) {
+      // The corvette is the long-range core. A missile boat is a cheap second
+      // hull that gives the yard something to do before the bank supports a
+      // capital ship; the frigate is a reaction to hostile air or a hostile
+      // submarine, not an opening purchase, because its SAM/ASW box is
+      // expensive insurance. A submarine the commander has actually seen is
+      // the one case where an escort is worth buying before enemy aircraft.
+      need('corvette', 1, 136);
+      need('missileBoat', 1, 118);
+      // A boat only earns its price against an enemy who actually has a fleet;
+      // blind submarine purchases starve the land army for no target.
+      if (ctx.enemyNaval > 0) need('submarine', 1, 124);
+      if (ctx.enemyNaval > 0 && ctx.player.mats > 850) need('frigate', 1, 144);
+      if (ctx.enemyAir > 0 && ctx.player.mats > 900) need('frigate', 1, 150);
+    }
     if ((ctx.counts.get('barracks') ?? 0) > 0 && (ctx.unitCounts.get('rifle') ?? 0) >= 4) {
       need('medic', 1, 84);
     }
@@ -1667,19 +1692,86 @@ export class AIController {
 
   private manageNaval(ctx: AIContext): void {
     for (const ship of ctx.own) {
-      if (ship.kind !== 'unit' || UNITS[ship.defId]?.domain !== 'naval' || !this.free(ship)) continue;
+      if (ship.kind !== 'unit' || UNITS[ship.defId]?.domain !== 'naval') continue;
+      const isSub = !!UNITS[ship.defId]?.submarine;
+      const sub = ship.submarine;
+      if (isSub && sub) {
+        // Dive while a hostile warship is near; surface when the coast is clear
+        // so the battery recharges instead of forcing a dead boat to the yard.
+        const threat = ctx.visible.some(
+          (e) =>
+            e.kind === 'unit' &&
+            UNITS[e.defId]?.domain === 'naval' &&
+            dist(ship.x, ship.z, e.x, e.z) < 16 * TILE_SIZE,
+        );
+        const wantDive = threat && sub.battery > 10;
+        if (wantDive !== sub.dived) {
+          ctx.game.enqueueCommand({
+            type: 'dive',
+            team: ctx.aiId,
+            ids: [ship.id],
+            dive: wantDive,
+          });
+        }
+      }
+      // A boat already executing an attack keeps its order; only the free
+      // hulls below receive a new target.
+      if (!this.free(ship)) continue;
+      // An escort with a sonar set treats a submerged contact as its first
+      // problem. This is a deliberate hunt: the order may be a long approach,
+      // not just a shot at something already inside depth-charge range.
+      const shipWeapons = entityWeapons(ship);
+      const aswWeapon = isSub ? undefined : shipWeapons.find((w) => w.asw);
+      if (aswWeapon) {
+        const contact = ctx.visible
+          .filter(
+            (e) =>
+              e.kind === 'unit' &&
+              e.submarine?.dived &&
+              e.owner !== -1 &&
+              canWeaponTarget(aswWeapon, e) &&
+              dist(ship.x, ship.z, e.x, e.z) < 24 * TILE_SIZE,
+          )
+          .sort(
+            (a, b) =>
+              dist(ship.x, ship.z, a.x, a.z) - dist(ship.x, ship.z, b.x, b.z) || a.id - b.id,
+          )[0];
+        if (contact) {
+          if (
+            this.order(ctx, ship, {
+              type: 'attack',
+              team: ctx.aiId,
+              ids: [ship.id],
+              targetId: contact.id,
+            })
+          ) {
+            ctx.st.lastDecision = `${UNITS[ship.defId]?.name ?? 'Escort'} hunting a submerged contact`;
+          }
+          continue;
+        }
+      }
       const target = ctx.visible
         .filter((e) => e.owner !== -1)
-        .find(
-          (e) =>
-            (UNITS[e.defId]?.domain === 'naval' || BUILDINGS[e.defId]?.commandPost) &&
-            dist(ship.x, ship.z, e.x, e.z) < 34 * TILE_SIZE,
-        );
+        .filter((e) =>
+          isSub
+            ? UNITS[e.defId]?.domain === 'naval'
+            : UNITS[e.defId]?.domain === 'naval' || BUILDINGS[e.defId]?.commandPost,
+        )
+        .filter((e) => dist(ship.x, ship.z, e.x, e.z) < 34 * TILE_SIZE)
+        .sort((a, b) => {
+          if (!isSub) return a.id - b.id;
+          // A submarine captain prefers a fat merchant or corvette to the
+          // escort whose whole job is to kill him; the sonar hull is discounted
+          // rather than banned so a lonely frigate is still a legal target.
+          const score = (e: Entity) =>
+            (UNITS[e.defId]?.hp ?? 0) - ((UNITS[e.defId]?.sonar ?? 0) > 0 ? 800 : 0);
+          return score(b) - score(a) || a.id - b.id;
+        })[0];
       if (!target) continue;
       if (
         this.order(ctx, ship, { type: 'attack', team: ctx.aiId, ids: [ship.id], targetId: target.id })
       ) {
-        ctx.st.lastDecision = `corvette engaging ${target.defId}`;
+        ctx.st.lastDecision = `${UNITS[ship.defId]?.name ?? 'Warship'} engaging ${target.defId}`;
       }
     }
   }

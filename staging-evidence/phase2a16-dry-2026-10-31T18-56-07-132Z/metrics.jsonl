@@ -1,0 +1,6 @@
+{"at":"2026-10-31T18:56:07.849Z","type":"room-created","room":{"roomId":"phase2a16-dry-mvwrhy9v","mode":"1v1","protocol":2,"matchDurationMs":130000,"matchDeadlineAt":1793473097832,"seats":[{"seatId":0,"playerId":0,"team":0},{"seatId":1,"playerId":1,"team":1}]}}
+{"at":"2026-10-31T18:56:08.013Z","type":"initial-connect","seat":0,"epoch":1,"seq":1,"tick":0,"connectMs":119}
+{"at":"2026-10-31T18:56:08.014Z","type":"initial-connect","seat":1,"epoch":1,"seq":1,"tick":0,"connectMs":155}
+{"at":"2026-10-31T18:56:08.082Z","type":"checkpoint-observed","snapshotCycles":2,"lastSuccessAt":1793472968030,"observedAt":1793472968082,"totalTicks":1,"processTicks":1,"ageSinceSuccessMs":95}
+{"at":"2026-10-31T18:56:10.051Z","type":"socket-close","seat":0,"code":null,"reason":""}
+{"at":"2026-10-31T18:56:10.054Z","type":"socket-close","seat":1,"code":null,"reason":""}

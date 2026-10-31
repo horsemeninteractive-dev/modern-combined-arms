@@ -1,0 +1,253 @@
+{
+  "test": {
+    "label": "probe2",
+    "base": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev",
+    "isMain": false,
+    "targetMs": 20000,
+    "startedAt": "2026-10-30T01:17:38.665Z",
+    "endedAt": "2026-10-30T01:17:58.766Z",
+    "wallElapsedMs": 20101,
+    "intervalMs": 30000,
+    "commandEveryMs": 5000,
+    "productionEveryMs": 180000,
+    "evidenceDir": "staging-evidence\\probe2-2026-10-30T01-17-37-808Z"
+  },
+  "health": {
+    "ok": true,
+    "onlineEnabled": true,
+    "devMode": true,
+    "adminConfigured": true,
+    "reservationConfigured": true,
+    "protocol": "mca.v1",
+    "build": "phase2a-staging"
+  },
+  "room": {
+    "roomId": "probe2-mvua8vgp",
+    "mode": "1v1",
+    "protocol": 1,
+    "matchDurationMs": 30000,
+    "matchDeadlineAt": 1793323088399,
+    "seats": [
+      {
+        "seatId": 0,
+        "playerId": 0,
+        "team": 0
+      },
+      {
+        "seatId": 1,
+        "playerId": 1,
+        "team": 1
+      }
+    ]
+  },
+  "results": [
+    null,
+    null
+  ],
+  "resultAtMs": null,
+  "abortReason": null,
+  "server": {
+    "phase": "closed",
+    "tick": 404,
+    "startedAtMs": 1793323058643,
+    "finishedAtMs": 1793323078881,
+    "elapsedMs": 20238,
+    "expectedTicksAt20Hz": 405,
+    "actualTicks": 404,
+    "effectiveHz": 19.962446882102974,
+    "stats": {
+      "ticks": 404,
+      "snapshots": 406,
+      "outboundBytes": 24099848,
+      "inboundMessages": 7,
+      "connectionsAccepted": 2,
+      "commandsAccepted": 7,
+      "commandsRejected": 0,
+      "heartbeatCount": 1,
+      "approxRequests": 8
+    },
+    "result": {
+      "phase": "playing",
+      "winnerTeam": null,
+      "reason": null,
+      "teams": [
+        {
+          "team": 0,
+          "playerIds": [
+            0
+          ],
+          "defeated": false,
+          "score": 5177
+        },
+        {
+          "team": 1,
+          "playerIds": [
+            1
+          ],
+          "defeated": false,
+          "score": 5225
+        }
+      ],
+      "tick": 404
+    }
+  },
+  "reservation": {
+    "reservationId": "r15",
+    "status": "released",
+    "hardDeadlineAt": 1793323088399
+  },
+  "closed": true,
+  "snapshots": [
+    {
+      "seat": 0,
+      "count": 203,
+      "bytes": 12029726,
+      "frequencyHz": 10.099000049748769,
+      "sizes": {
+        "count": 203,
+        "p50": 59304,
+        "p95": 59548,
+        "p99": 59689,
+        "max": 59973,
+        "min": 58855,
+        "mean": 59259.73399014778
+      },
+      "gaps": {
+        "count": 202,
+        "p50": 100,
+        "p95": 116,
+        "p99": 198,
+        "max": 208,
+        "min": 2,
+        "mean": 100.48019801980197
+      },
+      "longestGapMs": 208,
+      "firstTick": 0,
+      "lastTick": 404,
+      "tickDeltas": {
+        "2": 202
+      }
+    },
+    {
+      "seat": 1,
+      "count": 203,
+      "bytes": 12069143,
+      "frequencyHz": 10.099000049748769,
+      "sizes": {
+        "count": 203,
+        "p50": 59469,
+        "p95": 60134,
+        "p99": 61548,
+        "max": 62172,
+        "min": 58849,
+        "mean": 59453.906403940884
+      },
+      "gaps": {
+        "count": 202,
+        "p50": 100,
+        "p95": 117,
+        "p99": 199,
+        "max": 203,
+        "min": 1,
+        "mean": 99.97524752475248
+      },
+      "longestGapMs": 203,
+      "firstTick": 0,
+      "lastTick": 404,
+      "tickDeltas": {
+        "2": 202
+      }
+    }
+  ],
+  "stateSamples": [
+    {
+      "seat": 0,
+      "at": "2026-10-30T01:17:38.564Z",
+      "tick": 0,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3000,
+      "breakdown": {
+        "total": 58855,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2684,
+        "players": 206,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.710169059553139,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T01:17:38.664Z",
+      "tick": 0,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3000,
+      "breakdown": {
+        "total": 58849,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 220,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7102414654454621,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    }
+  ],
+  "commands": {
+    "sent": 7,
+    "accepted": 7,
+    "rejected": 0,
+    "timeouts": 0,
+    "byType": {
+      "move": 5,
+      "produce": 2
+    },
+    "rejectionByCode": {},
+    "latencyMs": {
+      "count": 7,
+      "p50": 14,
+      "p95": 19,
+      "p99": 19,
+      "max": 19,
+      "min": 11,
+      "mean": 14.285714285714286
+    },
+    "ackAnomalies": 0
+  },
+  "socketCloses": [
+    {
+      "at": "2026-10-30T01:17:58.899Z",
+      "seat": 0
+    },
+    {
+      "at": "2026-10-30T01:17:58.905Z",
+      "seat": 1
+    }
+  ],
+  "errors": [],
+  "clientMemory": {
+    "note": "Node client heap only; not server memory.",
+    "heapUsedMb": 31,
+    "rssMb": 128.6
+  }
+}

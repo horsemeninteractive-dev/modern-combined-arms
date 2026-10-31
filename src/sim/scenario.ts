@@ -32,6 +32,12 @@ export interface ScenarioPlayer {
   /** Player start tile (used for deployment validation and editor markers). */
   startX: number;
   startZ: number;
+  /**
+   * Optional team tint chosen in skirmish setup (`#rrggbb`). Absent on authored
+   * maps and legacy saves, where the faction identity supplies the colour. It
+   * is presentation only: team masks, ownership and visibility still use `team`.
+   */
+  color?: string;
 }
 
 export interface ScenarioStructure {
@@ -69,6 +75,11 @@ export interface ScenarioSettings {
   timeOfDay: 'dawn' | 'day' | 'dusk' | 'night';
 }
 
+export interface ScenarioCampaignRef {
+  campaignId: string;
+  missionId: string;
+}
+
 export interface Scenario {
   format: typeof MAP_FORMAT;
   version: number;
@@ -79,6 +90,12 @@ export interface Scenario {
     author: string;
     created: string;
     targetSize: 'small' | 'medium' | 'large';
+    /**
+     * Set only on a scenario launched from the campaign deck. It lets a saved
+     * campaign battle unlock the next operation after a reload; ordinary
+     * skirmish and editor scenarios leave it undefined.
+     */
+    campaign?: ScenarioCampaignRef;
   };
   width: number;
   height: number;
@@ -195,12 +212,31 @@ export function parseScenario(raw: unknown): Scenario {
     return { t: terrain, e, o };
   });
   const metaRaw = (r.meta ?? {}) as Record<string, unknown>;
+  // Campaign provenance is optional metadata, not a second scenario format.
+  // Preserving it here means a campaign battle saved mid-operation still
+  // knows which operation it belongs to when it is loaded again.
+  const campaignRaw = metaRaw.campaign;
+  let campaign: ScenarioCampaignRef | undefined;
+  if (campaignRaw && typeof campaignRaw === 'object') {
+    const ref = campaignRaw as Record<string, unknown>;
+    campaign = {
+      campaignId: asString(ref.campaignId, 'meta.campaign.campaignId'),
+      missionId: asString(ref.missionId, 'meta.campaign.missionId'),
+    };
+  }
   const settingsRaw = (r.settings ?? {}) as Record<string, unknown>;
   const playersRaw = Array.isArray(r.players) ? r.players : fail('players', 'array');
   const players: ScenarioPlayer[] = playersRaw.map((p, i) => {
     const pr = p as Record<string, unknown>;
     const factionId = asString(pr.factionId, `players[${i}].factionId`);
     if (!isKnownFactionId(factionId)) fail(`players[${i}].factionId`, 'known faction');
+    // A custom tint is optional; when present it must be a full hex colour.
+    const color =
+      pr.color === undefined
+        ? undefined
+        : /^#[0-9a-f]{6}$/i.test(asString(pr.color, `players[${i}].color`))
+          ? (pr.color as string)
+          : fail(`players[${i}].color`, 'hex colour');
     return {
       id: asNumber(pr.id, `players[${i}].id`, 0, 7),
       name: asString(pr.name, `players[${i}].name`),
@@ -209,6 +245,7 @@ export function parseScenario(raw: unknown): Scenario {
       isAI: asBool(pr.isAI ?? false, `players[${i}].isAI`),
       startX: asNumber(pr.startX, `players[${i}].startX`, 0, width - 1),
       startZ: asNumber(pr.startZ, `players[${i}].startZ`, 0, height - 1),
+      ...(color ? { color } : {}),
     };
   });
   const structures: ScenarioStructure[] = (Array.isArray(r.structures) ? r.structures : []).map(
@@ -270,6 +307,7 @@ export function parseScenario(raw: unknown): Scenario {
       author: asString(metaRaw.author ?? '', 'meta.author'),
       created: asString(metaRaw.created ?? '', 'meta.created'),
       targetSize: (metaRaw.targetSize as Scenario['meta']['targetSize']) ?? 'medium',
+      ...(campaign ? { campaign } : {}),
     },
     width,
     height,

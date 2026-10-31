@@ -1,0 +1,313 @@
+{
+  "meta": {
+    "generatedAt": "2026-10-30T18:43:01.244Z",
+    "phase": "2A.8",
+    "localOnly": true,
+    "warning": "Local wall-clock A/B on Node. Not Cloudflare Worker CPU time, not a deployed per-tick distribution, and not a capacity proof.",
+    "node": "v24.14.0",
+    "platform": "win32 x64",
+    "cpu": "AMD Custom APU 0405",
+    "blocks": 8,
+    "batch": 24,
+    "memoryReps": 12,
+    "astarSearchesPerBlock": 2000,
+    "sourceHashes": {
+      "src/sim/pathfinding.ts": "6bd4cb4ecac8c2f39f53a39e8d0b13ec091cffd41ea6f08896667b78f759faaf",
+      "src/sim/navBatch.ts": "1c2417c57543c4cfb66b4a039d0d0cff0dbe596d2c13b28e99f0f16e85ec2469",
+      "src/sim/game.ts": "99288b2d450d0045e8e7ce0ce8e662fab269c86989331f9601950c0f15587d0f",
+      "src/multiplayer/batchCalibration.ts": "05c679aabc0204c59ed10a83c719c402f74a40b38e2a94460cb8a1432e279471"
+    }
+  },
+  "results": [
+    {
+      "id": "apply-commands-stress",
+      "description": "Direct application of the two full-force attack-move orders (80 units).",
+      "blocks": 8,
+      "batch": 24,
+      "old": {
+        "medianMs": 14.146
+      },
+      "new": {
+        "medianMs": 12.635
+      },
+      "oldSamples": [
+        14.012,
+        15.099,
+        13.358,
+        15.137,
+        13.362,
+        15.7,
+        12.978,
+        14.28
+      ],
+      "newSamples": [
+        13.021,
+        12.515,
+        12.284,
+        12.313,
+        15.506,
+        12.755,
+        13.812,
+        12.412
+      ],
+      "changePct": -10.7
+    },
+    {
+      "id": "first-tick-stress",
+      "description": "First authoritative tick of the 80-unit stress setup with both orders queued.",
+      "blocks": 8,
+      "batch": 24,
+      "old": {
+        "medianMs": 16.626
+      },
+      "new": {
+        "medianMs": 14.349
+      },
+      "oldSamples": [
+        15.986,
+        17.267,
+        14.811,
+        17.35,
+        14.496,
+        17.982,
+        14.193,
+        17.592
+      ],
+      "newSamples": [
+        15.873,
+        14.219,
+        15.086,
+        13.72,
+        14.839,
+        13.43,
+        14.479,
+        12.865
+      ],
+      "changePct": -13.7
+    },
+    {
+      "id": "first-tick-no-orders",
+      "description": "First authoritative tick of the same 80 units with queued orders removed.",
+      "blocks": 8,
+      "batch": 24,
+      "old": {
+        "medianMs": 2.981
+      },
+      "new": {
+        "medianMs": 1.551
+      },
+      "oldSamples": [
+        1.946,
+        3.53,
+        2.431,
+        4.036,
+        1.783,
+        4.088,
+        2.064,
+        3.761
+      ],
+      "newSamples": [
+        1.447,
+        1.489,
+        2.007,
+        1.406,
+        1.616,
+        1.707,
+        1.368,
+        1.613
+      ],
+      "changePct": -48
+    },
+    {
+      "id": "single-order",
+      "description": "Direct attack-move of one team-0 ground unit: smallest command batch.",
+      "blocks": 8,
+      "batch": 200,
+      "old": {
+        "medianMs": 0.007
+      },
+      "new": {
+        "medianMs": 0.006
+      },
+      "oldSamples": [
+        0.008,
+        0.006,
+        0.006,
+        0.01,
+        0.007,
+        0.01,
+        0.005,
+        0.007
+      ],
+      "newSamples": [
+        0.005,
+        0.005,
+        0.006,
+        0.005,
+        0.006,
+        0.006,
+        0.005,
+        0.007
+      ],
+      "changePct": -14.3
+    },
+    {
+      "id": "path-scaling-9",
+      "description": "Direct attack-move of 9 team-0 ground units: path requests only.",
+      "blocks": 8,
+      "batch": 24,
+      "old": {
+        "medianMs": 2.98
+      },
+      "new": {
+        "medianMs": 2.401
+      },
+      "oldSamples": [
+        2.851,
+        3.35,
+        2.747,
+        3.109,
+        2.615,
+        3.222,
+        2.771,
+        3.194
+      ],
+      "newSamples": [
+        2.383,
+        2.419,
+        2.52,
+        2.294,
+        2.441,
+        2.273,
+        2.566,
+        2.341
+      ],
+      "changePct": -19.4
+    },
+    {
+      "id": "path-scaling-36",
+      "description": "Direct attack-move of 36 team-0 ground units: path requests only.",
+      "blocks": 8,
+      "batch": 24,
+      "old": {
+        "medianMs": 5.56
+      },
+      "new": {
+        "medianMs": 5.259
+      },
+      "oldSamples": [
+        5.332,
+        5.391,
+        5.304,
+        5.693,
+        5.716,
+        5.427,
+        6.771,
+        6.004
+      ],
+      "newSamples": [
+        5.635,
+        5.512,
+        5.115,
+        5.184,
+        5.722,
+        4.706,
+        5.333,
+        5.083
+      ],
+      "changePct": -5.4
+    },
+    {
+      "id": "traffic-mask-prep-36",
+      "description": "Traffic-mask preparation for 36 ground path requests: old per-request navFor versus one command batch.",
+      "blocks": 8,
+      "batch": 36,
+      "old": {
+        "medianMs": 1.67
+      },
+      "new": {
+        "medianMs": 0.244
+      },
+      "oldSamples": [
+        1.607,
+        1.733,
+        1.448,
+        1.817,
+        1.545,
+        2.234,
+        1.786,
+        1.575
+      ],
+      "newSamples": [
+        0.159,
+        0.243,
+        0.343,
+        0.373,
+        0.314,
+        0.244,
+        0.216,
+        0.193
+      ],
+      "changePct": -85.4
+    },
+    {
+      "id": "astar-dynamic-traffic",
+      "description": "Pure A* on the dynamic-traffic fixture, 2000 searches per block; heap-only microbenchmark.",
+      "old": {
+        "medianMs": 54.824
+      },
+      "new": {
+        "medianMs": 57.863
+      },
+      "oldSamples": [
+        58.722,
+        54.871,
+        55.202,
+        54.506,
+        54.609,
+        54.777,
+        55.558,
+        53.515
+      ],
+      "newSamples": [
+        55.609,
+        59.989,
+        78.332,
+        57.445,
+        57.367,
+        56.822,
+        69.741,
+        58.28
+      ],
+      "changePct": 5.5
+    }
+  ],
+  "memory": {
+    "method": "heapUsed delta across one command burst, forced GC before baseline, result retained; coarse and local",
+    "reps": 12,
+    "old": {
+      "medianBytes": 14531392,
+      "minBytes": 13704328,
+      "maxBytes": 15719368
+    },
+    "new": {
+      "medianBytes": 9930228,
+      "minBytes": 9523504,
+      "maxBytes": 10909672
+    }
+  },
+  "maskMemory": {
+    "method": "external memory delta for 36 old per-request masks versus one command batch, masks retained until read",
+    "reps": 12,
+    "old": {
+      "medianBytes": 248832
+    },
+    "new": {
+      "medianBytes": 6912
+    },
+    "expected": {
+      "oldBytes": 248832,
+      "newBytes": 6912
+    }
+  }
+}

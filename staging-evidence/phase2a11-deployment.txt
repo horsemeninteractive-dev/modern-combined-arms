@@ -1,0 +1,81 @@
+# Phase 2A.11 staging deployment and source identification
+Captured: 2026-10-30T22:26:00Z
+
+## Final staging deployment
+
+Worker: mca-multiplayer-staging
+URL: https://mca-multiplayer-staging.horsemeninteractive.workers.dev
+
+Active version: b1030bee-2c89-4a23-addd-f1567b0d818b
+Tag: phase2a11
+Message: Phase 2A.11: durable epochs and continuous match timing (start-preservation)
+Version created: 2026-10-30T22:19:03.297Z
+Deployment created: 2026-10-30T22:19:04.614Z
+
+The earlier Phase 2A.11 version 3940f7cd-5dc4-43ad-a939-495acfaa01b7
+(2026-10-30T22:01:02.221Z) was superseded by the start-preservation fix.
+All deployed checks in this evidence set were run against b1030bee.
+
+Worker health:
+{"ok":true,"onlineEnabled":true,"devMode":true,"adminConfigured":true,"reservationConfigured":true,"protocol":"mca.v2","snapshotVersion":2,"build":"phase2a11-staging"}
+
+## Repository
+
+HEAD: 132ccc8363d5b5bc98b6518b4afd1738dedaad6a
+Branch: master
+Working tree: 151 modified/untracked paths. Pre-existing work was preserved;
+nothing was staged, committed or pushed.
+
+## Source and artifact hashes
+
+c6fa0789f9ac13108a2c4feb50f2ad2434c3b0437ba2810fd4a63511a8f5f8aa *src/multiplayer/roomSnapshot.ts
+601e4318aa4344b98e1ee2ae8644f71a333ce01b5771b796b720194a23ff73a2 *src/multiplayer/roomMatch.ts
+f2beb9e69c450bc2b7494671c31a55224b5e531a7751696262ae69699c86c600 *src/multiplayer/roomDurableObject.ts
+ff4c3fd3c2a4918ab28116f659fe816d4c66c4f7bb667163c681043feaf1abd8 *src/multiplayer/roomWorker.ts
+04a368c0b770c69955c94a698d5553fbf259b14979e016de28d201200372dff1 *src/multiplayer/snapshotAssembler.ts
+4f925513d1223a607b94174abe67c29454fc81c78250eae6ce552767646f365f *tests/phase2a11-recovery.test.ts
+80d9f3da10ba0639a97d077814387805b33570e9ad8d839147002b3830190441 *tools/phase2a11-forced-restart.mjs
+b5081f68a578b1b9af1def18ff889be30620f0a4d84d7d4d7b8227ebfd02396e *dist-mp-room/roomWorker.js
+
+The deployed bytes match the local `dist-mp-room/roomWorker.js` hash.
+`roomDurableObject.ts` contains an export-only metadata test seam; it does not
+change the emitted Worker artifact.
+
+## Local verification
+
+- npm run typecheck: PASS
+- npx vitest run: 959/959 tests, 96 files
+- Focused recovery + snapshot + room + sync + keepalive: 46/46 tests
+- npm run build: PASS
+- npx vite build --config mp-room-vite.config.ts: PASS, 523.26 kB (130.81 kB gzip)
+
+## Deployed verification
+
+- 15/15 protocol and security smoke checks
+- 6/6 lifecycle and capacity checks; statuses 200, 200, 503, 200
+- Forced restart room restart-mvvjd560:
+  - epochs 1,1 -> 1026,1026
+  - 0 live post-restart update rejections
+  - four deliberately replayed stale messages rejected as epoch-mismatch
+  - start 1793398840606 unchanged
+  - deadline 1793398885348 unchanged
+  - final tick 851 for both clients and server
+  - result victory/defeat, time-limit, tick 851
+  - reservation released
+
+## Safety state
+
+MULTIPLAYER_FEATURE.enabled = false
+roomDiscovery = false
+accountLinking = false
+
+Reservation policy unchanged:
+- maxActiveRooms = 2
+- maxDailyDurationGbSeconds = 10,400
+- maxDailyRequests = 80,000
+- maxMatchDurationMs = 1,800,000
+- durationMb = 128
+- staleAfterMs = 90,000
+
+No production deployment, production activation, capacity increase, paid
+service, billing change or automatic upgrade occurred.

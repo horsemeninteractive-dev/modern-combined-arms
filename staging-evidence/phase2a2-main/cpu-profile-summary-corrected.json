@@ -1,0 +1,218 @@
+{
+  "source": "staging-evidence\\phase2a2-main\\cpu-profile.pprof",
+  "bytes": 5233,
+  "sampleTypes": [
+    {
+      "type": "cpu",
+      "unit": "nanoseconds"
+    }
+  ],
+  "period": 1000000,
+  "durationNanos": 9999641000,
+  "samples": 254,
+  "totalCpuMs": 254.0,
+  "topSelf": [
+    {
+      "function": "createTeamSnapshot",
+      "cpuMs": 116.0,
+      "percent": 45.67
+    },
+    {
+      "function": "sendSnapshotObject",
+      "cpuMs": 37.0,
+      "percent": 14.57
+    },
+    {
+      "function": "utf8ByteLength",
+      "cpuMs": 17.0,
+      "percent": 6.69
+    },
+    {
+      "function": "(idle)",
+      "cpuMs": 13.0,
+      "percent": 5.12
+    },
+    {
+      "function": "sendText",
+      "cpuMs": 12.0,
+      "percent": 4.72
+    },
+    {
+      "function": "(garbage collector)",
+      "cpuMs": 11.0,
+      "percent": 4.33
+    },
+    {
+      "function": "updateUnits",
+      "cpuMs": 11.0,
+      "percent": 4.33
+    },
+    {
+      "function": "",
+      "cpuMs": 7.0,
+      "percent": 2.76
+    },
+    {
+      "function": "(program)",
+      "cpuMs": 6.0,
+      "percent": 2.36
+    },
+    {
+      "function": "broadcast",
+      "cpuMs": 6.0,
+      "percent": 2.36
+    },
+    {
+      "function": "tick",
+      "cpuMs": 4.0,
+      "percent": 1.57
+    },
+    {
+      "function": "updateBuildingSystems",
+      "cpuMs": 2.0,
+      "percent": 0.79
+    },
+    {
+      "function": "player",
+      "cpuMs": 1.0,
+      "percent": 0.39
+    },
+    {
+      "function": "inBounds",
+      "cpuMs": 1.0,
+      "percent": 0.39
+    },
+    {
+      "function": "refreshVision",
+      "cpuMs": 1.0,
+      "percent": 0.39
+    },
+    {
+      "function": "hasLineOfSight",
+      "cpuMs": 1.0,
+      "percent": 0.39
+    },
+    {
+      "function": "runTick",
+      "cpuMs": 1.0,
+      "percent": 0.39
+    },
+    {
+      "function": "persistSnapshot",
+      "cpuMs": 1.0,
+      "percent": 0.39
+    },
+    {
+      "function": "put",
+      "cpuMs": 1.0,
+      "percent": 0.39
+    },
+    {
+      "function": "updatePassiveIncome",
+      "cpuMs": 1.0,
+      "percent": 0.39
+    }
+  ],
+  "topInclusive": [
+    {
+      "function": "(root)",
+      "cpuMs": 254.0,
+      "percent": 100.0
+    },
+    {
+      "function": "",
+      "cpuMs": 223.0,
+      "percent": 87.8
+    },
+    {
+      "function": "runTick",
+      "cpuMs": 219.0,
+      "percent": 86.22
+    },
+    {
+      "function": "tick",
+      "cpuMs": 218.0,
+      "percent": 85.83
+    },
+    {
+      "function": "broadcast",
+      "cpuMs": 191.0,
+      "percent": 75.2
+    },
+    {
+      "function": "createTeamSnapshot",
+      "cpuMs": 119.0,
+      "percent": 46.85
+    },
+    {
+      "function": "sendSnapshotObject",
+      "cpuMs": 66.0,
+      "percent": 25.98
+    },
+    {
+      "function": "sendText",
+      "cpuMs": 29.0,
+      "percent": 11.42
+    },
+    {
+      "function": "utf8ByteLength",
+      "cpuMs": 17.0,
+      "percent": 6.69
+    },
+    {
+      "function": "(idle)",
+      "cpuMs": 13.0,
+      "percent": 5.12
+    },
+    {
+      "function": "updateUnits",
+      "cpuMs": 12.0,
+      "percent": 4.72
+    },
+    {
+      "function": "(garbage collector)",
+      "cpuMs": 11.0,
+      "percent": 4.33
+    },
+    {
+      "function": "(program)",
+      "cpuMs": 6.0,
+      "percent": 2.36
+    },
+    {
+      "function": "eventsAfter",
+      "cpuMs": 3.0,
+      "percent": 1.18
+    },
+    {
+      "function": "refreshVision",
+      "cpuMs": 3.0,
+      "percent": 1.18
+    },
+    {
+      "function": "persistSnapshot",
+      "cpuMs": 3.0,
+      "percent": 1.18
+    },
+    {
+      "function": "updateBuildingSystems",
+      "cpuMs": 3.0,
+      "percent": 1.18
+    },
+    {
+      "function": "persistPeriodic",
+      "cpuMs": 2.0,
+      "percent": 0.79
+    },
+    {
+      "function": "updatePassiveIncome",
+      "cpuMs": 2.0,
+      "percent": 0.79
+    },
+    {
+      "function": "evaluateMatchResult",
+      "cpuMs": 2.0,
+      "percent": 0.79
+    }
+  ]
+}

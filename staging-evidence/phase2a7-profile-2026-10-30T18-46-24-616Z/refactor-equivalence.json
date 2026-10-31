@@ -1,0 +1,356 @@
+{
+  "prior": "C:\\Users\\aeryt\\Documents\\Modern Combined Arms\\staging-evidence\\phase2a6-calibration-2026-10-30T13-56-52-136Z\\samples.json",
+  "records": [
+    {
+      "profile": "baseline",
+      "batch": 0,
+      "match": true,
+      "prior": {
+        "initialChecksum": "edf2025e4e6158c8",
+        "checksum": "edf2025e4e6158c8",
+        "finalTick": 0,
+        "units": 16,
+        "projectiles": 0,
+        "shots": 0,
+        "kills": 0,
+        "commandsIssued": 0
+      },
+      "current": {
+        "initialChecksum": "edf2025e4e6158c8",
+        "checksum": "edf2025e4e6158c8",
+        "finalTick": 0,
+        "units": 16,
+        "projectiles": 0,
+        "shots": 0,
+        "kills": 0,
+        "commandsIssued": 0
+      }
+    },
+    {
+      "profile": "baseline",
+      "batch": 1,
+      "match": true,
+      "prior": {
+        "initialChecksum": "edf2025e4e6158c8",
+        "checksum": "abb91c76fc8af3e3",
+        "finalTick": 1,
+        "units": 16,
+        "projectiles": 0,
+        "shots": 0,
+        "kills": 0,
+        "commandsIssued": 0
+      },
+      "current": {
+        "initialChecksum": "edf2025e4e6158c8",
+        "checksum": "abb91c76fc8af3e3",
+        "finalTick": 1,
+        "units": 16,
+        "projectiles": 0,
+        "shots": 0,
+        "kills": 0,
+        "commandsIssued": 0
+      }
+    },
+    {
+      "profile": "baseline",
+      "batch": 5,
+      "match": true,
+      "prior": {
+        "initialChecksum": "edf2025e4e6158c8",
+        "checksum": "9c6da136517b58b7",
+        "finalTick": 5,
+        "units": 16,
+        "projectiles": 0,
+        "shots": 0,
+        "kills": 0,
+        "commandsIssued": 0
+      },
+      "current": {
+        "initialChecksum": "edf2025e4e6158c8",
+        "checksum": "9c6da136517b58b7",
+        "finalTick": 5,
+        "units": 16,
+        "projectiles": 0,
+        "shots": 0,
+        "kills": 0,
+        "commandsIssued": 0
+      }
+    },
+    {
+      "profile": "baseline",
+      "batch": 10,
+      "match": true,
+      "prior": {
+        "initialChecksum": "edf2025e4e6158c8",
+        "checksum": "cc19b919581d1d61",
+        "finalTick": 10,
+        "units": 16,
+        "projectiles": 0,
+        "shots": 0,
+        "kills": 0,
+        "commandsIssued": 0
+      },
+      "current": {
+        "initialChecksum": "edf2025e4e6158c8",
+        "checksum": "cc19b919581d1d61",
+        "finalTick": 10,
+        "units": 16,
+        "projectiles": 0,
+        "shots": 0,
+        "kills": 0,
+        "commandsIssued": 0
+      }
+    },
+    {
+      "profile": "baseline",
+      "batch": 20,
+      "match": true,
+      "prior": {
+        "initialChecksum": "edf2025e4e6158c8",
+        "checksum": "572c85ab65a1c006",
+        "finalTick": 20,
+        "units": 16,
+        "projectiles": 0,
+        "shots": 0,
+        "kills": 0,
+        "commandsIssued": 0
+      },
+      "current": {
+        "initialChecksum": "edf2025e4e6158c8",
+        "checksum": "572c85ab65a1c006",
+        "finalTick": 20,
+        "units": 16,
+        "projectiles": 0,
+        "shots": 0,
+        "kills": 0,
+        "commandsIssued": 0
+      }
+    },
+    {
+      "profile": "baseline",
+      "batch": 50,
+      "match": true,
+      "prior": {
+        "initialChecksum": "edf2025e4e6158c8",
+        "checksum": "403bfec5c1a90c89",
+        "finalTick": 50,
+        "units": 16,
+        "projectiles": 0,
+        "shots": 0,
+        "kills": 0,
+        "commandsIssued": 0
+      },
+      "current": {
+        "initialChecksum": "edf2025e4e6158c8",
+        "checksum": "403bfec5c1a90c89",
+        "finalTick": 50,
+        "units": 16,
+        "projectiles": 0,
+        "shots": 0,
+        "kills": 0,
+        "commandsIssued": 0
+      }
+    },
+    {
+      "profile": "baseline",
+      "batch": 100,
+      "match": true,
+      "prior": {
+        "initialChecksum": "edf2025e4e6158c8",
+        "checksum": "d53cf1b67430683f",
+        "finalTick": 100,
+        "units": 16,
+        "projectiles": 0,
+        "shots": 0,
+        "kills": 0,
+        "commandsIssued": 0
+      },
+      "current": {
+        "initialChecksum": "edf2025e4e6158c8",
+        "checksum": "d53cf1b67430683f",
+        "finalTick": 100,
+        "units": 16,
+        "projectiles": 0,
+        "shots": 0,
+        "kills": 0,
+        "commandsIssued": 0
+      }
+    },
+    {
+      "profile": "stress",
+      "batch": 0,
+      "match": true,
+      "prior": {
+        "initialChecksum": "6304954b1abca61b",
+        "checksum": "6304954b1abca61b",
+        "finalTick": 0,
+        "units": 80,
+        "projectiles": 0,
+        "shots": 0,
+        "kills": 0,
+        "commandsIssued": 2
+      },
+      "current": {
+        "initialChecksum": "6304954b1abca61b",
+        "checksum": "6304954b1abca61b",
+        "finalTick": 0,
+        "units": 80,
+        "projectiles": 0,
+        "shots": 0,
+        "kills": 0,
+        "commandsIssued": 2
+      }
+    },
+    {
+      "profile": "stress",
+      "batch": 1,
+      "match": true,
+      "prior": {
+        "initialChecksum": "6304954b1abca61b",
+        "checksum": "87f80cac6f36c97b",
+        "finalTick": 1,
+        "units": 80,
+        "projectiles": 23,
+        "shots": 31,
+        "kills": 0,
+        "commandsIssued": 2
+      },
+      "current": {
+        "initialChecksum": "6304954b1abca61b",
+        "checksum": "87f80cac6f36c97b",
+        "finalTick": 1,
+        "units": 80,
+        "projectiles": 23,
+        "shots": 31,
+        "kills": 0,
+        "commandsIssued": 2
+      }
+    },
+    {
+      "profile": "stress",
+      "batch": 5,
+      "match": true,
+      "prior": {
+        "initialChecksum": "6304954b1abca61b",
+        "checksum": "70bf83acecdc2149",
+        "finalTick": 5,
+        "units": 80,
+        "projectiles": 5,
+        "shots": 31,
+        "kills": 0,
+        "commandsIssued": 2
+      },
+      "current": {
+        "initialChecksum": "6304954b1abca61b",
+        "checksum": "70bf83acecdc2149",
+        "finalTick": 5,
+        "units": 80,
+        "projectiles": 5,
+        "shots": 31,
+        "kills": 0,
+        "commandsIssued": 2
+      }
+    },
+    {
+      "profile": "stress",
+      "batch": 10,
+      "match": true,
+      "prior": {
+        "initialChecksum": "6304954b1abca61b",
+        "checksum": "eafac198ac5ef0be",
+        "finalTick": 10,
+        "units": 80,
+        "projectiles": 5,
+        "shots": 35,
+        "kills": 0,
+        "commandsIssued": 2
+      },
+      "current": {
+        "initialChecksum": "6304954b1abca61b",
+        "checksum": "eafac198ac5ef0be",
+        "finalTick": 10,
+        "units": 80,
+        "projectiles": 5,
+        "shots": 35,
+        "kills": 0,
+        "commandsIssued": 2
+      }
+    },
+    {
+      "profile": "stress",
+      "batch": 20,
+      "match": true,
+      "prior": {
+        "initialChecksum": "6304954b1abca61b",
+        "checksum": "b1b6d6d66a418434",
+        "finalTick": 20,
+        "units": 77,
+        "projectiles": 0,
+        "shots": 52,
+        "kills": 3,
+        "commandsIssued": 2
+      },
+      "current": {
+        "initialChecksum": "6304954b1abca61b",
+        "checksum": "b1b6d6d66a418434",
+        "finalTick": 20,
+        "units": 77,
+        "projectiles": 0,
+        "shots": 52,
+        "kills": 3,
+        "commandsIssued": 2
+      }
+    },
+    {
+      "profile": "stress",
+      "batch": 50,
+      "match": true,
+      "prior": {
+        "initialChecksum": "6304954b1abca61b",
+        "checksum": "7f43c89565faa97d",
+        "finalTick": 50,
+        "units": 77,
+        "projectiles": 1,
+        "shots": 76,
+        "kills": 3,
+        "commandsIssued": 2
+      },
+      "current": {
+        "initialChecksum": "6304954b1abca61b",
+        "checksum": "7f43c89565faa97d",
+        "finalTick": 50,
+        "units": 77,
+        "projectiles": 1,
+        "shots": 76,
+        "kills": 3,
+        "commandsIssued": 2
+      }
+    },
+    {
+      "profile": "stress",
+      "batch": 100,
+      "match": true,
+      "prior": {
+        "initialChecksum": "6304954b1abca61b",
+        "checksum": "f2ebf1b38061a80f",
+        "finalTick": 100,
+        "units": 72,
+        "projectiles": 0,
+        "shots": 108,
+        "kills": 8,
+        "commandsIssued": 2
+      },
+      "current": {
+        "initialChecksum": "6304954b1abca61b",
+        "checksum": "f2ebf1b38061a80f",
+        "finalTick": 100,
+        "units": 72,
+        "projectiles": 0,
+        "shots": 108,
+        "kills": 8,
+        "commandsIssued": 2
+      }
+    }
+  ],
+  "allMatch": true
+}

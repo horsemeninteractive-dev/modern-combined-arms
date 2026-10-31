@@ -1,0 +1,1134 @@
+{
+  "test": {
+    "label": "phase2a12-dry6",
+    "base": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev",
+    "isMain": false,
+    "targetMs": 80000,
+    "startedAt": "2026-10-30T22:53:17.572Z",
+    "endedAt": "2026-10-30T22:54:47.463Z",
+    "wallElapsedMs": 89891,
+    "intervalMs": 30000,
+    "commandEveryMs": 5000,
+    "productionEveryMs": 180000,
+    "statusPollMs": 10000,
+    "fastStatusPollMs": 250,
+    "restartOffsets": [
+      10000,
+      40000
+    ],
+    "restartAges": [
+      1500,
+      12500
+    ],
+    "evidenceDir": "staging-evidence\\phase2a12-dry6-2026-10-30T22-53-16-754Z"
+  },
+  "health": {
+    "ok": true,
+    "onlineEnabled": true,
+    "devMode": true,
+    "adminConfigured": true,
+    "reservationConfigured": true,
+    "protocol": "mca.v2",
+    "snapshotVersion": 2,
+    "build": "phase2a11-staging"
+  },
+  "room": {
+    "roomId": "phase2a12-dry6-mvvkj37a",
+    "mode": "1v1",
+    "protocol": 2,
+    "matchDurationMs": 90000,
+    "matchDeadlineAt": 1793400887420,
+    "seats": [
+      {
+        "seatId": 0,
+        "playerId": 0,
+        "team": 0
+      },
+      {
+        "seatId": 1,
+        "playerId": 1,
+        "team": 1
+      }
+    ]
+  },
+  "results": [
+    {
+      "outcome": "victory",
+      "winnerTeam": 0,
+      "reason": "time-limit",
+      "tick": 1496
+    },
+    {
+      "outcome": "defeat",
+      "winnerTeam": 0,
+      "reason": "time-limit",
+      "tick": 1496
+    }
+  ],
+  "resultAtMs": 89817,
+  "abortReason": null,
+  "server": {
+    "phase": "finished",
+    "tick": 1496,
+    "startedAtMs": 1793400797556,
+    "finishedAtMs": 1793400887420,
+    "elapsedMs": 89864,
+    "expectedTicksAt20Hz": 1797,
+    "actualTicks": 1496,
+    "effectiveHz": 16.647378260482505,
+    "stats": {
+      "ticks": 1496,
+      "processTicks": 596,
+      "snapshots": 600,
+      "syncs": 6,
+      "deltas": 594,
+      "outboundBytes": 964087,
+      "inboundMessages": 20,
+      "connectionsAccepted": 2,
+      "commandsAccepted": 13,
+      "commandsRejected": 1,
+      "heartbeatCount": 1,
+      "approxRequests": 8
+    },
+    "diagnostics": {
+      "version": 1,
+      "clock": "performance.now",
+      "clockAdvanced": false,
+      "timerNote": "Deployed Workers freeze timer APIs during CPU-only work as a Spectre mitigation. Zero durations mean the clock did not advance, not that the work took no time.",
+      "enabled": true,
+      "startedAt": 1793400857588,
+      "activatedAt": 1793400797412,
+      "closedAt": 1793400887420,
+      "closedReason": "match-finished",
+      "tick": {
+        "count": 596,
+        "totalMs": 0,
+        "simulationMs": 0,
+        "otherWorkMs": 0,
+        "errors": 0,
+        "lastError": null,
+        "durationsAvailable": false,
+        "duration": {
+          "count": 596,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "p99": 0,
+          "p999": 0,
+          "max": 0,
+          "mean": 0,
+          "sum": 0,
+          "over10": 0,
+          "over50": 0,
+          "bucketWidth": 0.1,
+          "overflow": 0
+        },
+        "simulation": {
+          "count": 596,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "p99": 0,
+          "p999": 0,
+          "max": 0,
+          "mean": 0,
+          "sum": 0,
+          "over10": 0,
+          "over50": 0,
+          "bucketWidth": 0.1,
+          "overflow": 0
+        }
+      },
+      "snapshots": {
+        "total": 600,
+        "bytes": 961925,
+        "bytesMethod": "utf16-code-units",
+        "perSeat": [
+          {
+            "seat": 0,
+            "count": 300,
+            "bytes": 528037,
+            "size": {
+              "count": 300,
+              "min": 394,
+              "p50": 1152,
+              "p90": 2432,
+              "p95": 2688,
+              "p99": 3456,
+              "p999": 60800,
+              "max": 60925,
+              "mean": 1760.1233333333332,
+              "sum": 528037,
+              "over10": 300,
+              "over50": 300,
+              "bucketWidth": 256,
+              "overflow": 0
+            },
+            "serialization": {
+              "count": 300,
+              "min": 0,
+              "p50": 0,
+              "p90": 0,
+              "p95": 0,
+              "p99": 0,
+              "p999": 0,
+              "max": 0,
+              "mean": 0,
+              "sum": 0,
+              "over10": 0,
+              "over50": 0,
+              "bucketWidth": 0.1,
+              "overflow": 0
+            }
+          },
+          {
+            "seat": 1,
+            "count": 300,
+            "bytes": 433888,
+            "size": {
+              "count": 300,
+              "min": 408,
+              "p50": 896,
+              "p90": 1920,
+              "p95": 2432,
+              "p99": 3200,
+              "p999": 61806,
+              "max": 61806,
+              "mean": 1446.2933333333333,
+              "sum": 433888,
+              "over10": 300,
+              "over50": 300,
+              "bucketWidth": 256,
+              "overflow": 0
+            },
+            "serialization": {
+              "count": 300,
+              "min": 0,
+              "p50": 0,
+              "p90": 0,
+              "p95": 0,
+              "p99": 0,
+              "p999": 0,
+              "max": 0,
+              "mean": 0,
+              "sum": 0,
+              "over10": 0,
+              "over50": 0,
+              "bucketWidth": 0.1,
+              "overflow": 0
+            }
+          }
+        ],
+        "serialization": {
+          "count": 600,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "p99": 0,
+          "p999": 0,
+          "max": 0,
+          "mean": 0,
+          "sum": 0,
+          "over10": 0,
+          "over50": 0,
+          "bucketWidth": 0.1,
+          "overflow": 0
+        },
+        "durationsAvailable": false,
+        "failures": {
+          "serialization": 0,
+          "send": 0,
+          "controlSend": 0,
+          "slowClient": 0
+        }
+      },
+      "lifecycle": {
+        "connectionsAccepted": 2,
+        "seatConnects": [
+          1,
+          1
+        ],
+        "seatDisconnects": [
+          1,
+          1
+        ],
+        "reconnectAttempts": 2,
+        "reconnectSuccesses": 2,
+        "reconnectRejections": 0,
+        "socketRejections": {},
+        "deadlineHits": 1,
+        "abnormalShutdowns": 0
+      },
+      "keepalive": {
+        "received": 2,
+        "acked": 2,
+        "rateLimited": 0
+      },
+      "sync": {
+        "count": 6,
+        "bytes": 280216,
+        "perSeat": [
+          3,
+          3
+        ]
+      },
+      "delta": {
+        "count": 594,
+        "bytes": 681709,
+        "perSeat": [
+          297,
+          297
+        ],
+        "size": {
+          "count": 594,
+          "min": 394,
+          "p50": 800,
+          "p90": 2144,
+          "p95": 2464,
+          "p99": 2848,
+          "p999": 3488,
+          "max": 3506,
+          "mean": 1147.6582491582492,
+          "sum": 681709,
+          "over10": 594,
+          "over50": 594,
+          "bucketWidth": 64,
+          "overflow": 0
+        }
+      },
+      "resync": {
+        "requested": 4,
+        "accepted": 2,
+        "rejected": 2,
+        "lastRejection": "resync-rate-limited"
+      },
+      "socket": {
+        "maxBufferedBytes": [
+          0,
+          0
+        ],
+        "lastBufferedBytes": [
+          0,
+          0
+        ]
+      },
+      "reservations": {
+        "heartbeatSuccesses": 1,
+        "heartbeatFailures": 0,
+        "releaseSuccesses": 1,
+        "releaseFailures": 0,
+        "lastFailureCode": null
+      },
+      "persistence": {
+        "reads": 11,
+        "writes": 25,
+        "deletes": 18,
+        "readBytes": 520906,
+        "writeBytes": 774841,
+        "snapshotCycles": 3,
+        "metaCycles": 3,
+        "loadCycles": 1,
+        "failures": 0,
+        "lastSuccessAt": 1793400887476,
+        "lastFailureAt": null,
+        "lastFailureKind": null,
+        "lastFailure": null,
+        "chunksWritten": 18,
+        "lastSnapshotBytes": 255321,
+        "maxSnapshotBytes": 260474,
+        "maxCycleMs": 0,
+        "durationsAvailable": false,
+        "cycleDuration": {
+          "count": 7,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "p99": 0,
+          "p999": 0,
+          "max": 0,
+          "mean": 0,
+          "sum": 0,
+          "over10": 0,
+          "over50": 0,
+          "bucketWidth": 1,
+          "overflow": 0
+        },
+        "operationDuration": {
+          "count": 54,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "p99": 0,
+          "p999": 0,
+          "max": 0,
+          "mean": 0,
+          "sum": 0,
+          "over10": 0,
+          "over50": 0,
+          "bucketWidth": 1,
+          "overflow": 0
+        },
+        "ageSinceSuccessMs": 61,
+        "behind": false
+      }
+    },
+    "result": {
+      "phase": "finished",
+      "winnerTeam": 0,
+      "reason": "time-limit",
+      "teams": [
+        {
+          "team": 0,
+          "playerIds": [
+            0
+          ],
+          "defeated": false,
+          "score": 4552.9
+        },
+        {
+          "team": 1,
+          "playerIds": [
+            1
+          ],
+          "defeated": false,
+          "score": 3740
+        }
+      ],
+      "tick": 1496
+    }
+  },
+  "reservation": {
+    "reservationId": "r223",
+    "status": "released",
+    "hardDeadlineAt": 1793400887420
+  },
+  "closed": true,
+  "restarts": [
+    {
+      "index": 0,
+      "scheduledAgeMs": 1500,
+      "checkpointObservedAt": 1793400812540,
+      "checkpointObservedAtIso": "2026-10-30T22:53:32.540Z",
+      "checkpointAgeAtRequestMs": 1583,
+      "checkpointAgeAtAbortApproxMs": 1667,
+      "ageSinceAnyPersistenceSuccessMs": 1581,
+      "lastSuccessAt": 1793400812556,
+      "lastSuccessAtIso": "2026-10-30T22:53:32.556Z",
+      "lastCheckpointTick": 300,
+      "snapshotCyclesBefore": 3,
+      "snapshotCyclesAfterRestore": 1,
+      "preTick": 331,
+      "preEpochs": [
+        1,
+        1
+      ],
+      "preSeqs": [
+        166,
+        166
+      ],
+      "restoredSnapshotTick": 299,
+      "restoredTotalTicks": 299,
+      "restoredProcessTicks": 0,
+      "restoredAtIso": "2026-10-30T22:53:34.522Z",
+      "postRestartTickAfterChecks": 305,
+      "processTicksAfterChecks": 6,
+      "rollbackTicks": 32,
+      "rollbackMs": 1600,
+      "withinCheckpointInterval": true,
+      "restartRequestedAt": "2026-10-30T22:53:34.123Z",
+      "restartResponseAt": "2026-10-30T22:53:34.157Z",
+      "socketsClosedAt": [
+        "2026-10-30T22:53:34.216Z",
+        "2026-10-30T22:53:34.219Z"
+      ],
+      "closedAfterRequestMs": [
+        93,
+        96
+      ],
+      "restoredStatusAfterCloseMs": 303,
+      "reconnect": [
+        {
+          "seat": 0,
+          "connectMs": 90,
+          "firstSyncAt": 1793400814609,
+          "firstSyncMsAfterClose": 390,
+          "firstSyncTick": 301,
+          "firstSyncEpoch": 1026,
+          "firstSyncSeq": 151,
+          "firstSyncHadMap": true,
+          "firstSyncFogTiles": 6912,
+          "firstSyncStateTick": 301,
+          "firstDeltaAt": 1793400814655,
+          "firstDeltaMsAfterSync": 46,
+          "firstDeltaTick": 302,
+          "firstDeltaEpoch": 1026,
+          "firstCommandAt": 1793400814702,
+          "firstCommandMsAfterSync": 93,
+          "firstCommandAccepted": true,
+          "firstCommandTick": 302,
+          "resyncAcceptedAt": 1793400814741,
+          "resyncRateLimitedAt": 1793400814755,
+          "resyncSyncEpoch": 1027,
+          "staleSyncReject": {
+            "ok": false,
+            "reason": "epoch-mismatch",
+            "detail": "Sync epoch did not advance."
+          },
+          "staleDeltaReject": {
+            "ok": false,
+            "reason": "epoch-mismatch",
+            "detail": "Delta belongs to another sync generation."
+          },
+          "stateTickAfterRecovery": 304
+        },
+        {
+          "seat": 1,
+          "connectMs": 103,
+          "firstSyncAt": 1793400814627,
+          "firstSyncMsAfterClose": 408,
+          "firstSyncTick": 301,
+          "firstSyncEpoch": 1026,
+          "firstSyncSeq": 151,
+          "firstSyncHadMap": true,
+          "firstSyncFogTiles": 6912,
+          "firstSyncStateTick": 301,
+          "firstDeltaAt": 1793400814657,
+          "firstDeltaMsAfterSync": 30,
+          "firstDeltaTick": 302,
+          "firstDeltaEpoch": 1026,
+          "firstCommandAt": 1793400814717,
+          "firstCommandMsAfterSync": 90,
+          "firstCommandAccepted": true,
+          "firstCommandTick": 303,
+          "resyncAcceptedAt": 1793400814793,
+          "resyncRateLimitedAt": 1793400814808,
+          "resyncSyncEpoch": 1027,
+          "staleSyncReject": {
+            "ok": false,
+            "reason": "epoch-mismatch",
+            "detail": "Sync epoch did not advance."
+          },
+          "staleDeltaReject": {
+            "ok": false,
+            "reason": "epoch-mismatch",
+            "detail": "Delta belongs to another sync generation."
+          },
+          "stateTickAfterRecovery": 304
+        }
+      ],
+      "postRestartCommands": [
+        {
+          "seat": 0,
+          "accepted": true,
+          "tick": 302
+        },
+        {
+          "seat": 1,
+          "accepted": true,
+          "tick": 303
+        }
+      ],
+      "postCheckpointCommands": [
+        {
+          "seat": 0,
+          "purpose": "move",
+          "commandType": "move",
+          "accepted": true,
+          "tick": 331
+        },
+        {
+          "seat": 1,
+          "purpose": "move",
+          "commandType": "move",
+          "accepted": true,
+          "tick": 332
+        }
+      ],
+      "startContinuity": {
+        "before": 1793400797556,
+        "after": 1793400797556,
+        "deadlineBefore": 1793400887420,
+        "deadlineAfter": 1793400887420
+      },
+      "rejectedUpdates": 0,
+      "lastReject": null
+    },
+    {
+      "index": 1,
+      "scheduledAgeMs": 12500,
+      "checkpointObservedAt": 1793400844622,
+      "checkpointObservedAtIso": "2026-10-30T22:54:04.622Z",
+      "checkpointAgeAtRequestMs": 12596,
+      "checkpointAgeAtAbortApproxMs": 12676,
+      "ageSinceAnyPersistenceSuccessMs": 2590,
+      "lastSuccessAt": 1793400844637,
+      "lastSuccessAtIso": "2026-10-30T22:54:04.637Z",
+      "lastCheckpointTick": 901,
+      "snapshotCyclesBefore": 3,
+      "snapshotCyclesAfterRestore": 1,
+      "preTick": 1153,
+      "preEpochs": [
+        1027,
+        1027
+      ],
+      "preSeqs": [
+        578,
+        578
+      ],
+      "restoredSnapshotTick": 900,
+      "restoredTotalTicks": 900,
+      "restoredProcessTicks": 0,
+      "restoredAtIso": "2026-10-30T22:54:17.607Z",
+      "postRestartTickAfterChecks": 907,
+      "processTicksAfterChecks": 7,
+      "rollbackTicks": 253,
+      "rollbackMs": 12650,
+      "withinCheckpointInterval": true,
+      "restartRequestedAt": "2026-10-30T22:54:17.218Z",
+      "restartResponseAt": "2026-10-30T22:54:17.248Z",
+      "socketsClosedAt": [
+        "2026-10-30T22:54:17.300Z",
+        "2026-10-30T22:54:17.298Z"
+      ],
+      "closedAfterRequestMs": [
+        82,
+        80
+      ],
+      "restoredStatusAfterCloseMs": 307,
+      "reconnect": [
+        {
+          "seat": 0,
+          "connectMs": 87,
+          "firstSyncAt": 1793400857689,
+          "firstSyncMsAfterClose": 389,
+          "firstSyncTick": 902,
+          "firstSyncEpoch": 2052,
+          "firstSyncSeq": 453,
+          "firstSyncHadMap": true,
+          "firstSyncFogTiles": 6912,
+          "firstSyncStateTick": 902,
+          "firstDeltaAt": 1793400857780,
+          "firstDeltaMsAfterSync": 91,
+          "firstDeltaTick": 904,
+          "firstDeltaEpoch": 2052,
+          "firstCommandAt": 1793400857821,
+          "firstCommandMsAfterSync": 132,
+          "firstCommandAccepted": true,
+          "firstCommandTick": 904,
+          "resyncAcceptedAt": 1793400857864,
+          "resyncRateLimitedAt": 1793400857878,
+          "resyncSyncEpoch": 2053,
+          "staleSyncReject": {
+            "ok": false,
+            "reason": "epoch-mismatch",
+            "detail": "Sync epoch did not advance."
+          },
+          "staleDeltaReject": {
+            "ok": false,
+            "reason": "epoch-mismatch",
+            "detail": "Delta belongs to another sync generation."
+          },
+          "stateTickAfterRecovery": 906
+        },
+        {
+          "seat": 1,
+          "connectMs": 93,
+          "firstSyncAt": 1793400857697,
+          "firstSyncMsAfterClose": 397,
+          "firstSyncTick": 902,
+          "firstSyncEpoch": 2052,
+          "firstSyncSeq": 453,
+          "firstSyncHadMap": true,
+          "firstSyncFogTiles": 6912,
+          "firstSyncStateTick": 902,
+          "firstDeltaAt": 1793400857779,
+          "firstDeltaMsAfterSync": 82,
+          "firstDeltaTick": 904,
+          "firstDeltaEpoch": 2052,
+          "firstCommandAt": 1793400857844,
+          "firstCommandMsAfterSync": 147,
+          "firstCommandAccepted": true,
+          "firstCommandTick": 905,
+          "resyncAcceptedAt": 1793400857899,
+          "resyncRateLimitedAt": 1793400857913,
+          "resyncSyncEpoch": 2053,
+          "staleSyncReject": {
+            "ok": false,
+            "reason": "epoch-mismatch",
+            "detail": "Sync epoch did not advance."
+          },
+          "staleDeltaReject": {
+            "ok": false,
+            "reason": "epoch-mismatch",
+            "detail": "Delta belongs to another sync generation."
+          },
+          "stateTickAfterRecovery": 906
+        }
+      ],
+      "postRestartCommands": [
+        {
+          "seat": 0,
+          "accepted": true,
+          "tick": 904
+        },
+        {
+          "seat": 1,
+          "accepted": true,
+          "tick": 905
+        }
+      ],
+      "postCheckpointCommands": [
+        {
+          "seat": 0,
+          "purpose": "attack",
+          "commandType": "attack",
+          "accepted": true,
+          "tick": 1153
+        },
+        {
+          "seat": 1,
+          "purpose": "attack",
+          "commandType": "attack",
+          "accepted": true,
+          "tick": 1153
+        }
+      ],
+      "startContinuity": {
+        "before": 1793400797556,
+        "after": 1793400797556,
+        "deadlineBefore": 1793400887420,
+        "deadlineAfter": 1793400887420
+      },
+      "rejectedUpdates": 0,
+      "lastReject": null
+    }
+  ],
+  "snapshots": [
+    {
+      "seat": 0,
+      "count": 896,
+      "bytes": 1803834,
+      "frequencyHz": 9.967627459923685,
+      "sizes": {
+        "count": 896,
+        "p50": 1717,
+        "p95": 3082,
+        "p99": 3679,
+        "max": 60925,
+        "min": 372,
+        "mean": 2013.2075892857142
+      },
+      "gaps": {
+        "count": 895,
+        "p50": 100,
+        "p95": 106,
+        "p99": 207,
+        "max": 487,
+        "min": 0,
+        "mean": 100.38882681564246
+      },
+      "longestGapMs": 487,
+      "firstTick": 0,
+      "lastTick": 1496,
+      "tickDeltas": {
+        "1": 5,
+        "2": 887
+      }
+    },
+    {
+      "seat": 1,
+      "count": 896,
+      "bytes": 1670679,
+      "frequencyHz": 9.967627459923685,
+      "sizes": {
+        "count": 896,
+        "p50": 1447,
+        "p95": 3163,
+        "p99": 4544,
+        "max": 61806,
+        "min": 386,
+        "mean": 1864.5970982142858
+      },
+      "gaps": {
+        "count": 895,
+        "p50": 100,
+        "p95": 106,
+        "p99": 200,
+        "max": 505,
+        "min": 0,
+        "mean": 100.36424581005586
+      },
+      "longestGapMs": 505,
+      "firstTick": 0,
+      "lastTick": 1496,
+      "tickDeltas": {
+        "1": 1,
+        "2": 889
+      }
+    }
+  ],
+  "protocol": {
+    "version": 2,
+    "syncs": [
+      6,
+      6
+    ],
+    "deltas": [
+      890,
+      890
+    ],
+    "syncBytes": [
+      318252,
+      318912
+    ],
+    "deltaBytes": [
+      1485582,
+      1351767
+    ],
+    "firstSyncBytes": [
+      58975,
+      58969
+    ],
+    "syncMapBytes": [
+      208985,
+      208985
+    ],
+    "syncFogBytes": [
+      82950,
+      82950
+    ],
+    "deltaMapBytes": 0,
+    "deltaSize": [
+      {
+        "count": 890,
+        "p50": 1697,
+        "p95": 3048,
+        "p99": 3375,
+        "max": 4796,
+        "min": 372,
+        "mean": 1669.1932584269664
+      },
+      {
+        "count": 890,
+        "p50": 1436,
+        "p95": 3100,
+        "p99": 3916,
+        "max": 5643,
+        "min": 386,
+        "mean": 1518.8393258426966
+      }
+    ],
+    "fogEntries": [
+      1602,
+      2405
+    ],
+    "deltaFieldBytes": [
+      {
+        "players": 232591,
+        "entities": 965415,
+        "events": 83935,
+        "fog": 15309,
+        "charted": 10,
+        "contacts": 15927,
+        "projectiles": 26682,
+        "result": 9827
+      },
+      {
+        "players": 245051,
+        "entities": 774623,
+        "events": 81239,
+        "fog": 22500,
+        "charted": 35,
+        "projectiles": 26672,
+        "result": 17759,
+        "contacts": 48759
+      }
+    ],
+    "epochs": [
+      2054,
+      2054
+    ],
+    "resyncRequests": [
+      0,
+      0
+    ],
+    "rejectedUpdates": 0,
+    "lastReject": null
+  },
+  "reconstruction": {
+    "ready": [
+      true,
+      true
+    ],
+    "epoch": [
+      2054,
+      2054
+    ],
+    "seq": [
+      752,
+      752
+    ],
+    "tick": [
+      1496,
+      1496
+    ],
+    "phase": [
+      "finished",
+      "finished"
+    ],
+    "entities": [
+      11,
+      8
+    ],
+    "fogTiles": [
+      6912,
+      6912
+    ],
+    "mapTiles": [
+      6912,
+      6912
+    ],
+    "serverTick": 1496,
+    "serverPhase": "finished",
+    "tickMatches": true,
+    "outcomesMatch": true
+  },
+  "stateSamples": [
+    {
+      "seat": 0,
+      "at": "2026-10-30T22:53:17.547Z",
+      "tick": 0,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3000,
+      "breakdown": {
+        "total": 58855,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2684,
+        "players": 206,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.710169059553139,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T22:53:17.569Z",
+      "tick": 0,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3000,
+      "breakdown": {
+        "total": 58849,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 220,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7102414654454621,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T22:54:17.693Z",
+      "tick": 902,
+      "entities": 15,
+      "ownUnits": 8,
+      "visibleEnemies": 3,
+      "materials": 2745.100000000164,
+      "breakdown": {
+        "total": 60798,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 4239,
+        "players": 251,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 334,
+        "mapRatio": 0.6874732721471101,
+        "units": 11,
+        "buildings": 4,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T22:54:17.700Z",
+      "tick": 902,
+      "entities": 18,
+      "ownUnits": 7,
+      "visibleEnemies": 5,
+      "materials": 2745.100000000164,
+      "breakdown": {
+        "total": 61679,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 4757,
+        "players": 265,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 668,
+        "mapRatio": 0.6776536584574977,
+        "units": 12,
+        "buildings": 6,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    }
+  ],
+  "commands": {
+    "sent": [
+      22,
+      22
+    ],
+    "accepted": [
+      22,
+      21
+    ],
+    "rejected": [
+      0,
+      1
+    ],
+    "timeouts": [
+      0,
+      0
+    ],
+    "byType": [
+      {
+        "move": 10,
+        "produce": 1,
+        "attack": 11
+      },
+      {
+        "move": 10,
+        "produce": 1,
+        "attack": 11
+      }
+    ],
+    "rejectionByCode": {
+      "no-capable-attacker": 1
+    },
+    "latencyMs": {
+      "count": 44,
+      "p50": 13,
+      "p95": 16,
+      "p99": 54,
+      "max": 54,
+      "min": 11,
+      "mean": 14.113636363636363
+    },
+    "ackAnomalies": 0
+  },
+  "socketCloses": [
+    {
+      "at": "2026-10-30T22:53:34.214Z",
+      "seat": 0,
+      "code": null,
+      "reason": ""
+    },
+    {
+      "at": "2026-10-30T22:53:34.217Z",
+      "seat": 1,
+      "code": null,
+      "reason": ""
+    },
+    {
+      "at": "2026-10-30T22:54:17.296Z",
+      "seat": 1,
+      "code": null,
+      "reason": ""
+    },
+    {
+      "at": "2026-10-30T22:54:17.299Z",
+      "seat": 0,
+      "code": null,
+      "reason": ""
+    },
+    {
+      "at": "2026-10-30T22:54:47.390Z",
+      "seat": 0,
+      "code": 1000,
+      "reason": "match-finished"
+    },
+    {
+      "at": "2026-10-30T22:54:47.397Z",
+      "seat": 1,
+      "code": 1000,
+      "reason": "match-finished"
+    }
+  ],
+  "reconnects": {
+    "counts": [
+      0,
+      0
+    ],
+    "attempts": [
+      0,
+      0
+    ],
+    "failures": [
+      0,
+      0
+    ]
+  },
+  "keepalive": {
+    "sent": [
+      3,
+      3
+    ],
+    "acked": [
+      3,
+      3
+    ],
+    "server": {
+      "received": 2,
+      "acked": 2,
+      "rateLimited": 0
+    }
+  },
+  "checkpoints": {
+    "observed": 8,
+    "last": {
+      "snapshotCycles": 3,
+      "lastSuccessAt": 1793400887476,
+      "observedAt": 1793400887460,
+      "totalTicks": 1496,
+      "processTicks": 596,
+      "ageSinceSuccessMs": 14
+    }
+  },
+  "errors": [],
+  "clientMemory": {
+    "note": "Node client heap only; not server memory.",
+    "heapUsedMb": 19.6,
+    "rssMb": 94.2
+  }
+}

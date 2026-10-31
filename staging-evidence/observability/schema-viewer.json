@@ -1,0 +1,1 @@
+{"data":{"__type":{"fields":[{"name":"accounts","type":{"kind":"NON_NULL","name":"","ofType":{"name":""}}},{"name":"budget","type":{"kind":"NON_NULL","name":"","ofType":{"name":"uint64"}}},{"name":"organizations","type":{"kind":"NON_NULL","name":"","ofType":{"name":""}}},{"name":"zones","type":{"kind":"NON_NULL","name":"","ofType":{"name":""}}}]}},"errors":null}

@@ -1,0 +1,36 @@
+{
+  // Isolated phase-0 prototype. This Worker is not referenced by the game,
+  // Pages deployment or release script. Run it with:
+  //   npx wrangler@4 dev --config phase0/wrangler.jsonc --port 8787 --local
+  "$schema": "https://unpkg.com/wrangler/config-schema.json",
+  "name": "mca-phase0-rooms",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-01",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "PHASE0_ROOM",
+        "class_name": "Phase0Room"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "phase0-v1",
+      "new_sqlite_classes": ["Phase0Room"]
+    }
+  ],
+  "vars": {
+    "PHASE0_JOIN_TOKEN": "phase0-local-token",
+    "PHASE0_ALLOW_NO_ORIGIN": "1",
+    "PHASE0_ALLOWED_ORIGINS": "http://localhost:8787,http://127.0.0.1:8787,http://localhost:8788,http://127.0.0.1:8788",
+    "PHASE0_MAX_CONNECTIONS": "4",
+    "PHASE0_REQUEST_BUDGET": "100000",
+    "PHASE0_SEED": "773311",
+    "PHASE0_STRESS": "0",
+    "PHASE0_AI": "0"
+  },
+  "observability": {
+    "enabled": true
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "at": "2026-10-30T22:19:38.533Z",
+  "base": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev",
+  "tests": {
+    "reconnect": {
+      "roomId": "reconnect-mvvjbtt1",
+      "matchDurationMs": 60000,
+      "matchDeadlineAt": 1793398839089,
+      "passed": true,
+      "hello": {
+        "seat": 0,
+        "team": 0,
+        "phase": "playing"
+      },
+      "sync": {
+        "epoch": 2,
+        "seq": 2,
+        "tick": 26,
+        "checkpoint": false
+      },
+      "nextDelta": {
+        "epoch": 2,
+        "seq": 3,
+        "base": 2
+      },
+      "recoveryMs": 89,
+      "closed": true,
+      "reservation": "released"
+    },
+    "abandon": {
+      "roomId": "abandon-mvvjbvof",
+      "matchDurationMs": 90000,
+      "matchDeadlineAt": 1793398871279,
+      "passed": true,
+      "outcome": "victory",
+      "winnerTeam": 0,
+      "reason": "abandoned",
+      "observedAfterMs": 30091,
+      "closed": true,
+      "reservation": "released"
+    },
+    "shutdown": {
+      "roomId": "shutdown-mvvjcjb1",
+      "matchDurationMs": 60000,
+      "matchDeadlineAt": 1793398872250,
+      "passed": true,
+      "shutdownStatus": 200,
+      "clientCode": "room-shutdown",
+      "closed": true,
+      "reservation": "released"
+    },
+    "deadline": {
+      "roomId": "deadline-mvvjckax",
+      "matchDurationMs": 10000,
+      "matchDeadlineAt": 1793398823261,
+      "passed": true,
+      "outcomes": [
+        "draw",
+        "draw"
+      ],
+      "serverTick": 194,
+      "elapsedMs": 9742,
+      "closed": true,
+      "reservation": "released"
+    },
+    "resync": {
+      "roomId": "resync-mvvjcse8",
+      "matchDurationMs": 60000,
+      "matchDeadlineAt": 1793398883698,
+      "passed": true,
+      "before": {
+        "epoch": 1,
+        "seq": 1
+      },
+      "after": {
+        "epoch": 2,
+        "seq": 2,
+        "tick": 0
+      },
+      "nextDelta": {
+        "epoch": 2,
+        "seq": 3,
+        "base": 2
+      },
+      "recoveryMs": 21,
+      "closed": true,
+      "reservation": "released"
+    },
+    "capacity": {
+      "passed": true,
+      "statuses": [
+        200,
+        200,
+        503,
+        200
+      ],
+      "rejectedCode": "capacity-full",
+      "aReservation": "released",
+      "freedStatus": 200,
+      "freedCode": null
+    }
+  },
+  "passed": true
+}

@@ -1,0 +1,480 @@
+{
+  "stageCalls": [
+    {
+      "stage": "first-tick-stress",
+      "ticksPerRep": 1,
+      "checksumAfter": "87f80cac6f36c97b",
+      "functions": {
+        "findPath": {
+          "calls": 44,
+          "callsPerTick": 44,
+          "files": [
+            "src/sim/pathfinding.ts"
+          ]
+        },
+        "nearestWalkable": {
+          "calls": 144,
+          "callsPerTick": 144,
+          "files": [
+            "src/sim/pathfinding.ts"
+          ]
+        },
+        "stepCost": {
+          "calls": 10388,
+          "callsPerTick": 10388,
+          "files": [
+            "src/sim/pathfinding.ts"
+          ]
+        },
+        "diagonalBlocked": {
+          "calls": 648,
+          "callsPerTick": 648,
+          "files": [
+            "src/sim/pathfinding.ts"
+          ]
+        },
+        "lineClear": {
+          "calls": 82,
+          "callsPerTick": 82,
+          "files": [
+            "src/sim/pathfinding.ts"
+          ]
+        },
+        "smoothPath": {
+          "calls": 72,
+          "callsPerTick": 72,
+          "files": [
+            "src/sim/pathfinding.ts"
+          ]
+        },
+        "push": {
+          "calls": 5225,
+          "callsPerTick": 5225,
+          "files": [
+            "src/sim/pathfinding.ts"
+          ]
+        },
+        "pop": {
+          "calls": 3019,
+          "callsPerTick": 3019,
+          "files": [
+            "src/sim/pathfinding.ts"
+          ]
+        },
+        "navFor": {
+          "calls": 72,
+          "callsPerTick": 72,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "commandMove": {
+          "calls": 2,
+          "callsPerTick": 2,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "formationPoints": {
+          "calls": 2,
+          "callsPerTick": 2,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "updateUnits": {
+          "calls": 1,
+          "callsPerTick": 1,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "updateAutoEngagement": {
+          "calls": 78,
+          "callsPerTick": 78,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "separateUnits": {
+          "calls": 1,
+          "callsPerTick": 1,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "steerAroundUnits": {
+          "calls": 72,
+          "callsPerTick": 72,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "canOccupy": {
+          "calls": 132,
+          "callsPerTick": 132,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "unitClearAt": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "hasLineOfSight": {
+          "calls": 549,
+          "callsPerTick": 549,
+          "files": [
+            "src/sim/combat.ts"
+          ]
+        },
+        "stampVision": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "refreshVision": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "refreshVisibleEntities": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "updateProjectiles": {
+          "calls": 1,
+          "callsPerTick": 1,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "impact": {
+          "calls": 8,
+          "callsPerTick": 8,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "cleanup": {
+          "calls": 1,
+          "callsPerTick": 1,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "stateHash": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        }
+      }
+    },
+    {
+      "stage": "first-tick-stress-no-commands",
+      "ticksPerRep": 1,
+      "checksumAfter": "d4c2a93bd395a6c9",
+      "functions": {
+        "findPath": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "nearestWalkable": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "stepCost": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "diagonalBlocked": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "lineClear": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "smoothPath": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "push": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "pop": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "navFor": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "commandMove": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "formationPoints": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "updateUnits": {
+          "calls": 1,
+          "callsPerTick": 1,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "updateAutoEngagement": {
+          "calls": 78,
+          "callsPerTick": 78,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "separateUnits": {
+          "calls": 1,
+          "callsPerTick": 1,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "steerAroundUnits": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "canOccupy": {
+          "calls": 30,
+          "callsPerTick": 30,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "unitClearAt": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "hasLineOfSight": {
+          "calls": 258,
+          "callsPerTick": 258,
+          "files": [
+            "src/sim/combat.ts"
+          ]
+        },
+        "stampVision": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "refreshVision": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "refreshVisibleEntities": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "updateProjectiles": {
+          "calls": 1,
+          "callsPerTick": 1,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "impact": {
+          "calls": 7,
+          "callsPerTick": 7,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "cleanup": {
+          "calls": 1,
+          "callsPerTick": 1,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "stateHash": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        }
+      }
+    },
+    {
+      "stage": "steady-batch-20-stress",
+      "ticksPerRep": 20,
+      "checksumAfter": "7f43c89565faa97d",
+      "functions": {
+        "findPath": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "nearestWalkable": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "stepCost": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "diagonalBlocked": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "lineClear": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "smoothPath": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "push": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "pop": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "navFor": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "commandMove": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "formationPoints": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "updateUnits": {
+          "calls": 20,
+          "callsPerTick": 1,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "updateAutoEngagement": {
+          "calls": 1500,
+          "callsPerTick": 75,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "separateUnits": {
+          "calls": 6,
+          "callsPerTick": 0.3,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "steerAroundUnits": {
+          "calls": 281,
+          "callsPerTick": 14.05,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "canOccupy": {
+          "calls": 3087,
+          "callsPerTick": 154.35,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "unitClearAt": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        },
+        "hasLineOfSight": {
+          "calls": 4004,
+          "callsPerTick": 200.2,
+          "files": [
+            "src/sim/combat.ts"
+          ]
+        },
+        "stampVision": {
+          "calls": 68,
+          "callsPerTick": 3.4,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "refreshVision": {
+          "calls": 2,
+          "callsPerTick": 0.1,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "refreshVisibleEntities": {
+          "calls": 4,
+          "callsPerTick": 0.2,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "updateProjectiles": {
+          "calls": 20,
+          "callsPerTick": 1,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "impact": {
+          "calls": 21,
+          "callsPerTick": 1.05,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "cleanup": {
+          "calls": 20,
+          "callsPerTick": 1,
+          "files": [
+            "src/sim/game.ts"
+          ]
+        },
+        "stateHash": {
+          "calls": 0,
+          "callsPerTick": 0,
+          "files": []
+        }
+      }
+    }
+  ]
+}

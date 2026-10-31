@@ -1,0 +1,86 @@
+{
+  "ok": true,
+  "roomId": "main-30m-mvua9p6k",
+  "mode": "1v1",
+  "protocol": 1,
+  "closed": true,
+  "closedReason": "match-finished",
+  "closedAt": 1793324896854,
+  "started": true,
+  "createdAt": 1793323096841,
+  "matchDurationMs": 1800000,
+  "matchDeadlineAt": 1793324896854,
+  "reservation": {
+    "reservationId": "r16",
+    "status": "released",
+    "hardDeadlineAt": 1793324896854
+  },
+  "lastHeartbeatAt": 1793324877098,
+  "heartbeatIntervalMs": 20000,
+  "match": {
+    "phase": "finished",
+    "tick": 35995,
+    "startedAtMs": 1793323097076,
+    "finishedAtMs": 1793324896854,
+    "closedReason": null,
+    "stats": {
+      "ticks": 35995,
+      "snapshots": 35998,
+      "outboundBytes": 2124537809,
+      "inboundMessages": 444,
+      "connectionsAccepted": 2,
+      "commandsAccepted": 443,
+      "commandsRejected": 1,
+      "heartbeatCount": 89,
+      "approxRequests": 118
+    },
+    "result": {
+      "phase": "finished",
+      "winnerTeam": 0,
+      "reason": "time-limit",
+      "teams": [
+        {
+          "team": 0,
+          "playerIds": [
+            0
+          ],
+          "defeated": false,
+          "score": 6196.2
+        },
+        {
+          "team": 1,
+          "playerIds": [
+            1
+          ],
+          "defeated": false,
+          "score": 3300
+        }
+      ],
+      "tick": 35995
+    }
+  },
+  "finalResult": {
+    "phase": "finished",
+    "winnerTeam": 0,
+    "reason": "time-limit",
+    "teams": [
+      {
+        "team": 0,
+        "playerIds": [
+          0
+        ],
+        "defeated": false,
+        "score": 6196.2
+      },
+      {
+        "team": 1,
+        "playerIds": [
+          1
+        ],
+        "defeated": false,
+        "score": 3300
+      }
+    ],
+    "tick": 35995
+  }
+}

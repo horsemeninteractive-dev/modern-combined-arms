@@ -15,6 +15,46 @@ vec4 projectWorld(vec3 world) {
 }
 `;
 
+/**
+ * Fog field shared by every world-space fragment shader.
+ *
+ * The mask is uploaded every third tick, so a single texture made the vision
+ * boundary step on that cadence. Two fields — the previous upload and the new
+ * one — are cross-faded by uFogBlend, which the renderer ramps across exactly
+ * one fog interval. The three authored fog states are preserved: 255 is
+ * visible, 112 is charted but not watched, 0 has never been seen.
+ *
+ * Charted ground is desaturated and cooled rather than only darkened, so
+ * remembered terrain reads as memory instead of as night. `uWorldSize` lives
+ * here because every shader that samples this field is world-projected.
+ */
+const FOG_FIELD = /* glsl */ `
+uniform sampler2D uFogTex;
+uniform sampler2D uFogTexOld;
+uniform float uFogBlend;
+uniform vec2 uWorldSize;
+
+float fogField(vec2 uv) {
+  return mix(texture(uFogTexOld, uv).r, texture(uFogTex, uv).r, uFogBlend);
+}
+float fogSeen(float fog) {
+  return smoothstep(0.66, 0.94, fog);
+}
+float fogCharted(float fog) {
+  return smoothstep(0.12, 0.50, fog);
+}
+vec3 chartedTone(vec3 lit) {
+  float luma = dot(lit, vec3(0.299, 0.587, 0.114));
+  vec3 cool = luma * vec3(0.72, 0.84, 1.06);
+  return mix(vec3(luma), cool, 0.62) * 0.50 + vec3(0.010, 0.019, 0.031);
+}
+vec3 applyFog(vec3 lit, float fog) {
+  vec3 unseen = vec3(0.012, 0.027, 0.038);
+  vec3 seen = mix(unseen, chartedTone(lit), fogCharted(fog));
+  return mix(seen, lit, fogSeen(fog));
+}
+`;
+
 export const MESH_VS = /* glsl */ `#version 300 es
 precision highp float;
 layout(location=0) in vec3 aPos;
@@ -27,6 +67,8 @@ layout(location=6) in float aTexMask;
 layout(location=7) in float aMaterial;
 uniform mat4 uModel;
 uniform float uTime;
+/** World units pulled toward the eye for the occluded-unit silhouette pass. */
+uniform float uDepthPull;
 ${CAMERA}
 out vec3 vNormal;
 out vec3 vColor;
@@ -58,7 +100,13 @@ void main() {
   vWorld = world.xyz;
   vLocal = aPos;
   vMaterial = aMaterial;
-  gl_Position = projectWorld(world.xyz);
+  vec4 clip = projectWorld(world.xyz);
+  // The silhouette pass draws with a GREATER depth test. Pulling it toward the
+  // camera in view depth only — never on screen, the projection is orthographic
+  // — passes just where a surface sits directly in front of the unit, so a
+  // building occludes it but a ridge further down the view does not.
+  clip.z -= (2.0 * uDepthPull) / (uFar - uNear);
+  gl_Position = clip;
 }
 `;
 
@@ -80,11 +128,12 @@ uniform vec3 uTint;
 uniform float uAmbient;
 uniform float uAlpha;
 uniform float uFlash;
-uniform sampler2D uFogTex;
 uniform sampler2D uFlagTex;
 uniform sampler2D uMatLut;
 uniform float uUseFog;
-uniform vec2 uWorldSize;
+/** 1 while drawing the occluded-unit silhouette pass. */
+uniform float uSilhouette;
+${FOG_FIELD}
 out vec4 outColor;
 
 float hash21(vec2 p) {
@@ -113,6 +162,13 @@ float triNoise(vec3 p, vec3 n, float scale) {
 }
 
 void main() {
+  // A unit hidden behind a structure keeps its shape on screen as a flat team
+  // colour. Nothing is lit, textured or fogged here: the pass is a readability
+  // aid, and the caller has already restricted it to units in vision.
+  if (uSilhouette > 0.5) {
+    outColor = vec4(uTeamColor * 0.92 + vec3(0.05, 0.07, 0.08), uAlpha);
+    return;
+  }
   vec3 n = normalize(vNormal);
   vec3 sunDir = normalize(uSun);
   float diffuse = max(dot(n, sunDir), 0.0);
@@ -217,11 +273,10 @@ void main() {
 
   lit += vec3(1.0, 0.86, 0.66) * uFlash;
   // Only the road pass samples fog: roads are ground features, so they are
-  // known where the team has vision, dimmed where the ground was charted and
-  // lost again in ground nobody has ever seen.
-  float fog = uUseFog > 0.5 ? texture(uFogTex, vWorld.xz / uWorldSize).r : 1.0;
-  if (fog < 0.08) lit = mix(vec3(0.012, 0.027, 0.038), lit * 0.12, 0.22);
-  else lit = mix(lit * 0.34, lit, smoothstep(0.18, 0.92, fog));
+  // known where the team has vision, cooled and desaturated where the ground
+  // was charted and lost again in ground nobody has ever seen.
+  float fog = uUseFog > 0.5 ? fogField(vWorld.xz / uWorldSize) : 1.0;
+  lit = applyFog(lit, fog);
   outColor = vec4(lit, uAlpha);
 }
 `;
@@ -268,6 +323,136 @@ void main() {
 }
 `;
 
+export const DECAL_VS = /* glsl */ `#version 300 es
+precision highp float;
+layout(location=0) in vec2 aCorner;
+layout(location=1) in vec3 aCenter;
+layout(location=2) in vec2 aRadius;
+layout(location=3) in float aRotation;
+layout(location=4) in float aAlpha;
+layout(location=5) in vec3 aColor;
+layout(location=6) in float aKind;
+${CAMERA}
+out vec2 vLocal;
+out vec3 vWorld;
+out float vAlpha;
+out vec3 vColor;
+out float vKind;
+void main() {
+  vec2 p = aCorner * aRadius;
+  float c = cos(aRotation);
+  float s = sin(aRotation);
+  vec2 rotated = vec2(p.x * c - p.y * s, p.x * s + p.y * c);
+  vec3 world = aCenter + vec3(rotated.x, 0.0, rotated.y);
+  vLocal = aCorner;
+  vWorld = world;
+  vAlpha = aAlpha;
+  vColor = aColor;
+  vKind = aKind;
+  gl_Position = projectWorld(world);
+}
+`;
+
+export const DECAL_FS = /* glsl */ `#version 300 es
+precision highp float;
+in vec2 vLocal;
+in vec3 vWorld;
+in float vAlpha;
+in vec3 vColor;
+in float vKind;
+out vec4 outColor;
+
+float hash21(vec2 p) {
+  p = fract(p * vec2(234.34, 435.345));
+  p += dot(p, p + 34.23);
+  return fract(p.x * p.y);
+}
+float noise2(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash21(i);
+  float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0));
+  float d = hash21(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float trackMask(vec2 p) {
+  // Two parallel bands, each fading over the last third of the segment so
+  // consecutive decals overlap instead of reading as dashed stamps.
+  float lane = abs(abs(p.y) - 0.72);
+  float band = 1.0 - smoothstep(0.10, 0.26, lane);
+  float ends = 1.0 - smoothstep(0.68, 1.0, abs(p.x));
+  float tread = 0.9 + 0.1 * sin((vWorld.x + vWorld.z) * 7.0);
+  return band * ends * tread;
+}
+
+float tyreMask(vec2 p) {
+  // Narrower rubber bands than a steel track, with a fine repeating tread.
+  float lane = abs(abs(p.y) - 0.74);
+  float band = 1.0 - smoothstep(0.045, 0.15, lane);
+  float ends = 1.0 - smoothstep(0.70, 1.0, abs(p.x));
+  float tread = 0.82 + 0.18 * sin(p.x * 26.0 + (vWorld.x + vWorld.z) * 0.35);
+  return band * ends * tread;
+}
+
+float scorchMask(vec2 p) {
+  // World-space noise breaks the ellipse into an irregular burn with a soft
+  // rim. It is deterministic for the same position, not frame-time flicker.
+  float d = length(p);
+  float edge = noise2(vWorld.xz * 1.15 + 7.3) * 0.24;
+  float shape = 1.0 - smoothstep(0.38, 0.98, d + edge);
+  float ash = 0.82 + 0.18 * noise2(vWorld.xz * 3.2 + 1.7);
+  return shape * ash;
+}
+
+float craterEdge(vec2 p) {
+  return noise2(vWorld.xz * 5.4 + 11.7) * 0.18;
+}
+
+float craterMask(vec2 p) {
+  // A dark bowl with a broken ring of displaced earth around it. The noise
+  // is sampled in world space so adjacent craters do not share a shape.
+  float d = length(p);
+  float edge = craterEdge(p);
+  float bowl = 1.0 - smoothstep(0.20, 0.72, d + edge);
+  float ring = smoothstep(0.52, 0.70, d + edge) * (1.0 - smoothstep(0.80, 1.0, d + edge));
+  return max(bowl, ring * 0.72);
+}
+
+float craterRim(vec2 p) {
+  float d = length(p);
+  float edge = craterEdge(p);
+  return smoothstep(0.52, 0.70, d + edge) * (1.0 - smoothstep(0.80, 1.0, d + edge));
+}
+
+void main() {
+  float coverage;
+  float rim = 0.0;
+  if (vKind < 0.5) {
+    coverage = trackMask(vLocal);
+  } else if (vKind < 1.5) {
+    coverage = scorchMask(vLocal);
+  } else if (vKind < 2.5) {
+    coverage = tyreMask(vLocal);
+  } else {
+    coverage = craterMask(vLocal);
+    rim = craterRim(vLocal);
+  }
+  float a = coverage * vAlpha;
+  if (a < 0.004) discard;
+
+  vec3 color = vColor;
+  if (vKind > 2.5) {
+    color = mix(vColor, vec3(0.14, 0.12, 0.09), rim * 0.65);
+  } else if (vKind >= 0.5) {
+    color *= 0.9 + 0.2 * noise2(vWorld.xz * 2.1);
+  }
+  outColor = vec4(color, a);
+}
+`;
+
 export const TERRAIN_VS = /* glsl */ `#version 300 es
 precision highp float;
 layout(location=0) in vec3 aPos;
@@ -301,11 +486,11 @@ in vec4 vGround;
 uniform vec3 uSun;
 uniform vec3 uEye;
 uniform float uAmbient;
-uniform sampler2D uFogTex;
 uniform sampler2D uShoreTex;
 uniform float uUseFog;
 uniform float uTime;
 uniform float uGrid;
+${FOG_FIELD}
 out vec4 outColor;
 
 float hash21(vec2 p) {
@@ -403,6 +588,15 @@ void main() {
     beach * (0.1 + 0.46 * g.y)
   );
 
+  // Field-scale variation: a very low frequency drift over open grass, so a
+  // large lawn is not one flat value. It is gated to grass cover away from
+  // stone and steep faces, which have their own treatment, and it multiplies
+  // the authored tile colour rather than replacing it, so roads, ore and
+  // buildable ground stay readable.
+  float fieldDrift = noise2(p * 0.014 + 5.3) * 0.6 + noise2(p * 0.031 + 21.4) * 0.4;
+  float grassMask = clamp(g.x * (1.0 - g.w) * (1.0 - steep), 0.0, 1.0);
+  base *= mix(1.0, 0.88 + 0.24 * fieldDrift, grassMask * 0.85);
+
   // Broad cast keeps both a map-scale gradient and a field-scale offset, so a
   // 400 px view never lands on a flat patch of one value. Aggregate is the
   // sub-tile layer.
@@ -429,14 +623,8 @@ void main() {
   base *= 1.0 - edge * 0.14 * uGrid;
   float diffuse = max(dot(n, normalize(uSun)), 0.0);
   vec3 lit = base * (uAmbient + (1.0 - uAmbient) * diffuse * 0.88 + 0.06 * n.y);
-  float fog = uUseFog > 0.5 ? texture(uFogTex, vUv).r : 1.0;
-  vec3 dark = vec3(0.012, 0.027, 0.038);
-  if (fog < 0.08) {
-    lit = mix(dark, lit * 0.12, 0.22);
-  } else {
-    float vis = smoothstep(0.18, 0.92, fog);
-    lit = mix(lit * 0.34 + dark * 0.3, lit, vis);
-  }
+  float fog = uUseFog > 0.5 ? fogField(vUv) : 1.0;
+  lit = applyFog(lit, fog);
   outColor = vec4(lit, 1.0);
 }
 `;
@@ -463,9 +651,9 @@ uniform vec3 uSun;
 uniform vec3 uEye;
 uniform float uTime;
 uniform float uAmbient;
-uniform sampler2D uFogTex;
 uniform sampler2D uShoreTex;
 uniform float uUseFog;
+${FOG_FIELD}
 out vec4 outColor;
 
 float hash21(vec2 p) {
@@ -562,12 +750,8 @@ void main() {
   col = mix(col, vec3(0.6, 0.69, 0.65), waterline * 0.2);
   col = mix(col, vec3(0.22, 0.38, 0.4), (1.0 - depth) * 0.1);
 
-  float fog = uUseFog > 0.5 ? texture(uFogTex, vUv).r : 1.0;
-  if (fog < 0.08) {
-    col = mix(vec3(0.012, 0.03, 0.045), col * 0.15, 0.2);
-  } else {
-    col = mix(col * 0.3 + vec3(0.006, 0.02, 0.03), col, smoothstep(0.15, 0.9, fog));
-  }
+  float fog = uUseFog > 0.5 ? fogField(vUv) : 1.0;
+  col = applyFog(col, fog);
   outColor = vec4(col, 1.0);
 }
 `;
@@ -613,10 +797,9 @@ uniform vec3 uSun;
 uniform vec3 uEye;
 uniform float uAmbient;
 uniform float uEmissive;
-uniform sampler2D uFogTex;
 uniform sampler2D uMatLut;
 uniform float uUseFog;
-uniform vec2 uWorldSize;
+${FOG_FIELD}
 out vec4 outColor;
 
 float hash21(vec2 p) {
@@ -677,9 +860,8 @@ void main() {
   float highlight = pow(max(dot(n, halfDir), 0.0), mix(6.0, 100.0, gloss));
   col += mix(vec3(1.0), col, 0.5) * highlight * specular * (0.08 + metalness * 0.5);
   col += vColor * uEmissive;
-  float fog = uUseFog > 0.5 ? texture(uFogTex, vWorld.xz / uWorldSize).r : 1.0;
-  if (fog < 0.08) col = mix(vec3(0.012, 0.028, 0.04), col * 0.12, 0.2);
-  else col = mix(col * 0.3, col, smoothstep(0.15, 0.9, fog));
+  float fog = uUseFog > 0.5 ? fogField(vWorld.xz / uWorldSize) : 1.0;
+  col = applyFog(col, fog);
   outColor = vec4(col, 1.0);
 }
 `;

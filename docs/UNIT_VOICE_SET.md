@@ -5,12 +5,12 @@ listening and recognition tests have **not** been performed. The audition page i
 ready for that review.
 
 - Engine: Kokoro-82M ONNX (`kokoro-onnx` 0.4.7), fully local.
-- Coverage: 19 unit types, 4 cues each, 76 clips.
-- Cast: 19 distinct voices — 8 British, 11 American.
+- Coverage: 22 unit types, 4 cues each, 88 clips.
+- Cast: 22 distinct voices — 8 British, 14 American.
 - Format: 24 kHz mono MP3, 64 kbps, field-radio processing.
 - Location: `public/audio/unit-voice/`.
 - Contract: `public/audio/unit-voice/manifest.json`.
-- Total size: 809 KiB.
+- Total size: 1.1 MiB.
 
 The existing strategic announcer in `public/audio/battlesys/` is untouched.
 
@@ -44,6 +44,9 @@ for `unableToComply`, so the two states remain distinguishable.
 | Interceptor | af_nova | Air cover, ready. | Course set. | Target locked. | Unable. |
 | Recon UAV | af_sky | Drone, on station. | Climbing to station. | Unarmed, cannot engage. | Unable. |
 | Missile Corvette | bm_lewis | Warship, standing by. | Under way. | Target acquired. | Unable. |
+| Missile Boat | af_river | Fast attack, ready. | Boat moving. | Missiles away. | Cannot comply. |
+| Attack Submarine | am_santa | Submarine, standing by. | Under way. | Torpedoes away. | Cannot comply. |
+| Escort Frigate | af_nicole | Escort on station. | Escort moving. | Engaging. | Unable. |
 | Pathfinder Recon Team | bf_isabella | Scout team, ready. | Scout team moving. | Unarmed, cannot engage. | Negative. |
 | Spearhead MBT | am_fenrir | Main battle tank, ready. | Tank rolling. | Target acquired. | Negative. |
 | Rocket Battery | bm_daniel | Rocket battery, standing by. | Rocket battery moving. | Fire mission. | Cannot fire. |
@@ -63,6 +66,8 @@ for `unableToComply`, so the two states remain distinguishable.
 | Recon Vehicle | 1.06 | Rocket Battery | 0.96 |
 | AA Vehicle | 1.00 | Heavy Howitzer | 0.94 |
 | Field Recovery Vehicle | 0.98 | Deep Recon UAV | 1.08 |
+| Missile Boat | 1.04 | Escort Frigate | 0.98 |
+| Attack Submarine | 1.00 | | |
 | Harvester | 0.96 | | |
 
 ## 3. Processing chain
@@ -180,20 +185,20 @@ python -m http.server 8788 --bind 127.0.0.1
 `http://127.0.0.1:8788/docs/unit-voice-audition.html`
 
 The page supports search, role filtering, per-line playback and “Play all four”.
-It reports 19 units, 76 clips and 19 distinct voices directly from the manifest.
+It reports 22 units, 88 clips and 22 distinct voices directly from the manifest.
 
 ## 8. Verification
 
 | Check | Result |
 |---|---|
-| Clip count | 76 (19 units × 4 cues) |
-| Distinct voices | 19 |
-| Voice split | 8 British, 11 American |
+| Clip count | 88 (22 units × 4 cues) |
+| Distinct voices | 22 |
+| Voice split | 8 British, 14 American |
 | Missing/zero-byte files | none |
 | Shortest/longest clip | 0.72 s / 2.39 s |
 | Peak range | −2.7 to −2.1 dBFS |
 | RMS range | −22.0 to −15.8 dBFS |
-| Total size | 809 KiB |
+| Total size | 1.1 MiB |
 | Manifest engine/version | `kokoro-82m-onnx` / 2 |
 | Automated completeness test | `tests/unit-voice.test.ts` — 14 tests pass |
 

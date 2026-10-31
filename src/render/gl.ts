@@ -1,13 +1,15 @@
 /**
  * Texture units for the mesh program. Its fragment shader samples the national
- * flag (or the white fallback), the strategic fog mask used by roads, and the
- * tiny material-property LUT. One sampler can only read one unit, so each gets
- * its own slot: 0 flag, 1 fog, 2 material.
+ * flag (or the white fallback), the strategic fog mask used by roads, the tiny
+ * material-property LUT and the previous fog field it cross-fades from. One
+ * sampler can only read one unit, so each gets its own slot: 0 flag, 1 fog,
+ * 2 material, 3 previous fog.
  */
 export const MESH_FLAG_TEXTURE_UNIT = 0;
 export const MESH_FOG_TEXTURE_UNIT = 1;
 export const MESH_MATERIAL_TEXTURE_UNIT = 2;
-/** The prop program has no flag; it uses 0 for fog and 1 for materials. */
+export const MESH_FOG_OLD_TEXTURE_UNIT = 3;
+/** The prop program has no flag; it uses 0 for fog, 1 for materials, 2 for fog-old. */
 export const PROP_MATERIAL_TEXTURE_UNIT = 1;
 
 /** Bind a texture and point its sampler uniform at the same unit. */

@@ -433,6 +433,115 @@ export function buildRockMesh(): MeshBuffers {
   return b.build();
 }
 
+/**
+ * Ground scrub: three squashed spheres with no trunk, so a bush reads as cover
+ * lying on the terrain rather than a small tree. Kept under a metre so it never
+ * competes with an infantryman's silhouette at battle zoom.
+ */
+export function buildBushMesh(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.canvas;
+  // Lighter than the grass they stand on. A bush at the old value read as a
+  // black spot on the field at battle zoom; lifting the whole ramp keeps the
+  // silhouette without turning the scrub into holes in the ground.
+  const leaf: Color = [0.33, 0.46, 0.23];
+  const dark: Color = [0.22, 0.33, 0.16];
+  const light: Color = [0.44, 0.58, 0.29];
+  // A shadowed base, three shoulder lobes and a lit crown. Five uneven spheres
+  // keep the silhouette lumpy from every yaw, which is what stops a field of
+  // bushes reading as one repeated dot.
+  b.sphere(0, 0.26, 0, 0.5, 4, 7, dark);
+  b.sphere(0.34, 0.34, 0.16, 0.4, 3, 6, leaf);
+  b.sphere(-0.3, 0.32, 0.22, 0.35, 3, 6, leaf);
+  b.sphere(0.02, 0.52, -0.26, 0.29, 3, 6, light);
+  b.sphere(-0.14, 0.6, 0.12, 0.24, 3, 5, light);
+  b.box(0.1, 0.52, 0.06, 0.035, 0.62, 0.035, [0.24, 0.19, 0.12]);
+  return b.build();
+}
+
+/**
+ * Leggy brush: four woody stems with small canopies. Taller and sparser than a
+ * bush, so a thicket mixes heights instead of repeating one blob.
+ */
+export function buildShrubMesh(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.canvas;
+  // Same lift as the bush: woody stems stay warmer than the foliage, and the
+  // canopy keeps a lit crown so a thicket is not one flat mass.
+  const stem: Color = [0.31, 0.25, 0.18];
+  const leaf: Color = [0.34, 0.47, 0.24];
+  const light: Color = [0.43, 0.56, 0.28];
+  const stems: Array<[number, number, number]> = [
+    [0, 0, 1.06],
+    [0.22, 0.14, 0.86],
+    [-0.2, 0.18, 0.78],
+    [-0.04, -0.24, 0.92],
+  ];
+  for (const [x, z, h] of stems) b.box(x, h / 2, z, 0.045, h, 0.045, stem);
+  b.sphere(0, 1.04, 0, 0.25, 3, 5, leaf);
+  b.sphere(0.24, 0.86, 0.14, 0.19, 3, 5, light);
+  b.sphere(-0.2, 0.8, 0.18, 0.17, 3, 5, leaf);
+  return b.build();
+}
+
+/**
+ * Dry grass tuft: seven short blades fanning from one point. Under half a metre,
+ * it fills verges and dunes without pretending to be cover.
+ */
+export function buildGrassTuftMesh(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.canvas;
+  const dry: Color = [0.46, 0.43, 0.26];
+  const light: Color = [0.56, 0.51, 0.31];
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2;
+    const r = 0.07 + (i % 3) * 0.06;
+    b.cone(
+      Math.cos(a) * r,
+      0,
+      Math.sin(a) * r,
+      0.055,
+      0.32 + (i % 4) * 0.07,
+      3,
+      i % 2 === 0 ? dry : light,
+    );
+  }
+  return b.build();
+}
+
+/**
+ * Post-and-rail boundary fencing along the local X axis: three weathered posts
+ * and two rails. Placed parallel to a road, it gives the fields edges without
+ * blocking anything — props carry no collision.
+ */
+export function buildFenceMesh(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.canvas;
+  const timber: Color = [0.34, 0.29, 0.22];
+  const rail: Color = [0.26, 0.23, 0.18];
+  for (const x of [-1.15, 0, 1.15]) b.box(x, 0.46, 0, 0.1, 0.92, 0.1, timber);
+  for (const y of [0.4, 0.72]) b.box(0, y, 0, 2.4, 0.075, 0.05, rail);
+  return b.build();
+}
+
+/**
+ * Kerbside street lamp: cast base, pole, arm over the carriageway and a warm
+ * lens. The arm points along local +X, so the instance rotation aims it at the
+ * road it stands beside.
+ */
+export function buildLampMesh(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.bareMetal;
+  const pole: Color = [0.2, 0.22, 0.21];
+  b.box(0, 0.1, 0, 0.24, 0.2, 0.24, [0.27, 0.27, 0.25]);
+  b.cylinder(0, 1.32, 0, 0.06, 2.44, 5, pole);
+  b.box(0.34, 2.48, 0, 0.72, 0.07, 0.07, pole);
+  b.material = MATERIAL.painted;
+  b.box(0.72, 2.38, 0, 0.28, 0.1, 0.17, [0.28, 0.28, 0.26]);
+  b.box(0.72, 2.32, 0, 0.22, 0.05, 0.12, [0.92, 0.72, 0.34]);
+  return b.build();
+}
+
 export function buildOreMesh(): MeshBuffers {
   const b = new MeshBuilder();
   b.material = MATERIAL.bareMetal;

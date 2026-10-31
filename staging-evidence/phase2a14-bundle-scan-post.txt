@@ -1,0 +1,9 @@
+bundle=dist/assets/index-D2t9Wdf0.js
+sha256=65eced623281f8b906a398be7ce429c399fa38e7bc3f9d7bff98fec8b34e946a
+batchCalibration=0
+phase2a=0
+MP_ADMIN_TOKEN=0
+calibration=0
+MULTIPLAYER_FEATURE=0
+adminToken=0
+staging=0

@@ -1,0 +1,19 @@
+{
+  "generatedAt": "2026-10-30T18:10:13.127Z",
+  "phase": "2A.7",
+  "method": "V8 CPU profiler (requested 100 us sampling interval) around prepared calibration stages, plus V8 precise coverage call counts.",
+  "localOnly": true,
+  "warning": "Sample shares are local Node main-thread stack samples used for relative attribution. Not deployed Cloudflare CPU time and not a per-tick CPU distribution.",
+  "node": "v24.14.0",
+  "platform": "win32 x64",
+  "cpu": "AMD Custom APU 0405",
+  "gitHead": "refs/heads/master",
+  "sources": {
+    "src/sim/game.ts": "bd86717fedd51cac8da4b75fd10f1fb0414eabf09a6df828815a67896f8a2b7a",
+    "src/sim/pathfinding.ts": "860eb1aa62c7efa1b35c207b5ba8942a1eb052a3aa8d61b8fbda75e07e438f39",
+    "src/sim/terrain.ts": "5648a375e8b5c03e15be91bae399b930f0d002674ee5226814c948c6d6d08af7",
+    "src/multiplayer/batchCalibration.ts": "05c679aabc0204c59ed10a83c719c402f74a40b38e2a94460cb8a1432e279471",
+    "src/data/scenarios.ts": "49bb5ead76705c0380c997668047aa8ae9eb1b2b3256fff652e12d4e5e4f236c"
+  },
+  "sampleIntervalUs": 100
+}

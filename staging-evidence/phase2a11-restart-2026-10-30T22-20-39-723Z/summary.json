@@ -1,0 +1,112 @@
+{
+  "at": "2026-10-30T22:20:39.730Z",
+  "base": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev",
+  "build": "phase2a11-staging",
+  "roomId": "restart-mvvjd560",
+  "checks": {
+    "beforeRestart": {
+      "phase": "playing",
+      "start": 1793398840606,
+      "deadline": 1793398885348,
+      "tick": 334,
+      "epochs": [
+        1,
+        1
+      ],
+      "seqs": [
+        1,
+        1
+      ]
+    },
+    "afterRestart": {
+      "phase": "playing",
+      "start": 1793398840606,
+      "startDerived": false,
+      "deadline": 1793398885348,
+      "tick": 303,
+      "totalTicks": 303,
+      "processTicks": 4,
+      "epochs": [
+        1026,
+        1026
+      ],
+      "seqs": [
+        153,
+        152
+      ]
+    },
+    "rollback": {
+      "preTick": 334,
+      "restoredTick": 299,
+      "rollbackTicks": 35,
+      "withinCheckpointInterval": true
+    },
+    "final": {
+      "outcomes": [
+        "victory",
+        "defeat"
+      ],
+      "winners": [
+        0,
+        0
+      ],
+      "reasons": [
+        "time-limit",
+        "time-limit"
+      ],
+      "ticks": [
+        851,
+        851
+      ],
+      "clientTicks": [
+        851,
+        851
+      ]
+    },
+    "closed": {
+      "closed": true,
+      "reason": "match-finished",
+      "reservation": "released",
+      "matchTick": 851,
+      "totalTicks": 851,
+      "finishedAtMs": 1793398885348,
+      "resultTick": 851
+    }
+  },
+  "rejectedUpdates": 4,
+  "rejectedDetails": [
+    {
+      "seat": 0,
+      "kind": "stale-sync",
+      "reason": "epoch-mismatch"
+    },
+    {
+      "seat": 0,
+      "kind": "stale-delta",
+      "reason": "epoch-mismatch"
+    },
+    {
+      "seat": 1,
+      "kind": "stale-sync",
+      "reason": "epoch-mismatch"
+    },
+    {
+      "seat": 1,
+      "kind": "stale-delta",
+      "reason": "epoch-mismatch"
+    }
+  ],
+  "timeline": {
+    "restartRequestedAt": "2026-10-30T22:20:57.354Z",
+    "closedAt": "2026-10-30T22:20:57.459Z",
+    "seat0FirstSyncAt": "2026-10-30T22:20:57.732Z",
+    "seat0FirstDeltaAt": "2026-10-30T22:20:57.739Z",
+    "seat0CommandAt": "2026-10-30T22:20:57.755Z",
+    "seat1FirstSyncAt": "2026-10-30T22:20:57.844Z",
+    "seat1FirstDeltaAt": "2026-10-30T22:20:57.874Z",
+    "seat1CommandAt": "2026-10-30T22:20:57.893Z",
+    "reconnectedMs": 434,
+    "resultAt": "2026-10-30T22:21:25.342Z"
+  },
+  "passed": true
+}

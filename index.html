@@ -86,6 +86,26 @@
         <div id="hud-root"></div>
       </div>
 
+      <aside
+        id="tutorial-panel"
+        class="tutorial-panel hidden"
+        aria-labelledby="tutorial-title"
+        aria-label="Training instructions"
+      >
+        <div class="tutorial-top">
+          <span class="tutorial-kicker">TRAINING · <b id="tutorial-progress-label">01 / 07</b></span>
+          <button id="btn-tutorial-skip" class="tutorial-skip" type="button">SKIP TRAINING</button>
+        </div>
+        <h2 id="tutorial-title">Find your bearings</h2>
+        <p id="tutorial-body"></p>
+        <p id="tutorial-status" class="tutorial-status" role="status" aria-live="polite"></p>
+        <div class="tutorial-meter" aria-hidden="true"><i id="tutorial-meter"></i></div>
+        <div class="tutorial-actions">
+          <button id="btn-tutorial-next" class="btn btn-primary" type="button" hidden>Continue</button>
+          <button id="btn-tutorial-continue" class="btn btn-primary" type="button" hidden>Continue battle</button>
+        </div>
+      </aside>
+
       <section id="intro-screen" class="intro-screen" aria-label="Studio logo">
         <div class="intro-grid" aria-hidden="true"></div>
         <div class="intro-gate" id="intro-gate">
@@ -161,40 +181,126 @@
 
         <div class="menu-grid">
           <nav class="menu-nav" aria-label="Main menu">
-            <p class="menu-nav-head" aria-hidden="true">MAIN MENU</p>
-            <button type="button" class="menu-nav-item" data-menu-view="skirmish">
-              <span class="menu-nav-index">01</span>
-              <span class="menu-nav-text"><b>Skirmish</b><small>Kestrel Bay · land, air, sea</small></span>
-              <span class="menu-nav-go" aria-hidden="true">›</span>
-            </button>
-            <button type="button" class="menu-nav-item" data-menu-view="editor">
-              <span class="menu-nav-index">02</span>
-              <span class="menu-nav-text"><b>Map Editor</b><small>Scenario Forge</small></span>
-              <span class="menu-nav-go" aria-hidden="true">›</span>
-            </button>
-            <button type="button" class="menu-nav-item" data-menu-view="settings">
-              <span class="menu-nav-index">03</span>
-              <span class="menu-nav-text"><b>Settings</b><small>Audio · visuals · interface</small></span>
-              <span class="menu-nav-go" aria-hidden="true">›</span>
-            </button>
-            <div class="menu-nav-rule" aria-hidden="true"></div>
-            <button id="btn-load" type="button" class="menu-nav-item menu-nav-quiet">
-              <span class="menu-nav-index">04</span>
-              <span class="menu-nav-text"><b>Load Battle</b><small>Saved deployments</small></span>
-              <span class="menu-nav-go" aria-hidden="true">›</span>
-            </button>
+            <div class="menu-nav-level" data-menu-level="top">
+              <p class="menu-nav-head" aria-hidden="true">MAIN MENU</p>
+              <button type="button" class="menu-nav-item" data-menu-view="singleplayer">
+                <span class="menu-nav-index">01</span>
+                <span class="menu-nav-text"><b>Singleplayer</b><small>Tutorial · campaign · skirmish</small></span>
+                <span class="menu-nav-go" aria-hidden="true">›</span>
+              </button>
+              <!-- Enabled at runtime only when a room worker origin is configured. -->
+              <button type="button" class="menu-nav-item soon" data-menu-view="multiplayer" disabled aria-disabled="true" title="Network play needs a room worker address in this build">
+                <span class="menu-nav-index">02</span>
+                <span class="menu-nav-text"><b>Multiplayer</b><small>Network play unavailable</small></span>
+                <span class="menu-nav-badge">SOON</span>
+                <span class="menu-nav-go" aria-hidden="true">›</span>
+              </button>
+              <button type="button" class="menu-nav-item" data-menu-view="editor">
+                <span class="menu-nav-index">03</span>
+                <span class="menu-nav-text"><b>Map Editor</b><small>Scenario Forge</small></span>
+                <span class="menu-nav-go" aria-hidden="true">›</span>
+              </button>
+              <div class="menu-nav-rule" aria-hidden="true"></div>
+              <button type="button" class="menu-nav-item" data-menu-view="settings">
+                <span class="menu-nav-index">04</span>
+                <span class="menu-nav-text"><b>Settings</b><small>Audio · visuals · interface</small></span>
+                <span class="menu-nav-go" aria-hidden="true">›</span>
+              </button>
+            </div>
+
+            <div class="menu-nav-level" data-menu-level="singleplayer" hidden>
+              <button type="button" class="menu-crumb" data-menu-back="top">
+                <span aria-hidden="true">‹</span> Main menu
+              </button>
+              <p class="menu-nav-head" aria-hidden="true">SINGLEPLAYER</p>
+              <button id="btn-tutorial" type="button" class="menu-nav-item">
+                <span class="menu-nav-index">01</span>
+                <span class="menu-nav-text"><b>Tutorial</b><small>Guided deployment · learn the HUD</small></span>
+                <span class="menu-nav-go" aria-hidden="true">›</span>
+              </button>
+              <button type="button" class="menu-nav-item" data-menu-view="campaign">
+                <span class="menu-nav-index">02</span>
+                <span class="menu-nav-text"><b>Campaign</b><small>Opening operations · fixed commands</small></span>
+                <span class="menu-nav-go" aria-hidden="true">›</span>
+              </button>
+              <button type="button" class="menu-nav-item" data-menu-view="skirmish">
+                <span class="menu-nav-index">03</span>
+                <span class="menu-nav-text"><b>Skirmish</b><small>Deploy against the AI</small></span>
+                <span class="menu-nav-go" aria-hidden="true">›</span>
+              </button>
+              <button id="btn-load" type="button" class="menu-nav-item">
+                <span class="menu-nav-index">04</span>
+                <span class="menu-nav-text"><b>Load Battle</b><small>Saved deployments</small></span>
+                <span class="menu-nav-go" aria-hidden="true">›</span>
+              </button>
+            </div>
+
+            <div class="menu-nav-level menu-nav-campaign" data-menu-level="campaign" hidden>
+              <button type="button" class="menu-crumb" data-menu-back="singleplayer">
+                <span aria-hidden="true">‹</span> Singleplayer
+              </button>
+              <p class="menu-nav-head" aria-hidden="true">CAMPAIGN</p>
+              <div class="campaign-switch" id="campaign-switch" role="group" aria-label="Campaign"></div>
+              <p class="campaign-note" id="campaign-note"></p>
+              <div class="campaign-missions" id="campaign-missions" role="group" aria-label="Campaign operations"></div>
+              <div class="menu-actions">
+                <button id="btn-campaign-deploy" class="btn btn-primary btn-large">
+                  <span class="btn-kicker">DEPLOY</span>
+                  <span id="campaign-deploy-label">Begin operation</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="menu-nav-level menu-nav-options" data-menu-level="skirmish" hidden>
+              <button type="button" class="menu-crumb" data-menu-back="singleplayer">
+                <span aria-hidden="true">‹</span> Singleplayer
+              </button>
+              <p class="menu-nav-head" aria-hidden="true">DEPLOYMENT</p>
+              <div class="side-field">
+                <div class="nation-field">
+                  <span class="menu-difficulty-label" id="nation-label">YOUR NATION</span>
+                  <div id="nation-select" class="nation-picker" role="group" aria-labelledby="nation-label" aria-describedby="nation-note"></div>
+                </div>
+                <p class="nation-note" id="nation-note">Lithuania · Defender Coalition — front-line defender in the opening Baltic crisis.</p>
+                <div class="nation-field">
+                  <span class="menu-difficulty-label" id="opponent-label">OPPOSING NATION</span>
+                  <div id="opponent-select" class="nation-picker" role="group" aria-labelledby="opponent-label" aria-describedby="opponent-note"></div>
+                </div>
+                <p class="nation-note" id="opponent-note">Russia · Eastern Coalition — siege artillery.</p>
+                <div class="team-colors">
+                  <div class="team-color-row">
+                    <span class="menu-difficulty-label">YOUR COLOUR</span>
+                    <div class="team-swatches" id="team-colors" role="radiogroup" aria-label="Your team colour"></div>
+                  </div>
+                  <div class="team-color-row">
+                    <span class="menu-difficulty-label">OPPONENT COLOUR</span>
+                    <div class="team-swatches" id="opponent-colors" role="radiogroup" aria-label="Opponent team colour"></div>
+                  </div>
+                </div>
+              </div>
+              <div class="side-field menu-difficulty">
+                <span class="menu-difficulty-label" id="difficulty-label">OPPOSING COMMANDER</span>
+                <div class="difficulty-options" role="group" aria-labelledby="difficulty-label">
+                  <button type="button" class="difficulty-btn" data-difficulty="recruit" aria-pressed="false">RECRUIT</button>
+                  <button type="button" class="difficulty-btn" data-difficulty="veteran" aria-pressed="true">VETERAN</button>
+                  <button type="button" class="difficulty-btn" data-difficulty="elite" aria-pressed="false">ELITE</button>
+                </div>
+                <p class="difficulty-note" id="difficulty-note">Veteran — balanced expansion, production and attack timing.</p>
+              </div>
+              <div class="menu-actions">
+                <button id="btn-deploy" class="btn btn-primary btn-large">
+                  <span class="btn-kicker">DEPLOY</span>
+                  <span>Begin skirmish</span>
+                </button>
+              </div>
+            </div>
           </nav>
 
           <div class="menu-stage">
-            <section class="menu-view menu-idle" data-menu-panel="idle" aria-label="Command deck">
-              <div class="menu-view-head">
-                <p class="eyebrow">COMMAND DECK</p>
-                <h2>Awaiting <em>orders</em></h2>
-                <p class="lede">
-                  Pick a deployment from the main menu: a skirmish on Kestrel Bay, the scenario
-                  forge, or system settings.
-                </p>
-              </div>
+            <section class="menu-view menu-idle" data-menu-panel="idle" aria-label="Command deck"></section>
+
+            <section class="menu-view" data-menu-panel="multiplayer" aria-label="Multiplayer">
+              <div id="multiplayer-panel" class="mp-host"></div>
             </section>
 
             <section class="menu-view" data-menu-panel="skirmish" aria-label="Skirmish">
@@ -205,33 +311,11 @@
                   Establish a beachhead, break the ridge and take the 11th Expeditionary Corps' command post.
                 </p>
               </div>
-              <div class="map-select">
-                <span class="menu-difficulty-label" id="map-select-label">THEATRE</span>
-                <div class="map-cards" id="map-cards" role="radiogroup" aria-labelledby="map-select-label"></div>
-              </div>
-              <div class="menu-nation">
-                <div class="nation-field">
-                  <label class="menu-difficulty-label" for="nation-select">YOUR NATION</label>
-                  <select id="nation-select" class="nation-select" aria-describedby="nation-note"></select>
-                </div>
-                <p class="nation-note" id="nation-note">Lithuania · Defender Coalition — front-line defender in the opening Baltic crisis.</p>
-              </div>
-              <div class="menu-columns">
+              <div class="menu-columns skirmish-columns">
                 <div class="menu-column">
-                  <div class="menu-difficulty">
-                    <span class="menu-difficulty-label" id="difficulty-label">OPPOSING COMMANDER</span>
-                    <div class="difficulty-options" role="group" aria-labelledby="difficulty-label">
-                      <button type="button" class="difficulty-btn" data-difficulty="recruit" aria-pressed="false">RECRUIT</button>
-                      <button type="button" class="difficulty-btn" data-difficulty="veteran" aria-pressed="true">VETERAN</button>
-                      <button type="button" class="difficulty-btn" data-difficulty="elite" aria-pressed="false">ELITE</button>
-                    </div>
-                    <p class="difficulty-note" id="difficulty-note">Veteran — balanced expansion, production and attack timing.</p>
-                  </div>
-                  <div class="menu-actions">
-                    <button id="btn-deploy" class="btn btn-primary btn-large">
-                      <span class="btn-kicker">DEPLOY</span>
-                      <span>Begin skirmish</span>
-                    </button>
+                  <div class="map-select">
+                    <span class="menu-difficulty-label" id="map-select-label">THEATRE</span>
+                    <div class="map-cards" id="map-cards" role="radiogroup" aria-labelledby="map-select-label"></div>
                   </div>
                 </div>
                 <aside class="menu-brief">
@@ -251,6 +335,54 @@
                     <div><span>ALLIANCE</span><b id="brief-alliance">Defender Coalition</b></div>
                     <div><span>THEATRE</span><b id="brief-size">96 × 72 tiles</b></div>
                     <div><span>DOMAINS</span><b id="brief-domains">Ground · Air · Naval</b></div>
+                  </div>
+                </aside>
+              </div>
+            </section>
+
+            <section class="menu-view" data-menu-panel="campaign" aria-label="Campaign">
+              <div class="menu-view-head">
+                <p class="eyebrow" id="campaign-eyebrow">CAMPAIGN · DEFENDER COALITION</p>
+                <h2 id="campaign-title">The Baltic Line</h2>
+                <p class="lede" id="campaign-lede">
+                  Three opening operations holding the Baltic approach.
+                </p>
+              </div>
+              <div class="menu-columns campaign-columns">
+                <div class="menu-column">
+                  <article class="campaign-dossier">
+                    <div class="brief-head">
+                      <span>MISSION DOSSIER</span><span class="mono" id="campaign-code">BALTIC / 01</span>
+                    </div>
+                    <div class="campaign-dossier-body">
+                      <p class="campaign-situation" id="campaign-situation">
+                        Coalition forces hold the western beachhead while the expeditionary corps
+                        controls the ridge above Kestrel Bay.
+                      </p>
+                      <p class="menu-difficulty-label campaign-objectives-label">OBJECTIVES</p>
+                      <ol class="campaign-objectives" id="campaign-objectives"></ol>
+                      <p class="campaign-footnote">
+                        Fixed command · campaign sides are alliance blue versus red.
+                      </p>
+                    </div>
+                  </article>
+                </div>
+                <aside class="menu-brief campaign-brief">
+                  <div class="brief-head">
+                    <span>MISSION BRIEF</span><span class="mono" id="campaign-map-code">BALTIC / 01</span>
+                  </div>
+                  <div class="brief-map" id="campaign-brief-map">
+                    <canvas id="campaign-map-canvas" aria-label="Campaign theatre map"></canvas>
+                    <span class="map-city blue" id="campaign-label-friend">LITHUANIA</span>
+                    <span class="map-city red" id="campaign-label-enemy">RUSSIA</span>
+                  </div>
+                  <div class="brief-rows">
+                    <div><span>COMMAND</span><b id="campaign-command">Lithuania</b></div>
+                    <div><span>OPPOSITION</span><b id="campaign-opposition">Russia</b></div>
+                    <div><span>ALLIANCE</span><b id="campaign-alliance">Defender Coalition</b></div>
+                    <div><span>THEATRE</span><b id="campaign-size">96 × 72 tiles</b></div>
+                    <div><span>DOMAINS</span><b id="campaign-domains">Ground · Air · Naval</b></div>
+                    <div><span>THREAT</span><b id="campaign-threat">Entrenched armour and coastal missiles.</b></div>
                   </div>
                 </aside>
               </div>
@@ -294,7 +426,7 @@
 
         <footer class="menu-footer">
           <span>© 2026 MCA PROJECT · HORSEMEN INTERACTIVE</span>
-          <span class="menu-footer-mid" id="menu-build">v0.1.2 BETA · BUILD 0 · IRONTIDE ENGINE</span>
+          <span class="menu-footer-mid" id="menu-build">v0.2.0 BETA · BUILD 0 · IRONTIDE ENGINE</span>
           <div class="menu-footer-links">
             <button id="btn-changelog" class="menu-footer-link" type="button">Changelog</button>
             <button id="btn-briefing" class="menu-footer-link" type="button">Briefing &amp; Controls</button>
@@ -303,6 +435,7 @@
       </section>
 
       <div id="loading-screen" class="screen loading-screen hidden" aria-live="polite">
+        <div class="loading-flag" id="loading-flag" aria-hidden="true"></div>
         <div class="loading-scrim" aria-hidden="true"></div>
         <div class="loading-shell">
           <p class="eyebrow">PREPARING BATTLEFIELD</p>

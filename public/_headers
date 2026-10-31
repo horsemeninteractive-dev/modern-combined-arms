@@ -1,10 +1,38 @@
 # Cloudflare Pages header rules, copied verbatim into the deployment root.
 #
-# Pages resolves MIME types from a fixed extension table, and `.webmanifest` is
-# not in it: the file ships with no Content-Type at all, while Pages also sends
-# `x-content-type-options: nosniff`. Chrome then refuses to read the manifest,
-# so "Install app" never gets the name, icons or colours below it. Declaring the
-# type here is the whole fix; `_headers` is not part of the precached shell.
+# The shell is a single-origin game. Scripts come only from the built bundle;
+# inline styles remain permitted because the HUD writes live style attributes and
+# the first-paint plate is an inline <style> block. `connect-src` reserves the
+# same-origin HTTPS API and the future room WebSocket without opening arbitrary
+# origins. `frame-ancestors`/X-Frame-Options stop another site framing the game
+# or a future room action.
+#
+# Pages documents `_headers` for static responses. When the room API is added,
+# its Pages Function must repeat the `/api/*` no-store and same-origin rules on
+# every response too; the Function is the authoritative place for those headers.
+#
+# `Set-Cookie` responses must never be cached. The service worker also bypasses
+# `/api/*` and credentialed requests; this rule is the edge-side half of that
+# contract, not a replacement for it.
+
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self' https://mca-multiplayer-staging.horsemeninteractive.workers.dev wss://mca-multiplayer-staging.horsemeninteractive.workers.dev https://*.moderncombinedarms.pages.dev wss://moderncombinedarms.pages.dev wss://*.moderncombinedarms.pages.dev; manifest-src 'self'; worker-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+  Strict-Transport-Security: max-age=31536000
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=(), usb=()
+
+# Session, lobby and room responses are personalized. They must not be stored
+# by a browser, an intermediary or the service worker, and they must not be
+# readable by another origin. The Function still has to emit these headers.
+/api/*
+  Cache-Control: no-store
+  Pragma: no-cache
+  Vary: Cookie
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Cross-Origin-Resource-Policy: same-origin
 
 /manifest.webmanifest
   Content-Type: application/manifest+json

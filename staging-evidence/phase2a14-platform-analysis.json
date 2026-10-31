@@ -1,0 +1,79 @@
+{
+  "phase": "2A.14",
+  "source": "staging-evidence/phase2a14-platform-periodic.json",
+  "coverage": {
+    "rows": 32,
+    "firstAt": "2026-10-31T01:14:58Z",
+    "lastAt": "2026-10-31T01:44:24Z",
+    "note": "Active object-minute buckets only; one partial row at each restart boundary. Not an invocation or per-tick census."
+  },
+  "all": {
+    "rows": 32,
+    "cpuMs": 19281.124,
+    "activeSeconds": 1799.347,
+    "cpuMsPerActiveMinute": 642.937,
+    "memoryStartBytes": 14800940,
+    "memoryEndBytes": 51606156,
+    "memoryPeakBytes": 51606156,
+    "inboundWebsocketMessages": 906,
+    "outboundWebsocketMessages": 36900,
+    "rowsRead": 885,
+    "rowsWritten": 1816,
+    "fatalInternalErrors": 2
+  },
+  "windows": {
+    "early": {
+      "rows": 11,
+      "cpuMs": 7487.7,
+      "activeSeconds": 602.256,
+      "cpuMsPerActiveMinute": 745.966,
+      "memoryStartBytes": 14800940,
+      "memoryEndBytes": 36082418,
+      "memoryPeakBytes": 36082418,
+      "inboundWebsocketMessages": 306,
+      "outboundWebsocketMessages": 12350,
+      "rowsRead": 295,
+      "rowsWritten": 610,
+      "fatalInternalErrors": 1
+    },
+    "middle": {
+      "rows": 11,
+      "cpuMs": 6081.527,
+      "activeSeconds": 623.085,
+      "cpuMsPerActiveMinute": 585.62,
+      "memoryStartBytes": 36035916,
+      "memoryEndBytes": 45340997,
+      "memoryPeakBytes": 45340997,
+      "inboundWebsocketMessages": 317,
+      "outboundWebsocketMessages": 12783,
+      "rowsRead": 310,
+      "rowsWritten": 616,
+      "fatalInternalErrors": 1
+    },
+    "late": {
+      "rows": 10,
+      "cpuMs": 5711.897,
+      "activeSeconds": 574.006,
+      "cpuMsPerActiveMinute": 597.056,
+      "memoryStartBytes": 46167436,
+      "memoryEndBytes": 51606156,
+      "memoryPeakBytes": 51606156,
+      "inboundWebsocketMessages": 283,
+      "outboundWebsocketMessages": 11767,
+      "rowsRead": 280,
+      "rowsWritten": 590,
+      "fatalInternalErrors": 0
+    }
+  },
+  "derived": {
+    "cpuPercentOfActiveTime": 1.0716,
+    "memoryGrowthBytes": 36805216,
+    "memoryGrowthMiB": 35.1,
+    "memoryGrowthMiBPerMinute": 1.17,
+    "peakMemoryMiB": 49.22
+  },
+  "cpuPerTickContext": {
+    "aggregateCpuMsPerWholeMatchTick": 0.5435,
+    "note": "Derived only as context: 19,281.124 ms aggregate CPU / 35,477 whole-match ticks. This is not an individual-tick measurement and is not evidence for the 10 ms target."
+  }
+}

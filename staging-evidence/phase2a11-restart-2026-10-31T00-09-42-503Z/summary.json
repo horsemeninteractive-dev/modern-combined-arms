@@ -1,0 +1,5 @@
+{
+  "at": "2026-10-31T00:10:01.027Z",
+  "passed": false,
+  "error": "first restored state is close to the authoritative tick"
+}

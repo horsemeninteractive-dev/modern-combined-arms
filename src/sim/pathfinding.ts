@@ -29,42 +29,78 @@ const NEIGHBOURS: Array<[number, number, number]> = [
   [-1, -1, 1.41421356],
 ];
 
-interface HeapNode {
-  index: number;
-  f: number;
-}
-
+/**
+ * Binary min-heap over parallel typed arrays.
+ *
+ * The comparisons and swaps are deliberately the same as the previous
+ * object-node implementation: equal priorities do not bubble on push and do
+ * not sink on pop, so the exact pop order of equal-f nodes is unchanged. Only
+ * the storage changed, removing one object allocation per push.
+ */
 class MinHeap {
-  private items: HeapNode[] = [];
+  private indices: Int32Array;
+  private scores: Float64Array;
+  private count = 0;
 
-  push(node: HeapNode): void {
-    const items = this.items;
-    items.push(node);
-    let i = items.length - 1;
+  constructor(capacity = 64) {
+    const size = Math.max(1, capacity);
+    this.indices = new Int32Array(size);
+    this.scores = new Float64Array(size);
+  }
+
+  private grow(): void {
+    const indices = new Int32Array(this.indices.length * 2);
+    const scores = new Float64Array(this.scores.length * 2);
+    indices.set(this.indices);
+    scores.set(this.scores);
+    this.indices = indices;
+    this.scores = scores;
+  }
+
+  push(index: number, f: number): void {
+    if (this.count === this.indices.length) this.grow();
+    const indices = this.indices;
+    const scores = this.scores;
+    let i = this.count++;
+    indices[i] = index;
+    scores[i] = f;
     while (i > 0) {
       const parent = (i - 1) >> 1;
-      if (items[parent].f <= items[i].f) break;
-      [items[parent], items[i]] = [items[i], items[parent]];
+      if (scores[parent] <= scores[i]) break;
+      const swapIndex = indices[parent];
+      indices[parent] = indices[i];
+      indices[i] = swapIndex;
+      const swapScore = scores[parent];
+      scores[parent] = scores[i];
+      scores[i] = swapScore;
       i = parent;
     }
   }
 
-  pop(): HeapNode | undefined {
-    const items = this.items;
-    if (items.length === 0) return undefined;
-    const top = items[0];
-    const last = items.pop()!;
-    if (items.length > 0) {
-      items[0] = last;
+  /** Pop the lowest index, or -1 when empty. */
+  pop(): number {
+    if (this.count === 0) return -1;
+    const indices = this.indices;
+    const scores = this.scores;
+    const top = indices[0];
+    const lastIndex = indices[--this.count];
+    if (this.count > 0) {
+      indices[0] = lastIndex;
+      scores[0] = scores[this.count];
       let i = 0;
       for (;;) {
         const l = i * 2 + 1;
         const r = l + 1;
         let smallest = i;
-        if (l < items.length && items[l].f < items[smallest].f) smallest = l;
-        if (r < items.length && items[r].f < items[smallest].f) smallest = r;
+        if (l < this.count && scores[l] < scores[smallest]) smallest = l;
+        if (r < this.count && scores[r] < scores[smallest]) smallest = r;
         if (smallest === i) break;
-        [items[smallest], items[i]] = [items[i], items[smallest]];
+        const swapIndex = indices[smallest];
+        indices[smallest] = indices[i];
+        indices[i] = swapIndex;
+        const swapScore = scores[smallest];
+        scores[smallest] = scores[i];
+        scores[i] = swapScore;
         i = smallest;
       }
     }
@@ -72,7 +108,7 @@ class MinHeap {
   }
 
   get size(): number {
-    return this.items.length;
+    return this.count;
   }
 }
 
@@ -226,13 +262,13 @@ export function findPath(
   const closed = new Uint8Array(total);
   const open = new MinHeap();
   gScore[start] = 0;
-  open.push({ index: start, f: heuristic(nav, start, goal) });
+  open.push(start, heuristic(nav, start, goal));
   let expanded = 0;
   let found = false;
 
   while (open.size > 0) {
-    const current = open.pop()!;
-    const cur = current.index;
+    const cur = open.pop();
+    if (cur < 0) break;
     if (closed[cur]) continue;
     if (cur === goal) {
       found = true;
@@ -255,7 +291,7 @@ export function findPath(
       if (tentative < gScore[ni]) {
         gScore[ni] = tentative;
         cameFrom[ni] = cur;
-        open.push({ index: ni, f: tentative + heuristic(nav, ni, goal) });
+        open.push(ni, tentative + heuristic(nav, ni, goal));
       }
     }
   }

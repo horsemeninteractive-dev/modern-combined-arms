@@ -1,0 +1,350 @@
+{
+  "source": "staging-evidence\\phase2a3-soak\\heap-m26.pprof",
+  "bytes": 2591,
+  "sampleTypes": [
+    {
+      "type": "alloc_objects",
+      "unit": "count"
+    },
+    {
+      "type": "alloc_space",
+      "unit": "bytes"
+    }
+  ],
+  "samplePeriodBytes": 524288,
+  "samples": 50,
+  "totals": [
+    {
+      "type": "alloc_objects",
+      "unit": "count",
+      "value": 13308540,
+      "percentOfSampled": 100.0
+    },
+    {
+      "type": "alloc_space",
+      "unit": "bytes",
+      "value": 459741028,
+      "percentOfSampled": 100.0
+    }
+  ],
+  "bySampleType": [
+    {
+      "type": "alloc_objects",
+      "unit": "count",
+      "total": 13308540,
+      "topSelf": [
+        {
+          "function": "next",
+          "value": 12347219,
+          "percent": 92.78
+        },
+        {
+          "function": "acquireAutoTarget",
+          "value": 327695,
+          "percent": 2.46
+        },
+        {
+          "function": "steerAroundUnits",
+          "value": 196615,
+          "percent": 1.48
+        },
+        {
+          "function": "canOccupy",
+          "value": 87382,
+          "percent": 0.66
+        },
+        {
+          "function": "createTeamSnapshot",
+          "value": 49356,
+          "percent": 0.37
+        },
+        {
+          "function": "updateUnits",
+          "value": 43691,
+          "percent": 0.33
+        },
+        {
+          "function": "sqrt",
+          "value": 43691,
+          "percent": 0.33
+        },
+        {
+          "function": "abs",
+          "value": 43691,
+          "percent": 0.33
+        },
+        {
+          "function": "map",
+          "value": 32769,
+          "percent": 0.25
+        },
+        {
+          "function": "refreshVisibleEntities",
+          "value": 26215,
+          "percent": 0.2
+        },
+        {
+          "function": "values",
+          "value": 21846,
+          "percent": 0.16
+        },
+        {
+          "function": "from",
+          "value": 21760,
+          "percent": 0.16
+        },
+        {
+          "function": "evaluateVictory",
+          "value": 18725,
+          "percent": 0.14
+        },
+        {
+          "function": "projectPlayer",
+          "value": 16385,
+          "percent": 0.12
+        },
+        {
+          "function": "passiveMatsFor",
+          "value": 10923,
+          "percent": 0.08
+        }
+      ],
+      "topInclusive": [
+        {
+          "function": "(root)",
+          "value": 13308540,
+          "percent": 100.0
+        },
+        {
+          "function": "runTick",
+          "value": 13256041,
+          "percent": 99.61
+        },
+        {
+          "function": "next",
+          "value": 12347219,
+          "percent": 92.78
+        },
+        {
+          "function": "broadcast",
+          "value": 11599153,
+          "percent": 87.16
+        },
+        {
+          "function": "createTeamSnapshot",
+          "value": 11598688,
+          "percent": 87.15
+        },
+        {
+          "function": "from",
+          "value": 11556316,
+          "percent": 86.83
+        },
+        {
+          "function": "tick",
+          "value": 1649606,
+          "percent": 12.4
+        },
+        {
+          "function": "updateUnits",
+          "value": 1386130,
+          "percent": 10.42
+        },
+        {
+          "function": "acquireAutoTarget",
+          "value": 930638,
+          "percent": 6.99
+        },
+        {
+          "function": "steerAroundUnits",
+          "value": 283997,
+          "percent": 2.13
+        },
+        {
+          "function": "moveAlongPath",
+          "value": 283997,
+          "percent": 2.13
+        },
+        {
+          "function": "updateBuildingSystems",
+          "value": 101999,
+          "percent": 0.77
+        },
+        {
+          "function": "updateGridNotices",
+          "value": 100491,
+          "percent": 0.76
+        },
+        {
+          "function": "passiveMatsFor",
+          "value": 89568,
+          "percent": 0.67
+        },
+        {
+          "function": "updatePassiveIncome",
+          "value": 89568,
+          "percent": 0.67
+        }
+      ]
+    },
+    {
+      "type": "alloc_space",
+      "unit": "bytes",
+      "total": 459741028,
+      "topSelf": [
+        {
+          "function": "next",
+          "value": 246944380,
+          "percent": 53.71
+        },
+        {
+          "function": "from",
+          "value": 147255708,
+          "percent": 32.03
+        },
+        {
+          "function": "sendSnapshotObject",
+          "value": 28316012,
+          "percent": 6.16
+        },
+        {
+          "function": "acquireAutoTarget",
+          "value": 15729360,
+          "percent": 3.42
+        },
+        {
+          "function": "steerAroundUnits",
+          "value": 7864644,
+          "percent": 1.71
+        },
+        {
+          "function": "createTeamSnapshot",
+          "value": 3145872,
+          "percent": 0.68
+        },
+        {
+          "function": "sort",
+          "value": 2099136,
+          "percent": 0.46
+        },
+        {
+          "function": "canOccupy",
+          "value": 1048584,
+          "percent": 0.23
+        },
+        {
+          "function": "persistSnapshot",
+          "value": 1045656,
+          "percent": 0.23
+        },
+        {
+          "function": "push",
+          "value": 524340,
+          "percent": 0.11
+        },
+        {
+          "function": "filter",
+          "value": 524324,
+          "percent": 0.11
+        },
+        {
+          "function": "projectPlayer",
+          "value": 524320,
+          "percent": 0.11
+        },
+        {
+          "function": "evaluateMatchResult",
+          "value": 524304,
+          "percent": 0.11
+        },
+        {
+          "function": "map",
+          "value": 524304,
+          "percent": 0.11
+        },
+        {
+          "function": "values",
+          "value": 524304,
+          "percent": 0.11
+        }
+      ],
+      "topInclusive": [
+        {
+          "function": "(root)",
+          "value": 459741028,
+          "percent": 100.0
+        },
+        {
+          "function": "runTick",
+          "value": 456585932,
+          "percent": 99.31
+        },
+        {
+          "function": "broadcast",
+          "value": 408872232,
+          "percent": 88.94
+        },
+        {
+          "function": "createTeamSnapshot",
+          "value": 380556220,
+          "percent": 82.78
+        },
+        {
+          "function": "from",
+          "value": 377946828,
+          "percent": 82.21
+        },
+        {
+          "function": "next",
+          "value": 246944380,
+          "percent": 53.71
+        },
+        {
+          "function": "tick",
+          "value": 47189396,
+          "percent": 10.26
+        },
+        {
+          "function": "updateUnits",
+          "value": 39847736,
+          "percent": 8.67
+        },
+        {
+          "function": "sendSnapshotObject",
+          "value": 28316012,
+          "percent": 6.16
+        },
+        {
+          "function": "acquireAutoTarget",
+          "value": 27788220,
+          "percent": 6.04
+        },
+        {
+          "function": "steerAroundUnits",
+          "value": 8913228,
+          "percent": 1.94
+        },
+        {
+          "function": "moveAlongPath",
+          "value": 8913228,
+          "percent": 1.94
+        },
+        {
+          "function": "persistSnapshot",
+          "value": 3155096,
+          "percent": 0.69
+        },
+        {
+          "function": "persistPeriodic",
+          "value": 3155096,
+          "percent": 0.69
+        },
+        {
+          "function": "updateBuildingSystems",
+          "value": 3146772,
+          "percent": 0.68
+        }
+      ]
+    }
+  ]
+}

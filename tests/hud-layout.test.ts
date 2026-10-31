@@ -4,6 +4,7 @@ import {
   edgeAutoScrollVelocity,
   minimapBackingSize,
   minimapStatus,
+  productionBlockReason,
   productionCardState,
   productionDomain,
   resolveHudLayout,
@@ -107,6 +108,18 @@ describe('production card queue display', () => {
       active: false,
       progress: 0,
     });
+  });
+});
+
+describe('production card block reasons', () => {
+  it('names affordability, capacity and tech blocks in one vocabulary', () => {
+    expect(productionBlockReason('Insufficient materials.')).toEqual({ text: 'NO MATERIALS', tone: 'materials' });
+    expect(productionBlockReason('Insufficient requisition.')).toEqual({ text: 'NO REQUISITION', tone: 'requisition' });
+    expect(productionBlockReason('Production queue is full.')).toEqual({ text: 'QUEUE FULL', tone: 'queue' });
+    expect(productionBlockReason('Requires an operational airfield.')).toEqual({ text: 'NEEDS AIRFIELD', tone: 'tech' });
+    expect(productionBlockReason('An operational Vehicle Factory builds engineers.')).toEqual({ text: 'NEEDS VEHICLE FACTORY', tone: 'tech' });
+    expect(productionBlockReason('Facility still under construction.')).toEqual({ text: 'UNDER CONSTRUCTION', tone: 'tech' });
+    expect(productionBlockReason('Something unexpected.')).toEqual({ text: 'UNAVAILABLE', tone: 'other' });
   });
 });
 

@@ -1,0 +1,736 @@
+{
+  "version": 1,
+  "base": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev",
+  "capturedAt": "2026-10-30T12:58:58.938Z",
+  "build": "phase2a5-staging",
+  "roomId": "phase2a5-clock-mvuzarhj",
+  "unauthorizedStatus": 403,
+  "invalidProbeStatus": 400,
+  "probes": [
+    {
+      "version": 1,
+      "method": "synchronous-cpu-workload",
+      "iterations": 100000,
+      "workloadMultipliers": [
+        1,
+        2,
+        4
+      ],
+      "workloads": [
+        {
+          "iterations": 100000,
+          "checksum": 1439422740,
+          "clocks": [
+            {
+              "name": "performance.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "Date.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.hrtime.bigint",
+              "available": true,
+              "unit": "ns",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.cpuUsage",
+              "available": false,
+              "unit": "us",
+              "delta": null,
+              "error": "Error [ERR_METHOD_NOT_IMPLEMENTED]: The process.cpuUsage met"
+            }
+          ]
+        },
+        {
+          "iterations": 200000,
+          "checksum": 608761662,
+          "clocks": [
+            {
+              "name": "performance.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "Date.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.hrtime.bigint",
+              "available": true,
+              "unit": "ns",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.cpuUsage",
+              "available": false,
+              "unit": "us",
+              "delta": null,
+              "error": "Error [ERR_METHOD_NOT_IMPLEMENTED]: The process.cpuUsage met"
+            }
+          ]
+        },
+        {
+          "iterations": 400000,
+          "checksum": 3348093114,
+          "clocks": [
+            {
+              "name": "performance.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "Date.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.hrtime.bigint",
+              "available": true,
+              "unit": "ns",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.cpuUsage",
+              "available": false,
+              "unit": "us",
+              "delta": null,
+              "error": "Error [ERR_METHOD_NOT_IMPLEMENTED]: The process.cpuUsage met"
+            }
+          ]
+        }
+      ],
+      "ioYield": [
+        {
+          "name": "performance.now",
+          "available": true,
+          "unit": "ms",
+          "delta": 0,
+          "error": null
+        },
+        {
+          "name": "Date.now",
+          "available": true,
+          "unit": "ms",
+          "delta": 0,
+          "error": null
+        },
+        {
+          "name": "process.hrtime.bigint",
+          "available": true,
+          "unit": "ns",
+          "delta": 0,
+          "error": null
+        },
+        {
+          "name": "process.cpuUsage",
+          "available": false,
+          "unit": "us",
+          "delta": null,
+          "error": "Error [ERR_METHOD_NOT_IMPLEMENTED]: The process.cpuUsage met"
+        }
+      ],
+      "notes": "CPU-only workloads run synchronously. A zero delta means the clock did not advance, not that no CPU was used. ioYield runs after a real timer turn and is shown for comparison only."
+    },
+    {
+      "version": 1,
+      "method": "synchronous-cpu-workload",
+      "iterations": 100000,
+      "workloadMultipliers": [
+        1,
+        2,
+        4
+      ],
+      "workloads": [
+        {
+          "iterations": 100000,
+          "checksum": 1439422740,
+          "clocks": [
+            {
+              "name": "performance.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "Date.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.hrtime.bigint",
+              "available": true,
+              "unit": "ns",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.cpuUsage",
+              "available": false,
+              "unit": "us",
+              "delta": null,
+              "error": "Error [ERR_METHOD_NOT_IMPLEMENTED]: The process.cpuUsage met"
+            }
+          ]
+        },
+        {
+          "iterations": 200000,
+          "checksum": 608761662,
+          "clocks": [
+            {
+              "name": "performance.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "Date.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.hrtime.bigint",
+              "available": true,
+              "unit": "ns",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.cpuUsage",
+              "available": false,
+              "unit": "us",
+              "delta": null,
+              "error": "Error [ERR_METHOD_NOT_IMPLEMENTED]: The process.cpuUsage met"
+            }
+          ]
+        },
+        {
+          "iterations": 400000,
+          "checksum": 3348093114,
+          "clocks": [
+            {
+              "name": "performance.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "Date.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.hrtime.bigint",
+              "available": true,
+              "unit": "ns",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.cpuUsage",
+              "available": false,
+              "unit": "us",
+              "delta": null,
+              "error": "Error [ERR_METHOD_NOT_IMPLEMENTED]: The process.cpuUsage met"
+            }
+          ]
+        }
+      ],
+      "ioYield": [
+        {
+          "name": "performance.now",
+          "available": true,
+          "unit": "ms",
+          "delta": 0,
+          "error": null
+        },
+        {
+          "name": "Date.now",
+          "available": true,
+          "unit": "ms",
+          "delta": 0,
+          "error": null
+        },
+        {
+          "name": "process.hrtime.bigint",
+          "available": true,
+          "unit": "ns",
+          "delta": 0,
+          "error": null
+        },
+        {
+          "name": "process.cpuUsage",
+          "available": false,
+          "unit": "us",
+          "delta": null,
+          "error": "Error [ERR_METHOD_NOT_IMPLEMENTED]: The process.cpuUsage met"
+        }
+      ],
+      "notes": "CPU-only workloads run synchronously. A zero delta means the clock did not advance, not that no CPU was used. ioYield runs after a real timer turn and is shown for comparison only."
+    },
+    {
+      "version": 1,
+      "method": "synchronous-cpu-workload",
+      "iterations": 100000,
+      "workloadMultipliers": [
+        1,
+        2,
+        4
+      ],
+      "workloads": [
+        {
+          "iterations": 100000,
+          "checksum": 1439422740,
+          "clocks": [
+            {
+              "name": "performance.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "Date.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.hrtime.bigint",
+              "available": true,
+              "unit": "ns",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.cpuUsage",
+              "available": false,
+              "unit": "us",
+              "delta": null,
+              "error": "Error [ERR_METHOD_NOT_IMPLEMENTED]: The process.cpuUsage met"
+            }
+          ]
+        },
+        {
+          "iterations": 200000,
+          "checksum": 608761662,
+          "clocks": [
+            {
+              "name": "performance.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "Date.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.hrtime.bigint",
+              "available": true,
+              "unit": "ns",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.cpuUsage",
+              "available": false,
+              "unit": "us",
+              "delta": null,
+              "error": "Error [ERR_METHOD_NOT_IMPLEMENTED]: The process.cpuUsage met"
+            }
+          ]
+        },
+        {
+          "iterations": 400000,
+          "checksum": 3348093114,
+          "clocks": [
+            {
+              "name": "performance.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "Date.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.hrtime.bigint",
+              "available": true,
+              "unit": "ns",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.cpuUsage",
+              "available": false,
+              "unit": "us",
+              "delta": null,
+              "error": "Error [ERR_METHOD_NOT_IMPLEMENTED]: The process.cpuUsage met"
+            }
+          ]
+        }
+      ],
+      "ioYield": [
+        {
+          "name": "performance.now",
+          "available": true,
+          "unit": "ms",
+          "delta": 0,
+          "error": null
+        },
+        {
+          "name": "Date.now",
+          "available": true,
+          "unit": "ms",
+          "delta": 0,
+          "error": null
+        },
+        {
+          "name": "process.hrtime.bigint",
+          "available": true,
+          "unit": "ns",
+          "delta": 0,
+          "error": null
+        },
+        {
+          "name": "process.cpuUsage",
+          "available": false,
+          "unit": "us",
+          "delta": null,
+          "error": "Error [ERR_METHOD_NOT_IMPLEMENTED]: The process.cpuUsage met"
+        }
+      ],
+      "notes": "CPU-only workloads run synchronously. A zero delta means the clock did not advance, not that no CPU was used. ioYield runs after a real timer turn and is shown for comparison only."
+    },
+    {
+      "version": 1,
+      "method": "synchronous-cpu-workload",
+      "iterations": 100000,
+      "workloadMultipliers": [
+        1,
+        2,
+        4
+      ],
+      "workloads": [
+        {
+          "iterations": 100000,
+          "checksum": 1439422740,
+          "clocks": [
+            {
+              "name": "performance.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "Date.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.hrtime.bigint",
+              "available": true,
+              "unit": "ns",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.cpuUsage",
+              "available": false,
+              "unit": "us",
+              "delta": null,
+              "error": "Error [ERR_METHOD_NOT_IMPLEMENTED]: The process.cpuUsage met"
+            }
+          ]
+        },
+        {
+          "iterations": 200000,
+          "checksum": 608761662,
+          "clocks": [
+            {
+              "name": "performance.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "Date.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.hrtime.bigint",
+              "available": true,
+              "unit": "ns",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.cpuUsage",
+              "available": false,
+              "unit": "us",
+              "delta": null,
+              "error": "Error [ERR_METHOD_NOT_IMPLEMENTED]: The process.cpuUsage met"
+            }
+          ]
+        },
+        {
+          "iterations": 400000,
+          "checksum": 3348093114,
+          "clocks": [
+            {
+              "name": "performance.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "Date.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.hrtime.bigint",
+              "available": true,
+              "unit": "ns",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.cpuUsage",
+              "available": false,
+              "unit": "us",
+              "delta": null,
+              "error": "Error [ERR_METHOD_NOT_IMPLEMENTED]: The process.cpuUsage met"
+            }
+          ]
+        }
+      ],
+      "ioYield": [
+        {
+          "name": "performance.now",
+          "available": true,
+          "unit": "ms",
+          "delta": 0,
+          "error": null
+        },
+        {
+          "name": "Date.now",
+          "available": true,
+          "unit": "ms",
+          "delta": 0,
+          "error": null
+        },
+        {
+          "name": "process.hrtime.bigint",
+          "available": true,
+          "unit": "ns",
+          "delta": 0,
+          "error": null
+        },
+        {
+          "name": "process.cpuUsage",
+          "available": false,
+          "unit": "us",
+          "delta": null,
+          "error": "Error [ERR_METHOD_NOT_IMPLEMENTED]: The process.cpuUsage met"
+        }
+      ],
+      "notes": "CPU-only workloads run synchronously. A zero delta means the clock did not advance, not that no CPU was used. ioYield runs after a real timer turn and is shown for comparison only."
+    },
+    {
+      "version": 1,
+      "method": "synchronous-cpu-workload",
+      "iterations": 100000,
+      "workloadMultipliers": [
+        1,
+        2,
+        4
+      ],
+      "workloads": [
+        {
+          "iterations": 100000,
+          "checksum": 1439422740,
+          "clocks": [
+            {
+              "name": "performance.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "Date.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.hrtime.bigint",
+              "available": true,
+              "unit": "ns",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.cpuUsage",
+              "available": false,
+              "unit": "us",
+              "delta": null,
+              "error": "Error [ERR_METHOD_NOT_IMPLEMENTED]: The process.cpuUsage met"
+            }
+          ]
+        },
+        {
+          "iterations": 200000,
+          "checksum": 608761662,
+          "clocks": [
+            {
+              "name": "performance.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "Date.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.hrtime.bigint",
+              "available": true,
+              "unit": "ns",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.cpuUsage",
+              "available": false,
+              "unit": "us",
+              "delta": null,
+              "error": "Error [ERR_METHOD_NOT_IMPLEMENTED]: The process.cpuUsage met"
+            }
+          ]
+        },
+        {
+          "iterations": 400000,
+          "checksum": 3348093114,
+          "clocks": [
+            {
+              "name": "performance.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "Date.now",
+              "available": true,
+              "unit": "ms",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.hrtime.bigint",
+              "available": true,
+              "unit": "ns",
+              "delta": 0,
+              "error": null
+            },
+            {
+              "name": "process.cpuUsage",
+              "available": false,
+              "unit": "us",
+              "delta": null,
+              "error": "Error [ERR_METHOD_NOT_IMPLEMENTED]: The process.cpuUsage met"
+            }
+          ]
+        }
+      ],
+      "ioYield": [
+        {
+          "name": "performance.now",
+          "available": true,
+          "unit": "ms",
+          "delta": 0,
+          "error": null
+        },
+        {
+          "name": "Date.now",
+          "available": true,
+          "unit": "ms",
+          "delta": 0,
+          "error": null
+        },
+        {
+          "name": "process.hrtime.bigint",
+          "available": true,
+          "unit": "ns",
+          "delta": 0,
+          "error": null
+        },
+        {
+          "name": "process.cpuUsage",
+          "available": false,
+          "unit": "us",
+          "delta": null,
+          "error": "Error [ERR_METHOD_NOT_IMPLEMENTED]: The process.cpuUsage met"
+        }
+      ],
+      "notes": "CPU-only workloads run synchronously. A zero delta means the clock did not advance, not that no CPU was used. ioYield runs after a real timer turn and is shown for comparison only."
+    }
+  ]
+}

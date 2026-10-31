@@ -1,9 +1,17 @@
 import type { App } from '../app';
 import type { Game } from '../sim/game';
 import type { Entity, VictoryState } from '../sim/types';
-import { BUILDINGS, BUILDABLE_BY_PLAYER, isIndestructibleStructure } from '../data/buildings';
+import {
+  BUILDINGS,
+  BUILDABLE_BY_PLAYER,
+  buildingFamily,
+  buildingRequirements,
+  isIndestructibleStructure,
+} from '../data/buildings';
 import { UNITS } from '../data/units';
 import { ALLIANCES, tryIdentityDef } from '../data/factions';
+import { CAMPAIGNS } from '../data/campaign';
+import { TUTORIAL_SCENARIO_ID } from '../data/tutorial';
 import { TERRAIN, Terrain, tileIndex, type TerrainId } from '../sim/terrain';
 import { REPAIR_SUPPRESSION_TICKS, TILE_SIZE } from '../sim/constants';
 import { icon, iconSvg } from './icons';
@@ -14,19 +22,24 @@ import {
   gridAlertCopy,
   minimapBackingSize,
   minimapStatus,
+  productionBlockReason,
   productionCardState,
   productionDomain,
   resolveHudLayout,
+  selectionChips,
   structureTab,
   toggleHudPanel,
   type HudLayout,
   type HudPanel,
   type ProductionTab,
+  type SelectionChipView,
 } from './hudLayout';
 import { ThumbnailRenderer } from '../render/thumbnails';
+import { flagNationForFaction, flagTextureUrl } from '../render/flags';
 import type { ThumbnailKind, ThumbnailRequest, ThumbnailShape } from '../render/thumbnailFrame';
 import { objectiveMeterState } from './relayMeter';
 import { structureBenefit } from '../sim/infrastructure';
+import { contactAlpha, contactIsHollow, contactStateOf } from '../sim/contacts';
 import { BUILD_COMMIT, VERSION_LINE } from '../version';
 
 const DOMAIN_LABEL: Record<string, string> = { land: 'LAND', air: 'AIR', naval: 'SEA' };
@@ -58,6 +71,20 @@ const QUEUE_EDGE_SCROLL_SPEED = 900;
 /** The pointer may drift this far outside the sheet horizontally and still scroll. */
 const QUEUE_EDGE_SCROLL_MARGIN = 28;
 
+/**
+ * The sidebar's one cost line: amber **M** for materials, blue **R** for
+ * requisition, then the build time. Chips keep the three quantities legible at
+ * a glance instead of reading as one run-on string, and both card types share
+ * it so a structure and a unit quote their price the same way.
+ */
+function costChips(mats: number, req: number, time: number): string {
+  return `<span class="cost-chips">
+    <span class="cost-chip mat"><b>${mats}</b>M</span>
+    ${req > 0 ? `<span class="cost-chip req"><b>${req}</b>R</span>` : ''}
+    <span class="cost-chip time"><b>${time}</b>s</span>
+  </span>`;
+}
+
 function clamp01(v: number): number {
   return Math.max(0, Math.min(1, v));
 }
@@ -81,6 +108,14 @@ function stateLabel(e: Entity): string {
   if (e.kind === 'building') {
     if (e.queue.length > 0) return 'PRODUCING';
     return 'OPERATIONAL';
+  }
+  if (e.submarine) {
+    if (e.submarine.dived) {
+      return e.submarine.revealed
+        ? 'DATUM EXPOSED'
+        : `SUBMERGED ${Math.round(e.submarine.battery)}s`;
+    }
+    return `SURFACED ${Math.round((e.submarine.battery / e.submarine.maxBattery) * 100)}%`;
   }
   if (e.aircraft) {
     if (e.aircraft.landed) return e.aircraft.serviceTimer > 0 ? 'REARMING' : 'GROUNDED';
@@ -225,12 +260,21 @@ export class HUD {
           faction.doctrine ? ` · ${faction.doctrine}` : ''
         }`
       : 'Task force';
+    // The nation's real flag sits between the brand and the resources: the rail
+    // already names the command, so the plate carries the identity a player
+    // checks first — whose flag is flying over this base.
+    const nation = p ? flagNationForFaction(p.factionId) : undefined;
+    const alliance = faction ? ALLIANCES[faction.allianceId] : undefined;
     return `
       <aside class="hud-rail" aria-label="Command rail">
         <div class="rail-brand">
           <img class="brand-mark" src="/insignia.svg" alt="" aria-hidden="true" width="30" height="30" />
           <span class="rail-theatre" title="${escapeHtml(railTitle)}">${escapeHtml(railName)}</span>
         </div>
+        ${nation ? `<div class="rail-identity" title="${escapeHtml(railTitle)}">
+          <img class="rail-flag" src="${flagTextureUrl(nation)}" alt="${escapeHtml(railName)} flag" />
+          ${alliance ? `<span class="rail-alliance"><i style="background:${alliance.color}"></i>${escapeHtml(alliance.shortName)}</span>` : ''}
+        </div>` : ''}
         <div class="rail-stats">
           <div class="rail-stat"><span class="rail-label"><i class="resource-swatch"></i>MATS</span><b id="res-mats">0</b><span class="rail-rate" id="res-mats-rate">+0/m</span></div>
           <div class="rail-stat req"><span class="rail-label"><i class="resource-swatch blue"></i>REQ</span><b id="res-req">0</b><span class="rail-rate" id="res-req-rate">+0.0/s</span></div>
@@ -286,17 +330,18 @@ export class HUD {
       <div class="command-bar" role="toolbar" aria-label="Commands">
         <button class="cmd-btn" data-act="move" title="${mobile ? 'Move selected units — tap a destination' : 'Move selected units — click a destination'}">${icon('move')}<span class="lbl">MOVE</span></button>
         <button class="cmd-btn" data-act="attack" title="Attack target (then tap/click)">${icon('attack')}<span class="lbl">ATTACK</span></button>
-        <button class="cmd-btn" data-act="attackMove" title="Attack-move (A)">${icon('attackMove')}<span class="lbl">A-MOVE</span></button>
+        <button class="cmd-btn" data-act="attackMove" title="Attack-move (A)">${icon('attackMove')}<span class="lbl">A-MOVE</span><kbd class="cmd-key" aria-hidden="true">A</kbd></button>
         <div class="cmd-sep"></div>
-        <button class="cmd-btn" data-act="stop" title="Stop (S)">${icon('stop')}<span class="lbl">STOP</span></button>
-        <button class="cmd-btn" data-act="hold" title="Hold position (H)">${icon('hold')}<span class="lbl">HOLD POS</span></button>
-        <button class="cmd-btn" data-act="capture" title="Capture a strategic objective (C)">${icon('capture')}<span class="lbl">CAPTURE</span></button>
+        <button class="cmd-btn" data-act="stop" title="Stop (S)">${icon('stop')}<span class="lbl">STOP</span><kbd class="cmd-key" aria-hidden="true">S</kbd></button>
+        <button class="cmd-btn" data-act="hold" title="Hold position (H)">${icon('hold')}<span class="lbl">HOLD POS</span><kbd class="cmd-key" aria-hidden="true">H</kbd></button>
+        <button class="cmd-btn" data-act="capture" title="Capture a strategic objective (C)">${icon('capture')}<span class="lbl">CAPTURE</span><kbd class="cmd-key" aria-hidden="true">C</kbd></button>
         <button class="cmd-btn" data-act="repair" title="Repair a damaged structure (then tap/click it)">${icon('repair')}<span class="lbl">REPAIR</span></button>
-        <button class="cmd-btn" data-act="garrison" title="Garrison a building (G)">${icon('garrison')}<span class="lbl">GARRISON</span></button>
+        <button class="cmd-btn" data-act="garrison" title="Garrison a building (G)">${icon('garrison')}<span class="lbl">GARRISON</span><kbd class="cmd-key" aria-hidden="true">G</kbd></button>
         <button class="cmd-btn" data-act="ungarrison" title="Order infantry out of a building">${icon('ungarrison')}<span class="lbl">EXIT</span></button>
-        <button class="cmd-btn" data-act="return" title="Return aircraft / ship to base">${icon('return')}<span class="lbl">RETURN</span></button>
+        <button class="cmd-btn" data-act="return" title="Return aircraft / ship to base (R)">${icon('return')}<span class="lbl">RETURN</span><kbd class="cmd-key" aria-hidden="true">R</kbd></button>
+        <button class="cmd-btn" data-act="dive" title="Dive or surface selected submarines (D)">${icon('submarine')}<span class="lbl">DIVE</span><kbd class="cmd-key" aria-hidden="true">D</kbd></button>
         <div class="cmd-sep"></div>
-        <button class="cmd-btn accent" data-act="build" title="Construction">${icon('build')}<span class="lbl">BUILD</span></button>
+        <button class="cmd-btn accent" data-act="build" title="Construction (B)">${icon('build')}<span class="lbl">BUILD</span><kbd class="cmd-key" aria-hidden="true">B</kbd></button>
         <button class="cmd-btn" data-act="box" title="Box selection">${icon('box')}<span class="lbl">BOX</span></button>
         ${mobile ? `<button class="cmd-btn" data-act="groups" title="Control groups">${icon('squad')}<span class="lbl">GROUPS</span></button>
         <button class="cmd-btn" data-act="map" title="Tactical map">${icon('scope')}<span class="lbl">MAP</span></button>` : ''}
@@ -349,6 +394,7 @@ export class HUD {
         <button data-act="cancel-mode">CANCEL [ESC]</button>
       </div>
       ${this.productionMarkup()}
+      <div class="perf-readout hidden" id="perf-readout" aria-hidden="true"></div>
       <section class="battle-console hud-bottom">
         <div class="console-actions">${this.commandButtons(false)}</div>
         ${this.selectionPanelMarkup()}
@@ -369,10 +415,11 @@ export class HUD {
         <button data-act="cancel-mode">CANCEL</button>
       </div>
       ${this.productionMarkup()}
+      <div class="perf-readout hidden" id="perf-readout" aria-hidden="true"></div>
       <button class="mobile-backdrop" data-act="close-sheets" aria-label="Close panel"></button>
       <section class="mobile-sheet objective-sheet" role="dialog" aria-label="Primary objective">
         <div class="sheet-head"><span>PRIMARY OBJECTIVE</span><button class="sheet-close" data-act="close-sheets" aria-label="Close objective">×</button></div>
-        <div class="objective-sheet-body"><h3 data-objective-primary></h3><p data-objective-sub></p><p class="sheet-note">Capture signals relays for requisition, forward supply depots for supplementary materials and radar stations for reconnaissance. Destroy the enemy command post to secure the island.</p></div>
+        <div class="objective-sheet-body"><h3 data-objective-primary></h3><p data-objective-sub></p><ul class="objective-sheet-list" data-objective-list hidden></ul><p class="sheet-note" data-objective-note>Capture signals relays for requisition, forward supply depots for supplementary materials and radar stations for reconnaissance. Destroy the enemy command post to secure the island.</p></div>
       </section>
       <section class="mobile-sheet selection-sheet" role="dialog" aria-label="Selection">
         <div class="sheet-head"><span>SELECTION</span><span class="mono" id="sel-count">NONE</span><button class="sheet-close" data-act="close-sheets" aria-label="Close selection">×</button></div>
@@ -414,6 +461,13 @@ export class HUD {
       const chip = target?.closest<HTMLElement>('[data-inspect]');
       if (chip && root.contains(chip)) {
         this.inspect(Number(chip.dataset.inspect));
+        return;
+      }
+      // A collapsed type card narrows the selection to that type instead of
+      // opening a single hull; the count is preserved in the panel header.
+      const typeCard = target?.closest<HTMLElement>('[data-select-type]');
+      if (typeCard && root.contains(typeCard)) {
+        this.app.narrowSelectionToType(typeCard.dataset.selectType ?? '');
         return;
       }
       const tabEl = target?.closest<HTMLElement>('[data-tab]');
@@ -507,6 +561,9 @@ export class HUD {
       case 'return':
         this.app.commandReturn();
         break;
+      case 'dive':
+        this.app.commandDive();
+        break;
       case 'grid-fix':
         this.selectTab('base');
         this.app.beginPlacement('powerPlant');
@@ -588,6 +645,7 @@ export class HUD {
         this.renderProduction();
       }
       if (this.app.debug) this.renderDebug();
+      this.renderPerfReadout();
     }
     // Training progress is presentation state and must follow every animation
     // frame, not the throttled HUD refresh: sampling it at 110 ms made the
@@ -598,6 +656,17 @@ export class HUD {
       this.drawMinimap();
     }
     void dt;
+  }
+
+  /** Optional frame-rate badge; presentation-only and never part of the sim. */
+  private renderPerfReadout(): void {
+    const el = this.root?.querySelector<HTMLElement>('#perf-readout');
+    if (!el) return;
+    const on = this.app.settings.fpsReadout === true;
+    el.classList.toggle('hidden', !on);
+    if (!on) return;
+    const perf = this.app.perf;
+    el.textContent = `${perf.fps} FPS · ${perf.frameMs.toFixed(1)} ms · SIM ${perf.simMs.toFixed(2)} ms · ${perf.entities} ENT`;
   }
 
   private selectedKey(): string {
@@ -710,6 +779,12 @@ export class HUD {
     this.root
       .querySelectorAll<HTMLElement>('[data-build="powerPlant"]')
       .forEach((card) => card.classList.toggle('suggested', power.brownout));
+    // The radar card is the answer to the collapsed tactical map: keep it
+    // flagged in BASE whenever the local player has no operational radar.
+    const radarOnline = this.minimapIsOnline();
+    this.root
+      .querySelectorAll<HTMLElement>('[data-build="radar"]')
+      .forEach((card) => card.classList.toggle('suggested', !radarOnline));
     const railPower = this.root.querySelector('#rail-power');
     if (railPower) {
       railPower.classList.toggle('brownout', power.brownout);
@@ -774,6 +849,23 @@ export class HUD {
     this.root.querySelectorAll<HTMLElement>('[data-objective-primary]').forEach((primary) => {
       primary.textContent = primaryObjective(game);
     });
+    // The touch sheet has room for the supporting objectives; the desktop rail
+    // shows the primary alone and opens the fuller briefing on click. Resolve
+    // the operation from campaign content so a save written before objective
+    // authoring still shows the operation brief, not the map's generic list.
+    const operationObjectives = campaignMissionObjectives(game).filter(
+      (objective) => objective.trim().length > 0,
+    );
+    const list = this.root.querySelector<HTMLElement>('[data-objective-list]');
+    if (list) {
+      const supporting = operationObjectives.slice(1);
+      list.innerHTML = supporting
+        .map((objective) => `<li>${escapeHtml(objective)}</li>`)
+        .join('');
+      list.hidden = supporting.length === 0;
+    }
+    const note = this.root.querySelector<HTMLElement>('[data-objective-note]');
+    if (note) note.hidden = operationObjectives.length > 0;
   }
 
   /* ------------------------------------------------------------------ */
@@ -1114,12 +1206,15 @@ export class HUD {
 
   /**
    * The roster uses the panel's horizontal space: one chip per selected entity,
-   * scrolled sideways instead of stacking rows. It is rebuilt only when the
-   * selection changes so a scrolled strip does not jump every refresh.
+   * scrolled sideways instead of stacking rows. A large selection collapses
+   * identical unit types into one card with a count, and tapping that card
+   * narrows the selection to the type. It is rebuilt only when the selection
+   * changes so a scrolled strip does not jump every refresh.
    */
   private renderRoster(entities: Entity[]): void {
     const root = this.root;
     if (!root) return;
+    const chips = selectionChips(entities);
     const listKey = entities.map((e) => e.id).join(',');
     root.querySelectorAll<HTMLElement>('[data-roster]').forEach((host) => {
       if (entities.length === 0) {
@@ -1131,31 +1226,50 @@ export class HUD {
       }
       if (host.dataset.key !== listKey) {
         host.dataset.key = listKey;
-        host.innerHTML = entities.map((e) => this.rosterChip(e)).join('');
+        host.innerHTML = chips.map((chip) => this.rosterChip(chip, entities)).join('');
       }
-      for (const e of entities) {
-        const chip = host.querySelector<HTMLElement>(`[data-inspect="${e.id}"]`);
-        if (!chip) continue;
-        chip.classList.toggle('active', e.id === this.inspectedId);
-        chip.setAttribute('aria-pressed', String(e.id === this.inspectedId));
-        const bar = chip.querySelector<HTMLElement>('.chip-hp i');
+      for (const chip of chips) {
+        const el = host.querySelector<HTMLElement>(
+          chip.kind === 'group'
+            ? `[data-select-type="${chip.defId}"]`
+            : `[data-inspect="${chip.ids[0]}"]`,
+        );
+        if (!el) continue;
+        if (chip.kind === 'entity') {
+          el.classList.toggle('active', chip.ids[0] === this.inspectedId);
+          el.setAttribute('aria-pressed', String(chip.ids[0] === this.inspectedId));
+        }
+        const bar = el.querySelector<HTMLElement>('.chip-hp i');
         if (!bar) continue;
-        const frac = clamp01(e.hp / e.maxHp);
+        const frac = chip.maxHp > 0 ? clamp01(chip.hp / chip.maxHp) : 0;
         bar.style.width = `${frac * 100}%`;
         bar.className = hpClass(frac);
       }
     });
   }
 
-  private rosterChip(e: Entity): string {
-    const def = e.kind === 'unit' ? UNITS[e.defId] : BUILDINGS[e.defId];
-    const colour = this.game ? ownerColor(this.game, e) : '#d8e2dd';
-    const frac = clamp01(e.hp / e.maxHp);
-    const name = def?.name ?? e.defId;
-    return `<button class="roster-chip" data-inspect="${e.id}" title="${escapeHtml(name)} · ${escapeHtml(stateLabel(e))}" aria-label="${escapeHtml(name)}">
-      ${this.thumbMarkup(e.kind, e.defId, colour, 'portrait', def?.icon ?? 'target', 'chip-art')}
+  private rosterChip(chip: SelectionChipView, entities: Entity[]): string {
+    const first = entities.find((e) => chip.ids.includes(e.id));
+    if (!first) return '';
+    const def = first.kind === 'unit' ? UNITS[chip.defId] : BUILDINGS[chip.defId];
+    const colour = this.game ? ownerColor(this.game, first) : '#d8e2dd';
+    const frac = chip.maxHp > 0 ? clamp01(chip.hp / chip.maxHp) : 0;
+    const name = def?.name ?? chip.defId;
+    if (chip.kind === 'group') {
+      const label = `${chip.count} × ${def?.shortName ?? chip.defId}`;
+      return `<button class="roster-chip grouped" data-select-type="${escapeHtml(chip.defId)}" title="${escapeHtml(label)} — narrow the selection to this type" aria-label="${escapeHtml(label)}; narrow selection">
+        ${this.thumbMarkup('unit', chip.defId, colour, 'portrait', def?.icon ?? 'target', 'chip-art')}
+        <span class="chip-copy">
+          <span class="chip-name">${escapeHtml(def?.shortName ?? chip.defId)}</span>
+          <span class="chip-hp"><i class="${hpClass(frac)}" style="width:${frac * 100}%"></i></span>
+        </span>
+        <span class="chip-count" aria-hidden="true">${chip.count}</span>
+      </button>`;
+    }
+    return `<button class="roster-chip" data-inspect="${chip.ids[0]}" title="${escapeHtml(name)} · ${escapeHtml(stateLabel(first))}" aria-label="${escapeHtml(name)}">
+      ${this.thumbMarkup(first.kind, chip.defId, colour, 'portrait', def?.icon ?? 'target', 'chip-art')}
       <span class="chip-copy">
-        <span class="chip-name">${escapeHtml(def?.shortName ?? e.defId)}</span>
+        <span class="chip-name">${escapeHtml(def?.shortName ?? chip.defId)}</span>
         <span class="chip-hp"><i class="${hpClass(frac)}" style="width:${frac * 100}%"></i></span>
       </span>
     </button>`;
@@ -1313,11 +1427,13 @@ export class HUD {
         const reorderable = queued.queued > 0 && f.queue.some((item) => item.defId !== id);
         const dragHint = reorderable ? ' Drag to set production priority.' : '';
         const title = status.ok ? `${udef.description}${dragHint}` : `${status.reason}${dragHint}`;
+        const block = status.ok ? null : productionBlockReason(status.reason);
         const disabled = !status.ok && !reorderable ? 'disabled' : '';
         const cardClass = [
           'unit-card',
           queued.active ? 'training' : '',
           status.ok ? '' : 'unavailable',
+          block ? `blocked-${block.tone}` : '',
           reorderable ? 'reorderable' : '',
         ].filter(Boolean).join(' ');
         return `<div class="unit-slot">
@@ -1328,7 +1444,8 @@ export class HUD {
               <span class="u-progress" style="--p:${(queued.progress * 100).toFixed(1)}%" aria-hidden="true"></span>
             </span>
             <span class="u-name">${escapeHtml(udef.shortName)}${national}</span>
-            <span class="u-cost"><b>${udef.cost.mats}</b>M${udef.cost.req > 0 ? ` · ${udef.cost.req}R` : ''}</span>
+            ${costChips(udef.cost.mats, udef.cost.req, udef.buildTime)}
+            ${block ? `<span class="u-reason ${block.tone}">${block.text}</span>` : ''}
             ${reorderable ? '<span class="u-grip" title="Drag to set production priority" aria-hidden="true"></span>' : ''}
           </button>
           ${queued.queued > 0 ? `<button class="u-queue" data-cancel-def="${f.id}:${id}" title="${queued.queued} queued — cancel one" aria-label="Cancel one queued ${escapeHtml(udef.name)}">${queued.queued}</button>` : ''}
@@ -1607,10 +1724,51 @@ export class HUD {
       .filter((def) => !roster || roster.buildings.includes(def.id))
       .map((def) => {
         const affordable = p ? p.mats >= def.cost.mats && p.req >= def.cost.req : false;
-        return `<button class="build-card" data-build="${def.id}" ${engineer ? '' : 'disabled'} title="${escapeHtml(def.description)}">
-          ${def.id === 'powerPlant' ? '<span class="b-flag">GRID FIX</span>' : ''}
+        // The structure tree is visible even when locked, so the sidebar reads
+        // as a progression rather than hiding half the roster. A locked card
+        // carries the structure that opens it; affordability still dims the
+        // cost line, exactly as it does on a unit card.
+        const missing = this.game?.missingTech(this.app.localPlayerId, def.id) ?? [];
+        const required = missing.map((m) => m.name).join(' and ');
+        const locked = missing.length > 0;
+        // The reverse of the gate: what this structure opens for the roster the
+        // player actually fields. The tree is visible on the locked cards; this
+        // makes the other half of it legible from the structure that opens it.
+        const family = buildingFamily(def.id);
+        const unlocks = BUILDABLE_BY_PLAYER
+          .filter((b) => buildingRequirements(b.id).includes(family))
+          .filter((b) => !roster || roster.buildings.includes(b.id))
+          .map((b) => b.name);
+        // One affordability language for the whole sidebar: a card the player
+        // cannot pay for keeps its text readable while the portrait dims.
+        // The short reason is printed on the card so a touch player
+        // can read it without a tooltip.
+        const shortfall = !p
+          ? 'no commander'
+          : p.mats < def.cost.mats
+            ? 'not enough materials'
+            : 'not enough requisition';
+        const unlockNote = unlocks.length > 0 ? ` Unlocks ${unlocks.join(', ')}.` : '';
+        const title = `${locked
+          ? `${def.description} — requires ${required}`
+          : engineer
+            ? affordable
+              ? def.description
+              : `${def.description} — ${shortfall}`
+            : `${def.description} — requires a combat engineer`}${unlockNote}`;
+        const block = locked
+          ? `NEEDS ${required.toUpperCase()}`
+          : !engineer
+            ? 'NEEDS ENGINEER'
+            : affordable ? '' : shortfall.toUpperCase();
+        return `<button class="build-card${affordable ? '' : ' unavailable'}${locked ? ' locked' : ''}" data-build="${def.id}" ${engineer && !locked ? '' : 'disabled'} title="${escapeHtml(title)}">
+          ${def.id === 'powerPlant' ? '<span class="b-flag">GRID FIX</span>' : def.id === 'radar' ? '<span class="b-flag">RADAR</span>' : ''}
           ${this.thumbMarkup('building', def.id, this.teamColor(), 'card', def.icon, 'b-thumb')}
-          <span class="b-copy"><span class="b-name">${escapeHtml(def.name)}${def.variantOf ? '<span class="u-national">NATIONAL</span>' : ''}</span><span class="b-cost"><b>${def.cost.mats}</b>M${def.cost.req > 0 ? ` · ${def.cost.req}R` : ''} · ${def.buildTime}s${affordable ? '' : ' · INSUFFICIENT'}</span></span>
+          <span class="b-copy">
+            <span class="b-name">${escapeHtml(def.name)}${def.variantOf ? '<span class="u-national">NATIONAL</span>' : ''}</span>
+            ${block ? `<span class="b-req${locked ? '' : ' short'}">${escapeHtml(block)}</span>` : ''}
+            ${costChips(def.cost.mats, def.cost.req, def.buildTime)}
+          </span>
         </button>`;
       }).join('');
     return `<div class="build-grid">${cards}</div>`;
@@ -1710,6 +1868,8 @@ export class HUD {
       .some((e) => e.hp > 0 && !e.construction && !!BUILDINGS[e.defId]?.radar);
     const status = minimapStatus(radar, game.powerStatus(this.app.localPlayerId).brownout);
     canvas.classList.toggle('static', !status.online);
+    canvas.closest('.map-dock')?.classList.toggle('radar-offline', !status.online);
+    canvas.closest('.production-sidebar')?.classList.toggle('radar-offline', !status.online);
     canvas.title = status.online
       ? 'Click to jump the camera'
       : status.reason === 'brownout'
@@ -1783,13 +1943,11 @@ export class HUD {
       const vision = e.owner === this.app.localPlayerId
         ? 'visible'
         : game.visionStateOf(game.teamOf(this.app.localPlayerId), e.id);
-      const contact = vision === 'hidden' &&
-        game.contactsFor(this.app.localPlayerId).some((c) => c.entityId === e.id);
-      if (vision === 'hidden' && !contact) continue;
+      if (vision === 'hidden') continue;
       const tx = e.x / TILE_SIZE;
       const tz = e.z / TILE_SIZE;
-      // Remembered structures and cold contacts stay on the map as faint marks.
-      ctx.globalAlpha = vision === 'remembered' || contact ? 0.42 : 1;
+      // Remembered structures stay on the map as faint marks.
+      ctx.globalAlpha = vision === 'remembered' ? 0.42 : 1;
       ctx.fillStyle = e.owner === -1 ? '#c9d2ce' : ownerColor(game, e);
       if (e.kind === 'building') {
         const def = BUILDINGS[e.defId];
@@ -1803,6 +1961,33 @@ export class HUD {
         ctx.lineWidth = 1.25 / strokeScale;
         ctx.strokeRect(tx - 1.7, tz - 1.7, 3.6, 3.6);
       }
+    }
+    // Contacts are drawn from the position recorded while the unit was visible,
+    // never from its current hidden position: a detected or last-known mark must
+    // not drift with a unit the team cannot see. The shape carries the
+    // confidence — solid for a confirmed sighting, hollow once the classification
+    // is lost — and the opacity fades across the last-known window.
+    const team = game.teamOf(this.app.localPlayerId);
+    for (const contact of game.contactsFor(this.app.localPlayerId)) {
+      const entity = game.state.entities.find((entry) => entry.id === contact.entityId);
+      if (entity && game.visionStateOf(team, contact.entityId) === 'remembered') continue;
+      const cxp = contact.x / TILE_SIZE;
+      const czp = contact.z / TILE_SIZE;
+      const colour = entity ? ownerColor(game, entity) : '#c9d2ce';
+      ctx.globalAlpha = contactAlpha(game.state.tick, contact);
+      ctx.fillStyle = colour;
+      ctx.strokeStyle = colour;
+      ctx.lineWidth = 1.1 / strokeScale;
+      if (contactIsHollow(contact)) {
+        ctx.strokeRect(cxp - 1.2, czp - 1.2, 2.4, 2.4);
+      } else {
+        ctx.fillRect(cxp - 1.2, czp - 1.2, 2.4, 2.4);
+      }
+      if (contactStateOf(contact) === 'last-known') {
+        // A small bar under a stale mark reads as memory rather than a target.
+        ctx.fillRect(cxp - 1.6, czp + 1.8, 3.2, 0.5);
+      }
+      ctx.globalAlpha = 1;
     }
     const v = this.app.renderer.camera.viewRect();
     ctx.strokeStyle = 'rgba(241,194,126,0.9)';
@@ -1850,6 +2035,7 @@ export class HUD {
   ): void {
     const w = canvas.width;
     const h = canvas.height;
+    const compact = canvas.clientHeight < 90;
     const frame = ++this.minimapFrame;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
@@ -1859,6 +2045,28 @@ export class HUD {
     glow.addColorStop(1, '#030809');
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, w, h);
+
+    // The collapsed dock is a status bar, not a dead screen: one readable line
+    // plus the action that brings the map back. The full feed returns when the
+    // dock regains its height after a Radar Array comes online.
+    if (compact) {
+      const scan = Math.max(1, Math.round(2 * density));
+      ctx.fillStyle = 'rgba(0,0,0,0.2)';
+      for (let y = 0; y < h; y += scan) ctx.fillRect(0, y, w, 1);
+      const mainFont = Math.max(11, Math.round(11 * density));
+      const subFont = Math.max(9, Math.round(9.5 * density));
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `700 ${mainFont}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+      ctx.fillStyle = '#d8e2dd';
+      ctx.fillText('RADAR OFFLINE', w / 2, h * 0.36);
+      ctx.font = `600 ${subFont}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+      ctx.fillStyle = 'rgba(224,163,74,0.92)';
+      ctx.fillText(reason === 'brownout' ? 'GRID BROWNOUT · RESTORE POWER' : 'BUILD A RADAR ARRAY', w / 2, h * 0.7);
+      ctx.fillStyle = 'rgba(224,163,74,0.72)';
+      ctx.fillRect(0, 0, w, Math.max(1, density));
+      return;
+    }
 
     const nw = Math.max(72, Math.round(w / 3));
     const nh = Math.max(48, Math.round(h / 3));
@@ -1913,8 +2121,8 @@ export class HUD {
     ctx.fillStyle = vignette;
     ctx.fillRect(0, 0, w, h);
 
-    const mainFont = Math.max(13, Math.round(11 * density));
-    const subFont = Math.max(9, Math.round(7.5 * density));
+    const mainFont = Math.max(13, Math.round(13 * density));
+    const subFont = Math.max(11, Math.round(11 * density));
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.font = `700 ${mainFont}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
@@ -1975,15 +2183,63 @@ export class HUD {
     const enemyStats = enemies[0]?.stats;
     // End copy names the two identities actually fighting, not the legacy map.
     const victorName = tryIdentityDef(p?.factionId ?? '')?.name ?? 'Your force';
-    const enemyName = tryIdentityDef(enemies[0]?.factionId ?? '')?.name ?? 'The enemy';
+    // Skirmish setup allows a mirror match, so "United Kingdom holds the island"
+    // would read as the player's own side unless the opponent is named as such.
+    const mirror = Boolean(p && enemies[0] && p.factionId === enemies[0].factionId);
+    const enemyName = mirror
+      ? 'The opposing task force'
+      : (tryIdentityDef(enemies[0]?.factionId ?? '')?.name ?? 'The enemy');
+    // The verdict sting and the card share the player's own flag as a backdrop;
+    // a defeat desaturates it rather than switching sides, so the screen still
+    // reads as this commander's result.
+    const nation = p ? flagNationForFaction(p.factionId) : undefined;
+    const flagStyle = nation ? ` style="background-image:url(${flagTextureUrl(nation)})"` : '';
+    const campaign = this.app.campaignRun();
+    const campaignVictory = victory ? campaign : null;
+    const nextMission = campaignVictory?.next ?? null;
+    const verdictSub =
+      result === 'draw'
+        ? 'Operation ended'
+        : victory
+          ? campaignVictory
+            ? 'Operation complete'
+            : 'Island secured'
+          : 'Beachhead lost';
+    const heading =
+      result === 'draw'
+        ? 'Stalemate'
+        : victory
+          ? campaignVictory
+            ? 'Operation Complete'
+            : 'Island Secured'
+          : 'Beachhead Lost';
+    const copy = victory
+      ? campaignVictory
+        ? `${escapeHtml(campaignVictory.mission.name)} is secured. ${enemyName}'s command post is destroyed${nextMission ? `; ${escapeHtml(nextMission.name)} is now unlocked.` : '; the campaign line is complete.'}`
+        : `${enemyName}'s command post is destroyed. ${victorName} holds the island — land, air and sea were brought to bear as one force.`
+      : `Your command post has fallen. ${enemyName} holds the island; a new plan and a new landing are required.`;
+    const campaignNote = campaignVictory
+      ? nextMission
+        ? `<div class="end-campaign-note"><span>NEXT OPERATION UNLOCKED</span><b>${escapeHtml(nextMission.name)}</b></div>`
+        : '<div class="end-campaign-note complete"><span>CAMPAIGN COMPLETE</span><b>All operations cleared</b></div>'
+      : '';
+    const primaryAction =
+      campaignVictory && nextMission
+        ? '<button class="btn btn-primary" data-end="next">NEXT OPERATION</button>'
+        : '<button class="btn btn-primary" data-end="restart">RESTART SCENARIO</button>';
     root.innerHTML = `
-      <div class="end-screen">
+      <div class="end-screen ${victory ? 'victory' : result === 'draw' ? 'draw' : 'defeat'}">
+        <div class="end-flag"${flagStyle} aria-hidden="true"></div>
+        <div class="end-sting" aria-hidden="true">
+          <i class="end-sting-rule"></i>
+          <span>${result === 'draw' ? 'Stalemate' : victory ? 'Victory' : 'Defeat'}</span>
+          <small>${verdictSub}</small>
+        </div>
         <div class="end-card">
           <span class="result">${result === 'draw' ? 'OPERATION ENDED' : victory ? 'OPERATION COMPLETE' : 'OPERATION FAILED'}</span>
-          <h2 class="${victory ? '' : 'defeat'}">${result === 'draw' ? 'Stalemate' : victory ? 'Island Secured' : 'Beachhead Lost'}</h2>
-          <p>${victory
-            ? `${enemyName}'s command post is destroyed. ${victorName} holds the island — land, air and sea were brought to bear as one force.`
-            : `Your command post has fallen. ${enemyName} holds the island; a new plan and a new landing are required.`}</p>
+          <h2 class="${victory ? '' : 'defeat'}">${heading}</h2>
+          <p>${copy}</p>
+          ${campaignNote}
           <div class="end-stats">
             <div><span>MISSION TIME</span><b>${fmtTime(game.state.tick)}</b></div>
             <div><span>UNITS BUILT</span><b>${stats?.unitsBuilt ?? 0}</b></div>
@@ -1995,7 +2251,7 @@ export class HUD {
             <div><span>RELAYS</span><b>${p?.relayCount ?? 0}</b></div>
           </div>
           <div class="end-actions">
-            <button class="btn btn-primary" data-end="restart">RESTART SCENARIO</button>
+            ${primaryAction}
             <button class="btn btn-ghost" data-end="save">SAVE BATTLE</button>
             <button class="btn btn-ghost" data-end="editor">SCENARIO EDITOR</button>
             <button class="btn btn-ghost" data-end="menu">RETURN TO MENU</button>
@@ -2006,6 +2262,7 @@ export class HUD {
       btn.addEventListener('click', () => {
         const act = btn.dataset.end;
         if (act === 'restart') void this.app.restart();
+        if (act === 'next') this.app.startNextCampaignMission();
         if (act === 'save') this.app.openSaveMenu(false);
         if (act === 'editor') this.app.openEditor(game.state.scenario);
         if (act === 'menu') this.app.toMenu();
@@ -2015,7 +2272,20 @@ export class HUD {
   }
 }
 
+function campaignMissionObjectives(game: Game): readonly string[] {
+  const ref = game.state.scenario.meta.campaign;
+  if (!ref) return [];
+  const campaign = CAMPAIGNS.find((entry) => entry.id === ref.campaignId);
+  return campaign?.missions.find((mission) => mission.id === ref.missionId)?.objectives ?? [];
+}
+
 function primaryObjective(game: Game): string {
+  if (game.state.scenario.meta.id === TUTORIAL_SCENARIO_ID) return 'Complete the training lanes.';
+  // Campaign operations bring an authored first objective. Skirmish keeps the
+  // dynamic command-post line below; only a campaign marker opts into the
+  // operation brief, so an editor map's objective text is not commandeered.
+  const campaignPrimary = campaignMissionObjectives(game)[0]?.trim();
+  if (campaignPrimary) return campaignPrimary;
   const enemyHq = game.state.entities.find(
     (e) => e.owner !== game.localPlayerId && e.defId === 'commandPost' && e.hp > 0,
   );

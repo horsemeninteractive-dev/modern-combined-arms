@@ -8,6 +8,10 @@ declare module 'node:fs' {
   export function existsSync(path: string | URL): boolean;
 }
 
+declare module 'node:vm' {
+  export function runInNewContext(code: string, contextObject?: Record<string, unknown>): unknown;
+}
+
 declare module 'node:child_process' {
   export function execSync(command: string, options: { encoding: 'utf8' }): string;
 }

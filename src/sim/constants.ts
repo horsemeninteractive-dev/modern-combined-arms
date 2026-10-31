@@ -25,6 +25,15 @@ export const REPAIR_SUPPRESSION_TICKS = 20;
 /** Height of one elevation level in world units. */
 export const ELEVATION_HEIGHT = 1.15;
 
+/**
+ * Highest elevation the editor will paint. Eight levels is just over two tiles
+ * of relief, which is enough for a real hill line, a ridge the shader reads as
+ * rock, or a cliff that vehicles cannot climb. The old ceiling of four was
+ * never reached by the shipped maps, so the battlefield only ever had two
+ * heights (sea level and one terrace).
+ */
+export const MAX_ELEVATION = 8;
+
 /** Team identifiers used by the simulation. -1 is neutral. */
 export const NEUTRAL = -1;
 export const PLAYER = 0;

@@ -281,6 +281,25 @@ export function defaultOpponentNation(nationOrPresetId: string): NationDef {
 }
 
 /**
+ * Every playable nation, in registry order. Skirmish setup is free-choice:
+ * any nation can fight any other, including a mirror match.
+ */
+export function playableNations(): readonly NationDef[] {
+  return NATION_LIST;
+}
+
+/**
+ * Resolve the opponent for a deployment. Any playable nation is legal, so a
+ * mirror match is a valid pick; a stale or unknown id falls back to the
+ * deterministic other-alliance default.
+ */
+export function resolveOpponentNation(nationOrPresetId: string, chosenId?: string): NationDef {
+  const chosen = chosenId ? tryIdentityDef(chosenId) : undefined;
+  if (chosen?.playable) return chosen as NationDef;
+  return defaultOpponentNation(nationOrPresetId);
+}
+
+/**
  * Ids a scenario may name today: the six nations plus the two legacy presets.
  * Alliances are content buckets, not player identities, so they are excluded.
  * `Object.hasOwn` keeps prototype keys such as `toString` out of the registry.

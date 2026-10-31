@@ -1,0 +1,65 @@
+# Phase 2A.10 staging deployment and source identification
+Captured: 2026-10-30T21:05:00Z
+
+## Current staging deployment
+
+Worker: mca-multiplayer-staging
+URL: https://mca-multiplayer-staging.horsemeninteractive.workers.dev
+
+Current 100% version: d23e416c-c755-4ec4-bfb3-373ec216c275
+Tag: phase2a9-b
+Message: Phase 2A.9 B: Phase 2A.8 optimised pathfinding
+Version created: 2026-10-30T19:40:59.463Z
+Deployment created: 2026-10-30T19:50:59.829Z
+
+This is Phase 2A.9 Build B. No deployment, version upload or source edit was
+made during Phase 2A.10. The Worker build marker remains `phase2a6-staging`.
+
+## Source revision
+
+Repository HEAD: 132ccc8363d5b5bc98b6518b4afd1738dedaad6a
+Working tree: 146 modified/untracked paths, all pre-existing Phase 2A.8 and
+earlier work. Phase 2A.10 added evidence and report files only.
+
+The pathfinding source files and the deployed room artifact still match the
+Phase 2A.9 B build exactly:
+
+6bd4cb4ecac8c2f39f53a39e8d0b13ec091cffd41ea6f08896667b78f759faaf *src/sim/pathfinding.ts
+1c2417c57543c4cfb66b4a039d0d0cff0dbe596d2c13b28e99f0f16e85ec2469 *src/sim/navBatch.ts
+1450fb913285b3a9ae7f1d037de65db0abbe10b52ef5a647b82ce87bb77842ef *src/sim/game.ts
+05b2b2465d639852f24d1561c6d300362bf8aae9bcc464c0e1607c46717b87c7 *dist-mp-room/roomWorker.js
+
+The deployed artifact hash equals `tmp/phase2a9-builds/B/roomWorker.js` and
+contains `NavBatch` symbols. It is the Phase 2A.8 implementation.
+
+## Safety state
+
+MULTIPLAYER_FEATURE.enabled = false
+roomDiscovery = false
+accountLinking = false
+
+Reservation policy:
+- maxActiveRooms = 2
+- maxDailyDurationGbSeconds = 10,400 (80% of 13,000)
+- maxDailyRequests = 80,000 (80% of 100,000)
+- maxMatchDurationMs = 1,800,000 (30 minutes)
+- durationMb = 128
+- staleAfterMs = 90,000
+
+No production deployment, production feature activation, capacity increase,
+paid service, billing change or automatic upgrade occurred.
+
+## Soak identity
+
+Room: phase2a10-30m-mvvfbtvq
+Reservation: r164 (released)
+Match start: 2026-10-30T20:27:57.702Z (inferred from the fixed 30-minute deadline)
+Match deadline/finish: 2026-10-30T20:57:57.702Z
+Harness start: 2026-10-30T20:27:58.089Z
+Harness end: 2026-10-30T20:57:57.836Z
+Evidence directory: staging-evidence/phase2a10-30m-2026-10-30T20-27-39-949Z/
+
+The room object was restarted at 2026-10-30T20:45:31Z. The object id remained
+e631799e08be0cb21e9e241fcc6b8044ee5a030ae6ca609641a323e4ffac001b, but its
+diagnostics counters and `startedAtMs` restarted at that time. The match
+restored from persistence and continued to the fixed deadline.

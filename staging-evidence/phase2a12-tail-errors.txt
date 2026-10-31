@@ -1,0 +1,8 @@
+7:  (error) MP room restore failed RoomSnapshotError: Saved targetId references an unknown entity.
+16:  (error) MP room final snapshot failed RoomSnapshotError: A playing room snapshot cannot have a finish time.
+171:  (error) MP room restore failed RoomSnapshotError: Saved targetId references an unknown entity.
+183:  (error) MP room final snapshot failed RoomSnapshotError: A playing room snapshot cannot have a finish time.
+209:  (error) MP room final snapshot failed RoomSnapshotError: A playing room snapshot cannot have a finish time.
+235:  (error) MP room final snapshot failed RoomSnapshotError: A playing room snapshot cannot have a finish time.
+249:  (error) MP room final snapshot failed RoomSnapshotError: A playing room snapshot cannot have a finish time.
+253:  (error) MP room final snapshot failed RoomSnapshotError: A playing room snapshot cannot have a finish time.

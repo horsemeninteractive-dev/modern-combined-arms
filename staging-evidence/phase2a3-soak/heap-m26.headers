@@ -1,0 +1,18 @@
+HTTP/1.1 200 OK
+Date: Fri, 30 Oct 2026 05:22:57 GMT
+Content-Type: application/vnd.google.protobuf
+Transfer-Encoding: chunked
+Connection: keep-alive
+Set-Cookie: __cflb=0H28vgHxwvgAQtjUGU545LWSugXG5YhRxKb3vSHWuaM; HttpOnly; SameSite=None; Secure; Path=/; Expires=Fri, 30 Oct 2026 07:52:58 GMT
+set-cookie: __cf_bm=UGtBK50ljLuFK9S1kHNdzeoa4DxQcswvAcBNH0pND4Q-1793337755.6449716-1.0.1.1-35Lohgva0ERsR87lW3tUCqHBPRUXwKak0enMfDHLE9aZchnnoBrUGaaLTxA90fzlVT0Xv_10yid6B0g.3fyvotxaW6ZKrybYUehnd87938UJAnDr_DD611kdf1_1SnlJ; HttpOnly; SameSite=None; Secure; Path=/; Domain=api.cloudflare.com; Expires=Fri, 30 Oct 2026 05:52:57 GMT
+CF-Ray: a527fbaccc68d46c-LHR
+CF-Cache-Status: DYNAMIC
+Cache-Control: no-store
+Content-Disposition: attachment; filename=worker-mca-multiplayer-staging-heap.pprof.gz
+api-version: 2026-10-01.epoch
+Server: cloudflare
+cf-auditlog-id: 01a18b42-8803-769d-aaa2-404335b75a25
+Vary: accept-encoding
+Ratelimit: "workers_profile";r=49;t=6
+Ratelimit-Policy: "workers_profile";q=50;w=300
+

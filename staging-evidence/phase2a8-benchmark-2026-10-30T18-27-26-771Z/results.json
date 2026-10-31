@@ -1,0 +1,131 @@
+{
+  "meta": {
+    "generatedAt": "2026-10-30T18:28:06.072Z",
+    "phase": "2A.8",
+    "localOnly": true,
+    "warning": "Local wall-clock A/B on Node. Not Cloudflare Worker CPU time, not a deployed per-tick distribution, and not a capacity proof.",
+    "node": "v24.14.0",
+    "platform": "win32 x64",
+    "cpu": "AMD Custom APU 0405",
+    "reps": 24,
+    "memoryReps": 12,
+    "sourceHashes": {
+      "src/sim/pathfinding.ts": "6bd4cb4ecac8c2f39f53a39e8d0b13ec091cffd41ea6f08896667b78f759faaf",
+      "src/sim/navBatch.ts": "1c2417c57543c4cfb66b4a039d0d0cff0dbe596d2c13b28e99f0f16e85ec2469",
+      "src/sim/game.ts": "99288b2d450d0045e8e7ce0ce8e662fab269c86989331f9601950c0f15587d0f",
+      "src/multiplayer/batchCalibration.ts": "05c679aabc0204c59ed10a83c719c402f74a40b38e2a94460cb8a1432e279471"
+    }
+  },
+  "results": [
+    {
+      "id": "apply-commands-stress",
+      "description": "Direct application of the two full-force attack-move orders (80 units).",
+      "reps": 24,
+      "old": {
+        "medianMs": 12.577,
+        "p10Ms": 11.142,
+        "p90Ms": 17.636
+      },
+      "new": {
+        "medianMs": 13.128,
+        "p10Ms": 11.004,
+        "p90Ms": 17.286
+      },
+      "changePct": 4.4
+    },
+    {
+      "id": "first-tick-stress",
+      "description": "First authoritative tick of the 80-unit stress setup with both orders queued.",
+      "reps": 24,
+      "old": {
+        "medianMs": 16.274,
+        "p10Ms": 14.097,
+        "p90Ms": 24.67
+      },
+      "new": {
+        "medianMs": 15.072,
+        "p10Ms": 13.713,
+        "p90Ms": 22.804
+      },
+      "changePct": -7.4
+    },
+    {
+      "id": "first-tick-no-orders",
+      "description": "First authoritative tick of the same 80 units with queued orders removed.",
+      "reps": 24,
+      "old": {
+        "medianMs": 1.713,
+        "p10Ms": 1.411,
+        "p90Ms": 3.083
+      },
+      "new": {
+        "medianMs": 1.509,
+        "p10Ms": 1.382,
+        "p90Ms": 2.482
+      },
+      "changePct": -11.9
+    },
+    {
+      "id": "single-order",
+      "description": "Direct attack-move of one team-0 ground unit: smallest command batch.",
+      "reps": 24,
+      "old": {
+        "medianMs": 0.015,
+        "p10Ms": 0.011,
+        "p90Ms": 0.023
+      },
+      "new": {
+        "medianMs": 0.013,
+        "p10Ms": 0.009,
+        "p90Ms": 0.017
+      },
+      "changePct": -13.3
+    },
+    {
+      "id": "path-scaling-9",
+      "description": "Direct attack-move of 9 team-0 ground units: path requests only.",
+      "reps": 24,
+      "old": {
+        "medianMs": 1.657,
+        "p10Ms": 1.444,
+        "p90Ms": 2.302
+      },
+      "new": {
+        "medianMs": 1.728,
+        "p10Ms": 1.369,
+        "p90Ms": 3.387
+      },
+      "changePct": 4.3
+    },
+    {
+      "id": "path-scaling-36",
+      "description": "Direct attack-move of 36 team-0 ground units: path requests only.",
+      "reps": 24,
+      "old": {
+        "medianMs": 5.387,
+        "p10Ms": 4.575,
+        "p90Ms": 9.774
+      },
+      "new": {
+        "medianMs": 5.367,
+        "p10Ms": 4.329,
+        "p90Ms": 8.595
+      },
+      "changePct": -0.4
+    }
+  ],
+  "memory": {
+    "method": "heapUsed delta across one command burst, forced GC before baseline, result retained; coarse and local",
+    "reps": 12,
+    "old": {
+      "medianBytes": 15302976,
+      "minBytes": 9926656,
+      "maxBytes": 17216440
+    },
+    "new": {
+      "medianBytes": 10509508,
+      "minBytes": 8499016,
+      "maxBytes": 12236704
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "roomId": "phase2a15-dry-mvwn6rg9",
+  "mode": "1v1",
+  "protocol": 2,
+  "matchDurationMs": 100000,
+  "matchDeadlineAt": 1793465827548,
+  "seats": [
+    {
+      "seatId": 0,
+      "playerId": 0,
+      "team": 0
+    },
+    {
+      "seatId": 1,
+      "playerId": 1,
+      "team": 1
+    }
+  ]
+}

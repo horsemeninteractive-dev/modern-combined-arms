@@ -1,5 +1,6 @@
 import type { MeshBuffers } from './gl';
 import { MeshBuilder, PALETTE, type Color } from './geometry';
+import { hexToRgb } from './math';
 import { NATION_LIST, defaultNationFor, tryIdentityDef } from '../data/factions';
 
 /**
@@ -82,6 +83,18 @@ export function allianceFlagColor(factionId: string | undefined): Color {
 
 export function flagWindYaw(): number {
   return FLAG_WIND_YAW;
+}
+
+/**
+ * The upper cloth is the ownership band: a skirmish colour choice outranks the
+ * alliance colour. Resolve it against the flag owner (the garrison, when a
+ * structure is occupied), never against the neutral shell underneath.
+ */
+export function flagColorForOwner(
+  factionId: string | undefined,
+  override: string | undefined,
+): Color {
+  return override ? hexToRgb(override) : allianceFlagColor(factionId);
 }
 
 export interface FlagAnchor extends FlagMount {

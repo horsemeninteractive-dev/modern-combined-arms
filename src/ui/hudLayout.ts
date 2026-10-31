@@ -107,6 +107,101 @@ export function productionCardState(
 }
 
 /**
+ * Above this many selected entities the roster collapses identical unit types
+ * into one card with a count. Individual hulls stay reachable by inspecting; a
+ * thirty-rifle selection must not become a horizontal strip of thirty cards.
+ */
+export const SELECTION_GROUP_THRESHOLD = 8;
+
+export interface SelectionChipView {
+  /** Stable DOM key: the entity id, or `type:<defId>` for a group. */
+  key: string;
+  kind: 'entity' | 'group';
+  defId: string;
+  ids: number[];
+  count: number;
+  hp: number;
+  maxHp: number;
+}
+
+/**
+ * Reduce a selection to roster cards. Below the threshold every entity keeps
+ * its own card; above it identical unit types share one card, while structures
+ * always stay individual so a base is never summarised into a single chip.
+ */
+export function selectionChips(
+  entities: ReadonlyArray<{ id: number; kind: string; defId: string; hp: number; maxHp: number }>,
+  threshold = SELECTION_GROUP_THRESHOLD,
+): SelectionChipView[] {
+  if (entities.length <= threshold) {
+    return entities.map((e) => ({
+      key: String(e.id),
+      kind: 'entity',
+      defId: e.defId,
+      ids: [e.id],
+      count: 1,
+      hp: e.hp,
+      maxHp: e.maxHp,
+    }));
+  }
+  const chips: SelectionChipView[] = [];
+  const groups = new Map<string, SelectionChipView>();
+  for (const e of entities) {
+    if (e.kind !== 'unit') {
+      chips.push({ key: String(e.id), kind: 'entity', defId: e.defId, ids: [e.id], count: 1, hp: e.hp, maxHp: e.maxHp });
+      continue;
+    }
+    const existing = groups.get(e.defId);
+    if (existing) {
+      existing.ids.push(e.id);
+      existing.count += 1;
+      existing.hp += e.hp;
+      existing.maxHp += e.maxHp;
+      continue;
+    }
+    const chip: SelectionChipView = {
+      key: `type:${e.defId}`,
+      kind: 'group',
+      defId: e.defId,
+      ids: [e.id],
+      count: 1,
+      hp: e.hp,
+      maxHp: e.maxHp,
+    };
+    groups.set(e.defId, chip);
+    chips.push(chip);
+  }
+  return chips;
+}
+
+/**
+ * Why a production card is unavailable, reduced to a short on-card label.
+ * The simulation owns the authoritative sentence; the HUD only classifies it
+ * so the reason is visible without hover and the tone is consistent.
+ */
+export type ProductionBlockTone = 'materials' | 'requisition' | 'queue' | 'tech' | 'other';
+
+export interface ProductionBlockReason {
+  text: string;
+  tone: ProductionBlockTone;
+}
+
+export function productionBlockReason(reason: string): ProductionBlockReason {
+  const text = reason.toLowerCase();
+  if (text.includes('materials')) return { text: 'NO MATERIALS', tone: 'materials' };
+  if (text.includes('requisition')) return { text: 'NO REQUISITION', tone: 'requisition' };
+  if (text.includes('queue is full')) return { text: 'QUEUE FULL', tone: 'queue' };
+  if (text.includes('airfield')) return { text: 'NEEDS AIRFIELD', tone: 'tech' };
+  if (text.includes('shipyard')) return { text: 'NEEDS SHIPYARD', tone: 'tech' };
+  if (text.includes('factory')) return { text: 'NEEDS VEHICLE FACTORY', tone: 'tech' };
+  if (text.includes('under construction')) return { text: 'UNDER CONSTRUCTION', tone: 'tech' };
+  if (text.includes('cannot produce')) return { text: 'WRONG FACILITY', tone: 'tech' };
+  if (text.includes('roster')) return { text: 'NOT IN ROSTER', tone: 'tech' };
+  if (text.includes('unavailable')) return { text: 'FACILITY OFFLINE', tone: 'tech' };
+  return { text: 'UNAVAILABLE', tone: 'other' };
+}
+
+/**
  * Vertical auto-scroll velocity in px/s for a pointer inside a scrollable
  * panel. The top and bottom bands are `edge` pixels deep; speed ramps from 0 at
  * the inner boundary to `maxSpeed` at (and beyond) the panel edge. Negative

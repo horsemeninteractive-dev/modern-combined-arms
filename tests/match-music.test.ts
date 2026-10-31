@@ -64,7 +64,7 @@ describe('match soundtrack rotation', () => {
 
   it('does not put a partial media response in the runtime cache', () => {
     const sw = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
-    expect(sw).toContain('response.status !== 206');
+    expect(sw).toContain('response.status === 206');
   });
 
   it('starts once and ignores duplicate lifecycle notifications', () => {
@@ -362,7 +362,9 @@ describe('match soundtrack playback', () => {
 
   it('is wired into match start, load, end and exit lifecycle points', () => {
     const app = readFileSync(new URL('../src/app.ts', import.meta.url), 'utf8');
-    expect(app.match(/this\.audio\.startMatchMusic\(\)/g)).toHaveLength(2);
+    // Three entry points start match music: a local battle, a networked battle
+    // handed over by the lobby, and resuming a paused battle.
+    expect(app.match(/this\.audio\.startMatchMusic\(\)/g)).toHaveLength(3);
     expect(app.match(/this\.audio\.stopMatchMusic\(\)/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
     const start = app.slice(app.indexOf('async startBattle'), app.indexOf('async restart'));
     expect(start).toContain('this.audio.stopMatchMusic()');
@@ -374,6 +376,12 @@ describe('match soundtrack playback', () => {
     const load = app.slice(app.indexOf('loadFromSlot'), app.indexOf('private pauseForModal'));
     expect(load).toContain('this.audio.startMatchMusic()');
     expect(load).toContain('this.audio.stopMatchMusic()');
+    const network = app.slice(
+      app.indexOf('private startNetworkBattle'),
+      app.indexOf('private dispatchCommand'),
+    );
+    expect(network).toContain('this.audio.startMatchMusic()');
+    expect(network).toContain('this.audio.stopMenuMusic()');
   });
 
   it('applies global mute to the menu theme as well as match music', async () => {

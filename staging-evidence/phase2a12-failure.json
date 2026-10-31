@@ -1,0 +1,83 @@
+{
+  "phase": "2A.12",
+  "kind": "controlled-restart-recovery-failure",
+  "deployment": {
+    "worker": "mca-multiplayer-staging",
+    "version": "b1030bee-2c89-4a23-addd-f1567b0d818b",
+    "tag": "phase2a11",
+    "artifact": "b5081f68a578b1b9af1def18ff889be30620f0a4d84d7d4d7b8227ebfd02396e",
+    "build": "phase2a11-staging"
+  },
+  "roomId": "phase2a12-dry5-mvvkfozt",
+  "matchDurationMs": 90000,
+  "matchStartedAtMs": 1793400639156,
+  "matchDeadlineAt": 1793400728986,
+  "restartA": {
+    "result": "passed",
+    "checkpointObservedAt": "2026-10-30T22:50:54.301Z",
+    "checkpointAgeAtRequestMs": 1633,
+    "preTick": 335,
+    "restoredSnapshotTick": 299,
+    "rollbackTicks": 36,
+    "rollbackMs": 1800,
+    "firstSyncMsAfterClose": [347, 373],
+    "firstCommandAccepted": [true, true],
+    "resyncAccepted": true,
+    "resyncRateLimited": true,
+    "staleSyncReject": "epoch-mismatch",
+    "staleDeltaReject": "epoch-mismatch"
+  },
+  "restartB": {
+    "result": "failed",
+    "checkpointObservedAt": "2026-10-30T22:51:26.535Z",
+    "checkpointAgeAtRequestMs": 12633,
+    "lastCheckpointTick": 903,
+    "preTick": 1156,
+    "expectedRollbackTicksIfRestored": 253,
+    "expectedRollbackMsIfRestored": 12650,
+    "restartRequestedAt": "2026-10-30T22:51:39.170Z",
+    "restartResponseAt": "2026-10-30T22:51:39.204Z",
+    "socketsClosedAt": ["2026-10-30T22:51:39.251Z", "2026-10-30T22:51:39.253Z"],
+    "restoreStatus": "room-state-unavailable",
+    "restoreMessage": "Room snapshot could not be restored.",
+    "restoredSnapshotTick": null,
+    "reconnect": null,
+    "postRestartCommand": null
+  },
+  "workerErrors": [
+    "MP room restore failed RoomSnapshotError: Saved targetId references an unknown entity.",
+    "MP room final snapshot failed RoomSnapshotError: A playing room snapshot cannot have a finish time."
+  ],
+  "shutdown": {
+    "httpStatus": 200,
+    "body": {
+      "ok": false,
+      "code": "room-state-unavailable",
+      "message": "Room snapshot could not be restored."
+    },
+    "reservationVisible": false
+  },
+  "platformMetrics": {
+    "objectId": "e214a53b24a736cc67170389e934d456e54c474992dc7224baddf0a0105bbce8",
+    "coloCode": "LHR",
+    "periodicCpuTimeUs": 2028914,
+    "periodicCpuTimeMs": 2028.914,
+    "peakReportedMemoryBytes": 12152684,
+    "periodicBuckets": 5,
+    "fatalInternalErrors": 2,
+    "exceededCpuErrors": 0,
+    "exceededMemoryErrors": 0,
+    "note": "fatalInternalErrors includes the two deliberate staging aborts; it is not a count of restore failures."
+  },
+  "capacityAfterFailure": {
+    "sequence": [200, 200, 503, 200],
+    "passed": true,
+    "note": "The failed room could not be shut down through the admin route. Capacity recovered after the reservation lease expired; this is an inference from the successful post-failure capacity sequence."
+  },
+  "rootCause": {
+    "snapshotWriter": "src/multiplayer/roomSnapshot.ts:620 createRoomSnapshot serialises game.toSave() without checking entity references.",
+    "restoreValidator": "src/multiplayer/roomSnapshot.ts:424-428 rejects a non-zero targetId that is not in the saved entity set.",
+    "simulationCleanup": "src/sim/game.ts:4959-4978 clears targetId only when order.targetId is missing; buildTargetId and repairTargetId are not cleared in this loop.",
+    "description": "A surviving entity retained a direct targetId to an entity removed by combat cleanup. The snapshot was written, but the strict restore validator correctly rejected it. The failure is state-dependent and was not a Phase 2A.11 epoch/timing failure."
+  }
+}

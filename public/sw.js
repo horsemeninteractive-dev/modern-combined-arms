@@ -6,7 +6,7 @@
  * first so a new deployment is picked up, and fall back to the cached document
  * when the player is offline or the host is unreachable.
  */
-const VERSION = 'mca-v3';
+const VERSION = 'mca-v4';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -65,17 +65,57 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+/*
+ * The Cache API key is the URL. It does not include cookies or authorization,
+ * so an authenticated response must never enter a cache: a later request could
+ * be answered with another session's data. API routes and credentialed
+ * requests bypass the worker completely. The response guard is a second line
+ * of defence for anything that is accidentally served from the same origin.
+ */
+function isApiRequest(url) {
+  return url.pathname === '/api' || url.pathname.startsWith('/api/');
+}
+
+function isPrivateRequest(request, url) {
+  return (
+    isApiRequest(url) ||
+    request.headers.has('Authorization') ||
+    request.cache === 'no-store'
+  );
+}
+
+function isCacheable(response) {
+  if (!response.ok || response.status === 206) return false;
+  // A followed redirect may land on an API or session route. The cache key
+  // stays the original URL, so another user could receive that response later.
+  if (response.redirected) return false;
+  // `Set-Cookie` is filtered from browser Response headers, but the node-side
+  // test harness and some runtimes expose it. Never cache it if it is visible.
+  if (response.headers.has('Set-Cookie')) return false;
+  const cacheControl = response.headers.get('Cache-Control') || '';
+  if (/(^|,)\s*(no-store|private)\s*(,|$)/i.test(cacheControl)) return false;
+  const vary = response.headers.get('Vary') || '';
+  if (
+    vary.trim() === '*' ||
+    /(^|,)\s*(Cookie|Authorization)\s*(,|$)/i.test(vary)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  if (isPrivateRequest(request, url)) return;
 
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          if (response.ok) {
+          if (isCacheable(response)) {
             const copy = response.clone();
             caches.open(SHELL_CACHE).then((cache) => cache.put('/index.html', copy));
           }
@@ -100,7 +140,8 @@ self.addEventListener('fetch', (event) => {
         .then((response) => {
           // Never store a 206 partial response: a later range request cannot be
           // answered from one cached chunk, which would break long music tracks.
-          if (response.ok && response.status !== 206) {
+          // The same guard rejects no-store, cookie-varied and Set-Cookie replies.
+          if (isCacheable(response)) {
             const copy = response.clone();
             caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, copy));
           }

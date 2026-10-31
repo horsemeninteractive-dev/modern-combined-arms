@@ -1,0 +1,2083 @@
+{
+  "test": {
+    "label": "phase2a4-main4",
+    "base": "https://mca-multiplayer-staging.horsemeninteractive.workers.dev",
+    "isMain": true,
+    "targetMs": 1800000,
+    "startedAt": "2026-10-30T06:54:26.754Z",
+    "endedAt": "2026-10-30T07:21:45.356Z",
+    "wallElapsedMs": 1638602,
+    "intervalMs": 30000,
+    "commandEveryMs": 5000,
+    "productionEveryMs": 180000,
+    "evidenceDir": "staging-evidence\\phase2a4-main4-2026-10-30T06-54-25-818Z"
+  },
+  "health": {
+    "ok": true,
+    "onlineEnabled": true,
+    "devMode": true,
+    "adminConfigured": true,
+    "reservationConfigured": true,
+    "protocol": "mca.v2",
+    "build": "phase2a4-staging"
+  },
+  "room": {
+    "roomId": "phase2a4-main4-mvuma044",
+    "mode": "1v1",
+    "protocol": 2,
+    "matchDurationMs": 1800000,
+    "matchDeadlineAt": 1793345066546,
+    "seats": [
+      {
+        "seatId": 0,
+        "playerId": 0,
+        "team": 0
+      },
+      {
+        "seatId": 1,
+        "playerId": 1,
+        "team": 1
+      }
+    ]
+  },
+  "results": [
+    null,
+    null
+  ],
+  "resultAtMs": null,
+  "abortReason": "seat 0 socket closed before result",
+  "server": {
+    "phase": "finished",
+    "tick": 33299,
+    "startedAtMs": 1793344905592,
+    "finishedAtMs": 1793344935592,
+    "elapsedMs": 30000,
+    "expectedTicksAt20Hz": 600,
+    "actualTicks": 600,
+    "effectiveHz": 20,
+    "stats": {
+      "ticks": 600,
+      "snapshots": 0,
+      "syncs": 0,
+      "deltas": 0,
+      "outboundBytes": 0,
+      "inboundMessages": 0,
+      "connectionsAccepted": 0,
+      "commandsAccepted": 0,
+      "commandsRejected": 0,
+      "heartbeatCount": 1,
+      "approxRequests": 5
+    },
+    "diagnostics": {
+      "version": 1,
+      "clock": "performance.now",
+      "clockAdvanced": false,
+      "timerNote": "Deployed Workers freeze timer APIs during CPU-only work as a Spectre mitigation. Zero durations mean the clock did not advance, not that the work took no time.",
+      "enabled": true,
+      "startedAt": 1793344905592,
+      "activatedAt": 1793343266521,
+      "closedAt": null,
+      "closedReason": null,
+      "tick": {
+        "count": 600,
+        "totalMs": 0,
+        "simulationMs": 0,
+        "otherWorkMs": 0,
+        "errors": 0,
+        "lastError": null,
+        "durationsAvailable": false,
+        "duration": {
+          "count": 600,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "p99": 0,
+          "p999": 0,
+          "max": 0,
+          "mean": 0,
+          "sum": 0,
+          "over10": 0,
+          "over50": 0,
+          "bucketWidth": 0.1,
+          "overflow": 0
+        },
+        "simulation": {
+          "count": 600,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "p99": 0,
+          "p999": 0,
+          "max": 0,
+          "mean": 0,
+          "sum": 0,
+          "over10": 0,
+          "over50": 0,
+          "bucketWidth": 0.1,
+          "overflow": 0
+        }
+      },
+      "snapshots": {
+        "total": 0,
+        "bytes": 0,
+        "bytesMethod": "utf16-code-units",
+        "perSeat": [
+          {
+            "seat": 0,
+            "count": 0,
+            "bytes": 0,
+            "size": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p90": null,
+              "p95": null,
+              "p99": null,
+              "p999": null,
+              "max": null,
+              "mean": null,
+              "sum": 0,
+              "over10": 0,
+              "over50": 0,
+              "bucketWidth": 256,
+              "overflow": 0
+            },
+            "serialization": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p90": null,
+              "p95": null,
+              "p99": null,
+              "p999": null,
+              "max": null,
+              "mean": null,
+              "sum": 0,
+              "over10": 0,
+              "over50": 0,
+              "bucketWidth": 0.1,
+              "overflow": 0
+            }
+          },
+          {
+            "seat": 1,
+            "count": 0,
+            "bytes": 0,
+            "size": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p90": null,
+              "p95": null,
+              "p99": null,
+              "p999": null,
+              "max": null,
+              "mean": null,
+              "sum": 0,
+              "over10": 0,
+              "over50": 0,
+              "bucketWidth": 256,
+              "overflow": 0
+            },
+            "serialization": {
+              "count": 0,
+              "min": null,
+              "p50": null,
+              "p90": null,
+              "p95": null,
+              "p99": null,
+              "p999": null,
+              "max": null,
+              "mean": null,
+              "sum": 0,
+              "over10": 0,
+              "over50": 0,
+              "bucketWidth": 0.1,
+              "overflow": 0
+            }
+          }
+        ],
+        "serialization": {
+          "count": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "p95": null,
+          "p99": null,
+          "p999": null,
+          "max": null,
+          "mean": null,
+          "sum": 0,
+          "over10": 0,
+          "over50": 0,
+          "bucketWidth": 0.1,
+          "overflow": 0
+        },
+        "durationsAvailable": false,
+        "failures": {
+          "serialization": 0,
+          "send": 0,
+          "controlSend": 0,
+          "slowClient": 0
+        }
+      },
+      "lifecycle": {
+        "connectionsAccepted": 0,
+        "seatConnects": [
+          0,
+          0
+        ],
+        "seatDisconnects": [
+          0,
+          0
+        ],
+        "reconnectAttempts": 0,
+        "reconnectSuccesses": 0,
+        "reconnectRejections": 0,
+        "socketRejections": {},
+        "deadlineHits": 0,
+        "abnormalShutdowns": 0
+      },
+      "keepalive": {
+        "received": 0,
+        "acked": 0,
+        "rateLimited": 0
+      },
+      "sync": {
+        "count": 0,
+        "bytes": 0,
+        "perSeat": [
+          0,
+          0
+        ]
+      },
+      "delta": {
+        "count": 0,
+        "bytes": 0,
+        "perSeat": [
+          0,
+          0
+        ],
+        "size": {
+          "count": 0,
+          "min": null,
+          "p50": null,
+          "p90": null,
+          "p95": null,
+          "p99": null,
+          "p999": null,
+          "max": null,
+          "mean": null,
+          "sum": 0,
+          "over10": 0,
+          "over50": 0,
+          "bucketWidth": 64,
+          "overflow": 0
+        }
+      },
+      "resync": {
+        "requested": 0,
+        "accepted": 0,
+        "rejected": 0,
+        "lastRejection": null
+      },
+      "socket": {
+        "maxBufferedBytes": [
+          0,
+          0
+        ],
+        "lastBufferedBytes": [
+          0,
+          0
+        ]
+      },
+      "reservations": {
+        "heartbeatSuccesses": 1,
+        "heartbeatFailures": 0,
+        "releaseSuccesses": 0,
+        "releaseFailures": 0,
+        "lastFailureCode": null
+      },
+      "persistence": {
+        "reads": 11,
+        "writes": 24,
+        "deletes": 18,
+        "readBytes": 522804,
+        "writeBytes": 786692,
+        "snapshotCycles": 3,
+        "metaCycles": 3,
+        "loadCycles": 1,
+        "failures": 0,
+        "lastSuccessAt": 1793344935592,
+        "lastFailureAt": null,
+        "lastFailureKind": null,
+        "lastFailure": null,
+        "chunksWritten": 18,
+        "lastSnapshotBytes": 261412,
+        "maxSnapshotBytes": 261415,
+        "maxCycleMs": 0,
+        "durationsAvailable": false,
+        "cycleDuration": {
+          "count": 7,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "p99": 0,
+          "p999": 0,
+          "max": 0,
+          "mean": 0,
+          "sum": 0,
+          "over10": 0,
+          "over50": 0,
+          "bucketWidth": 1,
+          "overflow": 0
+        },
+        "operationDuration": {
+          "count": 53,
+          "min": 0,
+          "p50": 0,
+          "p90": 0,
+          "p95": 0,
+          "p99": 0,
+          "p999": 0,
+          "max": 0,
+          "mean": 0,
+          "sum": 0,
+          "over10": 0,
+          "over50": 0,
+          "bucketWidth": 1,
+          "overflow": 0
+        },
+        "ageSinceSuccessMs": 21,
+        "behind": false
+      }
+    },
+    "result": {
+      "phase": "finished",
+      "winnerTeam": null,
+      "reason": "draw",
+      "teams": [
+        {
+          "team": 0,
+          "playerIds": [
+            0
+          ],
+          "defeated": true,
+          "score": 7205
+        },
+        {
+          "team": 1,
+          "playerIds": [
+            1
+          ],
+          "defeated": true,
+          "score": 5225
+        }
+      ],
+      "tick": 33299
+    }
+  },
+  "reservation": {
+    "reservationId": "r77",
+    "status": "active",
+    "hardDeadlineAt": 1793345066546
+  },
+  "closed": true,
+  "snapshots": [
+    {
+      "seat": 0,
+      "count": 16387,
+      "bytes": 9085233,
+      "frequencyHz": 10.000598070794494,
+      "sizes": {
+        "count": 16387,
+        "p50": 397,
+        "p95": 1099,
+        "p99": 1439,
+        "max": 62116,
+        "min": 372,
+        "mean": 554.4170989198755
+      },
+      "gaps": {
+        "count": 16386,
+        "p50": 100,
+        "p95": 101,
+        "p99": 119,
+        "max": 428,
+        "min": 0,
+        "mean": 100.00268521908947
+      },
+      "longestGapMs": 428,
+      "firstTick": 0,
+      "lastTick": 32772,
+      "tickDeltas": {
+        "2": 16386
+      }
+    },
+    {
+      "seat": 1,
+      "count": 16387,
+      "bytes": 7073246,
+      "frequencyHz": 10.000598070794494,
+      "sizes": {
+        "count": 16387,
+        "p50": 410,
+        "p95": 412,
+        "p99": 413,
+        "max": 59028,
+        "min": 386,
+        "mean": 431.6376395923598
+      },
+      "gaps": {
+        "count": 16386,
+        "p50": 100,
+        "p95": 101,
+        "p99": 119,
+        "max": 841,
+        "min": 0,
+        "mean": 99.99627730989869
+      },
+      "longestGapMs": 841,
+      "firstTick": 0,
+      "lastTick": 32772,
+      "tickDeltas": {
+        "2": 16386
+      }
+    }
+  ],
+  "protocol": {
+    "version": 2,
+    "syncs": [
+      6,
+      6
+    ],
+    "deltas": [
+      16381,
+      16381
+    ],
+    "syncBytes": [
+      364716,
+      354103
+    ],
+    "deltaBytes": [
+      8720517,
+      6719143
+    ],
+    "firstSyncBytes": [
+      58975,
+      58969
+    ],
+    "syncMapBytes": [
+      250782,
+      250782
+    ],
+    "syncFogBytes": [
+      82950,
+      82950
+    ],
+    "deltaMapBytes": 0,
+    "deltaSize": [
+      {
+        "count": 16381,
+        "p50": 397,
+        "p95": 1099,
+        "p99": 1432,
+        "max": 3236,
+        "min": 372,
+        "mean": 532.3555948965264
+      },
+      {
+        "count": 16381,
+        "p50": 410,
+        "p95": 412,
+        "p99": 413,
+        "max": 413,
+        "min": 386,
+        "mean": 410.17904889811365
+      }
+    ],
+    "fogEntries": [
+      623,
+      0
+    ],
+    "deltaFieldBytes": [
+      {
+        "players": 4276628,
+        "entities": 2116273,
+        "events": 50409,
+        "fog": 6039,
+        "charted": 8,
+        "result": 1689
+      },
+      {
+        "players": 4502698
+      }
+    ],
+    "epochs": [
+      6,
+      6
+    ],
+    "resyncRequests": [
+      0,
+      0
+    ],
+    "rejectedUpdates": 0,
+    "lastReject": null
+  },
+  "reconstruction": {
+    "ready": [
+      true,
+      true
+    ],
+    "epoch": [
+      6,
+      6
+    ],
+    "seq": [
+      16387,
+      16387
+    ],
+    "tick": [
+      32772,
+      32772
+    ],
+    "phase": [
+      "playing",
+      "playing"
+    ],
+    "entities": [
+      20,
+      9
+    ],
+    "fogTiles": [
+      6912,
+      6912
+    ],
+    "mapTiles": [
+      6912,
+      6912
+    ],
+    "serverTick": 33299,
+    "serverPhase": "finished",
+    "tickMatches": false,
+    "outcomesMatch": false
+  },
+  "stateSamples": [
+    {
+      "seat": 0,
+      "at": "2026-10-30T06:54:26.653Z",
+      "tick": 0,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3000,
+      "breakdown": {
+        "total": 58855,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2684,
+        "players": 206,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.710169059553139,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T06:54:26.752Z",
+      "tick": 0,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3000,
+      "breakdown": {
+        "total": 58849,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 220,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7102414654454621,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T06:55:26.712Z",
+      "tick": 1200,
+      "entities": 11,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3060.0000000002183,
+      "breakdown": {
+        "total": 61185,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 3253,
+        "players": 251,
+        "events": 1709,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6831249489253902,
+        "units": 8,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T06:55:26.795Z",
+      "tick": 1202,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3060.1000000002186,
+      "breakdown": {
+        "total": 58899,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 264,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096385337611844,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T06:56:26.714Z",
+      "tick": 2400,
+      "entities": 12,
+      "ownUnits": 9,
+      "visibleEnemies": 0,
+      "materials": 2820.0000000004366,
+      "breakdown": {
+        "total": 63485,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 3557,
+        "players": 252,
+        "events": 3704,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6583759943293691,
+        "units": 9,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T06:56:26.796Z",
+      "tick": 2402,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3120.100000000437,
+      "breakdown": {
+        "total": 58900,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 265,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096264855687606,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T06:57:26.795Z",
+      "tick": 3602,
+      "entities": 12,
+      "ownUnits": 9,
+      "visibleEnemies": 0,
+      "materials": 2880.100000000655,
+      "breakdown": {
+        "total": 65211,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 3557,
+        "players": 250,
+        "events": 5432,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6409501464476852,
+        "units": 9,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T06:57:26.894Z",
+      "tick": 3604,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3180.2000000006556,
+      "breakdown": {
+        "total": 58901,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 266,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096144377854365,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T06:58:26.795Z",
+      "tick": 4802,
+      "entities": 12,
+      "ownUnits": 9,
+      "visibleEnemies": 0,
+      "materials": 2940.1000000008735,
+      "breakdown": {
+        "total": 66941,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 3557,
+        "players": 252,
+        "events": 7160,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6243856530377496,
+        "units": 9,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T06:58:26.894Z",
+      "tick": 4804,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3240.200000000874,
+      "breakdown": {
+        "total": 58899,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 264,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096385337611844,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T06:59:26.808Z",
+      "tick": 6002,
+      "entities": 13,
+      "ownUnits": 10,
+      "visibleEnemies": 0,
+      "materials": 2700.1000000010918,
+      "breakdown": {
+        "total": 60082,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 3857,
+        "players": 251,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6956659232382411,
+        "units": 10,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T06:59:26.895Z",
+      "tick": 6004,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3300.200000001092,
+      "breakdown": {
+        "total": 58897,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 262,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096626313734146,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:00:26.895Z",
+      "tick": 7204,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3360.2000000013104,
+      "breakdown": {
+        "total": 58900,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 265,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096264855687606,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:00:26.897Z",
+      "tick": 7204,
+      "entities": 13,
+      "ownUnits": 10,
+      "visibleEnemies": 0,
+      "materials": 2760.2000000013104,
+      "breakdown": {
+        "total": 61809,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 3857,
+        "players": 251,
+        "events": 1729,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6762283809801162,
+        "units": 10,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:01:26.993Z",
+      "tick": 8406,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3420.300000001529,
+      "breakdown": {
+        "total": 58898,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 263,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096505823627288,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:01:26.994Z",
+      "tick": 8406,
+      "entities": 13,
+      "ownUnits": 10,
+      "visibleEnemies": 0,
+      "materials": 2820.300000001529,
+      "breakdown": {
+        "total": 63535,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 3857,
+        "players": 249,
+        "events": 3457,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6578578736129692,
+        "units": 10,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:02:26.993Z",
+      "tick": 9606,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3480.3000000017473,
+      "breakdown": {
+        "total": 58901,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 266,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096144377854365,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:02:26.994Z",
+      "tick": 9606,
+      "entities": 14,
+      "ownUnits": 11,
+      "visibleEnemies": 0,
+      "materials": 2580.3000000017473,
+      "breakdown": {
+        "total": 65840,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 4161,
+        "players": 252,
+        "events": 5455,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6348268529769138,
+        "units": 11,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:03:26.994Z",
+      "tick": 10806,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3540.3000000019656,
+      "breakdown": {
+        "total": 58902,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 265,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096023904111914,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:03:26.995Z",
+      "tick": 10806,
+      "entities": 14,
+      "ownUnits": 11,
+      "visibleEnemies": 0,
+      "materials": 2640.3000000019656,
+      "breakdown": {
+        "total": 67589,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 4161,
+        "players": 251,
+        "events": 7203,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6183994436964595,
+        "units": 11,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:04:26.994Z",
+      "tick": 12006,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3600.300000002184,
+      "breakdown": {
+        "total": 58900,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 263,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096264855687606,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:04:26.995Z",
+      "tick": 12006,
+      "entities": 14,
+      "ownUnits": 11,
+      "visibleEnemies": 0,
+      "materials": 2700.300000002184,
+      "breakdown": {
+        "total": 60386,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 4161,
+        "players": 249,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6921637465637731,
+        "units": 11,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:05:26.994Z",
+      "tick": 13206,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3660.300000002402,
+      "breakdown": {
+        "total": 58900,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 263,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096264855687606,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:05:26.995Z",
+      "tick": 13206,
+      "entities": 15,
+      "ownUnits": 12,
+      "visibleEnemies": 0,
+      "materials": 2460.300000002402,
+      "breakdown": {
+        "total": 62710,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 4463,
+        "players": 249,
+        "events": 2024,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6665125179397225,
+        "units": 12,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:06:27.093Z",
+      "tick": 14408,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3720.400000002621,
+      "breakdown": {
+        "total": 58900,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 263,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096264855687606,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:06:27.094Z",
+      "tick": 14408,
+      "entities": 15,
+      "ownUnits": 12,
+      "visibleEnemies": 0,
+      "materials": 2520.400000002621,
+      "breakdown": {
+        "total": 64462,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 4463,
+        "players": 249,
+        "events": 3776,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6483975055071205,
+        "units": 12,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:07:27.192Z",
+      "tick": 15610,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3780.5000000028394,
+      "breakdown": {
+        "total": 58902,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 265,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096023904111914,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:07:27.193Z",
+      "tick": 15610,
+      "entities": 15,
+      "ownUnits": 12,
+      "visibleEnemies": 0,
+      "materials": 2580.5000000028394,
+      "breakdown": {
+        "total": 66070,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 4463,
+        "players": 251,
+        "events": 5382,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6326169214469503,
+        "units": 12,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:08:27.193Z",
+      "tick": 16810,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3840.5000000030577,
+      "breakdown": {
+        "total": 58901,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 264,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096144377854365,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:08:27.194Z",
+      "tick": 16810,
+      "entities": 16,
+      "ownUnits": 13,
+      "visibleEnemies": 0,
+      "materials": 2340.5000000030577,
+      "breakdown": {
+        "total": 68396,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 4767,
+        "players": 250,
+        "events": 7405,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6111029884788585,
+        "units": 13,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:09:27.292Z",
+      "tick": 18012,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3900.6000000032764,
+      "breakdown": {
+        "total": 58901,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 264,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096144377854365,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:09:27.293Z",
+      "tick": 18012,
+      "entities": 16,
+      "ownUnits": 13,
+      "visibleEnemies": 0,
+      "materials": 2400.6000000032764,
+      "breakdown": {
+        "total": 60993,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 4767,
+        "players": 250,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6852753594674799,
+        "units": 13,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:10:27.292Z",
+      "tick": 19212,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 3960.6000000034946,
+      "breakdown": {
+        "total": 58901,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 264,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096144377854365,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:10:27.293Z",
+      "tick": 19212,
+      "entities": 16,
+      "ownUnits": 13,
+      "visibleEnemies": 0,
+      "materials": 2460.6000000034946,
+      "breakdown": {
+        "total": 62744,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 4767,
+        "players": 250,
+        "events": 1753,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6661513451485401,
+        "units": 13,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:11:27.389Z",
+      "tick": 20414,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 4020.7000000037133,
+      "breakdown": {
+        "total": 58902,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 265,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096023904111914,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:11:27.391Z",
+      "tick": 20414,
+      "entities": 17,
+      "ownUnits": 14,
+      "visibleEnemies": 0,
+      "materials": 2220.7000000037133,
+      "breakdown": {
+        "total": 65104,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 5099,
+        "players": 251,
+        "events": 3780,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6420035635291227,
+        "units": 14,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:12:27.391Z",
+      "tick": 21614,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 4080.7000000039316,
+      "breakdown": {
+        "total": 58902,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 265,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096023904111914,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:12:27.392Z",
+      "tick": 21614,
+      "entities": 17,
+      "ownUnits": 14,
+      "visibleEnemies": 0,
+      "materials": 2280.7000000039316,
+      "breakdown": {
+        "total": 66856,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 5099,
+        "players": 251,
+        "events": 5532,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6251794902476966,
+        "units": 14,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:13:27.488Z",
+      "tick": 22816,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 4140.80000000415,
+      "breakdown": {
+        "total": 58899,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 262,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096385337611844,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:13:27.490Z",
+      "tick": 22816,
+      "entities": 17,
+      "ownUnits": 14,
+      "visibleEnemies": 0,
+      "materials": 2340.80000000415,
+      "breakdown": {
+        "total": 68605,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 5099,
+        "players": 248,
+        "events": 7284,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.609241308942497,
+        "units": 14,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:14:27.578Z",
+      "tick": 24018,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 4200.900000004369,
+      "breakdown": {
+        "total": 58901,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 264,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096144377854365,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:14:27.578Z",
+      "tick": 24018,
+      "entities": 18,
+      "ownUnits": 15,
+      "visibleEnemies": 0,
+      "materials": 2100.900000004369,
+      "breakdown": {
+        "total": 61659,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 5433,
+        "players": 250,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6778734653497461,
+        "units": 15,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:15:27.590Z",
+      "tick": 25218,
+      "entities": 18,
+      "ownUnits": 15,
+      "visibleEnemies": 0,
+      "materials": 2160.900000004587,
+      "breakdown": {
+        "total": 63409,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 5433,
+        "players": 249,
+        "events": 1753,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.659165102745667,
+        "units": 15,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:15:27.591Z",
+      "tick": 25218,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 4260.900000004587,
+      "breakdown": {
+        "total": 58900,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 263,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096264855687606,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:16:27.591Z",
+      "tick": 26418,
+      "entities": 18,
+      "ownUnits": 15,
+      "visibleEnemies": 0,
+      "materials": 2220.9000000048054,
+      "breakdown": {
+        "total": 65017,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 5433,
+        "players": 251,
+        "events": 3359,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6428626359259886,
+        "units": 15,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:16:27.690Z",
+      "tick": 26420,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 4321.000000004806,
+      "breakdown": {
+        "total": 58901,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 264,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096144377854365,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:17:27.685Z",
+      "tick": 27620,
+      "entities": 19,
+      "ownUnits": 16,
+      "visibleEnemies": 0,
+      "materials": 1981.0000000048228,
+      "breakdown": {
+        "total": 67508,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 5765,
+        "players": 251,
+        "events": 5518,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6191414350891746,
+        "units": 16,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:17:27.785Z",
+      "tick": 27622,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 4381.100000005024,
+      "breakdown": {
+        "total": 58901,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 264,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096144377854365,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:18:27.689Z",
+      "tick": 28820,
+      "entities": 19,
+      "ownUnits": 16,
+      "visibleEnemies": 0,
+      "materials": 2041.0000000047683,
+      "breakdown": {
+        "total": 69260,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 5765,
+        "players": 251,
+        "events": 7270,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6034796419289633,
+        "units": 16,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:18:27.789Z",
+      "tick": 28822,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 4441.100000005243,
+      "breakdown": {
+        "total": 58900,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 263,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096264855687606,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:19:27.783Z",
+      "tick": 30022,
+      "entities": 19,
+      "ownUnits": 16,
+      "visibleEnemies": 0,
+      "materials": 2101.1000000049553,
+      "breakdown": {
+        "total": 61991,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 5764,
+        "players": 251,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6742430352793147,
+        "units": 16,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:19:27.882Z",
+      "tick": 30024,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 4501.200000005461,
+      "breakdown": {
+        "total": 58901,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 264,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096144377854365,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:20:27.784Z",
+      "tick": 31222,
+      "entities": 20,
+      "ownUnits": 17,
+      "visibleEnemies": 0,
+      "materials": 1861.1000000049894,
+      "breakdown": {
+        "total": 64334,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 6096,
+        "players": 250,
+        "events": 2014,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6496875680044767,
+        "units": 17,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:20:27.883Z",
+      "tick": 31224,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 4561.20000000568,
+      "breakdown": {
+        "total": 58898,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 261,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096505823627288,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 0,
+      "at": "2026-10-30T07:21:27.785Z",
+      "tick": 32422,
+      "entities": 20,
+      "ownUnits": 17,
+      "visibleEnemies": 0,
+      "materials": 1921.1000000049348,
+      "breakdown": {
+        "total": 66087,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 6096,
+        "players": 251,
+        "events": 3766,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.6324541891748755,
+        "units": 17,
+        "buildings": 3,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    },
+    {
+      "seat": 1,
+      "at": "2026-10-30T07:21:27.885Z",
+      "tick": 32424,
+      "entities": 9,
+      "ownUnits": 8,
+      "visibleEnemies": 0,
+      "materials": 4621.200000005898,
+      "breakdown": {
+        "total": 58901,
+        "map": 41797,
+        "fog": 13825,
+        "entities": 2664,
+        "players": 264,
+        "events": 2,
+        "projectiles": 2,
+        "contacts": 2,
+        "mapRatio": 0.7096144377854365,
+        "units": 8,
+        "buildings": 1,
+        "terrainTiles": 6912,
+        "elevationTiles": 6912,
+        "oreTiles": 6912,
+        "fogTiles": 6912
+      }
+    }
+  ],
+  "commands": {
+    "sent": 324,
+    "accepted": 324,
+    "rejected": 0,
+    "timeouts": 0,
+    "byType": {
+      "move": 315,
+      "produce": 9
+    },
+    "rejectionByCode": {},
+    "latencyMs": {
+      "count": 324,
+      "p50": 13,
+      "p95": 15,
+      "p99": 18,
+      "max": 114,
+      "min": 10,
+      "mean": 13.246913580246913
+    },
+    "ackAnomalies": 0
+  },
+  "socketCloses": [
+    {
+      "at": "2026-10-30T07:21:45.304Z",
+      "seat": 1,
+      "code": null,
+      "reason": ""
+    },
+    {
+      "at": "2026-10-30T07:21:45.306Z",
+      "seat": 0,
+      "code": null,
+      "reason": ""
+    }
+  ],
+  "keepalive": {
+    "sent": [
+      81,
+      81
+    ],
+    "acked": [
+      81,
+      81
+    ],
+    "server": {
+      "received": 0,
+      "acked": 0,
+      "rateLimited": 0
+    },
+    "idleSeat": 1
+  },
+  "errors": [],
+  "clientMemory": {
+    "note": "Node client heap only; not server memory.",
+    "heapUsedMb": 13.6,
+    "rssMb": 89.5
+  }
+}

@@ -6,7 +6,8 @@ import { TILE_SIZE } from '../sim/constants';
 import type { Entity, GameState } from '../sim/types';
 import { terrainVisualHeight } from '../render/terrainSurface';
 import { AIR_UNIT_ALTITUDE, unitBannerHeight } from '../render/unitMeshes';
-import { buildingBannerAnchor, buildingBannerPoints } from '../render/buildingMeshes';
+import { buildingBannerAnchor, buildingBannerPoints, buildingTopHeight } from '../render/buildingMeshes';
+import { buildingWireframe } from '../render/buildingWireframe';
 import { relayMeterState } from './relayMeter';
 
 const BLUE = '#52c5e6';
@@ -130,6 +131,14 @@ export class Overlay {
       this.drawHealth(app, e, state, selected);
     }
 
+    // A site under construction keeps its building's own outline for the whole
+    // build: the growing model fills in a frame that is always the real shape.
+    for (const e of state.entities) {
+      if (e.kind !== 'building' || !e.construction || e.hp <= 0) continue;
+      if (e.owner !== app.localPlayerId && !game.isVisibleTo(app.localPlayerId, e.id)) continue;
+      this.drawConstructionOutline(app, e, state);
+    }
+
     // Capture-only objectives (signals relays, forward supply depots) always
     // carry an ownership/capture meter: they cannot be destroyed, so the
     // contest over them must be readable at a glance.
@@ -159,6 +168,10 @@ export class Overlay {
       ctx.setLineDash([]);
     }
 
+    // The training director's current ground marker. It sits above selection
+    // rings and paths so the next lane is never mistaken for an order.
+    this.drawTutorialMarker(app);
+
     // Gamepad virtual cursor.
     if (app.padCursor.active) {
       const x = app.padCursor.x;
@@ -183,6 +196,115 @@ export class Overlay {
       ctx.arc(x, y, 2, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.restore();
+  }
+
+  /**
+   * Amber ring and label for the active training lane. The marker is a
+   * presentation aid, not an entity: it never collides, picks or reaches the
+   * simulation, and it follows the same fog gate as every other overlay.
+   */
+  private drawTutorialMarker(app: App): void {
+    const marker = app.tutorial?.marker();
+    const game = app.game;
+    if (!marker || !game) return;
+    const camera = app.renderer.camera;
+    const ctx = this.ctx;
+    let x = marker.x ?? 0;
+    let z = marker.z ?? 0;
+    if (marker.entityId) {
+      const entity = game.getEntity(marker.entityId);
+      if (!entity || entity.hp <= 0) return;
+      if (
+        entity.owner !== app.localPlayerId &&
+        !game.isVisibleTo(app.localPlayerId, entity.id)
+      ) return;
+      x = entity.x;
+      z = entity.z;
+    }
+    const ground = terrainVisualHeight(game.state.scenario, x, z);
+    const center = camera.worldToScreen(x, ground + 0.35, z);
+    const pulse = 0.72 + 0.28 * Math.sin(performance.now() / 320);
+
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = marker.color;
+    ctx.fillStyle = marker.color;
+    ctx.setLineDash([5, 4]);
+    ctx.lineWidth = 1.6;
+    ctx.globalAlpha = 0.3 + 0.35 * pulse;
+    ctx.beginPath();
+    for (let i = 0; i <= 32; i++) {
+      const angle = (i / 32) * Math.PI * 2;
+      const px = x + Math.cos(angle) * marker.radius;
+      const pz = z + Math.sin(angle) * marker.radius;
+      const point = camera.worldToScreen(
+        px,
+        terrainVisualHeight(game.state.scenario, px, pz) + 0.3,
+        pz,
+      );
+      if (i === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // A short vertical stake anchors the ring to its label on a crowded map.
+    const top = camera.worldToScreen(x, ground + 3.4, z);
+    ctx.globalAlpha = 0.65;
+    ctx.beginPath();
+    ctx.moveTo(center.x, center.y);
+    ctx.lineTo(top.x, top.y);
+    ctx.stroke();
+
+    ctx.font = '700 9px SFMono-Regular, Consolas, monospace';
+    ctx.textAlign = 'center';
+    const labelWidth = ctx.measureText(marker.label).width;
+    let labelX = center.x;
+    let labelY = Math.min(center.y, top.y) - 9;
+    if (center.visible) {
+      labelX = Math.max(labelWidth / 2 + 8, Math.min(this.width - labelWidth / 2 - 8, labelX));
+      labelY = Math.max(24, labelY);
+    } else {
+      // Off-screen lanes become a clamped chevron at the edge of the view, so a
+      // player who panned away still knows which way the next order lies.
+      const cx = this.width / 2;
+      const cy = this.height / 2;
+      const dx = center.x - cx;
+      const dy = center.y - cy;
+      const length = Math.hypot(dx, dy);
+      if (length < 1) {
+        ctx.restore();
+        return;
+      }
+      const scale = Math.min(
+        (this.width / 2 - 44) / Math.abs(dx || 1),
+        (this.height / 2 - 44) / Math.abs(dy || 1),
+        1,
+      );
+      const ax = cx + dx * scale;
+      const ay = cy + dy * scale;
+      const angle = Math.atan2(dy, dx);
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(ax + Math.cos(angle) * 10, ay + Math.sin(angle) * 10);
+      ctx.lineTo(ax + Math.cos(angle + 2.5) * 9, ay + Math.sin(angle + 2.5) * 9);
+      ctx.lineTo(ax + Math.cos(angle - 2.5) * 9, ay + Math.sin(angle - 2.5) * 9);
+      ctx.closePath();
+      ctx.fill();
+      labelX = Math.max(labelWidth / 2 + 8, Math.min(this.width - labelWidth / 2 - 8, ax));
+      labelY = Math.max(24, Math.min(this.height - 12, ay - 14));
+    }
+    ctx.globalAlpha = 0.92;
+    ctx.fillStyle = 'rgba(7,12,14,0.88)';
+    ctx.fillRect(labelX - labelWidth / 2 - 6, labelY - 10, labelWidth + 12, 13);
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = marker.color;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(labelX - labelWidth / 2 - 5.5, labelY - 9.5, labelWidth + 11, 12);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = marker.color;
+    ctx.fillText(marker.label, labelX, labelY);
     ctx.restore();
   }
 
@@ -341,6 +463,74 @@ export class Overlay {
     void state;
   }
 
+  /** The building's own feature-edge outline, projected into the overlay. */
+  private strokeBuildingOutline(
+    app: App,
+    defId: string,
+    centerX: number,
+    baseY: number,
+    centerZ: number,
+    facing: number,
+    color: string,
+    alpha: number,
+    width: number,
+  ): void {
+    const edges = buildingWireframe(defId);
+    if (edges.length === 0) return;
+    const camera = app.renderer.camera;
+    const ctx = this.ctx;
+    // The renderer draws buildings with `modelFor(..., -facing, ...)`.
+    const cos = Math.cos(-facing);
+    const sin = Math.sin(-facing);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    for (let i = 0; i < edges.length; i += 6) {
+      const ax = edges[i];
+      const ay = edges[i + 1];
+      const az = edges[i + 2];
+      const bx = edges[i + 3];
+      const by = edges[i + 4];
+      const bz = edges[i + 5];
+      const from = camera.worldToScreen(
+        centerX + ax * cos + az * sin,
+        baseY + ay,
+        centerZ - ax * sin + az * cos,
+      );
+      const to = camera.worldToScreen(
+        centerX + bx * cos + bz * sin,
+        baseY + by,
+        centerZ - bx * sin + bz * cos,
+      );
+      if (!from.visible && !to.visible) continue;
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  private drawConstructionOutline(app: App, e: Entity, state: GameState): void {
+    const player = state.scenario.players.find((entry) => entry.id === e.owner);
+    const colour = player?.color ?? tryIdentityDef(player?.factionId ?? '')?.color ?? BLUE;
+    // The frame hands over to the built structure: strongest on a bare site,
+    // gone by the time the model has filled it.
+    const fade = Math.max(0, 1 - e.buildProgress);
+    this.strokeBuildingOutline(
+      app,
+      e.defId,
+      e.x,
+      terrainVisualHeight(state.scenario, e.x, e.z),
+      e.z,
+      e.facing,
+      colour,
+      0.34 * fade,
+      0.9,
+    );
+  }
+
   private drawHealth(app: App, e: Entity, state: GameState, selected: boolean): void {
     const game = app.game;
     if (!game) return;
@@ -455,39 +645,49 @@ export class Overlay {
     const def = BUILDINGS[defId];
     const camera = app.renderer.camera;
     const ctx = this.ctx;
-    const color = ok ? 'rgba(134,199,145,0.9)' : 'rgba(239,108,77,0.9)';
-    const fill = ok ? 'rgba(134,199,145,0.16)' : 'rgba(239,108,77,0.14)';
+    const color = ok ? 'rgba(134,199,145,0.92)' : 'rgba(239,108,77,0.92)';
+    const fill = ok ? 'rgba(134,199,145,0.09)' : 'rgba(239,108,77,0.08)';
+    const w = def.footprint.w;
+    const h = def.footprint.h;
+    const groundAt = (tx: number, tz: number): number =>
+      terrainVisualHeight(game.state.scenario, tx * TILE_SIZE, tz * TILE_SIZE);
+    // Terrain is sampled at each corner, so the frame follows a slope instead of
+    // hovering as one flat plane.
     const corners = [
-      [tileX, tileZ],
-      [tileX + def.footprint.w, tileZ],
-      [tileX + def.footprint.w, tileZ + def.footprint.h],
-      [tileX, tileZ + def.footprint.h],
-    ].map(([tx, tz]) => {
-      const wx = tx * TILE_SIZE;
-      const wz = tz * TILE_SIZE;
-      return camera.worldToScreen(wx, terrainVisualHeight(game.state.scenario, wx, wz) + 0.3, wz);
-    });
+      { x: tileX, z: tileZ },
+      { x: tileX + w, z: tileZ },
+      { x: tileX + w, z: tileZ + h },
+      { x: tileX, z: tileZ + h },
+    ].map((corner) => ({
+      x: corner.x * TILE_SIZE,
+      z: corner.z * TILE_SIZE,
+      y: groundAt(corner.x, corner.z),
+    }));
+    const project = (x: number, y: number, z: number) => camera.worldToScreen(x, y, z);
+    // Ground plate: the footprint the building will occupy.
     ctx.beginPath();
-    ctx.moveTo(corners[0].x, corners[0].y);
-    for (let i = 1; i < corners.length; i++) ctx.lineTo(corners[i].x, corners[i].y);
+    for (let i = 0; i < corners.length; i++) {
+      const point = project(corners[i].x, corners[i].y + 0.25, corners[i].z);
+      if (i === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    }
     ctx.closePath();
     ctx.fillStyle = fill;
     ctx.fill();
     ctx.strokeStyle = color;
-    ctx.lineWidth = 1.6;
+    ctx.lineWidth = 1.4;
     ctx.stroke();
-    const c = camera.worldToScreen(
-      (tileX + def.footprint.w / 2) * TILE_SIZE,
-      terrainVisualHeight(
-        game.state.scenario,
-        (tileX + def.footprint.w / 2) * TILE_SIZE,
-        (tileZ + def.footprint.h / 2) * TILE_SIZE,
-      ) + 1,
-      (tileZ + def.footprint.h / 2) * TILE_SIZE,
-    );
+    // The actual building silhouette, drawn from its own crease edges, so the
+    // preview is the structure that is about to be built rather than a box.
+    const centerX = (tileX + w / 2) * TILE_SIZE;
+    const centerZ = (tileZ + h / 2) * TILE_SIZE;
+    const centerY = groundAt(tileX + w / 2, tileZ + h / 2);
+    this.strokeBuildingOutline(app, defId, centerX, centerY, centerZ, 0, color, 0.5, 1);
+    const height = Math.max(1, buildingTopHeight(defId));
+    const labelPoint = project(centerX, centerY + height + 0.5, centerZ);
     ctx.font = '600 10px SFMono-Regular, Consolas, monospace';
     ctx.fillStyle = color;
     const label = ok ? def.shortName : reason;
-    ctx.fillText(label, c.x - ctx.measureText(label).width / 2, c.y - 6);
+    ctx.fillText(label, labelPoint.x - ctx.measureText(label).width / 2, labelPoint.y - 6);
   }
 }

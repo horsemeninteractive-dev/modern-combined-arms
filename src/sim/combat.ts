@@ -41,6 +41,12 @@ export function canWeaponTarget(weapon: WeaponDef, target: Entity): boolean {
   // Capture-only objectives (relays, forward supply depots) are not targets:
   // they change hands only through an engineer's capture order.
   if (isIndestructibleStructure(target.defId)) return false;
+  const submerged = target.kind === 'unit' && !!target.submarine?.dived;
+  // Depth charges only reach a boat that is actually under the surface; they
+  // are not a second short-range anti-ship gun.
+  if (weapon.asw) return submerged && weapon.targets.includes(entityTargetClass(target));
+  // A dived boat is not a gunnery target until a launch datum exposes it.
+  if (submerged && !target.submarine?.revealed) return false;
   return weapon.targets.includes(entityTargetClass(target));
 }
 

@@ -1,0 +1,19 @@
+{
+  "roomId": "phase2a14-30m-mvvp36oz",
+  "mode": "1v1",
+  "protocol": 2,
+  "matchDurationMs": 1800000,
+  "matchDeadlineAt": 1793410253490,
+  "seats": [
+    {
+      "seatId": 0,
+      "playerId": 0,
+      "team": 0
+    },
+    {
+      "seatId": 1,
+      "playerId": 1,
+      "team": 1
+    }
+  ]
+}

@@ -1,0 +1,94 @@
+{
+  "query": {
+    "name": "phase2a4-main5-mvunmx6l",
+    "start": "2026-10-30T07:32:20Z",
+    "end": "2026-10-30T08:03:00Z",
+    "datasets": [
+      "durableObjectsPeriodicGroups",
+      "durableObjectsInvocationsAdaptiveGroups",
+      "durableObjectsStorageGroups"
+    ],
+    "note": "Collected through the Cloudflare API connector after the soak. Account identifiers are omitted; the account-scoped GraphQL call used the signed-in Freebuff connector."
+  },
+  "periodic": {
+    "rows": 31,
+    "first": "2026-10-30T07:32:28Z",
+    "last": "2026-10-30T08:02:28Z",
+    "objectId": "629312694b5bad131fdb59f1765e1c1d8e7d3ccfb0ef6bae628fa21592a003f8",
+    "namespaceId": "4c3a9ed29ce1475aae7ec0530538afca",
+    "colo": "LHR",
+    "cpuTimeUs": 17593069,
+    "activeTimeUs": 1800128110,
+    "durationGbSeconds": 230.41639808,
+    "inboundWebsocketMessages": 533,
+    "outboundWebsocketMessages": 36537,
+    "rowsRead": 840,
+    "rowsWritten": 1779,
+    "subrequests": 91,
+    "exceededCpuErrors": 0,
+    "exceededMemoryErrors": 0,
+    "fatalInternalErrors": 0,
+    "memoryBytes": {
+      "first": 7420923,
+      "last": 12631852,
+      "min": 7420923,
+      "max": 35814139
+    },
+    "activeWebsocketConnectionsMax": 2,
+    "perMinute": [
+      { "at": "2026-10-30T07:32:28Z", "cpuTimeUs": 965558, "activeTimeUs": 60000209, "memoryBytes": 7420923, "activeWebsocketConnections": 2, "inbound": 16, "outbound": 1214 },
+      { "at": "2026-10-30T07:33:28Z", "cpuTimeUs": 634354, "activeTimeUs": 60000100, "memoryBytes": 9043500, "activeWebsocketConnections": 2, "inbound": 17, "outbound": 1217 },
+      { "at": "2026-10-30T07:34:28Z", "cpuTimeUs": 574373, "activeTimeUs": 60000115, "memoryBytes": 9872940, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:35:28Z", "cpuTimeUs": 507132, "activeTimeUs": 60000110, "memoryBytes": 11247404, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:36:28Z", "cpuTimeUs": 646768, "activeTimeUs": 60000076, "memoryBytes": 13906171, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:37:28Z", "cpuTimeUs": 602593, "activeTimeUs": 60000089, "memoryBytes": 15287547, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:38:28Z", "cpuTimeUs": 535262, "activeTimeUs": 60000080, "memoryBytes": 16448251, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:39:28Z", "cpuTimeUs": 525841, "activeTimeUs": 60000094, "memoryBytes": 16814892, "activeWebsocketConnections": 2, "inbound": 17, "outbound": 1217 },
+      { "at": "2026-10-30T07:40:28Z", "cpuTimeUs": 571000, "activeTimeUs": 60000102, "memoryBytes": 18085676, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:41:28Z", "cpuTimeUs": 517845, "activeTimeUs": 60000091, "memoryBytes": 20033324, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:42:28Z", "cpuTimeUs": 545490, "activeTimeUs": 60000113, "memoryBytes": 20158764, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:43:28Z", "cpuTimeUs": 521078, "activeTimeUs": 60000090, "memoryBytes": 22327084, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:44:28Z", "cpuTimeUs": 516484, "activeTimeUs": 60000092, "memoryBytes": 24122668, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:45:28Z", "cpuTimeUs": 526132, "activeTimeUs": 60000099, "memoryBytes": 24537900, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:46:28Z", "cpuTimeUs": 513729, "activeTimeUs": 60000118, "memoryBytes": 27664940, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:47:28Z", "cpuTimeUs": 510408, "activeTimeUs": 60000116, "memoryBytes": 28145915, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:48:28Z", "cpuTimeUs": 570953, "activeTimeUs": 60000111, "memoryBytes": 29168172, "activeWebsocketConnections": 2, "inbound": 17, "outbound": 1217 },
+      { "at": "2026-10-30T07:49:28Z", "cpuTimeUs": 552950, "activeTimeUs": 60000271, "memoryBytes": 30639404, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:50:28Z", "cpuTimeUs": 543659, "activeTimeUs": 60000088, "memoryBytes": 31434284, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:51:28Z", "cpuTimeUs": 541285, "activeTimeUs": 60000094, "memoryBytes": 33216044, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:52:28Z", "cpuTimeUs": 549993, "activeTimeUs": 60000098, "memoryBytes": 34376748, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:53:28Z", "cpuTimeUs": 532284, "activeTimeUs": 60000089, "memoryBytes": 35814139, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:54:28Z", "cpuTimeUs": 735636, "activeTimeUs": 60000092, "memoryBytes": 33439276, "activeWebsocketConnections": 2, "inbound": 17, "outbound": 1217 },
+      { "at": "2026-10-30T07:55:28Z", "cpuTimeUs": 606692, "activeTimeUs": 60000092, "memoryBytes": 32881964, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:56:28Z", "cpuTimeUs": 560929, "activeTimeUs": 60000089, "memoryBytes": 34257659, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:57:28Z", "cpuTimeUs": 599625, "activeTimeUs": 60000090, "memoryBytes": 34328315, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:58:28Z", "cpuTimeUs": 587234, "activeTimeUs": 60000153, "memoryBytes": 34447355, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T07:59:28Z", "cpuTimeUs": 664002, "activeTimeUs": 60000063, "memoryBytes": 34027564, "activeWebsocketConnections": 2, "inbound": 17, "outbound": 1217 },
+      { "at": "2026-10-30T08:00:28Z", "cpuTimeUs": 694902, "activeTimeUs": 60000075, "memoryBytes": 10120748, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:01:28Z", "cpuTimeUs": 622480, "activeTimeUs": 60000093, "memoryBytes": 10612524, "activeWebsocketConnections": 2, "inbound": 18, "outbound": 1218 },
+      { "at": "2026-10-30T08:02:28Z", "cpuTimeUs": 16398, "activeTimeUs": 124918, "memoryBytes": 12631852, "activeWebsocketConnections": 2, "inbound": 0, "outbound": 6 }
+    ]
+  },
+  "invocations": {
+    "rows": 4,
+    "requests": 4,
+    "errors": 2,
+    "wallTimeUs": 3599853195,
+    "responseBodyBytes": 19579775,
+    "entries": [
+      { "at": "2026-10-30T07:32:28Z", "type": "http", "status": "success", "requests": 1, "errors": 0, "cpuP50": 59490, "cpuP95": 59490, "cpuP99": 59490, "wallP50": 246665, "wallP95": 246665, "wallP99": 246665 },
+      { "at": "2026-10-30T07:32:29Z", "type": "http", "status": "clientDisconnected", "requests": 1, "errors": 1, "cpuP50": 4336, "cpuP95": 4336, "cpuP99": 4336, "wallP50": 1799834100, "wallP95": 1799834100, "wallP99": 1799834100 },
+      { "at": "2026-10-30T07:32:29Z", "type": "http", "status": "responseStreamDisconnected", "requests": 1, "errors": 1, "cpuP50": 17528348, "cpuP95": 17528348, "cpuP99": 17528348, "wallP50": 1799771100, "wallP95": 1799771100, "wallP99": 1799771100 },
+      { "at": "2026-10-30T08:02:29Z", "type": "http", "status": "success", "requests": 1, "errors": 0, "cpuP50": 909, "cpuP95": 909, "cpuP99": 909, "wallP50": 1255, "wallP95": 1255, "wallP99": 1255 }
+    ],
+    "note": "The two errors are the expected terminal statuses of the long-lived WebSocket invocations when the match closed them; they are not application exceptions. wrangler tail recorded zero exceptions for the run."
+  },
+  "storage": {
+    "rows": 0,
+    "firstStoredBytes": null,
+    "lastStoredBytes": null,
+    "maxStoredBytes": null,
+    "points": []
+  },
+  "errors": []
+}
