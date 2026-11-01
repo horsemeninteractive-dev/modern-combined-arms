@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   PRODUCTION_TABS,
+  cardArtState,
   edgeAutoScrollVelocity,
   minimapBackingSize,
   minimapStatus,
@@ -108,6 +109,18 @@ describe('production card queue display', () => {
       active: false,
       progress: 0,
     });
+  });
+});
+
+describe('production card art states', () => {
+  it('shows the model, greys it, or silhouettes it by unlock and cost', () => {
+    // Buyable now: the full model.
+    expect(cardArtState(true, true)).toBe('ready');
+    // Unlocked but the player cannot pay: greyed, still recognisable.
+    expect(cardArtState(true, false)).toBe('short');
+    // Missing technology wins over cost: a locked card is a silhouette.
+    expect(cardArtState(false, true)).toBe('locked');
+    expect(cardArtState(false, false)).toBe('locked');
   });
 });
 

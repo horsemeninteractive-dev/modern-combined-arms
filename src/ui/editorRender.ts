@@ -3,7 +3,15 @@ import { BUILDINGS } from '../data/buildings';
 import { UNITS } from '../data/units';
 import { tryIdentityDef } from '../data/factions';
 import { TILE_SIZE } from '../sim/constants';
-import { TERRAIN, inBounds, tileIndex, type TerrainId } from '../sim/terrain';
+import {
+  OVERLAYS,
+  TERRAIN,
+  inBounds,
+  overlayIdOf,
+  overlayLabel,
+  tileIndex,
+  type TerrainId,
+} from '../sim/terrain';
 import { terrainVisualHeight } from '../render/terrainSurface';
 
 export function drawEditorOverlay(editor: Editor): void {
@@ -133,13 +141,18 @@ export function drawEditorOverlay(editor: Editor): void {
       drawCell(ctx, scenario, project, hx, hz, 'rgba(224,163,74,0.3)', 'rgba(241,194,126,0.95)');
     } else {
       const r = editor.brush;
+      // The overlay brush previews in its own layer colour, so a crop pass and a
+      // terrain pass never look like the same stroke.
+      const overlayTint = OVERLAYS[overlayIdOf(editor.overlayId * 4 + editor.overlayDensity)].tint;
       const color = editor.tool === 'ore'
         ? 'rgba(224,163,74,0.32)'
-        : editor.tool === 'erase'
+        : editor.tool === 'erase' || editor.tool === 'overlayClear'
           ? 'rgba(239,108,77,0.3)'
           : editor.tool === 'raise' || editor.tool === 'lower'
             ? 'rgba(166,232,248,0.26)'
-            : 'rgba(134,199,145,0.26)';
+            : editor.tool === 'overlay'
+              ? `rgba(${overlayTint.map((c) => Math.round(c * 255)).join(',')},0.34)`
+              : 'rgba(134,199,145,0.26)';
       for (let dz = -r; dz <= r; dz++) {
         for (let dx = -r; dx <= r; dx++) {
           if (dx * dx + dz * dz > r * r + 1) continue;
@@ -205,7 +218,7 @@ export function terrainNameAt(editor: Editor, x: number, z: number): string {
   if (!scenario || !inBounds(scenario.width, scenario.height, x, z)) return 'Out of bounds';
   const tile = scenario.tiles[tileIndex(scenario.width, x, z)];
   const t = TERRAIN[tile.t as TerrainId];
-  return `${t?.name ?? 'Unknown'} · E${tile.e}${tile.o > 0 ? ` · ore ${tile.o}` : ''}`;
+  return `${t?.name ?? 'Unknown'}${overlayLabel(tile.v)} · E${tile.e}${tile.o > 0 ? ` · ore ${tile.o}` : ''}`;
 }
 
 export function unitPaletteName(id: string): string {

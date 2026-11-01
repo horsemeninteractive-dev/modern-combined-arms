@@ -231,6 +231,13 @@ export interface BuildingDef {
   /** Must be adjacent to navigable deep water. */
   requiresWater?: boolean;
   /**
+   * The footprint is deck, not masonry: ground units may cross it, so it is
+   * never stamped into the blocked grid while it stands. A span that is shot
+   * down blocks its own crossing and stays on the map as wreckage that an
+   * engineer can re-deck. Used by bridges.
+   */
+  walkable?: boolean;
+  /**
    * Net grid power: positive structures generate, negative structures draw.
    * Absent means zero. A deficit slows construction and production for the
    * owner until supply catches up.
@@ -442,6 +449,13 @@ export interface Entity {
   suppression: number;
   lastHitTick: number;
   kills: number;
+  /**
+   * Veterancy experience, earned by damaging and destroying enemies. Integer
+   * and clamped, so a save round-trip and both peers of a match agree exactly.
+   * Absent on saves and snapshots written before veterancy existed (loads as 0)
+   * and always 0 on buildings, which never promote.
+   */
+  xp?: number;
   /** Buildings: 0..1 construction progress; 1 for complete. */
   buildProgress: number;
   construction: boolean;
@@ -469,6 +483,14 @@ export interface Entity {
    * that entity is gone. Saves written before this field existed load as 0.
    */
   aimTargetId: number;
+  /**
+   * Night-fighting target acquisition. `acquireTargetId` is the target the crew
+   * is currently identifying and `acquireTicks` how long they have held it; a
+   * direct-fire shot waits until enough ticks have accumulated. Optional so a
+   * save written before the day/night system loads unchanged (absent = 0).
+   */
+  acquireTargetId?: number;
+  acquireTicks?: number;
   captureTargetId: number;
   captureProgress: number;
   /**
@@ -544,6 +566,8 @@ export type SimEventCode =
   | 'baseUnderAttack'
   | 'forcesUnderAttack'
   | 'enemyDetected'
+  | 'unitPromoted'
+  | 'rallySet'
   | 'moveOrder'
   | 'attackOrder';
 
@@ -705,6 +729,12 @@ export interface RuntimeMap {
   elevation: Uint8Array;
   ore: Uint16Array;
   maxOre: Uint16Array;
+  /**
+   * Packed surface/vegetation overlay per tile (0 = bare). Optional so every
+   * existing runtime map literal, save and projection stays valid; a map
+   * without it behaves exactly as it did before the layer existed.
+   */
+  overlay?: Uint8Array;
 }
 
 export interface GameState {

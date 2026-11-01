@@ -29,6 +29,9 @@ export type AnnouncementId =
   | 'forcesUnderAttack'
   | 'unitLost'
   | 'enemyDetected'
+  | 'unitPromoted'
+  | 'rallyPointSet'
+  | 'battlefieldEstablished'
   | 'victory';
 
 export interface VoiceCue {
@@ -71,6 +74,15 @@ export const VOICE_MANIFEST: Record<AnnouncementId, VoiceCue> = {
   buildingUnderConstruction: { file: 'buildingunderconstruction.mp3', priority: 25, cooldownMs: 5000, label: 'Building under construction' },
   buildingSold: { file: 'buildingsold.mp3', priority: 25, cooldownMs: 5000, label: 'Building sold' },
   siteContested: { file: 'sitecontested.mp3', priority: 65, cooldownMs: 10000, label: 'Site contested' },
+  battlefieldEstablished: {
+    file: 'battlefieldestablished.mp3',
+    priority: 55,
+    cooldownMs: 0,
+    once: true,
+    label: 'Battlefield established',
+  },
+  unitPromoted: { file: 'unitpromoted.mp3', priority: 40, cooldownMs: 4000, label: 'Unit promoted' },
+  rallyPointSet: { file: 'rallypointset.mp3', priority: 25, cooldownMs: 2500, label: 'Rally point set' },
 };
 
 export const ANNOUNCEMENT_IDS = Object.keys(VOICE_MANIFEST) as AnnouncementId[];
@@ -111,11 +123,13 @@ export function announcementForEvent(ev: SimEvent, localPlayerId: number): Annou
       if (!local) return null;
       if (ev.code === 'productionStarted') return 'productionUnderway';
       if (ev.code === 'productionCancelled') return 'productionCancelled';
+      if (ev.code === 'rallySet') return 'rallyPointSet';
       return null;
     case 'notice':
       if (!local) return null;
       if (ev.code === 'powerRestored') return 'powerRestored';
       if (ev.code === 'enemyDetected') return 'enemyDetected';
+      if (ev.code === 'unitPromoted') return 'unitPromoted';
       return null;
     case 'alert':
       if (!local) return null;

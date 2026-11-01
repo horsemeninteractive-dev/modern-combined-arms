@@ -101,7 +101,7 @@ describe('announcer manifest', () => {
       paths.add(path);
       expect(existsSync(new URL(`../public/audio/battlesys/${cue.file}`, import.meta.url))).toBe(true);
     }
-    expect(paths.size).toBe(20);
+    expect(paths.size).toBe(23);
   });
 });
 
@@ -123,6 +123,20 @@ describe('event to voice mapping', () => {
     expect(announcementForEvent(event({ type: 'alert', team: 0, code: 'baseUnderAttack' }), 0)).toBe('baseUnderAttack');
     expect(announcementForEvent(event({ type: 'alert', team: 0, code: 'forcesUnderAttack' }), 0)).toBe('forcesUnderAttack');
     expect(announcementForEvent(event({ type: 'notice', team: 0, code: 'enemyDetected' }), 0)).toBe('enemyDetected');
+  });
+
+  it('gives a rank-up the upgrade line, and only to the crew that earned it', () => {
+    expect(announcementForEvent(event({ type: 'notice', team: 0, code: 'unitPromoted' }), 0)).toBe(
+      'unitPromoted',
+    );
+    expect(announcementForEvent(event({ type: 'notice', team: 1, code: 'unitPromoted' }), 0)).toBeNull();
+  });
+
+  it('acknowledges a rally point only when this player set it', () => {
+    expect(announcementForEvent(event({ type: 'orderAck', team: 0, code: 'rallySet' }), 0)).toBe(
+      'rallyPointSet',
+    );
+    expect(announcementForEvent(event({ type: 'orderAck', team: 1, code: 'rallySet' }), 0)).toBeNull();
   });
 
   it('never announces enemy or unrelated AI events to the player', () => {

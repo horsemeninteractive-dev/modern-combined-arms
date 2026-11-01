@@ -10,7 +10,7 @@ import { LobbyClient, makeRoomCode, type LobbyView } from '../src/multiplayer/lo
 import { defaultLobbyConfig } from '../src/multiplayer/lobbyConfig';
 import { PLAYABLE_NATION_IDS } from '../src/data/factions';
 import { Game } from '../src/sim/game';
-import { builtinScenario } from '../src/data/scenarios';
+import { scenarioById } from '../src/data/scenarioCatalog';
 import { cloneScenario } from '../src/sim/scenario';
 import { createTeamSnapshot } from '../src/multiplayer/projection';
 import type { Command } from '../src/sim/types';
@@ -77,7 +77,7 @@ function lobbyMessage(overrides: {
     matchDeadlineAt: 0,
     config: {
       version: 1,
-      mapId: overrides.mapId ?? 'island-assault',
+      mapId: overrides.mapId ?? 'open-front',
       matchDurationMs: overrides.matchDurationMs ?? 600_000,
       seats: overrides.seats.map((seat, index) => ({
         nation: seat.nation ?? (index === 0 ? 'lithuania' : 'russia'),
@@ -351,7 +351,7 @@ describe('lobby client — the match stream', () => {
     const seen: number[] = [];
     client.onSnapshot((snapshot) => seen.push(snapshot.tick));
 
-    const map = builtinScenario('rust-valley').create();
+    const map = scenarioById('open-front')!.create();
     const truth = new Game(cloneScenario(map), { localPlayerId: 0, enableAI: false });
     truth.state.tick = 640;
     const snapshot = createTeamSnapshot(truth, 1);
@@ -456,7 +456,7 @@ describe('default lobby', () => {
   it('seats both players in nations the picker can actually show', () => {
     // Built-in maps declare alliance presets; a seat must not start on one,
     // because the nation field can only display real nations.
-    for (const mapId of ['island-assault', 'rust-valley', 'kestrel-straits', 'foundry-district']) {
+    for (const mapId of ['open-front', 'woodland-divide', 'drylands', 'ironworks', 'crossing-point', 'high-ground', 'littoral', 'contact-zone']) {
       const config = defaultLobbyConfig(mapId, 600_000);
       for (const seat of config.seats) {
         expect(PLAYABLE_NATION_IDS).toContain(seat.nation);
@@ -485,7 +485,7 @@ describe('start gating and codes', () => {
       roomId: 'kestrel',
       seat: 0,
       joinCode: 'ABCD2345',
-      mapId: 'island-assault',
+      mapId: 'open-front',
       matchDurationMs: 600_000,
       hostSeat: 0,
       seats: [seat({ host: true, ready: true }), seat({ ready: true })],

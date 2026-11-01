@@ -8,6 +8,85 @@ The release version and stage come from `package.json`; the build number shown
 in the menu is the repository commit count at build time. The same file is
 rendered in game from **Changelog** in the main-menu footer.
 
+## [0.3.0 BETA] — 2026-11-01
+
+A terrain, battlefield and atmosphere release. The map pool grows from eight
+competitive maps to seventeen, the ground itself gains eight new terrains and six
+surface layers that change movement, cover, concealment and sight, weather and a
+running time of day now affect detection, engagement range, mobility and the sea
+state, crews earn ranks by fighting, and the Scenario Forge gains symmetry tools
+and an island battlefield with spans that can be shot out and re-decked.
+
+### Terrain
+
+- **Eight new base terrains** — marshland, mud, farmland, scrubland, rocky ground, dunes, dense urban and industrial hardstanding — appended as ids 8–15. Existing ids are untouched so every saved battle, scenario and map keeps the ground it was authored with.
+- **Six surface layers** (waterlogged, crop rows, reeds, craters, hedgerows, snow cover) stacked on top of base terrain at one of three densities. Light reeds and dense reeds are the same layer at different strength, and a tile without a layer stores nothing extra, so old data stays byte-identical.
+- **Movement, cover, concealment and line of sight are all terrain now.** Marsh costs wheels 1.9× their open-ground rate and tracks 1.5×; dunes and boulder fields punish wheels more than tracks; industrial hardstanding is faster than open ground for every class. Infantry in cover take up to 30% less direct fire, indirect fire still arcs over it, and vehicles never benefit because their protection is their armour.
+- **Concealment is separate from cover.** Crops, reeds and hedgerows hide a squad without reducing the damage it takes once found, gate detection at 0.4+, and feed the same line-of-sight accounting as canopy and rock: three soft tiles close a sightline, a hedgerow blocks it outright.
+- Buildability, ore legality, the Scenario Forge's previews and the AI all read the same `(terrain, layer)` helpers, so the plan the pathfinder accepts is the ground the mover pays for.
+
+### Battlefields
+
+The pool is now **seventeen competitive maps** plus the four campaign theatres, all
+offered to skirmish and multiplayer and all four-way symmetric.
+
+- The original eight were audited and reworked onto the new catalogue: Open Front gained fields and hedgerows, Woodland Divide scrub and churned tracks, Drylands dune basins, Ironworks industrial yards, Crossing Point marsh banks, High Ground scree, Littoral salt marsh, Contact Zone a dense core with an industrial rim.
+- **Nine new battlefields:** Blackwater Fens (wetland causeways), Hedgerow Vale (bocage), Thorn Scrub (ambush country), Granite Steps (terraced uplands), Saffron Erg (deep desert), Ashcross Sprawl (dense city), Freight Yards (industry), Silt Delta (river delta) and **Cormorant Isle** — one island in open water with a level beach ring, four deep bays, a bridged cut and a two-step rocky centre, the first map in the pool where the sea is a flank rather than scenery.
+- Sizes are deliberately distinct (64² to 136²) and every map is verified by the audit that re-derives symmetry from finished tiles: terrain, elevation, ore and surface layer across all three quarter turns, neutral structures, owned content, start slots, and reachability for foot, wheeled and tracked from all four starts.
+- Ore no longer spawns under authored structures or on ground a harvester cannot stand on, which is what used to strand a harvester on an unreachable seam for the rest of a match.
+
+### Scenario Forge
+
+- **Symmetry tools:** single, two-way mirror and four-way rotation, with a live note saying which quarter a stroke will land in. Structures, units, ore, terrain, layers, elevation and bridges are all stamped at every reflected position.
+- **Slidable sidebars:** both rails drag off screen and back, snap collapsed or open, and remember where they were left, so the canvas is usable on a laptop.
+- Paint base terrain and surface layers as separate brushes, bridge authoring over channels and towpaths, the five new shelter kinds in the structure list, and the scenario's time of day shown in the editor instead of only in the battle.
+- Validation reports unsupported layer/terrain pairs, misplaced spans, unreachable ore and asymmetric quarters before a map can ship.
+
+### Weather, light and the sea
+
+- **Seven weather profiles** — clear, overcast, fog, rain, storm, snow and blizzard — selectable in skirmish and multiplayer, with the host's choice carried to every seat.
+- Each profile is a multiplier on what the simulation already computes, so weather stacks with darkness, elevation and terrain instead of replacing them: a storm cuts detection to 60%, engagement to 68% and direct-fire accuracy to 74%, slows hulls to 0.86 and aircraft to 0.78, widens artillery patterns to 1.75×, and turns the sea into a breaking 0.94 with hulls at 0.76 and watches at 0.68. A blizzard is worse again: sight at 36%, aircraft at half speed.
+- **Weather is visible, not just numeric:** heavy precipitation that reads as real rain rather than horizontal lines, sheet lightning behind the clouds, darker storm skies, swaying trees and a wet-sheen ground, plus volumetric haze and fog so a fog map actually fades out. Deep water turns choppy in a gale and the swell is what slows the hulls and shortens the watch.
+- **A running battlefield clock** drives ambient light, sun direction and colour grade; darkness shortens detection and caps engagement range through per-unit sensors (optical, night vision, thermal, recon, avionics) with floors so night is a disadvantage rather than an armistice.
+- Illumination is derived from authoritative entities: floodlit bases, headlamps, searchlights, beacons and lit windows. Lights burn only with power, lit windows dim in a brownout and go out in a blackout, a charted-but-unseen structure's windows stay dark until it is seen again, and no graphics setting can create light the simulation does not have.
+- The host chooses the map, start hour and weather for a multiplayer match; only the host may change them, the room validates and broadcasts them, and a change clears readiness so nobody starts on a configuration they did not confirm.
+
+### Veterancy
+
+- Crews earn experience by damaging and destroying enemies, scaled against the target's own integrity, and hold three ranks: Recruit, Veteran (+5% hit, +8% damage, quicker reload) and Elite (+10% hit, +16% damage, fastest reload). Engineers, harvesters and medics never promote — veterancy records combat, not existence.
+- Rank shows as chevrons over the unit and as progress in the inspector, and it is simulation state: it is saved, projected to opponents who can see the crew, and part of the state hash.
+- **Promotions are felt as well as read:** the hull pulses for about a second, the announcer plays the promotion line, and the rank-up joins the battlefield report and event log.
+
+### Traffic and pathfinding
+
+- A formation slot that lands on ground the hull cannot drive to is walked out to reachable ground, so a group order no longer leaves part of the force refusing to move.
+- A blocked vehicle now yields: a stationary hull asked to clear the lane steps aside and does so by driving to the new tile rather than jumping to it, and two hulls with equal claim resolve the standoff deterministically instead of waiting forever.
+- Map validation rejects seams and objectives that cannot be reached by every movement class, which closes the harvester-stuck-on-ore and unit-stuck-behind-buildings reports at the authoring end.
+
+### Structures, props and spans
+
+- **Five new garrisonable shelters** — village chapel, farmhouse, constabulary, fire lookout and freight shed — each with its own mesh, occupied variant, flag anchor, icon and firing slots, and each obeying fog of war like every other shelter.
+- **Destructible, repairable bridges.** A deck is a structure, not terrain: it lays road at bank height into the navigation layer, closes when shot out (the wreckage blocks and anything standing on it walks to the nearest bank), and can be re-decked by an engineer for its owner or for a neutral span.
+- Roadside signposts joined the batched props, and the shoreline stops z-fighting: coastal land sits clear of the sea plane and water is drawn with a polygon offset so the waterline reads as a line instead of a shimmer.
+
+### Interface and audio
+
+- In-game layout fixes: the production list no longer scrolls horizontally, the command row no longer crushes its buttons off screen at small heights, and the console keeps its four corners at every supported aspect ratio.
+- Three new announcer lines: the field is established at the start of a battle, a rally point is acknowledged when one is accepted, and a crew earning a rank is announced.
+
+### Verification
+
+- `npm run typecheck` clean and the full `vitest` suite run for this release.
+- New coverage for the terrain catalogue, layer packing and legality, class-aware movement, cover versus concealment, line of sight through canopy, scrub, rock and hedgerow, bridges, garrisonable fog, day/night sensors and lighting, weather mechanics, all seventeen maps against the four-way audit, scenario symmetry, editor rails, veterancy and promotion feedback.
+- Four-way symmetry, reachability and route balance are measured from the finished tiles, not from the builder's intent: seventeen of seventeen maps pass with zero problems.
+
+### Known gaps
+
+- 2v2 is described by the adjacent start pairs but is not implemented: multiplayer remains 1v1.
+- Naval play is supported by Cormorant Isle's water and the sea-state model, but no competitive map requires a navy and no naval balance claim is made.
+- The full graphics range was verified on the development machine only; a very low-end GPU was not tested.
+- The HUD's event log still surfaces as the battlefield report line rather than a scrollable review panel.
+
 ## [0.2.0 BETA] — 2026-10-31
 
 Online 1v1, played for real. This update turns multiplayer from a server-only

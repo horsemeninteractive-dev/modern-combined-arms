@@ -57,6 +57,10 @@ export interface LobbyView {
   seat: number | null;
   joinCode: string | null;
   mapId: string | null;
+  /** Authoritative start hour both seats will fight at, 0..24. */
+  startHour: number;
+  /** Authoritative weather kind both seats will fight in. */
+  weather: string;
   matchDurationMs: number;
   hostSeat: number;
   seats: LobbySeatView[];
@@ -98,6 +102,8 @@ function emptyView(): LobbyView {
     seat: null,
     joinCode: null,
     mapId: null,
+    startHour: 18,
+    weather: 'clear',
     matchDurationMs: 0,
     hostSeat: 0,
     seats: [],
@@ -138,6 +144,9 @@ export class LobbyClient {
    */
   private sentNation: string | null = null;
   private sentColor: string | null = null;
+  private sentMapId: string | null = null;
+  private sentStartHour: number | null = null;
+  private sentWeather: string | null = null;
   private socket: LobbySocket | null = null;
   private assembler: SnapshotAssembler | null = null;
   private keepalive: ReturnType<typeof setInterval> | null = null;
@@ -302,6 +311,27 @@ export class LobbyClient {
     if (this.sendLobbySet({ color })) this.sentColor = color;
   }
 
+  /**
+   * Ask the room for a different battlefield. The room decides whether this
+   * seat may ask (host only) and whether the map exists (catalogue), so a
+   * refusal arrives as the room's own error instead of a silent no-op.
+   */
+  setMap(mapId: string): void {
+    if (mapId === this.view.mapId || mapId === this.sentMapId) return;
+    if (this.sendLobbySet({ mapId })) this.sentMapId = mapId;
+  }
+
+  setStartHour(startHour: number): void {
+    if (startHour === this.view.startHour || startHour === this.sentStartHour) return;
+    if (this.sendLobbySet({ startHour })) this.sentStartHour = startHour;
+  }
+
+  /** Ask the room for different weather; the room decides whether this seat may. */
+  setWeather(weather: string): void {
+    if (weather === this.view.weather || weather === this.sentWeather) return;
+    if (this.sendLobbySet({ weather })) this.sentWeather = weather;
+  }
+
   setReady(ready: boolean): void {
     const socket = this.socket;
     if (!socket || socket.readyState !== SOCKET_OPEN) {
@@ -329,7 +359,13 @@ export class LobbyClient {
     this.leaving = false;
   }
 
-  private sendLobbySet(patch: { nation?: string; color?: string }): boolean {
+  private sendLobbySet(patch: {
+    nation?: string;
+    color?: string;
+    mapId?: string;
+    startHour?: number;
+    weather?: string;
+  }): boolean {
     const socket = this.socket;
     if (!socket || socket.readyState !== SOCKET_OPEN) {
       this.note('Not connected to the room.', 'error');
@@ -488,6 +524,9 @@ export class LobbyClient {
       // A rejected change must be retryable, so drop the pending intent.
       this.sentNation = null;
       this.sentColor = null;
+      this.sentMapId = null;
+      this.sentStartHour = null;
+      this.sentWeather = null;
       this.note(String(message.message ?? 'The room rejected that.'), 'error');
     }
   }
@@ -495,6 +534,9 @@ export class LobbyClient {
   private applyLobbyMessage(message: Record<string, unknown>): void {
     this.sentNation = null;
     this.sentColor = null;
+    this.sentMapId = null;
+    this.sentStartHour = null;
+    this.sentWeather = null;
     const config = record(message.config) ? message.config : null;
     const seatsRaw = config && Array.isArray(config.seats) ? config.seats : [];
     const seats: LobbySeatView[] = seatsRaw.filter(record).map((seat) => ({
@@ -512,6 +554,10 @@ export class LobbyClient {
       seat,
       hostSeat: typeof message.hostSeat === 'number' ? message.hostSeat : 0,
       mapId: config && typeof config.mapId === 'string' ? config.mapId : null,
+      startHour:
+        config && typeof config.startHour === 'number' ? config.startHour : this.view.startHour,
+      weather:
+        config && typeof config.weather === 'string' ? config.weather : this.view.weather,
       matchDurationMs:
         config && typeof config.matchDurationMs === 'number'
           ? config.matchDurationMs

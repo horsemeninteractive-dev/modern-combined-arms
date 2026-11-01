@@ -246,6 +246,33 @@ const ROSTER: BuildingDef[] = [
     hotkey: 'L',
   },
   {
+    id: 'bridge',
+    name: 'Road Bridge',
+    shortName: 'BRIDGE',
+    role: 'Crossing',
+    // Square, like every authored structure: the span is stamped at all four
+    // rotations of a competitive map, and a rectangular footprint cannot be
+    // rotated without also rotating the blocked tiles it stands for.
+    footprint: { w: 4, h: 4 },
+    hp: 900,
+    armour: 'structure',
+    cost: { mats: 0, req: 0 },
+    buildTime: 0,
+    vision: 4,
+    authoredOnly: true,
+    // Deck, not obstacle: a ground unit drives across the span instead of
+    // routing around it. Shooting it down blocks the crossing until an
+    // engineer re-decks it.
+    walkable: true,
+    // The span is authored over the channel it bridges, so water under it is
+    // the point rather than a placement mistake.
+    waterStructure: true,
+    description:
+      'Span carrying the road over a channel. Any ground unit can cross it while it stands, and it can be repaired between fights. Anti-structure fire drops the deck: the crossing closes, unless an engineer rebuilds it.',
+    icon: 'bridge',
+    hotkey: '',
+  },
+  {
     id: 'relay',
     name: 'Signals Relay',
     shortName: 'RELAY',
@@ -360,6 +387,26 @@ const ROSTER: BuildingDef[] = [
     hotkey: '',
   },
   {
+    id: 'freightShed',
+    name: 'Freight Shed',
+    shortName: 'SHED',
+    role: 'Industrial strongpoint',
+    // Square like every authored shelter, so it can be stamped at all four
+    // rotations of a competitive map without turning its footprint.
+    footprint: { w: 4, h: 4 },
+    hp: 700,
+    armour: 'structure',
+    cost: { mats: 0, req: 0 },
+    buildTime: 0,
+    vision: 5,
+    authoredOnly: true,
+    garrison: { capacity: 5, protection: 0.45, exposure: 0.55, firingSlots: 2 },
+    description:
+      'Steel goods shed with loading doors at both ends. Five infantry hold it behind two firing positions and 45% protection: thin sheet walls, but the open bay gives a covered line down the yard.',
+    icon: 'freightShed',
+    hotkey: '',
+  },
+  {
     id: 'civicHall',
     name: 'Civic Hall',
     shortName: 'CIVIC HALL',
@@ -411,6 +458,83 @@ const ROSTER: BuildingDef[] = [
     description:
       'Damaged civilian house. Two infantry can use its broken walls as a light firing position with 35% protection; one can fire at a time. Much more exposed than a tenement.',
     icon: 'ruin',
+    hotkey: '',
+  },
+  {
+    id: 'chapel',
+    name: 'Village Chapel',
+    shortName: 'CHAPEL',
+    role: 'Landmark observer',
+    // Square: an authored structure is stamped at all four rotations, so a
+    // non-square footprint cannot be placed symmetrically on a four-way map.
+    footprint: { w: 4, h: 4 },
+    hp: 620,
+    armour: 'structure',
+    cost: { mats: 0, req: 0 },
+    buildTime: 0,
+    // The bell tower is the draw: it sees over the treeline and across the
+    // river bend that the rest of the village cannot.
+    vision: 11,
+    authoredOnly: true,
+    garrison: { capacity: 3, protection: 0.5, exposure: 0.5, firingSlots: 2 },
+    description:
+      'Stone chapel with a bell tower. Three infantry hold the nave behind two firing positions and 50% protection, and the tower sees eleven tiles over the rooftops — the best observation in a village, and the most obvious landmark on the map.',
+    icon: 'chapel',
+    hotkey: '',
+  },
+  {
+    id: 'farmhouse',
+    name: 'Farmhouse',
+    shortName: 'FARM',
+    role: 'Rural strongpoint',
+    footprint: { w: 3, h: 3 },
+    hp: 460,
+    armour: 'structure',
+    cost: { mats: 0, req: 0 },
+    buildTime: 0,
+    vision: 5,
+    authoredOnly: true,
+    garrison: { capacity: 3, protection: 0.38, exposure: 0.62, firingSlots: 2 },
+    description:
+      'Stone farmhouse with a walled yard and an attached barn. Three infantry get two firing positions and 38% protection: thin walls, but the yard wall lets a squad trade shots without standing in the open.',
+    icon: 'farmhouse',
+    hotkey: '',
+  },
+  {
+    id: 'constabulary',
+    name: 'Constabulary',
+    shortName: 'POLICE',
+    role: 'Urban strongpoint',
+    footprint: { w: 4, h: 4 },
+    hp: 780,
+    armour: 'structure',
+    cost: { mats: 0, req: 0 },
+    buildTime: 0,
+    vision: 8,
+    authoredOnly: true,
+    garrison: { capacity: 4, protection: 0.5, exposure: 0.5, firingSlots: 3 },
+    description:
+      'Reinforced civic police station with a walled vehicle yard. Four occupants hold it behind three firing positions and 50% protection: the strongest street-corner position in a town, and the one that covers the junction.',
+    icon: 'constabulary',
+    hotkey: '',
+  },
+  {
+    id: 'watchtower',
+    name: 'Fire Lookout',
+    shortName: 'LOOKOUT',
+    role: 'Observation post',
+    footprint: { w: 2, h: 2 },
+    hp: 340,
+    armour: 'structure',
+    cost: { mats: 0, req: 0 },
+    buildTime: 0,
+    // A bare timber tower: almost no shelter, but it is a periscope on legs.
+    vision: 13,
+    authoredOnly: true,
+    garrison: { capacity: 2, protection: 0.3, exposure: 0.7, firingSlots: 1 },
+    description:
+      'Timber fire lookout on a hill. Two infantry get one firing position and only 30% protection, but thirteen tiles of vision: a cheap way to watch a pass, and a fragile one.',
+    icon: 'watchtower',
     hotkey: '',
   },
 ];

@@ -10,13 +10,17 @@ export function createRuntimeMap(scenario: AuthoredScenario): RuntimeMap {
   const elevation = new Uint8Array(size);
   const ore = new Uint16Array(size);
   const maxOre = new Uint16Array(size);
+  // The surface layer is carried alongside the base terrain, never folded into
+  // it: a tile's terrain id keeps meaning exactly the same thing it always did.
+  const overlay = new Uint8Array(size);
   for (let i = 0; i < size; i++) {
     terrain[i] = scenario.tiles[i].t;
     elevation[i] = scenario.tiles[i].e;
     ore[i] = scenario.tiles[i].o;
     maxOre[i] = scenario.tiles[i].o;
+    overlay[i] = scenario.tiles[i].v ?? 0;
   }
-  return { width: scenario.width, height: scenario.height, terrain, elevation, ore, maxOre };
+  return { width: scenario.width, height: scenario.height, terrain, elevation, ore, maxOre, overlay };
 }
 
 export function mapHeightAt(map: RuntimeMap, x: number, z: number): number {
@@ -87,6 +91,7 @@ export function runtimeMapFromSave(data: {
   elevation: number[];
   ore: number[];
   maxOre: number[];
+  overlay?: number[];
 }): RuntimeMap {
   return {
     width: data.width,
@@ -95,6 +100,8 @@ export function runtimeMapFromSave(data: {
     elevation: Uint8Array.from(data.elevation),
     ore: Uint16Array.from(data.ore),
     maxOre: Uint16Array.from(data.maxOre),
+    // A save written before the surface layer existed simply has none.
+    ...(data.overlay ? { overlay: Uint8Array.from(data.overlay) } : {}),
   };
 }
 
@@ -105,6 +112,7 @@ export function runtimeMapToSave(map: RuntimeMap): {
   elevation: number[];
   ore: number[];
   maxOre: number[];
+  overlay: number[];
 } {
   return {
     width: map.width,
@@ -113,6 +121,7 @@ export function runtimeMapToSave(map: RuntimeMap): {
     elevation: Array.from(map.elevation),
     ore: Array.from(map.ore),
     maxOre: Array.from(map.maxOre),
+    overlay: map.overlay ? Array.from(map.overlay) : new Array<number>(map.terrain.length).fill(0),
   };
 }
 

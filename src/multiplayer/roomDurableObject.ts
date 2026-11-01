@@ -1,4 +1,4 @@
-import { BUILTIN_SCENARIOS } from '../data/scenarios';
+import { defaultScenarioId } from '../data/scenarioCatalog';
 import { Game } from '../sim/game';
 import {
   RoomMatch,
@@ -700,7 +700,7 @@ export class MatchRoomDurableObject {
           // Creation makes a lobby, not a match: no scenario, no Game and no
           // snapshot. The authoritative world is built only by an accepted
           // start, which keeps a waiting room cheap and restorable.
-          const config = defaultLobbyConfig(BUILTIN_SCENARIOS[0].id, matchDurationMs);
+          const config = defaultLobbyConfig(defaultScenarioId('multiplayer'), matchDurationMs);
           const lobby = new RoomLobby({
             roomId,
             seats,
@@ -855,7 +855,7 @@ export class MatchRoomDurableObject {
       // of a lobby configuration. Its reservation duration and the default map
       // are the only durable facts available, so adopt them explicitly. A
       // stored-but-malformed configuration is still fatal below.
-      config = defaultLobbyConfig(BUILTIN_SCENARIOS[0].id, meta.matchDurationMs);
+      config = defaultLobbyConfig(defaultScenarioId('multiplayer'), meta.matchDurationMs);
       console.warn('MP room lobby configuration upgraded from legacy metadata', meta.roomId);
     } else {
       const parsed = validateLobbyConfig(stored);

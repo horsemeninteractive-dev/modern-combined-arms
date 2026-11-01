@@ -1,16 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { BUILTIN_SCENARIOS } from '../src/data/scenarios';
+import { SCENARIOS } from '../src/data/scenarioCatalog';
 import { BUILDINGS } from '../src/data/buildings';
 import { canLaunch, reachableFrom, validateScenario, type Scenario } from '../src/sim/scenario';
 import { TERRAIN, Terrain, tileIndex } from '../src/sim/terrain';
 import { Game } from '../src/sim/game';
 
 /**
- * The three new theatres are mirror-symmetric: every tile, deposit, objective
+ * The three legacy theatres are mirror-symmetric: every tile, deposit, objective
  * and starting unit has an identical twin across the vertical centre line, so
- * neither commander is dealt better ground.
+ * neither commander is dealt better ground. The competitive roster is four-way
+ * symmetric instead and is verified in `map-roster.test.ts`, so this file names
+ * its three maps explicitly rather than filtering "everything but the island".
  */
-const MAPS = BUILTIN_SCENARIOS.filter((s) => s.id !== 'island-assault');
+const LEGACY_IDS = ['rust-valley', 'kestrel-straits', 'foundry-district'] as const;
+const MAPS = SCENARIOS.filter((s) => (LEGACY_IDS as readonly string[]).includes(s.id));
 
 const mirrorX = (scenario: Scenario, x: number): number => scenario.width - 1 - x;
 const mirrorOrigin = (scenario: Scenario, x: number, width: number): number =>
@@ -132,7 +135,7 @@ describe('theatre variety', () => {
   });
 
   it('builds the urban map out of streets and garrisonable blocks', () => {
-    const scenario = BUILTIN_SCENARIOS.find((s) => s.id === 'foundry-district')!.create();
+    const scenario = SCENARIOS.find((s) => s.id === 'foundry-district')!.create();
     let road = 0;
     let urban = 0;
     for (const tile of scenario.tiles) {
@@ -153,7 +156,7 @@ describe('theatre variety', () => {
   });
 
   it('puts a mirrored landmark pair in the central square', () => {
-    const scenario = BUILTIN_SCENARIOS.find((s) => s.id === 'foundry-district')!.create();
+    const scenario = SCENARIOS.find((s) => s.id === 'foundry-district')!.create();
     for (const id of ['civicHall', 'foundryWorks']) {
       const def = BUILDINGS[id];
       const placed = scenario.structures.filter((s) => s.defId === id);
@@ -173,7 +176,7 @@ describe('theatre variety', () => {
   });
 
   it('leaves each side a clear yard to build in, outside the city core', () => {
-    const scenario = BUILTIN_SCENARIOS.find((s) => s.id === 'foundry-district')!.create();
+    const scenario = SCENARIOS.find((s) => s.id === 'foundry-district')!.create();
     const occupied = new Set<string>();
     for (const s of scenario.structures) {
       const def = BUILDINGS[s.defId];
@@ -210,7 +213,7 @@ describe('theatre variety', () => {
 
 describe('naval theatre', () => {
   it('gives both coasts a navigable strait for shipyards and corvettes', () => {
-    const entry = BUILTIN_SCENARIOS.find((s) => s.id === 'kestrel-straits')!;
+    const entry = SCENARIOS.find((s) => s.id === 'kestrel-straits')!;
     const scenario = entry.create();
     const water: Array<{ x: number; z: number }> = [];
     for (let z = 0; z < scenario.height; z++) {
@@ -232,7 +235,7 @@ describe('naval theatre', () => {
 
   it('leaves the armour and urban theatres without a navigable navy', () => {
     for (const id of ['rust-valley', 'foundry-district']) {
-      const scenario = BUILTIN_SCENARIOS.find((s) => s.id === id)!.create();
+      const scenario = SCENARIOS.find((s) => s.id === id)!.create();
       let deep = 0;
       for (const tile of scenario.tiles) if (tile.t === Terrain.DeepWater) deep++;
       expect(deep, id).toBe(0);

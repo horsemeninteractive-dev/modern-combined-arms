@@ -139,6 +139,14 @@ export const BUILDING_FLAG_ANCHORS: Record<string, FlagAnchor> = {
   officeBlock: { x: 2.0, y: 12.9, z: 4.6 },
   civicHall: { x: 4.6, y: 9.35, z: 3.6 },
   foundryWorks: { x: 4.8, y: 8.76, z: 3.2 },
+  farmhouse: { x: -1.4, y: 6.7, z: 0.4 },
+  chapel: { x: 1.0, y: 7.2, z: 1.2 },
+  constabulary: { x: -1.4, y: 7.23, z: 0.2 },
+  watchtower: { x: 0, y: 7.8, z: 0 },
+  freightShed: { x: 5.6, y: 6.25, z: 2.4 },
+  // A span is neutral ground, so its staff is never raised in play; the mount
+  // exists so every registered structure has a deterministic one.
+  bridge: { x: 6.9, y: 1.19, z: 0 },
 };
 
 export function flagAnchorFor(defId: string | undefined): FlagAnchor | undefined {

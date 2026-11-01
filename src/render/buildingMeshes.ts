@@ -1581,6 +1581,13 @@ export interface BuildingStyle {
    * are inside, so an empty shelter reads as empty at a glance.
    */
   garrisoned?: MeshBuffers;
+  /**
+   * What a structure looks like once it has been knocked out but has not been
+   * cleared from the map. Only walkable spans use it: everything else is
+   * removed when it dies, but a dropped bridge stays as wreckage over the water
+   * so the closed crossing can be read and re-decked.
+   */
+  ruined?: MeshBuffers;
   /** Optional traversing weapon on a fixed mount. */
   turret?: MeshBuffers;
   turretOffset?: [number, number, number];
@@ -1622,6 +1629,345 @@ function mergeMeshes(
   indices.set(a.indices, 0);
   for (let i = 0; i < b.indices.length; i++) indices[a.indices.length + i] = b.indices[i] + vertexCount;
   return { positions, normals, colors, teamMask, materials, indices };
+}
+
+/* ------------------------------------------------------------------ */
+/* Rural, civic and observation shelters                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Stone farmhouse with an attached barn and a walled yard (3x3 tiles).
+ * Two storeys of house next to a single-storey barn: the roofline is what makes
+ * it read as a working farm rather than another urban block.
+ */
+function buildFarmhouse(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.box(0, 0.28, 0, 11.5, 0.56, 11.5, PALETTE.concreteDark);
+  b.box(0, 0.68, 0, 10.8, 0.28, 10.8, PALETTE.concrete);
+  // House: two storeys under a shallow hipped roof.
+  b.box(-1.4, 3.2, 0.4, 6.8, 5.2, 6.6, PALETTE.canvas);
+  b.box(-1.4, 6.05, 0.4, 7.4, 0.5, 7.2, PALETTE.concrete);
+  b.box(-1.4, 6.5, 0.4, 5.6, 0.4, 5.2, PALETTE.oliveDark);
+  b.box(-3.4, 7.1, 2.6, 0.7, 2.4, 0.7, PALETTE.concreteDark);
+  // Barn: long and low, with a dark patched roof.
+  b.box(3.6, 2.5, -1.6, 4.0, 3.8, 8.4, PALETTE.hullDark);
+  b.box(3.6, 4.6, -1.6, 4.6, 0.4, 9.0, PALETTE.oliveDark);
+  b.box(3.6, 2.0, 2.6, 2.4, 2.8, 0.2, PALETTE.darkMetal);
+  // Shuttered windows and the kitchen door.
+  for (let i = 0; i < 3; i++) {
+    const x = -3.4 + i * 2.0;
+    b.box(x, 2.2, 3.75, 1.2, 1.0, 0.16, PALETTE.glassDark);
+    b.box(x, 4.6, 3.75, 1.2, 1.0, 0.16, PALETTE.glassDark);
+  }
+  b.box(-1.4, 1.5, 3.8, 1.2, 2.4, 0.2, PALETTE.hullDark);
+  // Yard wall, water butt and crates.
+  sandbagWall(b, -1.4, 4.9, 5.4, true, 0.85);
+  b.cylinder(-4.4, 1.35, 4.6, 0.55, 1.5, 8, PALETTE.darkMetal);
+  b.box(3.0, 1.0, 4.4, 1.0, 0.9, 1.0, PALETTE.concreteDark);
+  return b.build();
+}
+
+/**
+ * Village chapel with a bell tower (3x4 tiles).
+ * The tower is deliberately the tallest thing on any rural map: it is the
+ * observation post the description promises, and its silhouette is unique.
+ */
+function buildChapel(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.box(0, 0.28, 0, 11.4, 0.56, 15.4, PALETTE.concreteDark);
+  b.box(0, 0.68, 0, 10.6, 0.28, 14.6, PALETTE.concrete);
+  // Nave with a steep roof and a modest porch.
+  b.box(1.0, 3.1, 1.2, 7.2, 6.2, 10.4, PALETTE.concrete);
+  b.box(1.0, 6.5, 1.2, 7.8, 0.4, 11.0, PALETTE.concreteDark);
+  b.box(1.0, 6.95, 1.2, 5.2, 0.5, 9.2, PALETTE.concrete);
+  b.box(1.0, 1.6, 6.6, 2.2, 2.6, 0.5, PALETTE.hullDark);
+  // Bell tower: square shaft, louvred belfry, cap and spire.
+  b.box(-3.6, 5.2, -4.6, 4.6, 10.4, 4.6, PALETTE.concrete);
+  b.box(-3.6, 10.7, -4.6, 5.2, 0.6, 5.2, PALETTE.concreteDark);
+  for (const [dx, dz] of [[0, -2.28], [0, 2.28], [-2.28, 0], [2.28, 0]] as const) {
+    b.box(-3.6 + dx, 8.7, -4.6 + dz, dx === 0 ? 1.8 : 0.16, 1.3, dz === 0 ? 1.8 : 0.16, PALETTE.glassDark);
+  }
+  b.cone(-3.6, 11.0, -4.6, 2.2, 2.8, 4, PALETTE.concreteDark);
+  b.box(-3.6, 14.0, -4.6, 0.14, 0.9, 0.14, PALETTE.metal);
+  b.box(-3.6, 14.2, -4.6, 0.7, 0.14, 0.14, PALETTE.metal);
+  // Tall lancet windows down both flanks of the nave.
+  for (let i = 0; i < 3; i++) {
+    const z = -2.4 + i * 3.2;
+    b.box(4.65, 4.2, z, 0.16, 2.2, 1.1, PALETTE.glassDark);
+    b.box(-2.65, 4.2, z, 0.16, 2.2, 1.1, PALETTE.glassDark);
+  }
+  sandbagWall(b, 1.0, 7.4, 4.6, true, 0.9);
+  return b.build();
+}
+
+/**
+ * Civic police station (4x3 tiles): a two-storey block with a walled vehicle
+ * yard. Flat roof, deep parapet and a radio mast — an institutional building,
+ * not another apartment block.
+ */
+function buildConstabulary(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.box(0, 0.26, 0, 15.4, 0.52, 11.4, PALETTE.concreteDark);
+  b.box(0, 0.64, 0, 14.8, 0.24, 10.8, PALETTE.concrete);
+  b.box(-1.4, 3.5, 0.2, 10.8, 6.4, 8.4, PALETTE.canvas);
+  b.box(-1.4, 7.0, 0.2, 11.2, 0.45, 8.8, PALETTE.concrete);
+  // Parapet wall around the roof deck.
+  b.box(-1.4, 7.6, 4.4, 11.2, 0.7, 0.25, PALETTE.concreteDark);
+  b.box(-1.4, 7.6, -4.0, 11.2, 0.7, 0.25, PALETTE.concreteDark);
+  b.box(-6.85, 7.6, 0.2, 0.25, 0.7, 8.4, PALETTE.concreteDark);
+  b.box(4.05, 7.6, 0.2, 0.25, 0.7, 8.4, PALETTE.concreteDark);
+  // Vehicle yard wing with its own flat roof.
+  b.box(4.9, 2.0, 0.6, 4.6, 3.6, 6.4, PALETTE.concrete);
+  b.box(4.9, 3.9, 0.6, 5.0, 0.24, 6.8, PALETTE.concreteDark);
+  // Barred windows across the street face and the lobby canopy.
+  for (let i = 0; i < 4; i++) {
+    const x = -5.0 + i * 2.4;
+    b.box(x, 2.6, 4.45, 1.3, 1.1, 0.16, PALETTE.glassDark);
+    b.box(x, 5.2, 4.45, 1.3, 1.1, 0.16, PALETTE.glassDark);
+  }
+  b.box(-1.4, 2.4, 4.9, 3.4, 0.25, 1.4, PALETTE.hullDark);
+  b.box(-1.4, 1.5, 4.5, 1.4, 2.4, 0.2, PALETTE.hullDark);
+  // Radio mast, yard sandbags and a parked drum.
+  b.box(-5.2, 9.35, -3.2, 0.18, 4.2, 0.18, PALETTE.metal);
+  b.box(-5.2, 11.4, -3.2, 1.0, 0.1, 0.1, PALETTE.metal);
+  sandbagWall(b, 4.9, 4.2, 3.4, true, 0.9);
+  b.cylinder(6.6, 0.9, -3.3, 0.6, 1.2, 8, PALETTE.darkMetal);
+  return b.build();
+}
+
+/**
+ * Timber fire lookout (2x2 tiles): four braced legs carrying a glassed cab.
+ * Nothing else on the battlefield has an open frame, so it is recognisable at
+ * a glance even among the treeline it is built to see over.
+ */
+function buildWatchtower(): MeshBuffers {
+  const b = new MeshBuilder();
+  for (const [x, z] of [[-2.6, -2.6], [2.6, -2.6], [-2.6, 2.6], [2.6, 2.6]] as const) {
+    b.box(x, 0.3, z, 1.0, 0.6, 1.0, PALETTE.concreteDark);
+    b.box(x, 2.7, z, 0.42, 4.6, 0.42, PALETTE.hullDark);
+  }
+  // Cross bracing, one bay per face at two heights.
+  for (const y of [1.7, 3.7]) {
+    b.boxRot(0, y, -2.6, 5.6, 0.16, 0.16, 0.42, PALETTE.darkMetal);
+    b.boxRot(0, y, 2.6, 5.6, 0.16, 0.16, -0.42, PALETTE.darkMetal);
+    b.boxRot(-2.6, y, 0, 5.6, 0.16, 0.16, Math.PI / 2 + 0.42, PALETTE.darkMetal);
+    b.boxRot(2.6, y, 0, 5.6, 0.16, 0.16, Math.PI / 2 - 0.42, PALETTE.darkMetal);
+  }
+  // Deck, railing and the glassed cab.
+  b.box(0, 5.05, 0, 5.8, 0.36, 5.8, PALETTE.concreteDark);
+  for (const [x, z] of [[-2.7, -2.7], [2.7, -2.7], [-2.7, 2.7], [2.7, 2.7]] as const) {
+    b.box(x, 5.7, z, 0.18, 0.95, 0.18, PALETTE.metal);
+  }
+  b.box(0, 6.35, 0, 4.0, 2.3, 4.0, PALETTE.canvas);
+  b.box(0, 6.9, 0, 4.08, 0.9, 4.08, PALETTE.glassDark);
+  b.box(0, 7.65, 0, 4.6, 0.3, 4.6, PALETTE.hullDark);
+  // Ladder up the seaward face and the lookout lamp on the rail.
+  for (let i = 0; i < 8; i++) b.box(0, 0.8 + i * 0.55, 1.9 - i * 0.06, 0.7, 0.1, 0.12, PALETTE.metal);
+  b.box(2.3, 5.9, 2.3, 0.3, 0.3, 0.3, PALETTE.amber);
+  return b.build();
+}
+
+/**
+ * Road bridge (4x4 tiles).
+ *
+ * The deck runs along local X, so the art points the same way the map authors
+ * the crossing: a quarter-turn `facing` on the structure turns the span across
+ * the channel it bridges. The two ends are abutments that sit on the banks; the
+ * middle is a pier-supported slab with parapets along both carriageway edges.
+ * The deck top is ~1.1 units up, which clears the sea plane without leaving a
+ * ledge for a vehicle to climb.
+ */
+function buildBridge(): MeshBuffers {
+  const b = new MeshBuilder();
+  const span = 15.4;
+  // Abutments: the deck lands on solid ground at both banks.
+  b.box(-6.9, 0.32, 0, 3.0, 0.64, 7.4, PALETTE.concreteDark);
+  b.box(6.9, 0.32, 0, 3.0, 0.64, 7.4, PALETTE.concreteDark);
+  // Deck slab, its kerbs and the asphalt strip between them.
+  b.box(0, 0.86, 0, span, 0.44, 7.2, PALETTE.concreteDark);
+  b.box(0, 1.12, 0, span - 0.6, 0.1, 6.2, PALETTE.concrete);
+  b.box(0, 1.18, 0, span - 1.4, 0.06, 4.6, PALETTE.darkMetal);
+  // Parapets: a low concrete wall each side with a steel rail on top.
+  for (const z of [-3.5, 3.5]) {
+    b.box(0, 1.36, z, span, 0.5, 0.34, PALETTE.concrete);
+    b.box(0, 1.72, z, span - 0.4, 0.12, 0.12, PALETTE.metal);
+    for (let i = -3; i <= 3; i++) b.box(i * 2.3, 1.58, z, 0.14, 0.36, 0.14, PALETTE.metal);
+  }
+  // Centre pier and the two bank piers under the slab.
+  b.box(0, 0.42, 0, 2.2, 0.86, 6.4, PALETTE.concreteDark);
+  for (const x of [-4.6, 4.6]) {
+    b.box(x, 0.42, 0, 1.5, 0.86, 6.2, PALETTE.concreteDark);
+    b.box(x, 0.3, -2.6, 1.7, 0.6, 1.7, PALETTE.concreteDark);
+    b.box(x, 0.3, 2.6, 1.7, 0.6, 1.7, PALETTE.concreteDark);
+  }
+  // Chevron boards at both mouths and a pair of lamps on the near parapet.
+  for (const x of [-7.3, 7.3]) {
+    b.box(x, 1.5, 0, 0.18, 0.9, 1.5, PALETTE.warning);
+    b.box(x + Math.sign(x) * 0.02, 1.5, 0, 0.1, 0.5, 0.7, PALETTE.darkMetal);
+  }
+  for (const x of [-5.2, 5.2]) {
+    b.cylinder(x, 1.72, -3.5, 0.08, 0.9, 5, PALETTE.metal);
+    b.box(x, 2.2, -3.5, 0.24, 0.16, 0.24, PALETTE.amber);
+  }
+  return b.build();
+}
+
+/**
+ * The same span after the deck has been shot out: abutments, broken stubs and
+ * girders hanging over the water. Rendered in place of the intact deck while
+ * the structure's hit points are at zero, so a closed crossing is visible
+ * rather than an empty gap.
+ */
+function buildBridgeRuin(): MeshBuffers {
+  const b = new MeshBuilder();
+  // Only the two bank stubs survive, plus the charred ends of the slab.
+  for (const dir of [-1, 1] as const) {
+    b.box(dir * 6.9, 0.32, 0, 3.0, 0.64, 7.4, PALETTE.concreteDark);
+    b.box(dir * 6.0, 0.86, 0, 4.2, 0.44, 7.2, PALETTE.concreteDark);
+    b.box(dir * 4.3, 0.9, 0, 1.4, 0.36, 6.6, PALETTE.concrete);
+    for (const z of [-3.5, 3.5]) b.box(dir * 6.0, 1.36, z, 4.2, 0.5, 0.34, PALETTE.concrete);
+    // Girder ends bent down into the water, with rebar spikes.
+    for (const z of [-2.2, 0.4, 2.6]) {
+      b.boxRot(dir * 3.4, 0.62, z, 2.6, 0.22, 0.34, dir * -0.42, PALETTE.darkMetal);
+      for (let i = 0; i < 3; i++) {
+        b.box(dir * (2.6 + i * 0.35), 0.72 - i * 0.1, z + 0.2, 0.1, 0.1, 0.5, PALETTE.metal);
+      }
+    }
+    b.box(dir * 4.9, 0.5, -2.6, 1.7, 0.6, 1.7, PALETTE.concreteDark);
+    b.box(dir * 4.9, 0.5, 2.6, 1.7, 0.6, 1.7, PALETTE.concreteDark);
+  }
+  // Rubble in the channel where the centre pier and span came down.
+  b.box(0, 0.22, 0.6, 3.2, 0.44, 3.4, PALETTE.concreteDark);
+  b.box(-1.4, 0.36, -1.2, 1.6, 0.3, 1.8, PALETTE.concrete);
+  b.box(1.8, 0.3, 1.9, 1.2, 0.24, 1.2, PALETTE.concrete);
+  return b.build();
+}
+
+/**
+ * Steel goods shed (4x4 tiles).
+ *
+ * Roller doors at both ends so a column reads the through-route, a shallow
+ * sawtooth roof, and a gantry rail over the loading apron. Lighter and lower
+ * than the brick warehouse: this is the shelter of a working yard, not a
+ * landmark.
+ */
+function buildFreightShed(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.box(0, 0.28, 0, 15.2, 0.56, 15.2, PALETTE.concreteDark);
+  b.box(0, 0.62, 0, 14.4, 0.22, 14.4, PALETTE.concrete);
+  // The shed itself: corrugated walls, taller than a farm building and squat
+  // enough that it never hides the rest of the yard.
+  b.box(0, 3.1, 0, 13.6, 4.9, 13.6, PALETTE.canvas);
+  b.box(0, 5.72, 0, 14.2, 0.36, 14.2, PALETTE.oliveDark);
+  for (let i = 0; i < 3; i++) {
+    b.box(-4.4 + i * 4.4, 6.0, 0, 3.2, 0.5, 12.6, PALETTE.olive);
+  }
+  // Corrugation: vertical ribs down both street faces.
+  for (let i = 0; i < 11; i++) {
+    const z = -6.0 + i * 1.2;
+    b.box(-6.84, 3.1, z, 0.14, 4.6, 0.28, PALETTE.oliveDark);
+    b.box(6.84, 3.1, z, 0.14, 4.6, 0.28, PALETTE.oliveDark);
+  }
+  // Loading doors at both ends, with rails and a lamp over each.
+  for (const dir of [-1, 1] as const) {
+    b.box(dir * 7.0, 2.3, 0, 0.22, 3.6, 5.6, PALETTE.darkMetal);
+    b.box(dir * 7.1, 2.3, 0, 0.1, 3.3, 5.1, PALETTE.metal);
+    for (let i = 0; i < 7; i++) b.box(dir * 7.16, 0.9 + i * 0.46, 0, 0.06, 0.06, 5.0, PALETTE.hullDark);
+    b.box(dir * 6.9, 4.4, 0, 0.5, 0.28, 0.7, PALETTE.amber);
+  }
+  // Loading apron and the gantry that serves it.
+  b.box(0, 0.78, 7.4, 12.4, 0.16, 2.6, PALETTE.concrete);
+  for (const x of [-4.8, 4.8]) b.box(x, 2.6, 7.4, 0.28, 3.6, 0.28, PALETTE.metal);
+  b.box(0, 4.4, 7.4, 10.0, 0.26, 0.26, PALETTE.metal);
+  b.box(-2.0, 3.9, 7.4, 0.34, 0.9, 0.34, PALETTE.darkMetal);
+  // Crate stacks under the gantry.
+  for (const [x, z, w] of [
+    [-3.4, 8.2, 2.2],
+    [0.6, 8.4, 2.6],
+    [4.0, 8.1, 2.0],
+  ] as const) {
+    b.box(x, 1.1, z, w, 0.7, w, PALETTE.sandbag);
+    b.box(x, 1.7, z, w * 0.7, 0.5, w * 0.7, PALETTE.oliveDark);
+  }
+  return b.build();
+}
+
+/** Wire, sandbags and a covered firing position for an occupied shed. */
+function freightShedDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  garrisonDressing(b, {
+    halfX: 7.6,
+    halfZ: 7.6,
+    groundY: 0,
+    roofY: 6.4,
+    roofHalfX: 6.4,
+    roofHalfZ: 6.4,
+  });
+  // Sandbagged position in the open bay, facing the yard.
+  b.box(3.4, 1.05, 7.2, 3.0, 0.9, 0.8, PALETTE.sandbag);
+  b.box(3.4, 1.5, 7.2, 2.4, 0.4, 0.6, PALETTE.sandbag);
+  return b.build();
+}
+
+/** Wire, sandbags and sentries for an occupied farmyard. */
+function farmhouseDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  garrisonDressing(b, {
+    halfX: 5.5,
+    halfZ: 5.5,
+    groundY: 0,
+    roofY: 6.3,
+    roofHalfX: 4.6,
+    roofHalfZ: 4.4,
+  });
+  sandbagWall(b, -1.4, 5.1, 4.6, true, 1.0);
+  return b.build();
+}
+
+/** Wire, sandbags and a tower observation post for an occupied chapel. */
+function chapelDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  garrisonDressing(b, {
+    halfX: 5.5,
+    halfZ: 7.5,
+    groundY: 0,
+    roofY: 6.7,
+    roofHalfX: 3.8,
+    roofHalfZ: 5.4,
+  });
+  // A sandbagged step on the tower gallery: the observer's own position.
+  sandbagWall(b, -3.6, -2.0, 3.4, true, 11.0);
+  return b.build();
+}
+
+/** Wire and yard barricades for an occupied constabulary. */
+function constabularyDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  garrisonDressing(b, {
+    halfX: 7.5,
+    halfZ: 5.5,
+    groundY: 0,
+    roofY: 7.2,
+    roofHalfX: 5.4,
+    roofHalfZ: 4.2,
+  });
+  sandbagWall(b, -1.4, 5.2, 4.0, true, 1.0);
+  return b.build();
+}
+
+/** A held lookout: sandbags on the deck and a crew in the cab. */
+function watchtowerDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  garrisonDressing(b, {
+    halfX: 3.1,
+    halfZ: 3.1,
+    groundY: 0,
+    roofY: 5.23,
+    roofHalfX: 2.4,
+    roofHalfZ: 2.4,
+  });
+  sandbagWall(b, 0, 2.4, 3.2, true, 5.4);
+  return b.build();
 }
 
 const STYLES: Record<string, BuildingStyle> = {
@@ -1689,9 +2035,17 @@ const STYLES: Record<string, BuildingStyle> = {
     body: buildRuin(),
     garrisoned: mergeMeshes(buildRuin(), ruinDressing()),
   },
+  bridge: {
+    body: buildBridge(),
+    ruined: buildBridgeRuin(),
+  },
   warehouse: {
     body: buildWarehouse(),
     garrisoned: mergeMeshes(buildWarehouse(), warehouseDressing()),
+  },
+  freightShed: {
+    body: buildFreightShed(),
+    garrisoned: mergeMeshes(buildFreightShed(), freightShedDressing()),
   },
   officeBlock: {
     body: buildOfficeBlock(),
@@ -1704,6 +2058,22 @@ const STYLES: Record<string, BuildingStyle> = {
   foundryWorks: {
     body: buildFoundryWorks(),
     garrisoned: mergeMeshes(buildFoundryWorks(), foundryWorksDressing()),
+  },
+  farmhouse: {
+    body: buildFarmhouse(),
+    garrisoned: mergeMeshes(buildFarmhouse(), farmhouseDressing()),
+  },
+  chapel: {
+    body: buildChapel(),
+    garrisoned: mergeMeshes(buildChapel(), chapelDressing()),
+  },
+  constabulary: {
+    body: buildConstabulary(),
+    garrisoned: mergeMeshes(buildConstabulary(), constabularyDressing()),
+  },
+  watchtower: {
+    body: buildWatchtower(),
+    garrisoned: mergeMeshes(buildWatchtower(), watchtowerDressing()),
   },
 };
 

@@ -15,7 +15,8 @@ import {
   resumeMissionId,
 } from '../src/data/campaign';
 import { ALLIANCES, NATIONS, opposingAllianceId } from '../src/data/factions';
-import { BUILTIN_SCENARIOS, createEmptyScenario } from '../src/data/scenarios';
+import { createEmptyScenario } from '../src/data/scenarios';
+import { SCENARIOS } from '../src/data/scenarioCatalog';
 import { parseScenario } from '../src/sim/scenario';
 
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
@@ -33,7 +34,7 @@ describe('campaign prologue', () => {
   });
 
   it('stages every operation on a built-in theatre with a fixed cross-alliance command', () => {
-    const mapIds = new Set(BUILTIN_SCENARIOS.map((entry) => entry.id));
+    const mapIds = new Set(SCENARIOS.map((entry) => entry.id));
     const missionIds = new Set<string>();
 
     for (const campaign of CAMPAIGNS) {

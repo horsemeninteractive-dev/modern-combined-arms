@@ -512,6 +512,38 @@ describe('HUD legibility floor', () => {
   });
 });
 
+describe('HUD layout resilience', () => {
+  it('builds every card grid from shrinkable tracks', () => {
+    // A bare `fr` track floors at the card's min-content width, so one long
+    // structure name widened the track past the panel and pushed the cards out
+    // of view behind a horizontal scrollbar.
+    expect(styleCss).not.toMatch(/\.(unit-grid|build-grid)[^{]*\{[^}]*repeat\(2,\s*1fr\)/);
+    expect(styleCss).toContain('.build-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr))');
+    expect(styleCss).toMatch(/\.layout-desktop \.build-grid \{ grid-template-columns: minmax\(0, 1fr\); \}/);
+  });
+
+  it('never lets the production list scroll sideways', () => {
+    // Only the vertical axis scrolls; the rail of categories sits outside it.
+    expect(styleCss).toMatch(/\.prod-body \{[^}]*overflow-x: hidden/);
+  });
+
+  it('keeps the rail mission actions at a usable height', () => {
+    // The block used to be pinned to the console height, which crushed the 2x2
+    // save/pause/settings/menu grid to a few pixels once the clock and control
+    // groups were laid out above it.
+    const bottom = styleCss.slice(styleCss.indexOf('.rail-bottom {'));
+    expect(bottom.slice(0, bottom.indexOf('}'))).toContain('height: auto');
+    expect(styleCss).toMatch(/\.rail-actions \{[^}]*min-height: calc\(48px \* var\(--ui-scale\)\)/);
+  });
+
+  it('holds a usable card column at a reduced interface scale', () => {
+    // The sidebar floor keeps a one-column card readable even at 80%, where the
+    // scaled minimum width alone left about ninety pixels of card.
+    expect(styleCss).toContain('--sidebar-w: max(clamp(');
+    expect(styleCss).toContain('--tab-w: clamp(60px, calc(60px * var(--ui-scale)), 96px)');
+  });
+});
+
 describe('production apron', () => {
   it('places a finished vehicle on the apron in front of the factory', () => {
     const scenario = createIslandAssault();
@@ -582,9 +614,11 @@ describe('occlusion and cast shadows', () => {
     expect(push).toContain('buildingTopHeight(defId)');
     expect(push).toContain('this.airShadowOffset(height * 0.85)');
     expect(push).toContain('const strength = this.castShadowStrength()');
-    // Subtle at dusk and night, strongest at midday.
+    // Subtle at dusk and night, strongest at midday, and scaled by how much
+    // sun the weather lets through: under a storm the sky is the light source.
     const strength = source.slice(source.indexOf('private castShadowStrength'), source.indexOf('private shadowGroundY'));
-    expect(strength).toContain("if (tod === 'night') return 0.3");
-    expect(strength).toContain("if (tod === 'day') return 1");
+    expect(strength).toContain("tod === 'night' ? 0.3");
+    expect(strength).toContain("tod === 'day' ? 1");
+    expect(strength).toContain('this.weather.shadow');
   });
 });

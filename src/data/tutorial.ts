@@ -1,4 +1,4 @@
-import { defaultSettings, createScenario, type Scenario } from '../sim/scenario';
+import { phaseSettings, createScenario, type Scenario } from '../sim/scenario';
 import { TILE_SIZE } from '../sim/constants';
 import { Terrain, inBounds, tileIndex } from '../sim/terrain';
 import { identityAlliance } from './factions';
@@ -151,7 +151,7 @@ export function createTutorialScenario(): Scenario {
     'Move your squad to the assembly point and destroy the aggressor.',
   ];
   scenario.settings = {
-    ...defaultSettings(),
+    ...phaseSettings('day'),
     seed: 0x7a1e,
     startingMats: 1800,
     startingReq: 80,

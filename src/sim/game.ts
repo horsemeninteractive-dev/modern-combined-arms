@@ -26,6 +26,7 @@ import {
   inBounds,
   moveCost,
   terrainName,
+  tileConcealment,
   tileIndex,
   worldToTile,
   type TerrainId,
@@ -43,6 +44,26 @@ import {
 } from './scenario';
 import { createRuntimeMap, footprintCenter, stampFootprint } from './map';
 import { TUTORIAL_SCENARIO_ID } from '../data/tutorial';
+import {
+  dayNightAt,
+  type DayNightState,
+} from './dayNight';
+import { weatherFor, weatherSpeedFactor, type WeatherProfile } from './weather';
+import {
+  ILLUMINATED_TARGET_BONUS,
+  collectLightSources,
+  illuminationAt,
+  illuminationGrid as buildIlluminationGrid,
+  type LightSource,
+} from './illumination';
+import {
+  accuracyFactor,
+  acquireTicksFor,
+  engagementFactor,
+  sensorFor,
+  visionFactor,
+} from './sensors';
+import { awardCombatXp, rankOf } from './veterancy';
 
 /**
  * What one replacement drop-off costs. A base with no refinery and less than
@@ -59,6 +80,7 @@ import {
   canWeaponTarget,
   weaponCanHurt,
   computeDamage,
+  coverFactor,
   entityArmour,
   entityName,
   entityTargetClass,
@@ -166,6 +188,25 @@ const GARRISON_ENTRY_CLEARANCE = 1.75 * TILE_SIZE;
 const GARRISON_APPROACH_CLEARANCE = 1.5 * TILE_SIZE;
 /** Ticks a garrison order may spend without progress before it gives up. */
 const GARRISON_APPROACH_BUDGET = 60;
+/**
+ * How close a harvester must stand to a deposit's tile centre to mine it. One
+ * place, because the reroute check and the mining check must agree: a route that
+ * ends outside this radius can never start mining.
+ */
+const HARVEST_REACH = 3.5;
+/**
+ * Ticks a moving unit may fail to advance before its order is reported as
+ * impossible. A jam behind a friendly hull, a closed gate or a vehicle waiting
+ * for its turn costs a couple of seconds; only a genuinely walled-in hull should
+ * ever produce the "cannot reach" warning, so the grace is generous.
+ */
+const STUCK_GIVE_UP_TICKS = 90;
+/** Ticks a hauler may spend failing to close on a seam before it gives it up. */
+const HARVEST_APPROACH_PATIENCE = 60;
+/** How far from a walled-off aim the platoon may be walked before refusing. */
+const REACHABLE_AIM_SEARCH = 4;
+/** Route probes per ring when hunting for reachable ground near an aim. */
+const REACHABLE_AIM_PROBES = 5;
 
 export class Game {
   state: GameState;
@@ -187,6 +228,25 @@ export class Game {
   private lastAttackNotice = new Map<'base' | 'forces', number>();
   /** Not serialised; used for diagnostics and renderer consumption. */
   eventsSince = 0;
+  /**
+   * Authoritative time of day, cached by tick so a frame cannot see two clocks.
+   * Presentation reads this; nothing may set it.
+   */
+  private dayNightCache: { tick: number; state: DayNightState } | null = null;
+  /** Authored weather for this battle; constant, so cached against the settings. */
+  private weatherCache: { settings: unknown; profile: WeatherProfile } | null = null;
+  /** Lights burning at the last vision refresh; presentation reads the same list. */
+  private lightSources: LightSource[] = [];
+  private litGrid: Float32Array | null = null;
+  /**
+   * Ground and height with every standing bridge deck laid over the water.
+   * Null while the map has no span, so an ordinary battle never pays for the
+   * copy. Rebuilt only when a span is added, dropped or re-decked.
+   */
+  private deckTerrain: Uint8Array | null = null;
+  private deckElevation: Uint8Array | null = null;
+  private deckMask: Uint8Array | null = null;
+  private deckDirty = true;
   /** Whether incoming fire suspends engineer repair (Phase 8 rule; always true in play). */
   private readonly repairSuppression: boolean;
 
@@ -233,6 +293,48 @@ export class Game {
     return initialAIState(aiSeed, difficulty);
   }
 
+  /**
+   * The match clock. Derived purely from the authoritative tick and the
+   * scenario's authored start, so every peer, every reconnect and every restored
+   * snapshot agree without exchanging time messages.
+   */
+  get dayNight(): DayNightState {
+    const tick = this.state.tick;
+    if (this.dayNightCache?.tick === tick) return this.dayNightCache.state;
+    const state = dayNightAt(tick, {
+      startHour: this.state.scenario.settings.startHour,
+      dayLengthMinutes: this.state.scenario.settings.dayLengthMinutes,
+    });
+    this.dayNightCache = { tick, state };
+    return state;
+  }
+
+  /**
+   * Weather for this battle. Authored on the scenario and constant, so it is
+   * resolved once per scenario rather than once per unit per tick. Both peers
+   * build the same profile from the same scenario data, which is why weather
+   * needs no part of the multiplayer stream.
+   */
+  get weather(): WeatherProfile {
+    const settings = this.state.scenario.settings;
+    if (this.weatherCache && this.weatherCache.settings === settings) {
+      return this.weatherCache.profile;
+    }
+    const profile = weatherFor(settings.weather);
+    this.weatherCache = { settings, profile };
+    return profile;
+  }
+
+  /** Lights as of the last vision refresh. Presentation only. */
+  get lights(): readonly LightSource[] {
+    return this.lightSources;
+  }
+
+  /** Illumination grid as of the last vision refresh, or null in daylight. */
+  get illumination(): Float32Array | null {
+    return this.litGrid;
+  }
+
   private initialize(): void {
     const scenario = this.state.scenario;
     for (const p of scenario.players) {
@@ -266,9 +368,11 @@ export class Game {
         const def = BUILDINGS[e.defId];
         const tx = Math.round(e.x / TILE_SIZE - def.footprint.w / 2);
         const tz = Math.round(e.z / TILE_SIZE - def.footprint.h / 2);
-        stampFootprint(this.blocked, this.state.map, e.defId, tx, tz, 1);
+        // A deck is crossed, not walked around: only a dropped span blocks.
+        stampFootprint(this.blocked, this.state.map, e.defId, tx, tz, def.walkable && e.hp > 0 ? 0 : 1);
       }
     }
+    this.deckDirty = true;
     // The opening notice points at the human landing force. The AI is not given
     // this position: targetKnown stays false until a contact is recorded.
     const target = scenario.players.find((p) => !p.isAI) ?? scenario.players[0];
@@ -292,7 +396,7 @@ export class Game {
     if (this.state.scenario.settings.victory === 'annihilation') {
       return 'Destroy every enemy unit and structure.';
     }
-    return 'Destroy the enemy Command Post to secure the island.';
+    return 'Destroy the enemy Command Post to win the battle.';
   }
 
   /* ------------------------------------------------------------------ */
@@ -325,6 +429,7 @@ export class Game {
       suppression: 0,
       lastHitTick: -9999,
       kills: 0,
+      xp: 0,
       buildProgress: 1,
       construction: false,
       queue: [],
@@ -458,7 +563,8 @@ export class Game {
     e.guardX = center.x;
     e.guardZ = center.z;
     this.addEntity(e);
-    stampFootprint(this.blocked, this.state.map, s.defId, s.x, s.z, 1);
+    stampFootprint(this.blocked, this.state.map, s.defId, s.x, s.z, def.walkable ? 0 : 1);
+    if (def.walkable) this.deckDirty = true;
     if (s.owner >= 0) {
       const player = this.player(s.owner);
       if (player && !construction) player.stats.buildingsBuilt++;
@@ -593,6 +699,9 @@ export class Game {
   private isAttackable(attackerOwner: number, target: Entity): boolean {
     if (this.isHostile(attackerOwner, target.owner)) return true;
     if (target.owner !== -1 || target.kind !== 'building') return false;
+    // A neutral span is a shared crossing rather than a protected objective:
+    // either side may drop it, and either side may re-deck it afterwards.
+    if (BUILDINGS[target.defId]?.walkable) return target.hp > 0;
     if (!BUILDINGS[target.defId]?.garrison) return false;
     for (const e of this.state.entities) {
       if (e.kind !== 'unit' || e.hp <= 0 || e.garrisonId !== target.id) continue;
@@ -679,6 +788,16 @@ export class Game {
           }
           b.rallyX = cmd.x;
           b.rallyZ = cmd.z;
+          // Acknowledgement, not a loss of information: the announcer needs the
+          // transition to know the new rally is live, and the player hears it.
+          this.emit('orderAck', {
+            team: cmd.team,
+            x: cmd.x,
+            z: cmd.z,
+            text: `${entityName(b)} rally point set.`,
+            code: 'rallySet',
+            entityId: b.id,
+          });
           break;
         }
       }
@@ -756,12 +875,12 @@ export class Game {
         }
         e.harvester.phase = 'seek';
       }
-      const destTile = this.tileAt(dest.x, dest.z);
-      if (
-        destTile === null ||
-        !canStandOn(this.state.map.width, this.state.map.height, this.state.map.terrain, destTile, def.moveClass) ||
-        this.blocked[destTile]
-      ) {
+      // The stand decided here is the ground this unit will actually stop on.
+      // A slot that is only *standable* is not enough: a peak, a pocket behind
+      // a cliff or a corner cut off by a footprint can be open ground the hull
+      // can never drive to, which used to refuse the whole order for that unit.
+      const plan = this.planMove(e, def, dest.x, dest.z, navBatch);
+      if (!plan) {
         failed++;
         e.order = null;
         e.path = [];
@@ -769,21 +888,12 @@ export class Game {
         navBatch?.refresh(e.id, false);
         continue;
       }
-      const path = this.findPathFor(e, dest.x, dest.z, navBatch);
-      if (!path) {
-        failed++;
-        e.order = null;
-        e.path = [];
-        e.state = 'idle';
-        navBatch?.refresh(e.id, false);
-        continue;
-      }
-      e.order = { type: attackMove ? 'attackMove' : 'move', x: dest.x, z: dest.z };
-      e.path = path;
+      e.order = { type: attackMove ? 'attackMove' : 'move', x: plan.x, z: plan.z };
+      e.path = plan.path;
       e.pathIndex = 0;
-      e.destX = dest.x;
-      e.destZ = dest.z;
-      e.state = path.length > 0 ? 'moving' : 'idle';
+      e.destX = plan.x;
+      e.destZ = plan.z;
+      e.state = plan.path.length > 0 ? 'moving' : 'idle';
       e.blockedTicks = 0;
       // The aim was already dropped when the order replaced the old one.
       e.captureTargetId = 0;
@@ -838,21 +948,9 @@ export class Game {
       // Aircraft fly anywhere; a harvester sent at a refinery is redirected to
       // offload instead of being refused.
       if (def.domain === 'air' || e.harvester) continue;
-      const dest = destinations[i];
-      const destTile = this.tileAt(dest.x, dest.z);
-      if (destTile === null) return false;
-      if (
-        !canStandOn(
-          this.state.map.width,
-          this.state.map.height,
-          this.state.map.terrain,
-          destTile,
-          def.moveClass,
-        ) ||
-        this.blocked[destTile]
-      ) {
-        return false;
-      }
+      // The slot is allowed to walk out to nearby open ground, exactly as the
+      // command layer does, or the two would disagree about what is a valid aim.
+      if (!this.moveSlotFor(def, destinations[i].x, destinations[i].z)) return false;
     }
     // Tile tests are cheap and reject most of the walk; only a slot that
     // survives them is worth an actual route search. The routes are a
@@ -865,8 +963,14 @@ export class Game {
     for (let i = 0; i < entities.length; i++) {
       const e = entities[i];
       if (unitDef(e.defId).domain === 'air' || e.harvester) continue;
-      const dest = destinations[i];
-      if (!this.findPathFor(e, dest.x, dest.z, navBatch)) return false;
+      // Deliberately the *strict* test: a wave is only counted as launched when
+      // the aim the commander chose is open to every unit in it. The command
+      // layer's last-resort walk-out (planMove) is a convenience for a player
+      // clicking on awkward ground; letting it satisfy this gate would mean an
+      // assault destination could shift because of ground the AI cannot see.
+      const slot = this.moveSlotFor(unitDef(e.defId), destinations[i].x, destinations[i].z, false);
+      if (!slot) return false;
+      if (!this.findPathFor(e, slot.x, slot.z, navBatch)) return false;
     }
     return true;
   }
@@ -1339,9 +1443,14 @@ export class Game {
    * hostile infantry is not a repair job; it has to be cleared first.
    */
   private isRepairableBy(owner: number, target: Entity): boolean {
-    if (target.kind !== 'building' || target.hp <= 0 || target.construction || target.hp >= target.maxHp) {
+    if (target.kind !== 'building' || target.construction || target.hp >= target.maxHp) {
       return false;
     }
+    const def = BUILDINGS[target.defId];
+    // A dropped span is a repair job, not a ruin: its wreckage is still on the
+    // map, and re-decking it reopens the crossing for both sides.
+    if (def?.walkable) return target.owner === owner || target.owner === -1;
+    if (target.hp <= 0) return false;
     if (target.owner === owner) return true;
     if (!BUILDINGS[target.defId]?.garrison) return false;
     if (target.owner !== -1) return false;
@@ -2229,7 +2338,16 @@ export class Game {
       return { ok: false, code: 'req', reason: 'Insufficient requisition.' };
     }
     const occupied = blockedSnapshot(this.blocked);
-    const check = checkPlacement(this.state.scenario, defId, tileX, tileZ, occupied);
+    // The runtime ore field, not the authored tiles: a worked-out deposit is
+    // ordinary ground again.
+    const check = checkPlacement(
+      this.state.scenario,
+      defId,
+      tileX,
+      tileZ,
+      occupied,
+      this.state.map.ore,
+    );
     if (!check.ok) return check;
     // Units block foundations.
     for (const e of this.state.entities) {
@@ -2935,6 +3053,17 @@ export class Game {
   /* ------------------------------------------------------------------ */
 
   refreshVision(initial: boolean): void {
+    const dayNight = this.dayNight;
+    // One bounded light list per refresh, shared by the simulation and the
+    // renderer. A browned-out base is dark, and a daylight map has none at all.
+    this.lightSources = collectLightSources(
+      this.state.entities,
+      dayNight,
+      (owner) => !this.powerStatus(owner).brownout,
+    );
+    this.litGrid = this.lightSources.length
+      ? buildIlluminationGrid(this.state.scenario.width, this.state.scenario.height, this.lightSources)
+      : null;
     if (!this.state.scenario.settings.fog) {
       for (let team = 0; team < 2; team++) {
         this.state.fog[team].fill(2);
@@ -2955,11 +3084,28 @@ export class Game {
         if (e.hp <= 0) continue;
         const ownerTeam = this.teamOf(e.owner);
         if (ownerTeam !== team) continue;
-        const vision = entityVision(e);
+        // Darkness shortens what a unit can pick out; optics decide by how much.
+        // A hull adds its own penalty: in a real sea state the watch is looking
+        // through spray from a deck that will not hold still, so a ship sees
+        // less far than a vehicle on the shore in the same weather.
+        const seaReach = UNITS[e.defId]?.domain === 'naval' ? this.weather.navalVision : 1;
+        const vision =
+          entityVision(e) *
+          visionFactor(sensorFor(e), dayNight) *
+          this.weather.visibility *
+          seaReach;
         this.stampVision(fog, e.x, e.z, vision);
       }
+      // A team's own lights reveal their own yard to that team. This is why a
+      // floodlit base keeps its perimeter at night while an unlit one goes blind
+      // beyond its optics.
+      for (const light of this.lightSources) {
+        if (light.owner < 0 || this.teamOf(light.owner) !== team) continue;
+        const reach = light.vertical === 'ground' ? light.radius : light.radius * 0.6;
+        this.stampVision(fog, light.x, light.z, reach);
+      }
     }
-    for (let team = 0; team < 2; team++) this.refreshVisibleEntities(team, initial);
+    for (let team = 0; team < 2; team++) this.refreshVisibleEntities(team, initial, dayNight);
     this.ageContacts();
   }
 
@@ -2982,7 +3128,49 @@ export class Game {
     }
   }
 
-  private refreshVisibleEntities(team: number, initial = false): void {
+  private litAt(x: number, z: number): number {
+    const grid = this.litGrid;
+    if (!grid) return 0;
+    return illuminationAt(grid, this.state.scenario.width, this.state.scenario.height, x, z);
+  }
+
+  /**
+   * A target standing in a lit pool is easier to pick out: an optical observer
+   * gains extra reach against it. Illumination never reveals anything nobody
+   * can see; it only stretches the observer's reach where the light falls.
+   */
+  private seesLitTarget(target: Entity, team: number, dayNight: DayNightState): boolean {
+    for (const source of this.state.entities) {
+      if (source.hp <= 0 || source.owner < 0 || this.teamOf(source.owner) !== team) continue;
+      const reach =
+        entityVision(source) *
+        visionFactor(sensorFor(source), dayNight) *
+        this.weather.visibility *
+        (1 + ILLUMINATED_TARGET_BONUS);
+      if (dist(source.x, source.z, target.x, target.z) > reach * TILE_SIZE) continue;
+      if (!hasLineOfSight(this.state.map, source.x, source.z, target.x, target.z)) continue;
+      return true;
+    }
+    return false;
+  }
+
+  /** A vehicle showing a light gives itself away to anyone close enough to see it. */
+  private seesOwnLight(target: Entity, team: number): boolean {
+    let radius = 0;
+    for (const light of this.lightSources) {
+      if (light.entityId === target.id) radius = Math.max(radius, light.radius);
+    }
+    if (radius <= 0) return false;
+    for (const source of this.state.entities) {
+      if (source.hp <= 0 || source.owner < 0 || this.teamOf(source.owner) !== team) continue;
+      if (dist(source.x, source.z, target.x, target.z) > radius * 1.3 * TILE_SIZE) continue;
+      if (!hasLineOfSight(this.state.map, source.x, source.z, target.x, target.z)) continue;
+      return true;
+    }
+    return false;
+  }
+
+  private refreshVisibleEntities(team: number, initial = false, dayNight = this.dayNight): void {
     const previous = this.visible[team] ?? new Set<number>();
     const set = new Set<number>();
     const fog = this.state.fog[team];
@@ -3039,19 +3227,37 @@ export class Game {
       if (!inBounds(map.width, map.height, tx, tz)) continue;
       const idx = tileIndex(map.width, tx, tz);
       const fogValue = this.state.scenario.settings.fog ? fog[idx] : 2;
-      if (fogValue !== 2 && !radar && !sonar && !datum) continue;
+      // Illumination and a vehicle's own lights are the two ways a target can be
+      // picked out beyond the observer's own reach. Both still go through the
+      // authoritative line of sight and the team's own sources.
+      const lit = e.owner >= 0 && e.kind === 'unit' ? this.litAt(e.x, e.z) : 0;
+      const litVisible = lit > 0.25 && this.seesLitTarget(e, team, dayNight);
+      const ownLightVisible =
+        e.kind === 'unit' && dayNight.darkness > 0 && this.seesOwnLight(e, team);
+      if (fogValue !== 2 && !radar && !sonar && !datum && !litVisible && !ownLightVisible) continue;
       // Aircraft are large, noisy and above the canopy: forest concealment
       // applies to ground units, not to any airframe. A dived boat is under
       // the water, so the canopy is irrelevant to it as well.
       if (!radar && !dived && e.kind === 'unit' && UNITS[e.defId]?.domain !== 'air') {
         const terrain = this.state.map.terrain[idx] as TerrainId;
-        const concealment = TERRAIN[terrain].concealment;
-        if (concealment > 0.5) {
-          // Concealed units inside forest are only spotted at close range.
+        // Concealment stacks the base terrain with whatever surface cover the
+        // tile carries, so crops, reeds and scrub hide a unit the way canopy
+        // always did — without any of them counting as armour.
+        const concealment = tileConcealment(terrain, this.state.map.overlay?.[idx] ?? 0);
+        if (concealment >= 0.4) {
+          // Concealed units are only spotted at close range, and darkness
+          // tightens that range; a lit clearing loosens it again. Full
+          // concealment (dense reeds, deep canopy) close the range further.
+          const tightness = Math.max(0, concealment - 0.8) / 0.2;
+          const closeRange =
+            (lit > 0.25 ? 2.5 : 4.5) *
+            (1 - 0.45 * tightness) *
+            (1 - 0.35 * dayNight.darkness) *
+            this.weather.visibility;
           let close = false;
           for (const source of this.state.entities) {
             if (source.hp <= 0 || source.owner < 0 || this.teamOf(source.owner) !== team) continue;
-            if (dist(source.x, source.z, e.x, e.z) <= 4.5 * TILE_SIZE) {
+            if (dist(source.x, source.z, e.x, e.z) <= closeRange * TILE_SIZE) {
               close = true;
               break;
             }
@@ -3227,6 +3433,84 @@ export class Game {
   }
 
   /**
+   * Adopt the room's authoritative map for presentation.
+   *
+   * A networked client never simulates, but the ground it paints must be the
+   * ground the server is fighting over: the surface layer decides whether a
+   * tile reads as crop rows, reeds or a hedgerow, and therefore how thick the
+   * vegetation looks and where the sight lines appear to close. The projection
+   * ships the map once, so this copies it into the runtime buffers and into the
+   * authored tiles the renderer rebuilds geometry and props from.
+   *
+   * Returns true only when the ground itself changed — terrain, elevation or the
+   * surface layer — so the caller rebuilds the terrain GPU resources once rather
+   * than on every resync. Remaining material is adopted either way; the renderer
+   * already refreshes ore props from the runtime map.
+   */
+  adoptNetworkMap(projected: {
+    width: number;
+    height: number;
+    terrain: number[];
+    elevation: number[];
+    ore: number[];
+    overlay?: number[];
+  }): boolean {
+    const scenario = this.state.scenario;
+    const map = this.state.map;
+    const size = scenario.width * scenario.height;
+    if (projected.width !== scenario.width || projected.height !== scenario.height) return false;
+    if (
+      projected.terrain.length !== size ||
+      projected.elevation.length !== size ||
+      projected.ore.length !== size
+    ) {
+      return false;
+    }
+    if (projected.overlay && projected.overlay.length !== size) return false;
+
+    const terrain = Uint8Array.from(projected.terrain);
+    const elevation = Uint8Array.from(projected.elevation);
+    const ore = Uint16Array.from(projected.ore);
+    const overlay = projected.overlay ? Uint8Array.from(projected.overlay) : null;
+    const tiles = scenario.tiles;
+    // The renderer builds geometry and props from the authored tiles, so that is
+    // where a "the ground changed" answer has to come from.
+    let ground = false;
+    let material = false;
+    for (let i = 0; i < size && !(ground && material); i++) {
+      ground ||=
+        tiles[i].t !== terrain[i] ||
+        tiles[i].e !== elevation[i] ||
+        (overlay !== null && (tiles[i].v ?? 0) !== overlay[i]);
+      material ||= map.ore[i] !== ore[i];
+    }
+    if (!ground && !material) return false;
+
+    map.terrain.set(terrain);
+    map.elevation.set(elevation);
+    map.ore.set(ore);
+    // The ship carries remaining material, not the authored maximum. Keep the
+    // richer of the two per tile so a partially mined deposit still renders as
+    // partially mined rather than refilling.
+    for (let i = 0; i < size; i++) map.maxOre[i] = Math.max(map.maxOre[i], ore[i]);
+    if (overlay) {
+      if (!map.overlay || map.overlay.length !== size) map.overlay = new Uint8Array(size);
+      map.overlay.set(overlay);
+    }
+    for (let i = 0; i < size; i++) {
+      const tile = tiles[i];
+      tile.t = terrain[i];
+      tile.e = elevation[i];
+      tile.o = ore[i];
+      if (overlay) {
+        if (overlay[i] === 0) delete tile.v;
+        else tile.v = overlay[i];
+      }
+    }
+    return ground;
+  }
+
+  /**
    * Adopt a presentation-only view of the world.
    *
    * A networked client never simulates: it draws the team-visible projection
@@ -3341,7 +3625,14 @@ export class Game {
       if (e.garrisonId) continue;
       e.cooldown = Math.max(0, e.cooldown - dt);
       e.suppression = Math.max(0, e.suppression - dt * 0.12);
-      e.blockedTicks++;
+      // The counter means "ticks spent under a movement order without getting
+      // anywhere". Anything that is not trying to travel resets it, so a quiet
+      // garrison, a gunner on target or a miner at a seam is never mistaken for
+      // a wedged hull; an order that is not yet walking (an attack still to be
+      // closed, a route waiting on traffic) still accrues it, which is what the
+      // attack and garrison handlers watch to decide when to re-plan.
+      if (this.wantsToTravel(e)) e.blockedTicks++;
+      else e.blockedTicks = 0;
       const def = unitDef(e.defId);
       if (this.updateGarrisonOrder(e)) continue;
       if (def.domain === 'air') {
@@ -3628,13 +3919,24 @@ export class Game {
         break;
       }
       case 'toOre': {
-        if (dist(e.x, e.z, (h.oreTileX + 0.5) * TILE_SIZE, (h.oreTileZ + 0.5) * TILE_SIZE) < 3.5) {
+        if (dist(e.x, e.z, (h.oreTileX + 0.5) * TILE_SIZE, (h.oreTileZ + 0.5) * TILE_SIZE) < HARVEST_REACH) {
           h.phase = 'mining';
           h.timer = 0;
           e.path = [];
           e.state = 'harvesting';
           e.destX = e.x;
           e.destZ = e.z;
+          break;
+        }
+        // Arrived somewhere short of the deposit and unable to close the last
+        // metres — the seam was built over, the lane is walled, or another
+        // hauler is sitting on it. Look for another one instead of standing
+        // here for the rest of the battle. The patience limit covers the case
+        // where a route still exists on paper but the hull is going nowhere.
+        if (e.path.length === 0 || e.blockedTicks > HARVEST_APPROACH_PATIENCE) {
+          h.phase = 'seek';
+          e.path = [];
+          e.state = 'idle';
         }
         break;
       }
@@ -3765,17 +4067,43 @@ export class Game {
       const i = candidates[c].i;
       const tx = i % map.width;
       const tz = (i / map.width) | 0;
-      const path = this.findPathFor(e, (tx + 0.5) * TILE_SIZE, (tz + 0.5) * TILE_SIZE);
-      if (path) {
-        h.oreTileX = tx;
-        h.oreTileZ = tz;
-        e.path = path;
-        e.pathIndex = 0;
-        e.destX = (tx + 0.5) * TILE_SIZE;
-        e.destZ = (tz + 0.5) * TILE_SIZE;
-        e.state = 'moving';
-        return true;
-      }
+      // A structure standing on the deposit makes it unminable: the tile itself
+      // is blocked, so the hull could only ever park beside it and wait.
+      if (this.blocked[i]) continue;
+      // A seam another hauler is already working is not this one's ground.
+      // Driving at it means pushing against a hull that is standing still to
+      // mine, and separation hands the mover straight back its own step, so the
+      // pair deadlock until one of them is destroyed.
+      if (this.depositClaimed(e, tx, tz)) continue;
+      const cx = (tx + 0.5) * TILE_SIZE;
+      const cz = (tz + 0.5) * TILE_SIZE;
+      const path = this.findPathFor(e, cx, cz);
+      if (!path) continue;
+      // The route has to finish inside mining reach. A goal redirected onto a
+      // neighbouring tile would otherwise leave the harvester standing out of
+      // range for the rest of the match, which reads as a stuck unit.
+      const end = path.length > 0 ? path[path.length - 1] : { x: e.x, z: e.z };
+      if (dist(end.x, end.z, cx, cz) >= HARVEST_REACH) continue;
+      h.oreTileX = tx;
+      h.oreTileZ = tz;
+      e.path = path;
+      e.pathIndex = 0;
+      e.destX = cx;
+      e.destZ = cz;
+      e.state = 'moving';
+      return true;
+    }
+    return false;
+  }
+
+  /** True when a friendly hauler is already standing over this deposit tile. */
+  private depositClaimed(e: Entity, tx: number, tz: number): boolean {
+    const cx = (tx + 0.5) * TILE_SIZE;
+    const cz = (tz + 0.5) * TILE_SIZE;
+    for (const other of this.state.entities) {
+      if (other === e || other.kind !== 'unit' || other.hp <= 0 || other.garrisonId) continue;
+      if (!other.harvester || other.owner !== e.owner) continue;
+      if (dist2(other.x, other.z, cx, cz) < HARVEST_REACH * HARVEST_REACH) return true;
     }
     return false;
   }
@@ -3872,10 +4200,30 @@ export class Game {
         ) {
           return;
         }
+        const wasCollapsed = target.hp <= 0;
         target.hp = Math.min(
           target.maxHp,
           target.hp + target.maxHp * ENGINEER_REPAIR_RATE * dt,
         );
+        if (wasCollapsed && target.hp > 0) {
+          // The span carries traffic again the moment the deck is whole enough
+          // to drive across: the blocked tiles are released and the navigation
+          // layer is rebuilt with the deck over the water.
+          const def = buildingDef(target.defId);
+          const tx = Math.round(target.x / TILE_SIZE - def.footprint.w / 2);
+          const tz = Math.round(target.z / TILE_SIZE - def.footprint.h / 2);
+          if (def.walkable) {
+            stampFootprint(this.blocked, this.state.map, target.defId, tx, tz, 0);
+            this.deckDirty = true;
+            this.emit('notice', {
+              team: this.localPlayerId,
+              x: target.x,
+              z: target.z,
+              text: 'Bridge re-decked — the crossing is open',
+              level: 'info',
+            });
+          }
+        }
         if (target.hp >= target.maxHp) {
           target.hp = target.maxHp;
           e.order = null;
@@ -3966,6 +4314,9 @@ export class Game {
     const owner = e.owner;
     if (owner < 0) return null;
     const team = this.teamOf(owner);
+    // Darkness shortens the range at which this crew can actually engage, which
+    // is narrower than the weapon's physical range.
+    const rangeFactor = engagementFactor(sensorFor(e), this.dayNight) * this.weather.acquisition;
     let best: Entity | null = null;
     let bestScore = Infinity;
     for (const target of this.state.entities) {
@@ -3983,8 +4334,12 @@ export class Game {
         if (!canWeaponTarget(w, target)) continue;
         if (usesPrimaryAmmo(e, w) && e.ammo <= 0) continue;
         if (d < (w.minRange ?? 0) * TILE_SIZE) continue;
+        // Indirect fire is aimed at a known location, so its reach is physical;
+        // direct fire is limited by what the crew can identify at this light.
+        const reach = (w.indirect ? w.range : w.range * rangeFactor) * TILE_SIZE + 4;
+        if (d > reach) continue;
         usable = true;
-        weaponRange = Math.max(weaponRange, w.range);
+        weaponRange = Math.max(weaponRange, w.indirect ? w.range : w.range * rangeFactor);
         if (w.indirect) ignoresCover = true;
       }
       if (!usable) continue;
@@ -4081,7 +4436,15 @@ export class Game {
     if (e.cooldown > 0) return;
     const shooterDef = UNITS[e.defId];
     const d = dist(e.x, e.z, target.x, target.z);
-    if (d > weapon.range * TILE_SIZE + 4) return;
+    const dayNight = this.dayNight;
+    const profile = sensorFor(e);
+    // The gun keeps its physical range; what shrinks at night is how far the
+    // crew can identify and hold a target. Indirect fire is exempt: it is aimed
+    // at a coordinate a spotter already reported.
+    const effectiveRange = weapon.indirect
+      ? weapon.range
+      : weapon.range * engagementFactor(profile, dayNight) * this.weather.acquisition;
+    if (d > effectiveRange * TILE_SIZE + 4) return;
     if (d < (weapon.minRange ?? 0) * TILE_SIZE) return;
     if (weapon.indirect && e.state === 'moving') return;
     // Indirect fire arcs over cover, but the firing team still needs a spotter
@@ -4096,11 +4459,28 @@ export class Game {
     ) {
       return;
     }
+    // Identification takes time in the dark. A crew holds a target for a few
+    // ticks before the first shot; thermal sights need almost none.
+    if (!weapon.indirect) {
+      const needed = acquireTicksFor(profile, dayNight);
+      if (needed > 0) {
+        if (e.acquireTargetId !== target.id) {
+          e.acquireTargetId = target.id;
+          e.acquireTicks = 0;
+        }
+        const held = (e.acquireTicks ?? 0) + 1;
+        e.acquireTicks = held;
+        if (held < needed) return;
+      }
+    }
     if (usesPrimaryAmmo(e, weapon)) {
       if (e.ammo <= 0) return;
       e.ammo--;
     }
-    e.cooldown = weapon.cooldown;
+    // A veteran crew works its gun faster; the reload it sets is the only
+    // thing veterancy changes about the weapon itself.
+    const crew = rankOf(e);
+    e.cooldown = weapon.cooldown * crew.cooldown;
     // A submarine launch is a datum: the boat is briefly exposed, which gives
     // the target a chance to answer with sonar, guns or depth charges.
     if (shooterDef?.submarine) this.revealSubmarine(e, shooterDef.submarine.revealSeconds);
@@ -4111,8 +4491,23 @@ export class Game {
     const accuracyPenalty = e.suppression * 0.32;
     const firingDef = UNITS[e.defId];
     const movingPenalty = firingDef?.domain === 'land' && e.state === 'moving' ? 0.12 : 0;
-    const hit = this.rng.next() < clamp(weapon.accuracy - accuracyPenalty - movingPenalty, 0.05, 1);
-    const spread = hit ? 0 : (1.5 + this.rng.next() * 2.5) * TILE_SIZE;
+    // Poor optics also cost a little precision, capped so night fighting is
+    // degraded, never useless.
+    const nightAccuracy = weapon.indirect ? 1 : accuracyFactor(profile, dayNight);
+    const hit =
+      this.rng.next() <
+      clamp(
+        weapon.accuracy * nightAccuracy * this.weather.accuracy +
+          crew.accuracy -
+          accuracyPenalty -
+          movingPenalty,
+        0.05,
+        1,
+      );
+    // A miss lands inside the weapon's own pattern, stretched by the weather.
+    // Indirect fire is exempt from the accuracy penalty above but not from
+    // dispersion: a gunners' correction drifts in a gale whatever the sights.
+    const spread = hit ? 0 : (1.5 + this.rng.next() * 2.5) * TILE_SIZE * this.weather.dispersion;
     const scatterAngle = this.rng.next() * Math.PI * 2;
     const start = this.muzzlePoint(e);
     const targetHeight = weapon.underwater
@@ -4143,7 +4538,9 @@ export class Game {
         weapon.projectile === 'missile' ||
         weapon.projectile === 'sam' ||
         weapon.projectile === 'torpedo',
-      damage: weapon.damage,
+      // The crew's edge is baked into the round when it leaves the barrel, so
+      // the impact is resolved with the same numbers on every peer.
+      damage: weapon.damage * crew.damage,
       armourMul: weapon.multipliers,
       suppression: weapon.suppression,
       seed: this.rng.int(0, 0xffff),
@@ -4332,6 +4729,132 @@ export class Game {
   /* Movement                                                           */
   /* ------------------------------------------------------------------ */
 
+  /**
+   * The point a unit should actually stand on for a requested destination.
+   *
+   * A group gets a grid of formation slots, and on broken ground some of those
+   * slots land inside a footprint or on rock. Refusing the order for that used
+   * to strand every unit that drew a bad slot — the commander saw "no route"
+   * for a move into a tight space that was perfectly possible. Instead the slot
+   * walks out to the nearest tile this mover can occupy, up to three tiles, and
+   * only a genuinely enclosed aim returns null.
+   */
+  private moveSlotFor(
+    def: UnitDef,
+    x: number,
+    z: number,
+    /**
+     * Whether an occupied slot may walk out to the nearest open tile. The
+     * command layer allows it, because a commander clicking a tight pocket
+     * means "as close as you can get". A planning gate that is asking "is this
+     * exact ground open?" (the AI's assault-destination check) does not: a
+     * structure's centre is not an open aim merely because the ring beside it
+     * is, or an unseen footprint could pull a wave onto itself.
+     */
+    allowWalkOut = true,
+  ): { x: number; z: number } | null {
+    if (this.canStandAt(def, x, z)) return { x, z };
+    if (!allowWalkOut) return null;
+    for (let radius = 1; radius <= 3; radius++) {
+      let best: { x: number; z: number } | null = null;
+      let bestDist = Infinity;
+      for (let dz = -radius; dz <= radius; dz++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          // Ring only, so the first radius with any open tile wins outright.
+          if (Math.max(Math.abs(dx), Math.abs(dz)) !== radius) continue;
+          const px = x + dx * TILE_SIZE;
+          const pz = z + dz * TILE_SIZE;
+          if (!this.canStandAt(def, px, pz)) continue;
+          const d = dx * dx + dz * dz;
+          if (d < bestDist) {
+            bestDist = d;
+            best = { x: px, z: pz };
+          }
+        }
+      }
+      if (best) return best;
+    }
+    return null;
+  }
+
+  /**
+   * Where a mover should stand and the route that gets it there.
+   *
+   * `moveSlotFor` only answers whether a hull may *stand* on a point. Standable
+   * ground can still be unreachable — a lone peak, a pocket behind a cliff, a
+   * corner sealed by a footprint — and treating "standable" as "reachable" is
+   * what refused a whole group's order for the one unit that drew such a slot
+   * ("1 unit cannot reach that location") while the rest drove off. So the aim
+   * is walked out to the nearest ground that is both standable *and* routable,
+   * cheapest first, before anything is refused.
+   */
+  private planMove(
+    e: Entity,
+    def: UnitDef,
+    x: number,
+    z: number,
+    navBatch?: NavBatch,
+  ): { x: number; z: number; path: import('./types').PathPoint[] } | null {
+    const slot = this.moveSlotFor(def, x, z);
+    if (slot) {
+      const path = this.findPathFor(e, slot.x, slot.z, navBatch);
+      if (path) return { x: slot.x, z: slot.z, path };
+    }
+    const fallback = this.reachableAimFor(e, def, x, z, navBatch);
+    return fallback;
+  }
+
+  /**
+   * The nearest point around an aim that this mover can both stand on and drive
+   * to. Rings outwards from the aim, nearest candidate first within a ring, so
+   * the moved stop is as close to what the commander clicked as the ground
+   * allows. Deterministic: ties break on distance, then z, then x.
+   */
+  private reachableAimFor(
+    e: Entity,
+    def: UnitDef,
+    x: number,
+    z: number,
+    navBatch?: NavBatch,
+  ): { x: number; z: number; path: import('./types').PathPoint[] } | null {
+    const aimX = x;
+    const aimZ = z;
+    for (let radius = 1; radius <= REACHABLE_AIM_SEARCH; radius++) {
+      const candidates: Array<{ x: number; z: number; d: number }> = [];
+      for (let dz = -radius; dz <= radius; dz++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dz)) !== radius) continue;
+          const px = aimX + dx * TILE_SIZE;
+          const pz = aimZ + dz * TILE_SIZE;
+          if (!this.canStandAt(def, px, pz)) continue;
+          candidates.push({ x: px, z: pz, d: dx * dx + dz * dz });
+        }
+      }
+      if (candidates.length === 0) continue;
+      candidates.sort((a, b) => a.d - b.d || a.z - b.z || a.x - b.x);
+      const probes = Math.min(candidates.length, REACHABLE_AIM_PROBES);
+      for (let i = 0; i < probes; i++) {
+        const c = candidates[i];
+        const path = this.findPathFor(e, c.x, c.z, navBatch);
+        if (path) return { x: c.x, z: c.z, path };
+      }
+    }
+    return null;
+  }
+
+  /** Whether this mover may stand with its centre on a point. */
+  private canStandAt(def: UnitDef, x: number, z: number): boolean {
+    const tile = this.tileAt(x, z);
+    if (tile === null || this.blocked[tile]) return false;
+    return canStandOn(
+      this.state.map.width,
+      this.state.map.height,
+      this.state.map.terrain,
+      tile,
+      def.moveClass,
+    );
+  }
+
   private findPathFor(
     e: Entity,
     tx: number,
@@ -4388,13 +4911,155 @@ export class Game {
     return new NavBatch(width, height, members);
   }
 
+  /**
+   * Lay every standing bridge deck over the water it spans.
+   *
+   * The map itself is never rewritten — a deck is a structure, not terrain, and
+   * mutating the map would desynchronise every client that projected the same
+   * ground. Instead the navigation layer is a copy with the deck tiles already
+   * turned into road at bank height, so a route crosses the span while it
+   * stands and goes looking for a ford once it is down.
+   */
+  private rebuildDecks(): void {
+    this.deckDirty = false;
+    const map = this.state.map;
+    let spans = 0;
+    for (const e of this.state.entities) {
+      if (e.kind !== 'building' || e.hp <= 0) continue;
+      if (!BUILDINGS[e.defId]?.walkable) continue;
+      spans++;
+      break;
+    }
+    if (spans === 0) {
+      this.deckTerrain = null;
+      this.deckElevation = null;
+      this.deckMask = null;
+      return;
+    }
+    const terrain = new Uint8Array(map.terrain);
+    const elevation = new Uint8Array(map.elevation);
+    const mask = new Uint8Array(map.terrain.length);
+    for (const e of this.state.entities) {
+      if (e.kind !== 'building' || e.hp <= 0) continue;
+      const def = BUILDINGS[e.defId];
+      if (!def?.walkable) continue;
+      const tx = Math.round(e.x / TILE_SIZE - def.footprint.w / 2);
+      const tz = Math.round(e.z / TILE_SIZE - def.footprint.h / 2);
+      // The deck sits at the height of the banks it lands on, so a vehicle
+      // drives on and off without a step the movement class has to refuse.
+      let level = 0;
+      for (let dz = -1; dz <= def.footprint.h; dz++) {
+        for (let dx = -1; dx <= def.footprint.w; dx++) {
+          const x = tx + dx;
+          const z = tz + dz;
+          if (!inBounds(map.width, map.height, x, z)) continue;
+          const i = tileIndex(map.width, x, z);
+          if (map.terrain[i] === Terrain.DeepWater || map.terrain[i] === Terrain.ShallowWater) continue;
+          if (elevation[i] > level) level = elevation[i];
+        }
+      }
+      for (let dz = 0; dz < def.footprint.h; dz++) {
+        for (let dx = 0; dx < def.footprint.w; dx++) {
+          const x = tx + dx;
+          const z = tz + dz;
+          if (!inBounds(map.width, map.height, x, z)) continue;
+          const i = tileIndex(map.width, x, z);
+          terrain[i] = Terrain.Road;
+          elevation[i] = level;
+          mask[i] = 1;
+        }
+      }
+    }
+    this.deckTerrain = terrain;
+    this.deckElevation = elevation;
+    this.deckMask = mask;
+  }
+
+  /**
+   * World height of a bridge deck under a point, or null when there is none.
+   *
+   * Presentation only: a deck is a structure over water, so the terrain surface
+   * under it is still the sea bed. Anything standing on the span — a vehicle
+   * crossing, its dust, a wreck — has to be drawn at deck height instead.
+   */
+  deckHeightAt(x: number, z: number): number | null {
+    if (this.deckDirty) this.rebuildDecks();
+    if (!this.deckMask || !this.deckElevation) return null;
+    const tx = Math.floor(x / TILE_SIZE);
+    const tz = Math.floor(z / TILE_SIZE);
+    if (!inBounds(this.state.map.width, this.state.map.height, tx, tz)) return null;
+    const i = tileIndex(this.state.map.width, tx, tz);
+    if (!this.deckMask[i]) return null;
+    return this.deckElevation[i] * ELEVATION_HEIGHT;
+  }
+
+  /**
+   * Get anybody standing on a span off it when the deck drops.
+   *
+   * Without this the units would be left on the water tiles the bridge covered:
+   * visually wrong, and unpathable until the span was rebuilt. The search is a
+   * deterministic ring walk, so the same collapse evicts the same unit to the
+   * same bank on every peer.
+   */
+  private clearDeck(
+    bridge: Entity,
+    w: number,
+    h: number,
+    tx: number,
+    tz: number,
+  ): void {
+    const map = this.state.map;
+    const occupied = (x: number, z: number): boolean => x >= tx && x < tx + w && z >= tz && z < tz + h;
+    for (const e of this.state.entities) {
+      if (e.kind !== 'unit' || e.hp <= 0) continue;
+      const ux = Math.floor(e.x / TILE_SIZE);
+      const uz = Math.floor(e.z / TILE_SIZE);
+      if (!occupied(ux, uz)) continue;
+      let placed = false;
+      for (let radius = 1; radius <= 8 && !placed; radius++) {
+        for (let dz = -radius; dz <= radius && !placed; dz++) {
+          for (let dx = -radius; dx <= radius && !placed; dx++) {
+            if (Math.max(Math.abs(dx), Math.abs(dz)) !== radius) continue;
+            const x = ux + dx;
+            const z = uz + dz;
+            if (!inBounds(map.width, map.height, x, z)) continue;
+            const i = tileIndex(map.width, x, z);
+            const t = map.terrain[i] as TerrainId;
+            if (t === Terrain.DeepWater || t === Terrain.ShallowWater) continue;
+            if (this.blocked[i]) continue;
+            if (occupied(x, z)) continue;
+            e.x = (x + 0.5) * TILE_SIZE;
+            e.z = (z + 0.5) * TILE_SIZE;
+            e.path = [];
+            e.pathIndex = 0;
+            e.destX = e.x;
+            e.destZ = e.z;
+            if (e.order?.type === 'move' || e.order?.type === 'attackMove') e.order = null;
+            e.state = 'idle';
+            placed = true;
+          }
+        }
+      }
+    }
+    this.emit('notice', {
+      team: this.localPlayerId,
+      x: bridge.x,
+      z: bridge.z,
+      text: 'Bridge span down — the crossing is closed',
+      level: 'warning',
+      sound: 'alert',
+    });
+  }
+
   private navFor(e: Entity, batch?: NavBatch): NavGrid {
     const def = unitDef(e.defId);
+    if (this.deckDirty) this.rebuildDecks();
     const nav: NavGrid = {
       width: this.state.map.width,
       height: this.state.map.height,
-      terrain: this.state.map.terrain,
-      elevation: this.state.map.elevation,
+      terrain: this.deckTerrain ?? this.state.map.terrain,
+      elevation: this.deckElevation ?? this.state.map.elevation,
+      overlay: this.state.map.overlay,
       moveClass: def.moveClass,
       occupied: this.blocked,
     };
@@ -4499,7 +5164,13 @@ export class Game {
     const suppressionFactor = 1 - e.suppression * 0.2;
     const diveFactor = e.submarine?.dived ? def.submarine?.diveSpeed ?? 1 : 1;
     const speed =
-      def.speed * TILE_SIZE * Math.max(0.08, turnFactor) * terrainFactor * suppressionFactor * diveFactor;
+      def.speed *
+      TILE_SIZE *
+      Math.max(0.08, turnFactor) *
+      terrainFactor *
+      suppressionFactor *
+      diveFactor *
+      weatherSpeedFactor(def.domain, this.weather);
     // Ground and naval movers travel where the hull points. A vehicle waiting
     // for its turn therefore pivots instead of sliding sideways, and a track
     // that has not come round yet covers less ground.
@@ -4508,6 +5179,11 @@ export class Game {
     const step = Math.min(d, speed * dt * alignment);
     let nx = e.x + Math.cos(heading) * step;
     let nz = e.z + Math.sin(heading) * step;
+    // A friendly hull parked in the lane makes way. Separation alone only ever
+    // pushed the mover back, and a mover that never advances never reaches the
+    // blocked-tick threshold that re-routes it, so it stood there for good.
+    const traffic = this.trafficInTheWay(e, def, nx, nz);
+    if (traffic) this.makeWay(traffic, e);
     if (this.canOccupy(e, nx, nz)) {
       e.x = nx;
       e.z = nz;
@@ -4522,6 +5198,15 @@ export class Game {
       e.z = nz;
       e.blockedTicks = 0;
     } else {
+      // Nothing can be driven: the bow is against something. If a friendly hull
+      // is the thing in the way, it gives way — including here, where the step
+      // that failed was into a wall and the traffic test around that point saw
+      // nothing. A defile closed by a parked vehicle is exactly this case.
+      const ahead = this.trafficAhead(e, def);
+      if (ahead && this.makeWay(ahead, e)) {
+        e.blockedTicks = 0;
+        return;
+      }
       // A stopped neighbour can pin a column while the route ahead is clear.
       // Step onto the open shoulder before giving up and re-planning.
       if (e.blockedTicks > 2) {
@@ -4545,13 +5230,24 @@ export class Game {
           }
         }
       }
-      // Destination blocked by a new structure: try to re-route.
+      // Something is in the way for good: a new structure across the route, a
+      // walled pocket the aim sat behind, a column that closed up. Re-plan to
+      // the nearest ground this hull can actually reach before declaring the
+      // order impossible, and give it far more than a few ticks to work out.
       if (e.blockedTicks > 8) {
-        const repath = this.findPathFor(e, e.destX, e.destZ);
-        if (repath) {
-          e.path = repath;
+        const plan = this.planMove(e, def, e.destX, e.destZ);
+        if (plan && plan.path.length > 0) {
+          e.path = plan.path;
           e.pathIndex = 0;
+          e.destX = plan.x;
+          e.destZ = plan.z;
+          if (e.order?.type === 'move' || e.order?.type === 'attackMove') {
+            e.order = { ...e.order, x: plan.x, z: plan.z };
+          }
           e.blockedTicks = 0;
+        } else if (e.blockedTicks < STUCK_GIVE_UP_TICKS) {
+          // Keep trying: the nudge pass and traffic yielding below still have
+          // a chance to open the lane before this becomes a refusal.
         } else if (e.order?.type === 'garrison') {
           // The garrison handler owns this failure: it keeps trying doors for a
           // while, then reports the shelter it could not reach.
@@ -4683,6 +5379,7 @@ export class Game {
     e.destZ = e.z;
     e.guardX = e.x;
     e.guardZ = e.z;
+    e.blockedTicks = 0;
     const order = e.order;
     if (order?.type === 'move' || order?.type === 'attackMove') {
       e.order = null;
@@ -4719,6 +5416,179 @@ export class Game {
     e.state = 'idle';
   }
 
+  /**
+   * A friendly unit standing where the mover is about to drive. A parked unit
+   * clears the lane whenever it is asked; a unit with an order only yields when
+   * it is wedged itself and this mover has the lower id. That tie-break is what
+   * stops two columns pushing nose to nose for the rest of the battle: exactly
+   * one of any pair steps aside, and the choice is stable across replays.
+   */
+  private trafficInTheWay(e: Entity, def: UnitDef, x: number, z: number): Entity | null {
+    if (def.domain === 'air') return null;
+    let best: Entity | null = null;
+    let bestD = Infinity;
+    for (const other of this.state.entities) {
+      if (other === e || other.kind !== 'unit' || other.hp <= 0 || other.garrisonId) continue;
+      const od = unitDef(other.defId);
+      if (od.domain !== def.domain) continue;
+      if (this.isHostile(e.owner, other.owner)) continue;
+      if (!this.willGiveWay(other)) continue;
+      // Only what is actually in front of the hull. A unit sitting behind it
+      // used to count merely because it was near the next step, which shoved
+      // parked squads out of the way of a vehicle driving off in the opposite
+      // direction.
+      const fx = Math.cos(e.facing);
+      const fz = Math.sin(e.facing);
+      if ((other.x - e.x) * fx + (other.z - e.z) * fz <= 0) continue;
+      const min = (formationRadius(def) + formationRadius(od)) * 0.9;
+      const d = dist2(x, z, other.x, other.z);
+      if (d >= min * min || d >= bestD) continue;
+      best = other;
+      bestD = d;
+    }
+    return best;
+  }
+
+  /**
+   * Friendly traffic directly in front of a mover that has failed to advance.
+   * Used only when the step itself is impossible, so the probe is a bow-length
+   * ahead of the hull rather than at the blocked next position.
+   */
+  private trafficAhead(e: Entity, def: UnitDef): Entity | null {
+    if (def.domain === 'air') return null;
+    const fx = Math.cos(e.facing);
+    const fz = Math.sin(e.facing);
+    let best: Entity | null = null;
+    let bestAhead = Infinity;
+    for (const other of this.state.entities) {
+      if (other === e || other.kind !== 'unit' || other.hp <= 0 || other.garrisonId) continue;
+      const od = unitDef(other.defId);
+      if (od.domain !== def.domain) continue;
+      if (this.isHostile(e.owner, other.owner)) continue;
+      if (!this.willGiveWay(other)) continue;
+      const dx = other.x - e.x;
+      const dz = other.z - e.z;
+      const ahead = dx * fx + dz * fz;
+      const lateral = Math.abs(-dx * fz + dz * fx);
+      const reach = (formationRadius(def) + formationRadius(od)) * 1.35;
+      if (ahead <= 0 || ahead > reach) continue;
+      if (lateral > (formationRadius(def) + formationRadius(od)) * 0.75) continue;
+      if (ahead < bestAhead) {
+        bestAhead = ahead;
+        best = other;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Whether `blocker` should step out of `mover`'s lane.
+   *
+   * Parked units always make way, unless they were told to hold their ground. A
+   * unit that is under orders but has been failing to advance for a moment is
+   * traffic too — that is the head-on standoff in a corridor, where both hulls
+   * wait for the other and neither ever moves. The higher id yields so the pair
+   * cannot both step and shuffle forever.
+   */
+  private willGiveWay(blocker: Entity): boolean {
+    if (blocker.stance === 'hold') return false;
+    return this.isIdleTraffic(blocker);
+  }
+
+  /** Whether this unit is under an order that requires it to change ground. */
+  private wantsToTravel(e: Entity): boolean {
+    if (e.path.length > 0 || e.state === 'moving') return true;
+    switch (e.order?.type) {
+      case 'move':
+      case 'attackMove':
+      case 'attack':
+      case 'capture':
+      case 'garrison':
+      case 'repair':
+        return true;
+      default:
+        break;
+    }
+    if (e.harvester) return e.harvester.phase === 'toOre' || e.harvester.phase === 'toRefinery';
+    return false;
+  }
+
+  /** No order, no target and no hold stance: the unit is parked, not defending. */
+  private isIdleTraffic(e: Entity): boolean {
+    if (e.state !== 'idle') return false;
+    if (e.path.length > 0) return false;
+    if (e.order) return false;
+    if (e.targetId || e.aimTargetId) return false;
+    return e.stance !== 'hold';
+  }
+
+  /**
+   * Step a parked unit out of the lane, perpendicular to the mover's heading.
+   * One shoulder at a time: the mover creeps up, the blocker clears a hull's
+   * width, and the lane opens within a tick or two. Pure geometry, so it stays
+   * deterministic, and the blocker keeps its guard point: it stepped aside, it
+   * was not ordered.
+   */
+  private makeWay(blocker: Entity, mover: Entity): boolean {
+    const bDef = unitDef(blocker.defId);
+    const mDef = unitDef(mover.defId);
+    const aside = (formationRadius(bDef) + formationRadius(mDef)) * 0.95;
+    for (const sign of [1, -1]) {
+      const angle = mover.facing + Math.PI * 0.5 * sign;
+      const bx = blocker.x + Math.cos(angle) * aside;
+      const bz = blocker.z + Math.sin(angle) * aside;
+      if (!this.canOccupy(blocker, bx, bz)) continue;
+      if (!this.unitClearAt(blocker, bx, bz)) continue;
+      return this.sidestep(blocker, bx, bz);
+    }
+    // No shoulder at all: a defile, a bridge, a gate between two structures.
+    // A parked unit still gives way by stepping along the lane, so the column
+    // shuffles forward instead of the vehicle grinding to a halt behind it for
+    // the rest of the battle. Only a unit at rest is moved like this: one that
+    // is under orders is driving its own route and not a queue to be pushed.
+    if (!this.isIdleTraffic(blocker)) return false;
+    // Away from the mover, not along its nose: a hull jammed in a defile has
+    // been steering into the walls, so its facing points at rock rather than at
+    // the only lane that exists.
+    const away = Math.atan2(blocker.z - mover.z, blocker.x - mover.x);
+    for (const sign of [0, 1]) {
+      const angle = away + Math.PI * sign;
+      const bx = blocker.x + Math.cos(angle) * aside;
+      const bz = blocker.z + Math.sin(angle) * aside;
+      if (!this.canOccupy(blocker, bx, bz)) continue;
+      if (!this.unitClearAt(blocker, bx, bz)) continue;
+      return this.sidestep(blocker, bx, bz);
+    }
+    return false;
+  }
+
+  /**
+   * Send a unit that is giving way to its clearing position under its own
+   * power. Giving way used to write the new coordinates straight into the
+   * entity, so a hull snapped a full body-width sideways between two frames;
+   * a one-point route makes it drive and turn there instead, at its own speed.
+   * The unit is not under orders afterwards: it stepped aside, it was not told
+   * to go anywhere, so its guard point is untouched and it simply stops there.
+   */
+  private sidestep(blocker: Entity, x: number, z: number): boolean {
+    // Only a unit at rest is ever redirected: taking a unit under orders off its
+    // route to clear a lane would silently cancel what the commander told it to
+    // do, which is worse than the queue it was standing in.
+    if (blocker.order || blocker.targetId || blocker.aimTargetId) return false;
+    if (blocker.state === 'moving' && blocker.path.length > 0) {
+      // Already walking out of the way; do not re-aim it every tick.
+      return true;
+    }
+    blocker.order = null;
+    blocker.path = [{ x, z }];
+    blocker.pathIndex = 0;
+    blocker.destX = x;
+    blocker.destZ = z;
+    blocker.state = 'moving';
+    blocker.blockedTicks = 0;
+    return true;
+  }
+
   /** Whether a step would put `e` inside another ground unit's footprint. */
   private unitClearAt(e: Entity, x: number, z: number): boolean {
     const def = unitDef(e.defId);
@@ -4743,19 +5613,34 @@ export class Game {
     // Aircraft fly over structures, coastlines and elevation; only map bounds apply.
     if (def.moveClass === 'air') return true;
     const idx = tileIndex(this.state.map.width, tx, tz);
-    if (this.blocked[idx]) return false;
+    // A hull already standing on ground it should not be on — shoved into a
+    // foundation by separation, spawned before the building was raised, restored
+    // mid-collision — has to be allowed to drive out. Without this the first
+    // step is refused, the shoulder nudges are refused too, and it stands there
+    // for the rest of the battle while its route keeps looking perfectly valid.
+    // Only a mover that is already in the wall gets this dispensation; everyone
+    // else is held out of it exactly as before.
+    const curTx = Math.floor(e.x / TILE_SIZE);
+    const curTz = Math.floor(e.z / TILE_SIZE);
+    const curIdx = tileIndex(this.state.map.width, curTx, curTz);
+    const trapped = this.blocked[curIdx] === 1;
+    if (this.blocked[idx] && !trapped) return false;
+    if (this.deckDirty) this.rebuildDecks();
+    // Routing and movement must agree about a bridge deck: the route is planned
+    // on the decked ground (see `navFor`), so the per-step check is too, or a
+    // column would plan a crossing it then refuses to drive over.
     const cost = moveCost(
       this.state.map.width,
       this.state.map.height,
-      this.state.map.terrain,
-      this.state.map.elevation,
+      this.deckTerrain ?? this.state.map.terrain,
+      this.deckElevation ?? this.state.map.elevation,
       tx,
       tz,
-      Math.floor(e.x / TILE_SIZE),
-      Math.floor(e.z / TILE_SIZE),
+      curTx,
+      curTz,
       def.moveClass,
     );
-    return Number.isFinite(cost);
+    return Number.isFinite(cost) || trapped;
   }
 
   private separateUnits(): void {
@@ -4936,8 +5821,51 @@ export class Game {
     if (target.hp <= 0) return;
     // Capture-only objectives are never damaged; even splash leaves them intact.
     if (isIndestructibleStructure(target.defId)) return;
+    // Infantry in physical cover take less from direct fire. Concealment never
+    // enters this calculation: a crop field hides a squad but does not stop a
+    // round once it is found, and indirect fire arcs over field cover. Vehicles
+    // do not benefit — their protection is their armour, which the damage model
+    // already accounts for, so a tank duel is decided by guns and plating.
+    if (damage > 0 && target.kind === 'unit') {
+      const def = UNITS[target.defId];
+      if (def && def.domain !== 'air' && def.armour === 'infantry') {
+        const cover = coverFactor(this.state.map, target.x, target.z, weaponId ? WEAPONS[weaponId] : undefined);
+        if (cover > 0) damage = Math.max(0.1, Math.round(damage * (1 - 0.3 * cover) * 10) / 10);
+      }
+    }
+    // What actually landed, so a killing blow cannot pay out more experience
+    // than the target had left to give.
+    const applied = Math.max(0, Math.min(damage, target.hp));
     target.hp -= damage;
     target.lastHitTick = this.state.tick;
+    // Veterancy is earned by the crew that did the work, friend or foe, ship,
+    // airframe or vehicle. Static defences never promote, and neither does a
+    // shot into somebody else's fight: only hostile damage counts.
+    const shooter = this.getEntity(shooterId);
+    if (
+      shooter &&
+      shooter.kind === 'unit' &&
+      applied > 0 &&
+      target.owner >= 0 &&
+      this.isHostile(shooter.owner, target.owner)
+    ) {
+      const promoted = awardCombatXp(shooter, applied, Math.max(1, target.maxHp));
+      if (promoted) {
+        // `unitPromoted` is the presentation hook: the line, the announcer and
+        // the hull flash all key off it, so promotion feedback stays in one
+        // place instead of every surface guessing from the prose.
+        this.emit('notice', {
+          team: shooter.owner,
+          x: shooter.x,
+          z: shooter.z,
+          text: `${entityName(shooter)} promoted to ${promoted.name}`,
+          code: 'unitPromoted',
+          entityId: shooter.id,
+          defId: shooter.defId,
+          level: 'success',
+        });
+      }
+    }
     // A depth-charge hit is a datum of its own: the boat is briefly exposed
     // even if it was not the one that launched.
     if (target.submarine?.dived) {
@@ -5001,9 +5929,17 @@ export class Game {
       const def = buildingDef(target.defId);
       const tx = Math.round(target.x / TILE_SIZE - def.footprint.w / 2);
       const tz = Math.round(target.z / TILE_SIZE - def.footprint.h / 2);
-      stampFootprint(this.blocked, this.state.map, target.defId, tx, tz, 0);
+      if (def.walkable) {
+        // A bridge is not cleared when it dies. The span drops into the channel,
+        // the crossing closes, and the wreckage stays until an engineer re-decks
+        // it — so the tiles block from this tick on.
+        stampFootprint(this.blocked, this.state.map, target.defId, tx, tz, 1);
+        this.clearDeck(target, def.footprint.w, def.footprint.h, tx, tz);
+        this.deckDirty = true;
+      } else {
+        stampFootprint(this.blocked, this.state.map, target.defId, tx, tz, 0);
+      }
     }
-    const shooter = this.getEntity(shooterId);
     if (shooter) shooter.kills++;
     target.path = [];
     target.queue = [];
@@ -5038,7 +5974,15 @@ export class Game {
   }
 
   private cleanup(): void {
-    if (!this.state.entities.some((e) => e.hp <= 0)) return;
+    // A dropped span is kept on purpose, so only a removable death is a reason
+    // to walk the entity list.
+    if (
+      !this.state.entities.some(
+        (e) => e.hp <= 0 && !(e.kind === 'building' && BUILDINGS[e.defId]?.walkable),
+      )
+    ) {
+      return;
+    }
     // Destroyed shelters kill their occupants first: those units are not in the
     // initial dead list, so recompute it before removing ids, or a stale id
     // would keep them selectable through getEntity after death.
@@ -5053,11 +5997,16 @@ export class Game {
         const def = buildingDef(e.defId);
         const tx = Math.round(e.x / TILE_SIZE - def.footprint.w / 2);
         const tz = Math.round(e.z / TILE_SIZE - def.footprint.h / 2);
+        // A dropped span survives its own destruction as wreckage: clearing its
+        // footprint here would reopen the crossing the enemy just closed.
+        if (def.walkable) continue;
         stampFootprint(this.blocked, this.state.map, e.defId, tx, tz, 0);
       }
       this.byId.delete(e.id);
     }
-    this.state.entities = this.state.entities.filter((e) => e.hp > 0);
+    this.state.entities = this.state.entities.filter(
+      (e) => e.hp > 0 || (e.kind === 'building' && !!BUILDINGS[e.defId]?.walkable),
+    );
     this.state.contacts = this.state.contacts.filter((c) => this.byId.has(c.entityId));
     if (this.state.charted.some((c) => !this.byId.has(c.entityId))) {
       this.state.charted = this.state.charted.filter((c) => this.byId.has(c.entityId));
@@ -5470,6 +6419,9 @@ export class Game {
           e.garrisonId,
           e.captureTargetId,
           e.captureProgress.toFixed(3),
+          // Veterancy is simulation state: two worlds that have fought the same
+          // fight have to promote the same crews.
+          e.xp ?? 0,
           e.submarine
             ? `s${e.submarine.dived ? 1 : 0}:${e.submarine.battery.toFixed(1)}:${e.submarine.revealTimer.toFixed(1)}:${e.submarine.revealed ? 1 : 0}`
             : '-',

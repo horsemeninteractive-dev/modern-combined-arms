@@ -161,9 +161,11 @@ describe('ore exhaustion', () => {
   it('releases as soon as a deposit becomes reachable', () => {
     // Start exhausted with one hauler and a 4 000 bank. At 60 s a deposit is
     // made reachable; the hauler starts mining, the economy demand returns and
-    // the commander buys the second hauler it was holding back.
+    // the commander buys the second hauler it was holding back. The tile is open
+    // ground south of the base: a deposit *under* a structure is unminable by
+    // design, so restoring one there would test nothing but the idle signal.
     const r = run(
-      { harvesters: 1, bank: 4000, restoreAt: { second: 60, x: 47, z: 34 } },
+      { harvesters: 1, bank: 4000, restoreAt: { second: 60, x: 46, z: 38 } },
       180,
     );
     expect(r.gathered).toBeGreaterThan(0);

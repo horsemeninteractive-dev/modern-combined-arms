@@ -1,5 +1,5 @@
 import { TILE_SIZE } from '../sim/constants';
-import { Terrain, TERRAIN, tileIndex, type TerrainId } from '../sim/terrain';
+import { OVERLAYS, Terrain, TERRAIN, overlayIdOf, tileIndex, type TerrainId } from '../sim/terrain';
 import type { Scenario } from '../sim/scenario';
 import type { RuntimeMap } from '../sim/types';
 import { BUILDINGS } from '../data/buildings';
@@ -40,11 +40,49 @@ function groundCover(t: TerrainId): [number, number, number, number] {
       return [0, 0, 0, 0];
     case Terrain.Urban:
       return [0.05, 0.42, 0, 0.53];
+    // Wetland and scrub read as green cover with their own colour on top.
+    case Terrain.Scrub:
+      return [0.72, 0.18, 0.1, 0];
+    case Terrain.Marsh:
+      return [0.5, 0.34, 0.08, 0.08];
+    case Terrain.Farmland:
+      return [0.34, 0.66, 0, 0];
+    case Terrain.Mud:
+      return [0.04, 0.9, 0, 0.06];
+    case Terrain.Rocks:
+      return [0, 0, 0, 1];
+    case Terrain.DenseUrban:
+      return [0.02, 0.3, 0, 0.68];
+    case Terrain.Industrial:
+      return [0.06, 0.34, 0, 0.6];
     default:
-      // Sand and any future dry ground read as exposed earth.
+      // Sand, dunes and any future dry ground read as exposed earth.
       return [0.08, 0.92, 0, 0];
   }
 }
+
+/**
+ * Base colour with its surface layer blended in.
+ *
+ * The overlay is a tint over the ground, not a replacement: a crop field reads
+ * as cultivated earth with rows on it, and the same crops over open ground
+ * read as green. Density scales the blend, so light reeds and dense reeds are
+ * visibly different without a second terrain id.
+ */
+function surfaceColor(terrain: TerrainId, overlay: number): [number, number, number] {
+  const base = TERRAIN[terrain].color;
+  if (overlay <= 0) return base;
+  const props = OVERLAYS[overlayIdOf(overlay)];
+  if (props.id === 0) return base;
+  const density = overlay % 4;
+  const amount = Math.min(0.7, props.strength * density * 0.3);
+  return [
+    base[0] * (1 - amount) + props.tint[0] * amount,
+    base[1] * (1 - amount) + props.tint[1] * amount,
+    base[2] * (1 - amount) + props.tint[2] * amount,
+  ];
+}
+
 
 export function buildTerrainGeometry(scenario: Scenario): TerrainGeometry {
   const pos: number[] = [];
@@ -98,7 +136,8 @@ export function buildTerrainGeometry(scenario: Scenario): TerrainGeometry {
           const tx = vx + dx;
           const tz = vz + dz;
           if (tx < 0 || tz < 0 || tx >= W || tz >= H) continue;
-          const terrain = scenario.tiles[tileIndex(W, tx, tz)].t as TerrainId;
+          const tile = scenario.tiles[tileIndex(W, tx, tz)];
+          const terrain = tile.t as TerrainId;
           const def = TERRAIN[terrain];
           // Water quads are not part of this mesh; letting their colour in
           // would smear a dark blue band along every coastline. Roads are
@@ -106,9 +145,10 @@ export function buildTerrainGeometry(scenario: Scenario): TerrainGeometry {
           // buildRoadDetails, and sampling the tile colour here put a hard
           // square of asphalt under every rounded road edge.
           if (def.water || terrain === Terrain.Road) continue;
-          r += def.color[0];
-          g += def.color[1];
-          b += def.color[2];
+          const [sr, sg, sb] = surfaceColor(terrain, tile.v ?? 0);
+          r += sr;
+          g += sg;
+          b += sb;
           n++;
         }
       }
@@ -668,6 +708,10 @@ export function buildPropInstances(
   tufts: PropInstance[];
   fences: PropInstance[];
   lamps: PropInstance[];
+  signs: PropInstance[];
+  rubble: PropInstance[];
+  reeds: PropInstance[];
+  poles: PropInstance[];
 } {
   const trees: PropInstance[] = [];
   const rocks: PropInstance[] = [];
@@ -676,7 +720,11 @@ export function buildPropInstances(
   const shrubs: PropInstance[] = [];
   const tufts: PropInstance[] = [];
   const fences: PropInstance[] = [];
+  const rubble: PropInstance[] = [];
+  const reeds: PropInstance[] = [];
+  const poles: PropInstance[] = [];
   const lamps: PropInstance[] = [];
+  const signs: PropInstance[] = [];
   const W = scenario.width;
   const H = scenario.height;
   // Coastal riprap is part of the existing instanced rock pass, not a new draw
@@ -915,6 +963,145 @@ export function buildPropInstances(
         }
       }
 
+      // Roadside direction signs. They stand on the verge with their blades
+      // turned at the carriageway, so a road reads as a road with places on it
+      // rather than a strip of asphalt through empty ground. Sparse on purpose:
+      // one landmark every few dozen tiles, not a picket line of them.
+      if (
+        !blocked[i] &&
+        tile.o === 0 &&
+        !TERRAIN[tile.t as TerrainId].water &&
+        tile.t !== Terrain.Road &&
+        tile.t !== Terrain.Forest &&
+        tile.t !== Terrain.Rock &&
+        tile.t !== Terrain.Rocks
+      ) {
+        let toRoadX = 0;
+        let toRoadZ = 0;
+        for (const [dx, dz] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ] as const) {
+          const nx = x + dx;
+          const nz = z + dz;
+          if (nx < 0 || nz < 0 || nx >= W || nz >= H) continue;
+          if (scenario.tiles[nz * W + nx].t === Terrain.Road) {
+            toRoadX = dx;
+            toRoadZ = dz;
+            break;
+          }
+        }
+        if ((toRoadX !== 0 || toRoadZ !== 0) && hash01(x, z, 149) > 0.9) {
+          const wx = (x + 0.5 + toRoadX * 0.3) * TILE_SIZE;
+          const wz = (z + 0.5 + toRoadZ * 0.3) * TILE_SIZE;
+          signs.push({
+            x: wx,
+            y: terrainSurfaceHeight(scenario, wx, wz),
+            z: wz,
+            // Local +X points at the carriageway, so the blades face the traffic.
+            rotation: Math.atan2(toRoadZ, toRoadX),
+            scale: 0.95 + hash01(x, z, 151) * 0.18,
+            color: [1, 1, 1],
+          });
+        }
+      }
+
+      // Collapsed masonry in the built-up districts. A street of clean tiles
+      // reads as a diagram; a street with a heap of slabs in it reads as a place
+      // that has been fought over.
+      if (
+        !blocked[i] &&
+        (tile.t === Terrain.Urban ||
+          tile.t === Terrain.DenseUrban ||
+          tile.t === Terrain.Industrial) &&
+        hash01(x, z, 163) > 0.82
+      ) {
+        const wx = (x + 0.5) * TILE_SIZE + (hash01(x, z, 165) - 0.5) * 2.4;
+        const wz = (z + 0.5) * TILE_SIZE + (hash01(x, z, 167) - 0.5) * 2.4;
+        rubble.push({
+          x: wx,
+          y: terrainSurfaceHeight(scenario, wx, wz),
+          z: wz,
+          rotation: hash01(x, z, 169) * Math.PI * 2,
+          scale: 0.8 + hash01(x, z, 171) * 0.55,
+          color: [0.94 + hash01(x, z, 173) * 0.12, 0.94, 0.92],
+        });
+      }
+
+      // Reeds stand in the water at the bank and in the marsh itself. They are
+      // the only prop placed on a water tile, so they are also the thing that
+      // tells a shallow shelf apart from open sea at a glance.
+      const waterTile = TERRAIN[tile.t as TerrainId].water;
+      if (
+        !blocked[i] &&
+        (tile.t === Terrain.Marsh ||
+          (waterTile && tile.t === Terrain.ShallowWater && hash01(x, z, 177) > 0.52))
+      ) {
+        let toLand = false;
+        for (const [dx, dz] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ] as const) {
+          const nx = x + dx;
+          const nz = z + dz;
+          if (nx < 0 || nz < 0 || nx >= W || nz >= H) continue;
+          if (!TERRAIN[scenario.tiles[nz * W + nx].t as TerrainId].water) toLand = true;
+        }
+        if (toLand) {
+          const wx = (x + 0.5) * TILE_SIZE + (hash01(x, z, 179) - 0.5) * 2.6;
+          const wz = (z + 0.5) * TILE_SIZE + (hash01(x, z, 181) - 0.5) * 2.6;
+          // Water tiles report no land height, so the clump stands on the
+          // surface plane instead of on a sea bed nobody can see.
+          const y = waterTile ? 0.14 : terrainSurfaceHeight(scenario, wx, wz);
+          reeds.push({
+            x: wx,
+            y,
+            z: wz,
+            rotation: hash01(x, z, 183) * Math.PI * 2,
+            scale: 0.85 + hash01(x, z, 185) * 0.5,
+            color: [0.95 + hash01(x, z, 187) * 0.12, 0.98, 0.9],
+          });
+        }
+      }
+
+      // Telegraph poles along the carriageway, rarer and taller than the lamps.
+      // The arm turns across the road, so consecutive poles read as one line.
+      if (tile.t === Terrain.Road && hash01(x, z, 191) > 0.955) {
+        let vergeX = 0;
+        let vergeZ = 0;
+        for (const [dx, dz] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ] as const) {
+          const nx = x + dx;
+          const nz = z + dz;
+          if (nx < 0 || nz < 0 || nx >= W || nz >= H) continue;
+          const neighbour = scenario.tiles[nz * W + nx];
+          if (TERRAIN[neighbour.t as TerrainId].water || neighbour.t === Terrain.Road) continue;
+          vergeX = dx;
+          vergeZ = dz;
+          break;
+        }
+        if (vergeX !== 0 || vergeZ !== 0) {
+          const wx = (x + 0.5 + vergeX * 0.44) * TILE_SIZE;
+          const wz = (z + 0.5 + vergeZ * 0.44) * TILE_SIZE;
+          poles.push({
+            x: wx,
+            y: terrainSurfaceHeight(scenario, wx, wz),
+            z: wz,
+            rotation: Math.atan2(vergeZ, vergeX),
+            scale: 0.94 + hash01(x, z, 193) * 0.14,
+            color: [1, 1, 1],
+          });
+        }
+      }
+
       const amount = ore ? ore[i] : tile.o;
       if (amount > 0) {
         const max = maxOre ? maxOre[i] : tile.o || 1;
@@ -932,7 +1119,20 @@ export function buildPropInstances(
       }
     }
   }
-  return { trees, rocks, ore: oreInstances, bushes, shrubs, tufts, fences, lamps };
+  return {
+    trees,
+    rocks,
+    ore: oreInstances,
+    bushes,
+    shrubs,
+    tufts,
+    fences,
+    lamps,
+    signs,
+    rubble,
+    reeds,
+    poles,
+  };
 }
 
 export function runtimeOreInstances(scenario: Scenario, map: RuntimeMap): PropInstance[] {

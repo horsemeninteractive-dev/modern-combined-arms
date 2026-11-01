@@ -70,6 +70,25 @@ export function normaliseEscBehavior(value: unknown): EscBehavior {
   return value === 'menu' ? 'menu' : 'pause';
 }
 
+/**
+ * Additive light intensity. Presentation only: no gameplay rule reads this, so
+ * two players with different settings still get identical detection and combat.
+ */
+export function normaliseLightBloom(value: unknown): number {
+  if (value === null || value === undefined || value === '') return 1;
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return 1;
+  return Math.max(0, Math.min(1.5, n));
+}
+
+/**
+ * Graphics presets decide whether night lights are drawn at all. Low quality
+ * keeps the darkness and the gameplay, and drops the additive pass.
+ */
+export function presetNightLights(quality: unknown): boolean {
+  return normaliseGraphicsQuality(quality) !== 'low';
+}
+
 export function graphicsPreset(quality: unknown): GraphicsPreset {
   return GRAPHICS_PRESETS[normaliseGraphicsQuality(quality)];
 }

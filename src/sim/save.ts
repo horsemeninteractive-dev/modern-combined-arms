@@ -20,6 +20,8 @@ export interface SerializedMap {
   elevation: number[];
   ore: number[];
   maxOre: number[];
+  /** Surface/vegetation layer; absent in saves written before it existed. */
+  overlay?: number[];
 }
 
 export interface SerializedGameState {

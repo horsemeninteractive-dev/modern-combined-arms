@@ -57,6 +57,7 @@ function normalizeEntity(raw: unknown): Json {
     suppression: num(e.suppression, 0),
     lastHitTick: num(e.lastHitTick, -9999),
     kills: num(e.kills, 0),
+    xp: num(e.xp, 0),
     buildProgress: num(e.buildProgress, 1),
     construction: bool(e.construction, false),
     queue: asArray(e.queue),

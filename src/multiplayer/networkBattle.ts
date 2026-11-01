@@ -123,6 +123,7 @@ function createEntity(projected: ProjectedEntity, x: number, z: number): Entity 
     suppression: 0,
     lastHitTick: 0,
     kills: 0,
+    xp: projected.xp ?? 0,
     buildProgress: projected.buildProgress ?? 1,
     construction: projected.construction ?? false,
     queue: (projected.queue ?? []).map((item) => ({ ...item })),
@@ -339,6 +340,9 @@ export class NetworkBattle {
         entity.buildProgress = projected.buildProgress ?? entity.buildProgress;
         entity.queue = (projected.queue ?? []).map((item) => ({ ...item }));
         entity.garrisonId = projected.garrisonId ?? 0;
+        // A remembered silhouette carries no experience: the replica keeps the
+        // rank it last knew rather than inventing one.
+        entity.xp = projected.remembered === true ? entity.xp ?? 0 : projected.xp ?? entity.xp ?? 0;
         entity.targetId = projected.targetId ?? 0;
         if (entity.aircraft) {
           entity.aircraft.landed =

@@ -317,7 +317,7 @@ function joinBoth(h: Harness, markReady = true): Joined {
 
 describe('Phase 2B.1 lobby configuration', () => {
   it('builds a legal default from the map catalogue and the room duration', () => {
-    const config = defaultLobbyConfig('island-assault', DURATION_MS);
+    const config = defaultLobbyConfig('open-front', DURATION_MS);
     expect(validateLobbyConfig(config).ok).toBe(true);
     expect(config.version).toBe(1);
     expect(config.matchDurationMs).toBe(DURATION_MS);
@@ -326,7 +326,7 @@ describe('Phase 2B.1 lobby configuration', () => {
   });
 
   it('rejects unsupported versions, maps, durations, nations and colours', () => {
-    const base = defaultLobbyConfig('island-assault', DURATION_MS);
+    const base = defaultLobbyConfig('open-front', DURATION_MS);
     const cases: Array<[unknown, string]> = [
       [{ ...base, version: 2 }, 'unsupported-lobby-version'],
       [{ ...base, mapId: 'no-such-map' }, 'invalid-map'],
@@ -351,7 +351,7 @@ describe('Phase 2B.1 lobby configuration', () => {
   });
 
   it('reports every unmet start condition in a fixed order', () => {
-    const config: LobbyConfigV1 = defaultLobbyConfig('island-assault', DURATION_MS);
+    const config: LobbyConfigV1 = defaultLobbyConfig('open-front', DURATION_MS);
     const empty = startConditions({
       seats: [{ joined: false, connected: false }, { joined: false, connected: false }],
       config,
@@ -422,7 +422,7 @@ describe('Phase 2B.1 lobby authority', () => {
     return new RoomLobby({
       roomId: 'lobby-unit',
       seats,
-      config: defaultLobbyConfig('island-assault', DURATION_MS),
+      config: defaultLobbyConfig('open-front', DURATION_MS),
       hardDeadlineAt: Date.now() + 600_000,
       now: Date.now(),
     });
@@ -1117,12 +1117,14 @@ describe('Phase 2B.1 seat socket ownership after the start', () => {
 /* ------------------------------------------------------------------ */
 
 describe('Phase 2B.1 documented defaults', () => {
-  it('uses the island catalogue map and the reservation duration until the lobby edits them', async () => {
+  it('uses the default competitive map and the reservation duration until the lobby edits them', async () => {
     const h = harness();
     expect((await createRoom(h, DEFAULT_MATCH_DURATION_MS)).phase).toBe('lobby');
     const meta = h.storage.raw(ROOM_STORAGE_KEYS.meta) as Record<string, unknown>;
     const config = meta.lobbyConfig as LobbyConfigV1;
-    expect(config.mapId).toBe('island-assault');
+    // A room opens on a battlefield the multiplayer catalogue admits; the
+    // campaign theatres are no longer lobby ground.
+    expect(config.mapId).toBe('open-front');
     expect(config.matchDurationMs).toBe(DEFAULT_MATCH_DURATION_MS);
     expect(config.seats.map((seat) => seat.color)).toEqual([LOBBY_COLORS[0], LOBBY_COLORS[1]]);
   });

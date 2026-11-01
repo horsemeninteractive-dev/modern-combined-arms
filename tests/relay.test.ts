@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { Game } from '../src/sim/game';
 import { createIslandAssault } from '../src/data/scenarios';
+import { BUILDINGS } from '../src/data/buildings';
 import { FACTIONS } from '../src/data/factions';
 import { relayMeterState, RELAY_NEUTRAL_COLOR } from '../src/ui/relayMeter';
 
@@ -92,5 +94,46 @@ describe('relay ownership and capture meter', () => {
     expect(meter.ownerLabel).toBe(FACTIONS.baltic.shortName);
     expect(meter.ownerColor).toBe(FACTIONS.baltic.color);
     expect(meter.caption).toBe('BALTIC');
+  });
+
+  it('puts the control meter on every capturable objective, not just the sturdy ones', () => {
+    // A radar station changes hands by capture exactly like a relay. Gating the
+    // world meter on indestructibility left the one destructible objective with
+    // no owner label and no capture bar at all.
+    const capturable = Object.values(BUILDINGS).filter((b) => b.capturable);
+    expect(capturable.map((b) => b.id).sort()).toEqual(
+      ['radarStation', 'relay', 'supplyDepot'].sort(),
+    );
+    const overlaySource = readFileSync(new URL('../src/ui/overlay.ts', import.meta.url), 'utf8');
+    expect(overlaySource).toContain("if (!BUILDINGS[relay.defId]?.capturable) continue;");
+    // Remembered ground keeps the holder's name but never live capture progress.
+    expect(overlaySource).toContain('const caption = remembered ? meter.ownerLabel : meter.caption;');
+    expect(overlaySource).toContain('const progress = remembered ? 0 : meter.progress;');
+  });
+
+  it('takes a capture order on a relay that has slipped back into memory', () => {
+    // The point of charting: a relay nobody is watching is still a legal order,
+    // so an engineer can be sent to take an objective scouted a minute ago.
+    const game = newGame();
+    const target = relay(game);
+    const scout = tank(game);
+    const home = { x: scout.x, z: scout.z };
+    scout.x = target.x + 8;
+    scout.z = target.z;
+    game.advance(20);
+    expect(game.visionStateOf(0, target.id)).toBe('visible');
+    scout.x = home.x;
+    scout.z = home.z;
+    game.advance(20);
+    expect(game.isVisibleTo(0, target.id)).toBe(false);
+    expect(game.visionStateOf(0, target.id)).toBe('remembered');
+    expect(game.isKnownTo(0, target.id)).toBe(true);
+
+    const engineer = game.entitiesOf(0, 'unit').find((e) => e.defId === 'engineer')!;
+    game.enqueueCommand({ type: 'capture', team: 0, ids: [engineer.id], targetId: target.id });
+    game.advance(2);
+    expect(game.state.events.some((e) => e.type === 'orderFailed')).toBe(false);
+    expect(engineer.order?.type).toBe('capture');
+    expect(engineer.captureTargetId).toBe(target.id);
   });
 });

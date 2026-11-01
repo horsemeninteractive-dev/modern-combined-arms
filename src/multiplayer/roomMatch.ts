@@ -1,4 +1,4 @@
-import { createIslandAssault } from '../data/scenarios';
+import { defaultScenarioId, scenarioById } from '../data/scenarioCatalog';
 import { Game } from '../sim/game';
 import { CommandGate, type GateRejection } from './commandGate';
 import {
@@ -321,7 +321,9 @@ export class RoomMatch {
     if (options.game) {
       this.game = options.game;
     } else {
-      const scenario = createIslandAssault();
+      // No game was handed in, so build the catalogue's default multiplayer
+      // battlefield rather than a campaign theatre a lobby cannot choose.
+      const scenario = scenarioById(defaultScenarioId('multiplayer'))!.create();
       scenario.settings.fog = true;
       scenario.settings.timeLimitSec = Math.max(1, Math.ceil(options.matchDurationMs / 1000));
       scenario.players[0].isAI = false;

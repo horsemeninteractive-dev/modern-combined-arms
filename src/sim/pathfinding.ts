@@ -7,6 +7,8 @@ export interface NavGrid {
   height: number;
   terrain: Uint8Array;
   elevation: Uint8Array;
+  /** Packed surface overlay, when the map has one. */
+  overlay?: Uint8Array;
   moveClass: MoveClass;
   /** 1 = blocked by a structure (or impassable for this mover). */
   occupied?: Uint8Array;
@@ -140,6 +142,7 @@ function stepCost(nav: NavGrid, from: number, to: number, diagonal: boolean): nu
     fx,
     fz,
     nav.moveClass,
+    nav.overlay,
   );
   if (!Number.isFinite(cost)) return Number.POSITIVE_INFINITY;
   // Traffic is a preference, not a wall: a corridor packed with friendly

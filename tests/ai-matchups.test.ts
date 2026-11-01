@@ -11,10 +11,17 @@ import { BUILDINGS } from '../src/data/buildings';
  * 260-340 per tile, which is one harvester load: a match there burns through
  * every deposit in about three minutes, after which both commanders can only
  * spend their bank and every level plays the same. The ladder therefore uses a
- * two-load field so a commander's economy decisions have time to pay for
- * themselves. Increasing this further does not change the ordering.
+ * deep field so a match is limited by how fast an economy can mine, not by how
+ * much ore is left standing.
+ *
+ * This number has to stay deep. Harvesters now reach every deposit on a field
+ * (unreachable seams are rerouted rather than abandoned), so a shallow field is
+ * exhausted sooner than it used to be, and once both sides are sitting on an
+ * empty map their economies converge and every skill margin collapses toward a
+ * coin flip. At 3600 per tile the field outlasts the 600-second limit and the
+ * measured margins are stable.
  */
-const ARENA_ORE = 600;
+const ARENA_ORE = 3600;
 
 /** Eight seeds x both sides = sixteen matches per pairing. */
 const SEEDS = [101, 1078, 2055, 3032, 4009, 4986, 5963, 6940];

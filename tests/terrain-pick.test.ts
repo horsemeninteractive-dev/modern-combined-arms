@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Camera } from '../src/render/camera';
 import {
+  SHORE_LEVEL,
   WATER_LEVEL,
   terrainCornerHeight,
   terrainSurfaceHeight,
@@ -11,7 +12,7 @@ import { constructionGridVisible } from '../src/render/gridVisibility';
 import { buildTerrainGeometry } from '../src/render/terrainMesh';
 import { createIslandAssault } from '../src/data/scenarios';
 import { createScenario, type Scenario } from '../src/sim/scenario';
-import { Terrain, TERRAIN, inBounds, tileIndex } from '../src/sim/terrain';
+import { Terrain, TERRAIN, inBounds, tileIndex, type TerrainId } from '../src/sim/terrain';
 import { ELEVATION_HEIGHT, TILE_SIZE } from '../src/sim/constants';
 
 function camera(): Camera {
@@ -63,12 +64,16 @@ describe('sloped terrain surface', () => {
     expect(highSide).toBeGreaterThan(edgeCorner);
   });
 
-  it('meets the water plane at shoreline corners instead of leaving a gap', () => {
+  it('ramps shoreline corners just under the water plane instead of into it', () => {
     const s = scenario();
     for (let z = 0; z < 16; z++) {
       for (let x = 0; x < 4; x++) s.tiles[tileIndex(s.width, x, z)].t = Terrain.ShallowWater;
     }
-    expect(terrainCornerHeight(s, 4, 8)).toBeCloseTo(WATER_LEVEL, 6);
+    // A shared plane is what made every coast z-fight: the land edge must finish
+    // below the sea surface, close enough to read as a waterline.
+    const shore = terrainCornerHeight(s, 4, 8);
+    expect(shore).toBeLessThan(WATER_LEVEL);
+    expect(shore).toBeGreaterThan(WATER_LEVEL - 0.1);
     expect(terrainVisualHeight(s, 8, 32)).toBeCloseTo(WATER_LEVEL, 6);
     expect(TERRAIN[Terrain.ShallowWater].buildable).toBe(false);
   });
@@ -158,17 +163,36 @@ describe('terrain ray picking', () => {
 });
 
 describe('rendered terrain geometry', () => {
-  it('draws exactly the sloped surface that picking samples', () => {
+  it('draws the sloped surface that picking samples, apart from the shoreline step', () => {
     const s = createIslandAssault();
     const geo = buildTerrainGeometry(s);
-    let maxError = 0;
+    // The one deliberate disagreement is the shoreline: the mesh finishes the
+    // land ramp just under the sea plane so the two are never coplanar, while a
+    // sample taken inside a water tile still answers with the sea plane. Every
+    // other vertex must match the picked surface exactly.
+    const step = WATER_LEVEL - SHORE_LEVEL;
+    let onLand = 0;
+    let onCoast = 0;
     for (let i = 0; i < geo.positions.length; i += 3) {
       const x = geo.positions[i];
       const y = geo.positions[i + 1];
       const z = geo.positions[i + 2];
-      maxError = Math.max(maxError, Math.abs(y - terrainVisualHeight(s, x, z)));
+      const tx = Math.min(s.width - 1, Math.max(0, Math.floor(x / TILE_SIZE)));
+      const tz = Math.min(s.height - 1, Math.max(0, Math.floor(z / TILE_SIZE)));
+      const wet = TERRAIN[s.tiles[tileIndex(s.width, tx, tz)].t as TerrainId].water;
+      const delta = Math.abs(y - terrainVisualHeight(s, x, z));
+      if (wet) {
+        // A vertex at a corner the sea shares with land: the sampled point is on
+        // the water plane, the drawn corner is on the waterline ramp.
+        expect(delta, `coast vertex ${x},${z}`).toBeLessThanOrEqual(step + 0.03);
+        onCoast++;
+        continue;
+      }
+      expect(delta, `vertex ${x},${z}`).toBeLessThan(1e-3);
+      onLand++;
     }
-    expect(maxError).toBeLessThan(1e-3);
+    expect(onCoast).toBeGreaterThan(0);
+    expect(onLand).toBeGreaterThan(onCoast);
   });
 
   it('ramps between elevations instead of stacking vertical steps', () => {

@@ -16,15 +16,31 @@ import { BUILDINGS } from '../data/buildings';
 import { UNITS } from '../data/units';
 import { ALLIANCE_LIST, FACTIONS, NATION_LIST, tryIdentityDef } from '../data/factions';
 import {
+  OVERLAYS,
+  OVERLAY_PALETTE,
+  Overlay,
   TERRAIN,
-  TERRAIN_ORDER,
+  TERRAIN_GROUPS,
   Terrain,
   canStandOn,
   inBounds,
+  overlayAllowedOn,
+  overlayNote,
+  packOverlay,
   tileIndex,
+  type OverlayId,
   type TerrainId,
 } from '../sim/terrain';
 import { MAX_ELEVATION, TILE_SIZE } from '../sim/constants';
+import {
+  DEFAULT_DAY_LENGTH_MINUTES,
+  PHASE_LABELS,
+  formatHour,
+  normaliseStartHour,
+  phaseAtHour,
+  phaseForStartHour,
+} from '../sim/dayNight';
+import { WEATHER, WEATHER_KINDS, weatherFor } from '../sim/weather';
 import { pickTerrain } from '../render/terrainSurface';
 import { icon } from './icons';
 import { openModal, closeModal, escapeHtml } from './modal';
@@ -33,11 +49,36 @@ import {
   dismissEditorSheet,
   editorSheetHeight,
   editorSheetOffset,
+  railOffset,
+  railRestOffset,
+  railSettlesCollapsed,
   resolveEditorLayout,
+  type RailSide,
 } from './editorLayout';
+import {
+  SYMMETRY_MODES,
+  symmetryNote,
+  symmetryOwner,
+  symmetryRects,
+  symmetryStart,
+  symmetryTiles,
+  type SymmetryMode,
+} from './editorSymmetry';
 
 type EditorTab = 'terrain' | 'forces' | 'mission';
-type EditorTool = 'paint' | 'raise' | 'lower' | 'ore' | 'erase' | 'start' | 'structure' | 'unit';
+type EditorTool =
+  | 'paint'
+  | 'raise'
+  | 'lower'
+  | 'ore'
+  | 'erase'
+  | 'start'
+  | 'structure'
+  | 'unit'
+  /** Surface/vegetation overlay on top of the existing base terrain. */
+  | 'overlay'
+  /** Strip the surface layer without touching the ground under it. */
+  | 'overlayClear';
 
 const AUTOSAVE_KEY = 'iron-tide.editor.autosave.v1';
 
@@ -49,11 +90,16 @@ export class Editor {
   tab: EditorTab = 'terrain';
   tool: EditorTool = 'paint';
   terrain: TerrainId = Terrain.Grass;
+  /** Surface layer painted by the overlay brushes. */
+  overlayId: OverlayId = Overlay.Crop;
+  overlayDensity = 2;
   brush = 1;
   owner = 0;
   structureDef = 'barracks';
   unitDef = 'rifle';
   startPlayerId = 0;
+  /** Authoring symmetry: one-way, mirrored or four-way rotational. */
+  symmetry: SymmetryMode = 'single';
   reachMode: 'off' | 'ground' | 'naval' = 'off';
   panMode = false;
   reach: Uint8Array | null = null;
@@ -72,6 +118,8 @@ export class Editor {
   private autosaveTimer = 0;
   private touchLayout = false;
   private sheetDrag: { startY: number; dy: number; target: HTMLElement } | null = null;
+  /** Which slide rails are drawn out. Remembered while the forge is open. */
+  private rails: Record<RailSide, boolean> = { left: true, right: true };
   private canvas: HTMLCanvasElement;
 
   constructor(app: App) {
@@ -117,6 +165,9 @@ export class Editor {
     root.innerHTML = this.markup();
     this.bindChrome();
     this.bindSheetDrag();
+    this.bindRails();
+    this.bindSymmetry();
+    this.applyRails();
     this.renderTools();
     this.renderInspector();
     this.refreshValidation();
@@ -158,6 +209,7 @@ export class Editor {
     this.hover = null;
     this.terrainDirty = false;
     this.lastPaint = '';
+    this.syncSymmetryRow();
     if (refresh && this.active) {
       this.app.renderer.settings.showFog = false;
       this.app.renderer.setScenario(this.scenario);
@@ -198,15 +250,18 @@ export class Editor {
           <button class="editor-tab" data-tab="forces">FORCES</button>
           <button class="editor-tab" data-tab="mission">MISSION</button>
         </div>
+        <div class="editor-sym-row" id="ed-symmetry" role="group" aria-label="Authoring symmetry">${this.symmetryRow()}</div>
         <div class="tool-scroll" id="ed-tools"></div>
+        <button class="editor-rail" data-rail="tools" aria-label="Slide the authoring tools away" aria-expanded="true"><span class="editor-rail-grip"></span></button>
       </aside>
       <aside class="editor-side" aria-label="Scenario settings">
         <div class="editor-sheet-grab" data-sheet-grab aria-label="Drag settings sheet"></div>
+        <button class="editor-rail" data-rail="side" aria-label="Slide the scenario settings away" aria-expanded="true"><span class="editor-rail-grip"></span></button>
         <div class="panel-head"><span>SCENARIO SETTINGS</span><span class="editor-sheet-meta"><span class="mono" id="ed-dims">${this.scenario.width}×${this.scenario.height}</span><button class="editor-sheet-close" data-ed="inspector-close" aria-label="Close scenario settings">${icon('close')}</button></span></div>
         <div class="editor-inspector" id="ed-inspector"></div>
       </aside>
       <div class="editor-backdrop" data-ed="backdrop"></div>
-      <div class="editor-hint" id="ed-hint">Left click paint · Right/middle drag pan · Wheel zoom</div>
+      <div class="editor-hint" id="ed-hint">Left click paint · Right/middle drag pan · Wheel zoom · Drag the panel rails to slide them away</div>
       <div class="editor-toolbar-overlay">
         <button class="btn btn-ghost" data-ed="pan" aria-label="Pan map" aria-pressed="false">${icon('move')} <span class="btn-label">PAN</span></button>
         <button class="btn btn-ghost" data-ed="reach" aria-label="Reachability preview">${icon('terrain')} <span class="btn-label">REACH</span></button>
@@ -306,6 +361,7 @@ export class Editor {
       this.touchLayout = touch;
       this.root?.querySelector('.editor-screen')?.classList.toggle('touch', touch);
       if (!touch) this.closePanels();
+      this.applyRails();
     }
     this.syncSheetHeight();
     this.setHint();
@@ -415,6 +471,143 @@ export class Editor {
   }
 
   /* ------------------------------------------------------------------ */
+  /* Sliding sidebars                                                    */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Both side panels sit on a rail. Dragging the strip on the panel's inner
+   * edge slides it out of the way and leaves a working handle on screen, so a
+   * wide map can be seen whole without losing the panel for good. The rails
+   * are a pointer-device affordance: on touch the panels are drawers already.
+   */
+  private bindRails(): void {
+    this.root?.querySelectorAll<HTMLElement>('[data-rail]').forEach((rail) => {
+      const side: RailSide = rail.dataset.rail === 'side' ? 'right' : 'left';
+      const panel = rail.parentElement;
+      if (!panel) return;
+      let drag: { startX: number; base: number } | null = null;
+      let moved = false;
+      const settle = (clientX: number, commit: boolean): void => {
+        const width = panel.offsetWidth;
+        const offset = railOffset(side, width, (drag?.base ?? 0) + (clientX - (drag?.startX ?? clientX)));
+        if (!commit) {
+          panel.style.transform = '';
+          return;
+        }
+        drag = null;
+        panel.classList.remove('dragging');
+        this.setRail(side, railSettlesCollapsed(side, width, offset));
+      };
+      rail.addEventListener('pointerdown', (event) => {
+        if (this.touchLayout) return;
+        event.preventDefault();
+        moved = false;
+        drag = { startX: event.clientX, base: railRestOffset(side, panel.offsetWidth, !this.rails[side]) };
+        panel.classList.add('dragging');
+        try {
+          rail.setPointerCapture(event.pointerId);
+        } catch {
+          /* Synthetic pointers cannot be captured. */
+        }
+      });
+      rail.addEventListener('pointermove', (event) => {
+        if (!drag) return;
+        const width = panel.offsetWidth;
+        const offset = railOffset(side, width, drag.base + (event.clientX - drag.startX));
+        if (Math.abs(event.clientX - drag.startX) > 3) moved = true;
+        panel.style.transform = `translateX(${offset}px)`;
+      });
+      rail.addEventListener('pointerup', (event) => {
+        if (!drag) return;
+        settle(event.clientX, moved);
+        if (!moved) this.setRail(side, this.rails[side]);
+      });
+      rail.addEventListener('pointercancel', () => {
+        if (!drag) return;
+        settle(0, false);
+        drag = null;
+        panel.classList.remove('dragging');
+      });
+      rail.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        this.setRail(side, this.rails[side]);
+      });
+      // A tap that never became a drag toggles the panel, so the rail works for
+      // anyone who would rather click than pull.
+      rail.addEventListener('click', () => {
+        if (this.touchLayout || moved) return;
+        this.setRail(side, this.rails[side]);
+      });
+    });
+  }
+
+  /** Put a panel in its open or stowed state and mirror that into the chrome. */
+  private setRail(side: RailSide, open: boolean): void {
+    this.rails[side] = open;
+    const panel = this.root?.querySelector<HTMLElement>(side === 'left' ? '.editor-tools' : '.editor-side');
+    if (panel) {
+      panel.classList.remove('dragging');
+      panel.style.transform = '';
+      panel.classList.toggle('collapsed', !open);
+      panel.querySelector('[data-rail]')?.setAttribute('aria-expanded', String(open));
+      panel.querySelector('[data-rail]')?.setAttribute('aria-label', open
+        ? `Slide the ${side === 'left' ? 'authoring tools' : 'scenario settings'} away`
+        : `Bring the ${side === 'left' ? 'authoring tools' : 'scenario settings'} back`);
+    }
+    const screen = this.root?.querySelector<HTMLElement>('.editor-screen');
+    screen?.classList.toggle(side === 'left' ? 'tools-collapsed' : 'side-collapsed', !open);
+  }
+
+  private applyRails(): void {
+    if (this.touchLayout) {
+      // The touch composition places the panels itself; stale rail transforms
+      // would fight the drawers.
+      this.root?.querySelectorAll<HTMLElement>('.editor-tools, .editor-side').forEach((panel) => {
+        panel.classList.remove('collapsed', 'dragging');
+        panel.style.transform = '';
+      });
+      this.root?.querySelector('.editor-screen')?.classList.remove('tools-collapsed', 'side-collapsed');
+      return;
+    }
+    this.setRail('left', this.rails.left);
+    this.setRail('right', this.rails.right);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Symmetry                                                            */
+  /* ------------------------------------------------------------------ */
+
+  private symmetryRow(): string {
+    const buttons = SYMMETRY_MODES.map((mode) => {
+      const active = this.symmetry === mode.id;
+      const title = symmetryNote(mode.id, this.scenario.width, this.scenario.height);
+      return `<button class="tool-btn ${active ? 'active' : ''}" data-symmetry="${mode.id}" title="${escapeHtml(title)}" aria-pressed="${active}">${mode.label}</button>`;
+    }).join('');
+    return `<span class="editor-sym-label">SYMMETRY</span><div class="editor-sym-grid">${buttons}</div>`;
+  }
+
+  private syncSymmetryRow(): void {
+    const row = this.root?.querySelector('#ed-symmetry');
+    if (!row) return;
+    row.innerHTML = this.symmetryRow();
+    this.bindSymmetry();
+  }
+
+  private bindSymmetry(): void {
+    this.root?.querySelectorAll<HTMLElement>('[data-symmetry]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const mode = btn.dataset.symmetry as SymmetryMode | undefined;
+        if (!mode) return;
+        this.symmetry = mode;
+        this.syncSymmetryRow();
+        this.setHint();
+        this.app.notify(symmetryNote(mode, this.scenario.width, this.scenario.height), 'info');
+      });
+    });
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Tools                                                               */
   /* ------------------------------------------------------------------ */
 
@@ -429,10 +622,26 @@ export class Editor {
   }
 
   private terrainTools(): string {
-    const swatches = TERRAIN_ORDER.map((t) => {
-      const def = TERRAIN[t];
-      const color = `rgb(${def.color.map((c) => Math.round(c * 255)).join(',')})`;
-      return `<button class="terrain-swatch ${this.tool === 'paint' && this.terrain === t ? 'active' : ''}" data-terrain="${t}" style="background:${color}">${def.name.toUpperCase()}</button>`;
+    // The palette is grouped by what the ground is, not by terrain id: the
+    // catalogue is twice the size it was, and a flat list of sixteen swatches
+    // is not a palette any more.
+    const swatches = TERRAIN_GROUPS.map((group) => {
+      const cells = group.terrains
+        .map((t) => {
+          const def = TERRAIN[t];
+          const color = `rgb(${def.color.map((c) => Math.round(c * 255)).join(',')})`;
+          const active = this.tool === 'paint' && this.terrain === t;
+          const title = def.note ? `${def.name} — ${def.note}` : def.name;
+          return `<button class="terrain-swatch ${active ? 'active' : ''}" data-terrain="${t}" title="${escapeHtml(title)}" style="background:${color}">${escapeHtml(def.name.toUpperCase())}</button>`;
+        })
+        .join('');
+      return `<h4 class="terrain-group">${group.name.toUpperCase()}</h4><div class="terrain-grid">${cells}</div>`;
+    }).join('');
+    const overlaySwatches = OVERLAY_PALETTE.map((id) => {
+      const def = OVERLAYS[id];
+      const color = `rgb(${def.tint.map((c) => Math.round(c * 255)).join(',')})`;
+      const active = this.tool === 'overlay' && this.overlayId === id;
+      return `<button class="terrain-swatch overlay-swatch ${active ? 'active' : ''}" data-overlay="${id}" title="${escapeHtml(overlayNote(id))}" style="background:${color}">${escapeHtml(def.name.toUpperCase())}</button>`;
     }).join('');
     return `
       <div class="tool-section"><h4>BRUSH TOOL</h4>
@@ -441,11 +650,17 @@ export class Editor {
           ${this.toolBtn('raise', 'elevation', 'RAISE')}
           ${this.toolBtn('lower', 'elevation', 'LOWER')}
           ${this.toolBtn('ore', 'materials', 'ORE')}
+          ${this.toolBtn('overlayClear', 'erase', 'UNLAY')}
           ${this.toolBtn('erase', 'erase', 'ERASE')}
           ${this.toolBtn('start', 'target', 'START')}
         </div>
       </div>
-      <div class="tool-section"><h4>TERRAIN</h4><div class="terrain-grid">${swatches}</div></div>
+      <div class="tool-section"><h4>TERRAIN</h4>${swatches}</div>
+      <div class="tool-section"><h4>SURFACE LAYER</h4>
+        <div class="terrain-grid">${overlaySwatches}</div>
+        <div class="brush-row"><span class="mono">DENSITY</span><input type="range" min="1" max="3" step="1" value="${this.overlayDensity}" id="ed-overlay-density"><span class="mono">${this.overlayDensity}</span></div>
+        <p class="tool-note">Overlays sit on top of the ground and never replace it: paint crops on farmland, reeds on marsh, craters on a battlefield. ${escapeHtml(overlayNote(this.overlayId))}</p>
+      </div>
       <div class="tool-section"><h4>BRUSH SIZE</h4>
         <div class="brush-row"><input type="range" min="0" max="4" step="1" value="${this.brush}" id="ed-brush"><span class="mono">${this.brush * 2 + 1}</span></div>
         <p class="tool-note">Paint water to author coastlines and navigable channels. Raise or lower elevation for ridges and plateaus.</p>
@@ -538,6 +753,23 @@ export class Editor {
         this.setHint();
       });
     });
+    this.root.querySelectorAll<HTMLElement>('[data-overlay]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.overlayId = Number(btn.dataset.overlay) as OverlayId;
+        this.tool = 'overlay';
+        this.panMode = false;
+        this.syncPanButton();
+        this.renderTools();
+        this.closeTools();
+        this.setHint();
+      });
+    });
+    const density = this.root.querySelector<HTMLInputElement>('#ed-overlay-density');
+    density?.addEventListener('input', () => {
+      this.overlayDensity = Math.max(1, Math.min(3, Number(density.value) || 1));
+      const readout = density.nextElementSibling;
+      if (readout) readout.textContent = String(this.overlayDensity);
+    });
     this.root.querySelectorAll<HTMLElement>('[data-building]').forEach((btn) => {
       btn.addEventListener('click', () => {
         this.structureDef = btn.dataset.building ?? 'barracks';
@@ -628,15 +860,57 @@ export class Editor {
         <label class="form-row"><span>Start mats</span><input type="number" id="ed-mats" value="${s.settings.startingMats}"></label>
         <label class="form-row"><span>Start req</span><input type="number" id="ed-req" value="${s.settings.startingReq}"></label>
         <label class="form-row"><span>Victory</span><select id="ed-victory"><option value="destroyHQ" ${s.settings.victory === 'destroyHQ' ? 'selected' : ''}>Destroy HQ</option><option value="annihilation" ${s.settings.victory === 'annihilation' ? 'selected' : ''}>Annihilation</option></select></label>
-        <label class="form-row"><span>Weather</span><select id="ed-weather">${['clear', 'overcast', 'rain'].map((w) => `<option value="${w}" ${s.settings.weather === w ? 'selected' : ''}>${w}</option>`).join('')}</select></label>
-        <label class="form-row"><span>Time of day</span><select id="ed-tod">${['dawn', 'day', 'dusk', 'night'].map((w) => `<option value="${w}" ${s.settings.timeOfDay === w ? 'selected' : ''}>${w}</option>`).join('')}</select></label>
+        <label class="form-row"><span>Weather</span><select id="ed-weather">${WEATHER_KINDS.map((w) => `<option value="${w}" ${s.settings.weather === w ? 'selected' : ''}>${WEATHER[w].label}</option>`).join('')}</select></label>
+        <label class="form-row"><span>Start hour</span><input type="range" id="ed-tod" min="0" max="23.5" step="0.5" value="${s.settings.startHour}"><b id="ed-tod-label">${escapeHtml(`${formatHour(s.settings.startHour)} · ${PHASE_LABELS[phaseAtHour(s.settings.startHour)]}`)}</b></label>
+        <label class="form-row"><span>Day cycle</span><select id="ed-daylen">${this.dayLengthOptions(s.settings.dayLengthMinutes)}</select></label>
         <label class="form-row"><span>Fog</span><select id="ed-fog"><option value="1" ${s.settings.fog ? 'selected' : ''}>Enabled</option><option value="0" ${!s.settings.fog ? 'selected' : ''}>Disabled</option></select></label>
       </div>
+      <p class="tool-note" id="ed-sky-note">${escapeHtml(this.skyNote())}</p>
       <div class="inspector-section"><h4>PLAYER STARTS</h4>${players || '<p class="tool-note">No players defined.</p>'}</div>
       <div class="inspector-section"><h4>MAP SUMMARY</h4><div id="ed-summary"></div></div>
       <div class="inspector-section"><h4>VALIDATION <span id="ed-issue-count"></span></h4><div class="validation-list" id="ed-validation"></div></div>`;
     this.bindInspector();
     this.renderSummary();
+  }
+
+  /**
+   * Day-cycle presets, plus whatever the scenario already holds so opening an
+   * older map never silently rewrites its clock.
+   */
+  private dayLengthOptions(current: number): string {
+    const presets = [
+      { value: 0, label: 'Frozen at start hour' },
+      { value: 30, label: '30 min per day (fast)' },
+      { value: 60, label: '60 min per day' },
+      { value: 120, label: '120 min per day' },
+      { value: DEFAULT_DAY_LENGTH_MINUTES, label: `${DEFAULT_DAY_LENGTH_MINUTES} min per day (standard)` },
+    ];
+    if (!presets.some((preset) => preset.value === current)) {
+      presets.push({ value: current, label: `${Math.round(current)} min per day` });
+    }
+    return presets
+      .sort((a, b) => a.value - b.value)
+      .map(
+        (preset) =>
+          `<option value="${preset.value}" ${preset.value === current ? 'selected' : ''}>${escapeHtml(preset.label)}</option>`,
+      )
+      .join('');
+  }
+
+  /**
+   * One line describing the sky the author has chosen: the same numbers the
+   * simulation and the renderer read, so the forge cannot show a different
+   * battlefield from the one it is about to save.
+   */
+  private skyNote(): string {
+    const s = this.scenario.settings;
+    const profile = weatherFor(s.weather);
+    const phase = PHASE_LABELS[phaseAtHour(s.startHour)];
+    const clock =
+      s.dayLengthMinutes > 0
+        ? `${Math.round(s.dayLengthMinutes)} min per day`
+        : 'clock frozen';
+    return `${formatHour(s.startHour)} ${phase} · ${profile.label} — ${profile.hint} (${clock})`;
   }
 
   /**
@@ -687,12 +961,33 @@ export class Editor {
     bind('ed-req', (v) => (this.scenario.settings.startingReq = Math.max(0, Math.floor(Number(v) || 0))));
     bind('ed-victory', (v) => (this.scenario.settings.victory = v as 'destroyHQ'));
     bind('ed-weather', (v) => {
-      this.scenario.settings.weather = v as 'clear';
-      this.refreshTerrain(true);
+      this.scenario.settings.weather = weatherFor(v).kind;
+      const note = this.root?.querySelector('#ed-sky-note');
+      if (note) note.textContent = this.skyNote();
     });
-    bind('ed-tod', (v) => {
-      this.scenario.settings.timeOfDay = v as 'dusk';
-      this.refreshTerrain(true);
+    // The authored hour is the authoritative time; the legacy phase label is
+    // derived from it so a saved file never carries two disagreeing clocks.
+    const tod = this.root.querySelector<HTMLInputElement>('#ed-tod');
+    const applyHour = (raw: string) => {
+      const hour = normaliseStartHour(Number(raw), this.scenario.settings.startHour);
+      this.scenario.settings.startHour = hour;
+      this.scenario.settings.timeOfDay = phaseForStartHour(hour);
+      const label = this.root?.querySelector('#ed-tod-label');
+      if (label) label.textContent = `${formatHour(hour)} · ${PHASE_LABELS[phaseAtHour(hour)]}`;
+      const note = this.root?.querySelector('#ed-sky-note');
+      if (note) note.textContent = this.skyNote();
+    };
+    // Sliding previews live, releasing commits the edit.
+    tod?.addEventListener('input', () => applyHour(tod.value));
+    tod?.addEventListener('change', () => {
+      applyHour(tod.value);
+      this.refreshValidation();
+      this.scheduleAutosave();
+    });
+    bind('ed-daylen', (v) => {
+      this.scenario.settings.dayLengthMinutes = Math.max(0, Number(v) || 0);
+      const note = this.root?.querySelector('#ed-sky-note');
+      if (note) note.textContent = this.skyNote();
     });
     bind('ed-fog', (v) => (this.scenario.settings.fog = v === '1'));
     // Nation identity is per player slot and registry-driven; saving the file
@@ -888,11 +1183,47 @@ export class Editor {
           this.app.notify('A starting unit is standing on the foundation.', 'warning');
           return;
         }
+        // Every symmetric twin has to be checked the same way as the placement
+        // itself: a wall, a coastline or a standing building on the far side
+        // would leave the map one-sided, which is the thing the mode exists to
+        // prevent. One bad twin refuses the whole stroke.
+        const copies = symmetryRects(
+          this.symmetry,
+          this.scenario.width,
+          this.scenario.height,
+          tx,
+          tz,
+          bdef.footprint.w,
+          bdef.footprint.h,
+        );
+        this.markFootprint(occupied, tx, tz, bdef.footprint.w, bdef.footprint.h);
+        const accepted: ScenarioStructure[] = [];
+        for (const rect of copies) {
+          const twin = checkPlacement(this.scenario, this.structureDef, rect.x, rect.z, occupied);
+          if (!twin.ok) {
+            this.app.notify(`Symmetric site blocked: ${twin.reason}`, 'warning');
+            this.app.audio.play('denied');
+            return;
+          }
+          const twinOwner = symmetryOwner(
+            this.symmetry,
+            this.owner,
+            this.scenario.players.length,
+            rect.x,
+            rect.z,
+            this.scenario.width,
+            this.scenario.height,
+          );
+          const copy: ScenarioStructure = { defId: this.structureDef, owner: twinOwner, x: rect.x, z: rect.z };
+          if (bdef.requiresWater) copy.facing = waterFacingFor(this.scenario, copy);
+          accepted.push(copy);
+          this.markFootprint(occupied, rect.x, rect.z, rect.w, rect.h);
+        }
         // A yard turned toward its harbour while authoring keeps the gate, the
         // berth and the preview pointing the same way in battle.
         const placed: ScenarioStructure = { defId: this.structureDef, owner: this.owner, x: tx, z: tz };
         if (bdef.requiresWater) placed.facing = waterFacingFor(this.scenario, placed);
-        this.scenario.structures.push(placed);
+        this.scenario.structures.push(placed, ...accepted);
       } else {
         const udef = UNITS[this.unitDef];
         const blocked = this.scenario.structures.some((s) => {
@@ -904,12 +1235,47 @@ export class Editor {
           return;
         }
         const terrainArr = new Uint8Array(this.scenario.tiles.map((t) => t.t));
-        if (!canStandOn(this.scenario.width, this.scenario.height, terrainArr, tileIndex(this.scenario.width, this.hover.x, this.hover.z), udef.moveClass)) {
-          this.app.notify(`${udef.name} cannot start on this terrain.`, 'warning');
-          this.app.audio.play('denied');
-          return;
+        const slots = [
+          { x: this.hover.x, z: this.hover.z },
+          ...symmetryTiles(
+            this.symmetry,
+            this.scenario.width,
+            this.scenario.height,
+            this.hover.x,
+            this.hover.z,
+          ),
+        ];
+        const twins = [];
+        for (const slot of slots) {
+          if (!inBounds(this.scenario.width, this.scenario.height, slot.x, slot.z)) {
+            this.app.notify('A symmetric deployment would fall outside the map.', 'warning');
+            this.app.audio.play('denied');
+            return;
+          }
+          if (!canStandOn(this.scenario.width, this.scenario.height, terrainArr, tileIndex(this.scenario.width, slot.x, slot.z), udef.moveClass)) {
+            this.app.notify(`${udef.name} cannot start on this terrain.`, 'warning');
+            this.app.audio.play('denied');
+            return;
+          }
+          if (this.structureAt(slot.x, slot.z)) {
+            this.app.notify('A structure occupies a symmetric deployment tile.', 'warning');
+            this.app.audio.play('denied');
+            return;
+          }
+          twins.push(slot);
         }
-        this.scenario.units.push({ defId: this.unitDef, owner: this.owner, x: this.hover.x, z: this.hover.z });
+        for (const slot of twins) {
+          const owner = symmetryOwner(
+            this.symmetry,
+            this.owner,
+            this.scenario.players.length,
+            slot.x,
+            slot.z,
+            this.scenario.width,
+            this.scenario.height,
+          );
+          this.scenario.units.push({ defId: this.unitDef, owner, x: slot.x, z: slot.z });
+        }
       }
       this.app.audio.play('build');
       this.refreshValidation();
@@ -920,8 +1286,26 @@ export class Editor {
       if (player) {
         player.startX = this.hover.x;
         player.startZ = this.hover.z;
-        const label = this.root?.querySelector(`#ed-start-${player.id}`);
-        if (label) label.textContent = `${player.startX}, ${player.startZ}`;
+        // Deployment markers follow the symmetry too, so a mirrored or rotated
+        // map cannot be left with the two commanders starting unequal ground.
+        for (const other of this.scenario.players) {
+          if (other.id === player.id) continue;
+          const point = symmetryStart(
+            this.symmetry,
+            other.id,
+            this.scenario.players.length,
+            this.hover.x,
+            this.hover.z,
+            this.scenario.width,
+            this.scenario.height,
+          );
+          other.startX = point.x;
+          other.startZ = point.z;
+        }
+        for (const p of this.scenario.players) {
+          const label = this.root?.querySelector(`#ed-start-${p.id}`);
+          if (label) label.textContent = `${p.startX}, ${p.startZ}`;
+        }
         this.refreshValidation();
       }
       return;
@@ -938,31 +1322,13 @@ export class Editor {
         const x = cx + dx;
         const z = cz + dz;
         if (!inBounds(this.scenario.width, this.scenario.height, x, z)) continue;
-        const tile = this.scenario.tiles[tileIndex(this.scenario.width, x, z)];
-        if (this.tool === 'paint') {
-          tile.t = this.terrain;
-          if (this.terrain === Terrain.DeepWater) {
-            tile.e = 0;
-            tile.o = 0;
-          } else if (this.terrain === Terrain.ShallowWater) {
-            tile.e = 0;
-            tile.o = 0;
-          } else if (!TERRAIN[this.terrain].oreAllowed) {
-            tile.o = 0;
-          }
-          changed = true;
-        } else if (this.tool === 'raise' || this.tool === 'lower') {
-          if (tile.t === Terrain.DeepWater || tile.t === Terrain.ShallowWater) continue;
-          const delta = this.tool === 'raise' ? 1 : -1;
-          tile.e = Math.max(0, Math.min(MAX_ELEVATION, tile.e + delta));
-          changed = true;
-        } else if (this.tool === 'ore') {
-          if (TERRAIN[tile.t as TerrainId]?.oreAllowed) {
-            tile.o = 300;
-            changed = true;
-          }
-        } else if (this.tool === 'erase') {
-          if (this.eraseEntityAt(x, z) || tile.o > 0) changed = true;
+        if (this.applyTileTool(x, z)) changed = true;
+        // The same stroke lands on every symmetric twin. Tiles are pure
+        // geometry, so the mode applies to terrain, elevation, deposits and
+        // erasure alike.
+        for (const twin of symmetryTiles(this.symmetry, this.scenario.width, this.scenario.height, x, z)) {
+          if (!inBounds(this.scenario.width, this.scenario.height, twin.x, twin.z)) continue;
+          if (this.applyTileTool(twin.x, twin.z)) changed = true;
         }
       }
     }
@@ -985,6 +1351,74 @@ export class Editor {
       if (!BUILDINGS[s.defId]?.requiresWater) continue;
       const facing = waterFacingFor(this.scenario, s);
       if (s.facing !== facing) s.facing = facing;
+    }
+  }
+
+  /** One tile's worth of the active brush. Returns whether anything changed. */
+  private applyTileTool(x: number, z: number): boolean {
+    const tile = this.scenario.tiles[tileIndex(this.scenario.width, x, z)];
+    if (this.tool === 'paint') {
+      tile.t = this.terrain;
+      if (this.terrain === Terrain.DeepWater || this.terrain === Terrain.ShallowWater) {
+        tile.e = 0;
+        tile.o = 0;
+      } else if (!TERRAIN[this.terrain].oreAllowed) {
+        tile.o = 0;
+      }
+      // Repainting the ground under a layer that the new ground cannot hold
+      // drops the layer rather than leaving "crops on deep water" behind.
+      if ((tile.v ?? 0) > 0 && !overlayAllowedOn(tile.v ?? 0, tile.t)) tile.v = undefined;
+      return true;
+    }
+    if (this.tool === 'overlay') {
+      const packed = packOverlay(this.overlayId, this.overlayDensity);
+      if (!overlayAllowedOn(packed, tile.t)) return false;
+      if ((tile.v ?? 0) === packed) return false;
+      tile.v = packed;
+      return true;
+    }
+    if (this.tool === 'overlayClear') {
+      if ((tile.v ?? 0) === 0) return false;
+      tile.v = undefined;
+      return true;
+    }
+    if (this.tool === 'raise' || this.tool === 'lower') {
+      if (tile.t === Terrain.DeepWater || tile.t === Terrain.ShallowWater) return false;
+      const delta = this.tool === 'raise' ? 1 : -1;
+      tile.e = Math.max(0, Math.min(MAX_ELEVATION, tile.e + delta));
+      return true;
+    }
+    if (this.tool === 'ore') {
+      if (!TERRAIN[tile.t as TerrainId]?.oreAllowed) return false;
+      tile.o = 300;
+      return true;
+    }
+    if (this.tool === 'erase') {
+      if (this.eraseEntityAt(x, z)) return true;
+      if ((tile.v ?? 0) > 0) {
+        tile.v = undefined;
+        return true;
+      }
+      return tile.o > 0;
+    }
+    return false;
+  }
+
+  /** Whether a structure footprint covers this tile. */
+  private structureAt(x: number, z: number): boolean {
+    return this.scenario.structures.some((s) => {
+      const def = BUILDINGS[s.defId];
+      if (!def) return false;
+      return x >= s.x && x < s.x + def.footprint.w && z >= s.z && z < s.z + def.footprint.h;
+    });
+  }
+
+  private markFootprint(mask: Uint8Array, x: number, z: number, w: number, h: number): void {
+    for (let dz = 0; dz < h; dz++) {
+      for (let dx = 0; dx < w; dx++) {
+        if (!inBounds(this.scenario.width, this.scenario.height, x + dx, z + dz)) continue;
+        mask[tileIndex(this.scenario.width, x + dx, z + dz)] = 1;
+      }
     }
   }
 
@@ -1240,10 +1674,17 @@ export class Editor {
     return '';
   }
 
+  /** Mode tag appended to every tool hint while symmetry is doing something. */
+  private symmetryTag(): string {
+    if (this.symmetry === 'single') return '';
+    const label = SYMMETRY_MODES.find((mode) => mode.id === this.symmetry)?.label ?? '';
+    return ` · ${label}`;
+  }
+
   toolHint(): string {
     switch (this.tool) {
       case 'paint':
-        return `PAINT ${TERRAIN[this.terrain].name.toUpperCase()} · brush ${this.brush * 2 + 1} · L-drag paint · R-drag pan`;
+        return `PAINT ${TERRAIN[this.terrain].name.toUpperCase()} · brush ${this.brush * 2 + 1}${this.symmetryTag()} · L-drag paint · R-drag pan`;
       case 'raise':
         return 'RAISE ELEVATION · L-drag to add a level · right-drag pan';
       case 'lower':
@@ -1251,15 +1692,19 @@ export class Editor {
       case 'ore':
         return 'MATERIAL DEPOSIT · paint ore on buildable land · right-drag pan';
       case 'erase':
-        return 'ERASE · remove unit/structure under cursor, or clear ore · right-drag pan';
+        return 'ERASE · remove unit/structure, then surface layer, then ore · right-drag pan';
+      case 'overlay':
+        return `PAINT ${OVERLAYS[this.overlayId].name.toUpperCase()} ${this.overlayDensity} · brush ${this.brush * 2 + 1}${this.symmetryTag()} · ground underneath is preserved · right-drag pan`;
+      case 'overlayClear':
+        return 'CLEAR SURFACE LAYER · strips crops/reeds/mud, ground untouched · right-drag pan';
       case 'start':
         return `PLAYER START · click to reposition ${escapeHtml(this.scenario.players.find((p) => p.id === this.startPlayerId)?.name ?? 'player')}`;
       case 'structure': {
         const def = BUILDINGS[this.structureDef];
-        return `PLACE ${def?.name.toUpperCase() ?? 'STRUCTURE'} · owner ${this.owner}${this.structureNote(this.structureDef)} · shipyards need navigable coast`;
+        return `PLACE ${def?.name.toUpperCase() ?? 'STRUCTURE'} · owner ${this.owner}${this.symmetryTag()}${this.structureNote(this.structureDef)} · shipyards need navigable coast`;
       }
       case 'unit':
-        return `PLACE ${unitPaletteName(this.unitDef).toUpperCase()} · owner ${this.owner} · check terrain and structures`;
+        return `PLACE ${unitPaletteName(this.unitDef).toUpperCase()} · owner ${this.owner}${this.symmetryTag()} · check terrain and structures`;
       default:
         return '';
     }
@@ -1269,6 +1714,10 @@ export class Editor {
     switch (this.tool) {
       case 'paint':
         return `PAINT ${TERRAIN[this.terrain].name.toUpperCase()}`;
+      case 'overlay':
+        return `SURFACE ${OVERLAYS[this.overlayId].name.toUpperCase()} ${this.overlayDensity}`;
+      case 'overlayClear':
+        return 'CLEAR SURFACE LAYER';
       case 'structure':
         return `PLACE ${BUILDINGS[this.structureDef]?.name.toUpperCase() ?? 'STRUCTURE'}${this.structureNote(this.structureDef)}`;
       case 'unit':

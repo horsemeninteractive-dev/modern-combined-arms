@@ -8,11 +8,15 @@
  * shows the room's own code and message instead of guessing.
  */
 import { NATIONS, PLAYABLE_NATION_IDS } from '../data/factions';
-import { BUILTIN_SCENARIOS } from '../data/scenarios';
+import { scenarioById, scenariosForMode, type ScenarioEntry } from '../data/scenarioCatalog';
 import { LOBBY_COLORS, MAX_MATCH_DURATION_MS, MIN_MATCH_DURATION_MS } from '../multiplayer/lobbyConfig';
 import { LobbyClient, type LobbyView } from '../multiplayer/lobbyClient';
 import { NationPicker, type NationPickerEntry } from './nationPicker';
+import { drawBriefMap } from './mapPreview';
+import { PHASE_LABELS, formatHour, phaseForStartHour } from '../sim/dayNight';
+import { WEATHER, WEATHER_KINDS, weatherFor } from '../sim/weather';
 import { escapeHtml } from './modal';
+import type { Scenario } from '../sim/scenario';
 
 export interface MultiplayerPanelOptions {
   /** Worker origin, e.g. https://mca-multiplayer-staging.example.workers.dev */
@@ -47,8 +51,51 @@ const NATION_ENTRIES: NationPickerEntry[] = PLAYABLE_NATION_IDS.map((id) => ({
 }));
 
 function mapName(mapId: string | null): string {
-  const entry = BUILTIN_SCENARIOS.find((scenario) => scenario.id === mapId);
-  return entry?.name ?? mapId ?? 'Unknown theatre';
+  if (!mapId) return 'Unknown theatre';
+  return scenarioById(mapId)?.name ?? mapId;
+}
+
+/** The catalogue's multiplayer roster, in catalogue order. */
+const MULTIPLAYER_MAPS: readonly ScenarioEntry[] = scenariosForMode('multiplayer');
+
+/**
+ * Scenario tiles for the preview raster, one per map. The picture must be the
+ * battlefield the room will actually build, so it comes from the catalogue
+ * entry rather than from an image that can drift away from the map data.
+ */
+const previewScenarios = new Map<string, Scenario>();
+
+/**
+ * Every hour the forge can author. The lobby used to offer four, which meant a
+ * battlefield authored at 09:00 could not be played at 09:00.
+ */
+const START_HOURS = Array.from({ length: 24 }, (_, hour) => hour);
+
+function startHourLabel(hour: number): string {
+  return `${formatHour(hour)} · ${PHASE_LABELS[phaseForStartHour(hour)].toUpperCase()}`;
+}
+
+function mapDetail(mapId: string | null): string {
+  if (!mapId) return '';
+  const entry = scenarioById(mapId);
+  if (!entry) return '';
+  const weather = weatherFor(previewScenario(mapId)?.settings.weather).label;
+  return `${entry.width}×${entry.height} · ${entry.playerCounts.join(' or ')} players · ${weather} · ${entry.tags.join(' · ')}`;
+}
+
+/**
+ * The catalogue entry's own scenario, built once per map. The preview raster and
+ * the detail line both describe the ground the room will actually build, so
+ * neither may use an image or a label that can drift from the map data.
+ */
+function previewScenario(mapId: string): Scenario | null {
+  const cached = previewScenarios.get(mapId);
+  if (cached) return cached;
+  const entry = scenarioById(mapId);
+  if (!entry) return null;
+  const scenario = entry.create();
+  previewScenarios.set(mapId, scenario);
+  return scenario;
 }
 
 function minutes(ms: number): string {
@@ -311,6 +358,56 @@ export class MultiplayerPanel {
           }
         </div>
         ${notice}
+        <section class="mp-card mp-battlefield">
+          <span class="mp-card-head">BATTLEFIELD</span>
+          <canvas class="mp-map-canvas" id="mp-map-canvas" aria-label="${escapeHtml(mapName(view.mapId))} terrain map"></canvas>
+          ${
+            view.isHost
+              ? `<label class="mp-field">
+                  <span>Map</span>
+                  <select id="mp-map" ${view.phase === 'lobby' ? '' : 'disabled'}>
+                    ${MULTIPLAYER_MAPS.map(
+                      (entry) =>
+                        `<option value="${entry.id}" ${entry.id === view.mapId ? 'selected' : ''}>${escapeHtml(entry.name)}</option>`,
+                    ).join('')}
+                  </select>
+                </label>`
+              : `<p class="mp-seat-name">${escapeHtml(mapName(view.mapId))}</p>`
+          }
+          <p class="mp-hint" id="mp-map-detail">${escapeHtml(mapDetail(view.mapId))}</p>
+          ${
+            view.isHost
+              ? `<label class="mp-field">
+                  <span>Start time</span>
+                  <select id="mp-start-hour" ${view.phase === 'lobby' ? '' : 'disabled'}>
+                    ${START_HOURS.map(
+                      (hour) =>
+                        `<option value="${hour}" ${hour === Math.round(view.startHour) ? 'selected' : ''}>${escapeHtml(startHourLabel(hour))}</option>`,
+                    ).join('')}
+                  </select>
+                </label>`
+              : `<p class="mp-hint">Start time ${escapeHtml(startHourLabel(view.startHour))}</p>`
+          }
+          ${
+            view.isHost
+              ? `<label class="mp-field">
+                  <span>Weather</span>
+                  <select id="mp-weather" ${view.phase === 'lobby' ? '' : 'disabled'}>
+                    ${WEATHER_KINDS.map(
+                      (kind) =>
+                        `<option value="${kind}" ${kind === view.weather ? 'selected' : ''}>${escapeHtml(WEATHER[kind].label)}</option>`,
+                    ).join('')}
+                  </select>
+                </label>`
+              : `<p class="mp-hint">Weather ${escapeHtml(weatherFor(view.weather).label)}</p>`
+          }
+          <p class="mp-hint" id="mp-weather-detail">${escapeHtml(weatherFor(view.weather).hint)}</p>
+          <p class="mp-hint">
+            ${view.isHost
+              ? 'Changing the battlefield, start time or weather clears both ready states.'
+              : 'The host chooses the battlefield, start time and weather.'}
+          </p>
+        </section>
         <div class="mp-columns">
           ${seatCard(0)}
           ${seatCard(1)}
@@ -347,6 +444,9 @@ export class MultiplayerPanel {
     const client = this.clientInstance;
     if (!client) return;
 
+    // The card is in the DOM now, so its box has a size to raster into.
+    requestAnimationFrame(() => this.paintMapPreview(this.view.mapId));
+
     const nationHost = this.host.querySelector<HTMLElement>('#mp-nation-host');
     if (nationHost) {
       this.picker = new NationPicker(nationHost, (id) => {
@@ -354,6 +454,30 @@ export class MultiplayerPanel {
       });
       this.picker.setOptions(NATION_ENTRIES, this.view.nation ?? NATION_ENTRIES[0]?.id ?? '');
     }
+
+    this.host.querySelector<HTMLSelectElement>('#mp-map')?.addEventListener('change', (event) => {
+      const select = event.currentTarget as HTMLSelectElement;
+      client.setMap(select.value);
+      // Show the chosen ground and its size/tags while the room confirms it.
+      this.paintMapPreview(select.value);
+      const detail = this.host.querySelector('#mp-map-detail');
+      if (detail) detail.textContent = mapDetail(select.value);
+    });
+
+    this.host.querySelector<HTMLSelectElement>('#mp-start-hour')?.addEventListener('change', (event) => {
+      const select = event.currentTarget as HTMLSelectElement;
+      const hour = Number(select.value);
+      if (Number.isFinite(hour)) client.setStartHour(hour);
+    });
+
+    this.host.querySelector<HTMLSelectElement>('#mp-weather')?.addEventListener('change', (event) => {
+      const select = event.currentTarget as HTMLSelectElement;
+      client.setWeather(select.value);
+      // Describe the choice while the room confirms it: weather is fought on,
+      // so the host should know what it does to detection and mobility.
+      const detail = this.host.querySelector('#mp-weather-detail');
+      if (detail) detail.textContent = weatherFor(select.value).hint;
+    });
 
     this.host.querySelectorAll<HTMLButtonElement>('[data-color]').forEach((button) => {
       button.addEventListener('click', () => {
@@ -375,6 +499,18 @@ export class MultiplayerPanel {
     this.host.querySelector('#mp-copy-join')?.addEventListener('click', () => {
       void this.copy(this.view.joinCode ?? '');
     });
+  }
+
+  /** Paint the selected battlefield from the catalogue's own scenario data. */
+  private paintMapPreview(mapId: string | null): void {
+    const canvas = this.host.querySelector<HTMLCanvasElement>('#mp-map-canvas');
+    if (!canvas || !mapId) return;
+    const entry = scenarioById(mapId);
+    if (!entry) return;
+    const scenario = previewScenario(mapId);
+    if (!scenario) return;
+    canvas.setAttribute('aria-label', `${entry.name} terrain map`);
+    drawBriefMap(canvas, scenario);
   }
 
   private renderMatch(view: LobbyView): void {
@@ -463,6 +599,8 @@ function emptyView(): LobbyView {
     seat: null,
     joinCode: null,
     mapId: null,
+    startHour: 18,
+    weather: 'clear',
     matchDurationMs: 0,
     hostSeat: 0,
     seats: [],

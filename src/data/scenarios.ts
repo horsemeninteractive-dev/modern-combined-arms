@@ -4,9 +4,13 @@ import {
   TILE_SIZE,
 } from '../sim/constants';
 import { Terrain, inBounds, tileIndex, type TerrainId } from '../sim/terrain';
-import { reachableFrom, type Scenario, type ScenarioTile } from '../sim/scenario';
-import { defaultSettings } from '../sim/scenario';
-import { createFoundryDistrict, createKestrelStraits, createRustValley } from './maps';
+import {
+  clearOreUnderStructures,
+  reachableFrom,
+  type Scenario,
+  type ScenarioTile,
+} from '../sim/scenario';
+import { defaultSettings, phaseSettings } from '../sim/scenario';
 
 const W = 96;
 const H = 72;
@@ -334,7 +338,7 @@ export function createIslandAssault(): Scenario {
       'Keep your own Command Post operational.',
     ],
     settings: {
-      ...defaultSettings(),
+      ...phaseSettings('day'),
       seed: 773311,
       startingMats: 3000,
       startingReq: 180,
@@ -346,76 +350,16 @@ export function createIslandAssault(): Scenario {
   };
 
   // Sanity: starting naval units must be on water, ground units on land.
+  clearOreUnderStructures(scenario);
   return scenario;
 }
 
-export interface BuiltinScenario {
-  id: string;
-  name: string;
-  description: string;
-  /** One-word theatre tag shown in the map selector. */
-  focus: string;
-  /** Domains the map actually supports, for the briefing. */
-  domains: string;
-  /** Authored footprint, available without generating the tiles. */
-  width: number;
-  height: number;
-  create: () => Scenario;
-}
-
-/**
- * The skirmish theatre list. The three symmetric maps live in `maps.ts`; every
- * entry is playable from both sides on identical ground.
+/*
+ * The theatre list itself lives in `scenarioCatalog.ts`, together with the game
+ * modes each battlefield is available in. This module only creates scenarios:
+ * the four campaign maps below and the editor's blank sheet. The competitive
+ * roster is authored in `competitiveMaps.ts`.
  */
-export const BUILTIN_SCENARIOS: BuiltinScenario[] = [
-  {
-    id: 'island-assault',
-    name: 'Island Assault — Kestrel Bay',
-    description: 'The vertical-slice island battle: beachhead, ridge, bay and enemy base.',
-    focus: 'Combined',
-    domains: 'Ground · Air · Naval',
-    width: 96,
-    height: 72,
-    create: createIslandAssault,
-  },
-  {
-    id: 'rust-valley',
-    name: 'Rust Valley',
-    description: 'Landlocked armour country split by a central massif and two wide passes.',
-    focus: 'Armour',
-    domains: 'Ground · Air',
-    width: 112,
-    height: 80,
-    create: createRustValley,
-  },
-  {
-    id: 'kestrel-straits',
-    name: 'Kestrel Straits',
-    description: 'Two coasts across a deep strait, with two contested islands between them.',
-    focus: 'Naval',
-    domains: 'Ground · Air · Naval',
-    width: 88,
-    height: 64,
-    create: createKestrelStraits,
-  },
-  {
-    id: 'foundry-district',
-    name: 'Foundry District',
-    description:
-      'Two field bases on the open outskirts, facing off across a dense city core of warehouses, offices and tenements.',
-    focus: 'Urban',
-    domains: 'Ground · Air',
-    width: 104,
-    height: 76,
-    create: createFoundryDistrict,
-  },
-];
-
-export const DEFAULT_SCENARIO_ID = BUILTIN_SCENARIOS[0].id;
-
-export function builtinScenario(id: string): BuiltinScenario {
-  return BUILTIN_SCENARIOS.find((s) => s.id === id) ?? BUILTIN_SCENARIOS[0];
-}
 
 export function createEmptyScenario(width = 64, height = 48): Scenario {
   const tiles: ScenarioTile[] = new Array(width * height);

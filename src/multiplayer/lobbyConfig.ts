@@ -12,7 +12,12 @@
  * so the lifecycle can persist, validate and consume a configuration, and so
  * the next phase has a contract to edit rather than invent.
  */
-import { BUILTIN_SCENARIOS, builtinScenario } from '../data/scenarios';
+import {
+  defaultScenarioId,
+  isScenarioAvailable,
+  scenarioById,
+  type GameMode,
+} from '../data/scenarioCatalog';
 import {
   PLAYABLE_NATION_IDS,
   defaultNationFor,
@@ -20,6 +25,8 @@ import {
   tryIdentityDef,
 } from '../data/factions';
 import type { Scenario } from '../sim/scenario';
+import { normaliseStartHour } from '../sim/dayNight';
+import { isWeatherKind, normaliseWeather, type WeatherKind } from '../sim/weather';
 
 export const LOBBY_CONFIG_VERSION = 1 as const;
 
@@ -63,6 +70,14 @@ export interface LobbyConfigV1 {
   version: typeof LOBBY_CONFIG_VERSION;
   mapId: string;
   matchDurationMs: number;
+  /** Authoritative start hour, 0..24. Both seats fight the same clock. */
+  startHour: number;
+  /**
+   * Authoritative weather. Both seats fight the same sky: the profile changes
+   * detection, engagement range, dispersion and mobility, so it is part of the
+   * shared configuration rather than a per-client preference.
+   */
+  weather: WeatherKind;
   /** Indexed by seat id, so seat 0 is always the host's own configuration. */
   seats: LobbySeatConfig[];
 }
@@ -72,6 +87,7 @@ export type LobbyErrorCode =
   | 'unsupported-lobby-version'
   | 'invalid-map'
   | 'invalid-duration'
+  | 'invalid-weather'
   | 'invalid-nation'
   | 'invalid-colour'
   | 'duplicate-colour';
@@ -89,8 +105,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export function isPlayableMapId(mapId: unknown): mapId is string {
-  return typeof mapId === 'string' && BUILTIN_SCENARIOS.some((entry) => entry.id === mapId);
+/**
+ * A map id is playable only when the catalogue says it is available for the
+ * mode asking. The multiplayer catalogue is deliberately narrower than the
+ * scenario catalogue: the campaign theatres exist, but they are not ground a
+ * lobby may choose.
+ */
+export function isPlayableMapId(mapId: unknown, mode: GameMode = 'multiplayer'): mapId is string {
+  return isScenarioAvailable(mapId, mode);
 }
 
 export function isLobbyColor(value: unknown): value is LobbyColor {
@@ -128,7 +150,8 @@ function playableNationId(factionId: string | undefined, fallback: string): stri
 }
 
 function defaultNations(mapId: string): [string, string] {
-  const scenario = builtinScenario(mapId).create();
+  const scenario = scenarioById(mapId)?.create();
+  if (!scenario) return ['lithuania', 'russia'];
   return [
     playableNationId(scenario.players[0]?.factionId, 'lithuania'),
     playableNationId(scenario.players[1]?.factionId, 'russia'),
@@ -141,10 +164,12 @@ function defaultNations(mapId: string): [string, string] {
  * a room never starts life with a configuration the validator would reject.
  */
 export function defaultLobbyConfig(
-  mapId: string = BUILTIN_SCENARIOS[0].id,
+  mapId: string = defaultScenarioId('multiplayer'),
   matchDurationMs: number = DEFAULT_MATCH_DURATION_MS,
 ): LobbyConfigV1 {
-  const safeMap = isPlayableMapId(mapId) ? mapId : BUILTIN_SCENARIOS[0].id;
+  const safeMap = isPlayableMapId(mapId) ? mapId : defaultScenarioId('multiplayer');
+  const authoredScenario = scenarioById(safeMap)?.create();
+  const authored = authoredScenario?.settings.startHour ?? 18;
   const duration = isValidMatchDuration(matchDurationMs)
     ? matchDurationMs
     : DEFAULT_MATCH_DURATION_MS;
@@ -153,6 +178,10 @@ export function defaultLobbyConfig(
     version: LOBBY_CONFIG_VERSION,
     mapId: safeMap,
     matchDurationMs: duration,
+    startHour: normaliseStartHour(authored, 18),
+    // The map's own sky is the default, so a host who changes nothing fights
+    // the weather the theatre was designed for.
+    weather: normaliseWeather(authoredScenario?.settings.weather),
     seats: [
       { nation: hostNation, color: LOBBY_COLORS[0], ready: false },
       { nation: guestNation, color: LOBBY_COLORS[1], ready: false },
@@ -180,6 +209,21 @@ export function validateLobbyConfig(raw: unknown): LobbyParseResult {
   if (!isValidMatchDuration(raw.matchDurationMs)) {
     return { ok: false, problem: { code: 'invalid-duration', message: 'Match duration is outside the allowed range.' } };
   }
+  // A lobby written before the day/night clock has no start hour; it adopts the
+  // map's authored time rather than failing to restore.
+  const authoredScenario = scenarioById(raw.mapId)?.create();
+  const authoredHour = authoredScenario?.settings.startHour ?? 18;
+  const startHour =
+    raw.startHour === undefined
+      ? normaliseStartHour(authoredHour, 18)
+      : normaliseStartHour(raw.startHour, authoredHour);
+  // A lobby persisted before weather was selectable adopts the map's authored
+  // sky. A present-but-unknown value is rejected rather than silently cleared:
+  // the two seats must never disagree about whether it is raining.
+  if (raw.weather !== undefined && !isWeatherKind(raw.weather)) {
+    return { ok: false, problem: { code: 'invalid-weather', message: 'Selected weather is not a known profile.' } };
+  }
+  const weather = normaliseWeather(raw.weather ?? authoredScenario?.settings.weather);
   if (!Array.isArray(raw.seats) || raw.seats.length !== 2) {
     return { ok: false, problem: { code: 'invalid-lobby', message: 'Lobby must describe exactly two seats.' } };
   }
@@ -209,6 +253,8 @@ export function validateLobbyConfig(raw: unknown): LobbyParseResult {
       version: LOBBY_CONFIG_VERSION,
       mapId: raw.mapId,
       matchDurationMs: raw.matchDurationMs,
+      startHour,
+      weather,
       seats,
     },
   };
@@ -226,12 +272,22 @@ export function lobbyConfigProblem(raw: unknown): string | null {
  * client beyond the already-validated lobby configuration.
  */
 export function buildLobbyScenario(config: LobbyConfigV1): Scenario {
-  const scenario = builtinScenario(config.mapId).create();
+  const entry = scenarioById(config.mapId);
+  if (!entry || !isPlayableMapId(config.mapId)) {
+    // Defence in depth: the room validates the same catalogue before it starts,
+    // so reaching this line means a caller bypassed the lobby entirely.
+    throw new Error(`Map "${config.mapId}" is not available for multiplayer.`);
+  }
+  const scenario = entry.create();
   scenario.settings.fog = true;
   // The authoritative deadline is derived from this duration at start; the
   // scenario's own timer is kept consistent with it so a saved match and a live
   // match agree about how long they are.
   scenario.settings.timeLimitSec = Math.max(1, Math.ceil(config.matchDurationMs / 1000));
+  // The room's chosen hour and sky are authoritative and identical for both
+  // seats: neither is a client preference, and both feed the simulation.
+  scenario.settings.startHour = normaliseStartHour(config.startHour, scenario.settings.startHour);
+  scenario.settings.weather = normaliseWeather(config.weather);
   for (let index = 0; index < scenario.players.length && index < 2; index++) {
     const player = scenario.players[index];
     player.isAI = false;

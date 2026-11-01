@@ -11,7 +11,10 @@ const ROSTER: UnitDef[] = [
     speed: 1.7,
     turnRate: 2.6,
     radius: 2.4,
-    vision: 6,
+    // An armoured engineering vehicle looks after its own site: it has to find
+    // the relay it is sent to take and see its own works, so its optics reach
+    // further than a line infantryman's rather than a third less.
+    vision: 9,
     hp: 220,
     armour: 'support',
     cost: { mats: 300, req: 0 },

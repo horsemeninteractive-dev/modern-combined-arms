@@ -542,12 +542,231 @@ export function buildLampMesh(): MeshBuffers {
   return b.build();
 }
 
-export function buildOreMesh(): MeshBuffers {
+/**
+ * Roadside direction sign: a post carrying two angled destination blades.
+ *
+ * Local +X points at the carriageway it stands beside, so the instance
+ * rotation aims the blades across the verge at the traffic that has to read
+ * them. The dark bars are a stand-in for lettering: at battle zoom a painted
+ * word is one pixel, but the bar pattern still reads as a sign.
+ */
+export function buildSignPostMesh(): MeshBuffers {
   const b = new MeshBuilder();
   b.material = MATERIAL.bareMetal;
-  b.cone(0, 0, 0.2, 0.55, 1.9, 5, PALETTE.amber);
-  b.cone(0.55, 0, -0.3, 0.4, 1.4, 5, [0.95, 0.66, 0.24]);
-  b.cone(-0.5, 0, 0.45, 0.42, 1.2, 5, [0.76, 0.45, 0.1]);
-  b.cone(0.1, 0, -0.7, 0.32, 0.9, 5, [0.9, 0.58, 0.18]);
+  const post: Color = [0.26, 0.27, 0.24];
+  b.box(0, 0.05, 0, 0.3, 0.1, 0.3, [0.3, 0.3, 0.28]);
+  b.cylinder(0, 0.84, 0, 0.055, 1.68, 5, post);
+  b.material = MATERIAL.painted;
+  // Two blades at different heights, one white and one red, so they separate
+  // into two directions rather than one bright rectangle.
+  for (const [y, colour] of [
+    [1.42, [0.87, 0.88, 0.83] as Color],
+    [1.16, [0.72, 0.24, 0.2] as Color],
+  ] as const) {
+    b.box(0.3, y, 0, 0.82, 0.22, 0.055, colour);
+    b.box(0.66, y, 0, 0.09, 0.22, 0.15, colour);
+  }
+  b.material = MATERIAL.bareMetal;
+  b.box(0.3, 1.44, 0.03, 0.5, 0.045, 0.015, [0.14, 0.15, 0.14]);
+  b.box(0.26, 1.18, 0.03, 0.36, 0.045, 0.015, [0.14, 0.15, 0.14]);
+  return b.build();
+}
+
+/**
+ * Collapsed masonry: a heap of broken slabs with chips and two rods of rebar.
+ *
+ * Placed in the streets of a built-up block, it is the difference between an
+ * empty road and a road that has been fought over. Rubble carries no collision
+ * and no cover: the simulation's terrain already decided what the ground costs.
+ */
+export function buildRubbleMesh(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.concrete;
+  const pale: Color = [0.46, 0.45, 0.42];
+  const dark: Color = [0.31, 0.3, 0.28];
+  // Slabs at different heights and headings, so the heap has no tidy edge.
+  const slabs: Array<[number, number, number, number, number, number, number]> = [
+    [0, 0.2, 0, 1.5, 0.4, 0.52, 0.15],
+    [0.5, 0.16, 0.55, 1.05, 0.32, 0.46, -0.62],
+    [-0.58, 0.14, -0.28, 0.86, 0.28, 0.42, 1.08],
+    [0.12, 0.35, 0.18, 0.62, 0.24, 0.36, 0.72],
+  ];
+  slabs.forEach(([x, y, z, sx, sy, sz, yaw], index) => {
+    b.boxRot(x, y, z, sx, sy, sz, yaw, index % 2 === 0 ? pale : dark);
+  });
+  // Aggregate around the base: the pile should spill, not stand.
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2 + 0.4;
+    const r = 0.58 + (i % 3) * 0.24;
+    b.boxRot(
+      Math.cos(a) * r,
+      0.07 + (i % 2) * 0.05,
+      Math.sin(a) * r,
+      0.22 + (i % 3) * 0.08,
+      0.14,
+      0.2,
+      a * 0.7,
+      i % 2 === 0 ? pale : dark,
+    );
+  }
+  b.material = MATERIAL.bareMetal;
+  b.boxRot(0.34, 0.52, 0.08, 0.055, 0.66, 0.055, 0.35, [0.29, 0.24, 0.2]);
+  b.boxRot(-0.28, 0.47, -0.22, 0.05, 0.56, 0.05, -0.5, [0.27, 0.22, 0.19]);
+  return b.build();
+}
+
+/**
+ * A clump of bank reeds: nine leaning blades and a few seed heads.
+ *
+ * Local +Y is up and the blades splay outward, so one instance covers a patch of
+ * bank. Foliage material means the prop shader sways it with the wind, exactly
+ * as it sways the treeline.
+ */
+export function buildReedMesh(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.canvas;
+  const green: Color = [0.35, 0.37, 0.23];
+  const dry: Color = [0.47, 0.44, 0.27];
+  const head: Color = [0.4, 0.32, 0.19];
+  const blade = (x: number, z: number, height: number, lean: number, colour: Color): void => {
+    // Two crossed, tapered quads read as a blade from any camera angle without
+    // doubling the vertex count of a real prism.
+    const cx = x * 0.4;
+    const cz = z * 0.4;
+    const tip: Vec3 = [x + cx * lean, height, z + cz * lean];
+    const mid: Vec3 = [x + cx * lean * 0.45, height * 0.55, z + cz * lean * 0.45];
+    for (const across of [
+      [0.06, 0.0],
+      [0.0, 0.06],
+    ] as const) {
+      const [ax, az] = across;
+      b.addTriangle([x - ax, 0, z - az], [x + ax, 0, z + az], tip, colour);
+      b.addTriangle([x + ax, 0, z + az], [x - ax, 0, z - az], mid, shade(colour, 0.94));
+    }
+    if (height > 0.85) {
+      b.material = MATERIAL.painted;
+      b.cylinder(tip[0], height * 0.86, tip[2], 0.035, 0.24, 4, head);
+      b.material = MATERIAL.canvas;
+    }
+  };
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2 + (i % 3) * 0.21;
+    const r = 0.1 + (i % 4) * 0.09;
+    blade(
+      Math.cos(a) * r,
+      Math.sin(a) * r,
+      0.55 + (i % 5) * 0.13,
+      0.35 + (i % 3) * 0.2,
+      i % 2 === 0 ? green : dry,
+    );
+  }
+  return b.build();
+}
+
+/**
+ * A timber utility pole carrying a crossarm, three insulators and a wire run.
+ *
+ * Taller and rarer than a street lamp, and aimed so its crossarm sits across the
+ * road: the arms then line up into a telegraph run without any prop knowing
+ * about its neighbours.
+ */
+export function buildUtilityPoleMesh(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.canvas;
+  const timber: Color = [0.32, 0.26, 0.2];
+  const creosote: Color = [0.26, 0.21, 0.17];
+  b.cylinder(0, 2.1, 0, 0.1, 4.2, 5, timber);
+  b.material = MATERIAL.bareMetal;
+  b.box(0, 3.84, 0, 1.62, 0.09, 0.1, creosote);
+  b.boxRot(0.42, 3.5, 0.06, 0.05, 0.7, 0.05, 0.5, creosote);
+  b.material = MATERIAL.painted;
+  for (const x of [-0.68, 0, 0.68]) {
+    b.cylinder(x, 3.98, 0, 0.05, 0.2, 4, [0.56, 0.57, 0.53]);
+  }
+  b.material = MATERIAL.bareMetal;
+  // A taut wire span between the insulators, sagging slightly at the middle.
+  for (const x of [-0.68, 0.68]) b.box(x, 4.02, 0, 0.02, 0.02, 1.4, [0.2, 0.21, 0.2]);
+  return b.build();
+}
+
+/**
+ * One faceted crystal shard, a tapered column leaning from `base` to `tip`.
+ *
+ * The deposit used to be a fan of five-sided cones, which is exactly what a
+ * traffic cone is; the facets here alternate brightness so the shard reads as
+ * cut mineral with flat faces catching the light at different angles.
+ */
+function crystalShard(
+  b: MeshBuilder,
+  base: Vec3,
+  tip: Vec3,
+  radius: number,
+  sides: number,
+  color: Color,
+  seed: number,
+): void {
+  const ax = tip[0] - base[0];
+  const ay = tip[1] - base[1];
+  const az = tip[2] - base[2];
+  const len = Math.hypot(ax, ay, az) || 1;
+  const axis: Vec3 = [ax / len, ay / len, az / len];
+  // Any reference not parallel to the shard gives an orthonormal cut section.
+  const ref: Vec3 = Math.abs(axis[1]) > 0.92 ? [1, 0, 0] : [0, 1, 0];
+  const cx = axis[1] * ref[2] - axis[2] * ref[1];
+  const cy = axis[2] * ref[0] - axis[0] * ref[2];
+  const cz = axis[0] * ref[1] - axis[1] * ref[0];
+  const cl = Math.hypot(cx, cy, cz) || 1;
+  const u: Vec3 = [cx / cl, cy / cl, cz / cl];
+  const v: Vec3 = [
+    axis[1] * u[2] - axis[2] * u[1],
+    axis[2] * u[0] - axis[0] * u[2],
+    axis[0] * u[1] - axis[1] * u[0],
+  ];
+  const ring = (centre: Vec3, r: number): Vec3[] => {
+    const points: Vec3[] = [];
+    for (let i = 0; i < sides; i++) {
+      const a = (i / sides) * Math.PI * 2;
+      const ca = Math.cos(a) * r;
+      const sa = Math.sin(a) * r;
+      points.push([
+        centre[0] + u[0] * ca + v[0] * sa,
+        centre[1] + u[1] * ca + v[1] * sa,
+        centre[2] + u[2] * ca + v[2] * sa,
+      ]);
+    }
+    return points;
+  };
+  const foot = ring(base, radius * 0.74);
+  const shoulder = ring(
+    [base[0] + ax * 0.6, base[1] + ay * 0.6, base[2] + az * 0.6],
+    radius,
+  );
+  for (let i = 0; i < sides; i++) {
+    const j = (i + 1) % sides;
+    const facet = 0.72 + 0.28 * (((i * 3 + seed * 2) % 5) / 4);
+    b.addQuad(foot[i], foot[j], shoulder[j], shoulder[i], shade(color, facet));
+    // The tapering tip catches the most light, the way a cut point would.
+    b.addTriangle(tip, shoulder[i], shoulder[j], shade(color, facet + 0.2));
+    b.addTriangle(base, foot[j], foot[i], shade(color, 0.52));
+  }
+}
+
+/**
+ * A gold crystal seam: one tall central spire with shorter shards leaning out
+ * of the ground around it. The renderer adds the cyan night glow, so this is
+ * plain mineral geometry.
+ */
+export function buildOreMesh(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.glass;
+  const gold: Color = [1.0, 0.84, 0.36];
+  const deepGold: Color = [0.9, 0.68, 0.22];
+  const paleGold: Color = [1.0, 0.93, 0.62];
+  crystalShard(b, [0, -0.06, 0.04], [0.06, 2.3, -0.04], 0.44, 6, gold, 1);
+  crystalShard(b, [0.5, -0.06, 0.2], [1.05, 1.45, 0.52], 0.3, 6, deepGold, 2);
+  crystalShard(b, [-0.45, -0.06, 0.35], [-0.95, 1.2, 0.72], 0.26, 6, gold, 3);
+  crystalShard(b, [0.12, -0.06, -0.5], [0.35, 1.55, -1.1], 0.28, 6, paleGold, 4);
+  crystalShard(b, [-0.3, -0.06, -0.35], [-0.55, 0.9, -0.75], 0.22, 6, deepGold, 5);
+  crystalShard(b, [0.75, -0.06, -0.45], [1.1, 0.7, -0.6], 0.18, 6, gold, 6);
   return b.build();
 }

@@ -233,6 +233,19 @@ export function edgeAutoScrollVelocity(
 }
 
 /**
+ * How a production or build card's model art is presented. A card the player
+ * can buy right now shows the full model, one that is unlocked but unaffordable
+ * goes grey, and one still missing its prerequisite is a black silhouette so the
+ * progression reads at a glance.
+ */
+export type ThumbnailArtState = 'ready' | 'short' | 'locked';
+
+export function cardArtState(unlocked: boolean, affordable: boolean): ThumbnailArtState {
+  if (!unlocked) return 'locked';
+  return affordable ? 'ready' : 'short';
+}
+
+/**
  * Copy for the production sidebar's low-power strip. `null` means the grid is
  * balanced and the strip stays hidden; the caller never formats power itself.
  */

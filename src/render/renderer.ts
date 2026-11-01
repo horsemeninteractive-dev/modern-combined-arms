@@ -1,4 +1,4 @@
-import { HARVESTER_CAPACITY, TICK_RATE, TILE_SIZE } from '../sim/constants';
+import { ELEVATION_HEIGHT, HARVESTER_CAPACITY, TICK_RATE, TILE_SIZE } from '../sim/constants';
 import { Terrain, tileIndex } from '../sim/terrain';
 import { effectivePixelRatio } from '../settings';
 import { BUILDINGS } from '../data/buildings';
@@ -59,9 +59,13 @@ import {
   buildGrassTuftMesh,
   buildLampMesh,
   buildOreMesh,
+  buildReedMesh,
   buildRockMesh,
+  buildRubbleMesh,
   buildShrubMesh,
+  buildSignPostMesh,
   buildTreeMesh,
+  buildUtilityPoleMesh,
 } from './geometry';
 import { materialLut } from './materials';
 import {
@@ -75,6 +79,10 @@ import {
 } from './terrainMesh';
 import { ParticleSystem } from './particles';
 import { ParticleGpu, type GpuParticle } from './particleGpu';
+import { LightGpu, type GpuLight } from './lightGpu';
+import { buildLightView, oreGlowLights, structureWindowGlow, windowGlow } from './lightView';
+import { dayNightAt, type DayNightState } from '../sim/dayNight';
+import { weatherFor, type WeatherProfile } from '../sim/weather';
 import { DecalGpu } from './decalGpu';
 import { DecalStore, decalAlpha, type GroundDecal } from './decalStore';
 import { ShadowGpu, type GpuShadow } from './shadowGpu';
@@ -164,6 +172,10 @@ export interface RenderSettings {
   silhouettes: boolean;
   /** Animated water normals; off keeps the sea but freezes the ripple. */
   waterDetail: boolean;
+  /** Building and vehicle lights after dark. Presentation only. */
+  nightLights: boolean;
+  /** Multiplier for additive light intensity; never changes detection. */
+  lightBloom: number;
 }
 
 interface TerrainGpu {
@@ -232,6 +244,8 @@ export class Renderer {
     shadows: true,
     silhouettes: true,
     waterDetail: true,
+    nightLights: true,
+    lightBloom: 1,
   };
 
   private canvas: HTMLCanvasElement;
@@ -251,6 +265,8 @@ export class Renderer {
   private shadowScratch: GpuShadow[] = [];
   private terrainGpu: TerrainGpu | null = null;
   private waterVao: WebGLVertexArrayObject | null = null;
+  /** Index count of the sea grid; the count lives with the buffer. */
+  private waterCount = 0;
   private roadMesh: StaticMesh | null = null;
   private treesMesh!: InstancedMesh;
   private rocksMesh!: InstancedMesh;
@@ -260,6 +276,10 @@ export class Renderer {
   private tuftsMesh!: InstancedMesh;
   private fencesMesh!: InstancedMesh;
   private lampsMesh!: InstancedMesh;
+  private signsMesh!: InstancedMesh;
+  private rubbleMesh!: InstancedMesh;
+  private reedsMesh!: InstancedMesh;
+  private polesMesh!: InstancedMesh;
   private treeInstances: PropInstance[] = [];
   private rockInstances: PropInstance[] = [];
   private oreInstances: PropInstance[] = [];
@@ -268,6 +288,10 @@ export class Renderer {
   private tuftInstances: PropInstance[] = [];
   private fenceInstances: PropInstance[] = [];
   private lampInstances: PropInstance[] = [];
+  private signInstances: PropInstance[] = [];
+  private rubbleInstances: PropInstance[] = [];
+  private reedInstances: PropInstance[] = [];
+  private poleInstances: PropInstance[] = [];
   private fogTexture!: WebGLTexture;
   /** Previous fog mask, cross-faded with the current one over one interval. */
   private fogTextureOld!: WebGLTexture;
@@ -283,6 +307,8 @@ export class Renderer {
     {
       body: StaticMesh;
       garrisoned: StaticMesh | null;
+      /** Spent span, drawn in place of the body for a bridge at zero hit points. */
+      ruined: StaticMesh | null;
       turret: StaticMesh | null;
       turretOffset: Vec3;
       door: StaticMesh | null;
@@ -310,6 +336,13 @@ export class Renderer {
     launcherElevation?: number;
   }>();
   private visuals = new Map<number, VisualEntity>();
+  /**
+   * Hulls that just earned a rank, keyed by entity id and stamped with the
+   * render clock. Presentation only: nothing here reaches the simulation, a
+   * save or a snapshot, so two clients with different frame rates still fight
+   * the same battle.
+   */
+  private promotionFlashes = new Map<number, number>();
   /** Presentation-only hulks; never entities, picks, saves or collision. */
   private readonly wrecks = new WreckStore();
   private trailTimers = new Map<number, number>();
@@ -321,6 +354,61 @@ export class Renderer {
   private shake = 0;
   private sun: Vec3 = [-0.55, 0.75, 0.35];
   private ambient = 0.4;
+  /** Global time-of-day grade, uploaded as uTone to every lit program. */
+  private tone: Vec3 = [1, 1, 1];
+  /**
+   * Colour and thickness of the air itself. Haze is the "how far away is it"
+   * half of visibility, and it is what makes a fog map read as a volume rather
+   * than a dimmer map.
+   */
+  private hazeColor: Vec3 = [0.5, 0.54, 0.56];
+  private hazeDensity = 0;
+  /** Grade-only values, before the lightning pass lifts them for the frame. */
+  private baseHazeColor: Vec3 = [0.5, 0.54, 0.56];
+  private baseHaze = 0;
+  private lightGpu!: LightGpu;
+  /**
+   * Lights split by what they must not be painted over. Ground pools go down
+   * before the models so a hull occludes the pool it stands in; wall lamps,
+   * lit windows and lens glows go down after, or the building they are bolted to
+   * simply covers them.
+   */
+  private lightPools: GpuLight[] = [];
+  private lightGlows: GpuLight[] = [];
+  /** Authoritative clock as of the last frame; the sim owns it, we only read. */
+  private dayNight: DayNightState = dayNightAt(0, { startHour: 18, dayLengthMinutes: 60 });
+  /** Cached preview clock, keyed on the authored hour so edits invalidate it. */
+  private previewClock: { key: string; state: DayNightState } | null = null;
+  /** Weather as of the last frame, resolved from the scenario. */
+  private weather: WeatherProfile = weatherFor('clear');
+  /** Fractional precipitation budget, so the drop count is frame-rate free. */
+  private weatherBudget = 0;
+  /** Fractional mist budget, so the bank count is frame-rate free too. */
+  private mistBudget = 0;
+  /**
+   * The graded scene without lightning. `ambient`/`tone`/`clearColor` are these
+   * plus the current flash, recomputed every frame so a strike can light the
+   * battlefield for a few frames without rebuilding the whole grade.
+   */
+  private baseAmbient = 0.4;
+  private baseTone: Vec3 = [1, 1, 1];
+  private baseClear: [number, number, number] = [0.027, 0.043, 0.055];
+  /** 0..1 lightning brightness for this frame. */
+  private flash = 0;
+  private flashAt = -999;
+  private flashEnergy = 0;
+  private nextStrikeAt = 0;
+  /**
+   * Sheet lightning: the cloud is lit from behind rather than struck. It is a
+   * separate channel from `flash` because it must not read as a bolt over the
+   * battlefield — it is slower, softer, lifts the sky far more than the ground,
+   * and never shakes the camera.
+   */
+  private sheet = 0;
+  private sheetAt = -999;
+  private sheetEnergy = 0;
+  private nextSheetAt = 0;
+  private lightingKey = '';
   private clearColor: [number, number, number] = [0.027, 0.043, 0.055];
   dpr = Math.min(2, typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
 
@@ -381,26 +469,27 @@ export class Renderer {
     this.propProgram = { program: createProgram(gl, PROP_VS, PROP_FS), u: {} };
     this.meshProgram.u = uniformMap(gl, this.meshProgram.program, [
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
-      'uModel', 'uTeamColor', 'uSun', 'uTint', 'uAmbient', 'uAlpha', 'uFlash',
+      'uModel', 'uTeamColor', 'uSun', 'uTint', 'uAmbient', 'uTone', 'uAlpha', 'uFlash', 'uNightGlow',
       'uFogTex', 'uFogTexOld', 'uFogBlend', 'uFlagTex', 'uMatLut', 'uUseFog',
-      'uWorldSize', 'uTime', 'uSilhouette', 'uDepthPull',
+      'uWorldSize', 'uTime', 'uSilhouette', 'uDepthPull', 'uHaze', 'uHazeColor', 'uHazeRef',
     ]);
     this.terrainProgram.u = uniformMap(gl, this.terrainProgram.program, [
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
-      'uSun', 'uAmbient', 'uFogTex', 'uFogTexOld', 'uFogBlend', 'uShoreTex',
-      'uUseFog', 'uTime', 'uGrid',
+      'uSun', 'uAmbient', 'uTone', 'uFogTex', 'uFogTexOld', 'uFogBlend', 'uShoreTex',
+      'uUseFog', 'uTime', 'uGrid', 'uWet', 'uHaze', 'uHazeColor', 'uHazeRef',
     ]);
     this.waterProgram.u = uniformMap(gl, this.waterProgram.program, [
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
-      'uSun', 'uAmbient', 'uFogTex', 'uFogTexOld', 'uFogBlend', 'uShoreTex',
-      'uUseFog', 'uTime', 'uWorldSize',
+      'uSun', 'uAmbient', 'uTone', 'uFogTex', 'uFogTexOld', 'uFogBlend', 'uShoreTex',
+      'uUseFog', 'uTime', 'uWorldSize', 'uSea', 'uHaze', 'uHazeColor', 'uHazeRef',
     ]);
     this.propProgram.u = uniformMap(gl, this.propProgram.program, [
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
-      'uSun', 'uAmbient', 'uEmissive', 'uFogTex', 'uFogTexOld', 'uFogBlend',
-      'uMatLut', 'uUseFog', 'uWorldSize',
+      'uSun', 'uAmbient', 'uTone', 'uEmissive', 'uGlow', 'uFogTex', 'uFogTexOld', 'uFogBlend',
+      'uMatLut', 'uUseFog', 'uWorldSize', 'uWind', 'uTime', 'uHaze', 'uHazeColor', 'uHazeRef',
     ]);
     this.particleGpu = new ParticleGpu(gl);
+    this.lightGpu = new LightGpu(gl);
     this.decalGpu = new DecalGpu(gl);
     this.shadowGpu = new ShadowGpu(gl);
 
@@ -412,6 +501,10 @@ export class Renderer {
     this.tuftsMesh = new InstancedMesh(gl, buildGrassTuftMesh());
     this.fencesMesh = new InstancedMesh(gl, buildFenceMesh());
     this.lampsMesh = new InstancedMesh(gl, buildLampMesh());
+    this.signsMesh = new InstancedMesh(gl, buildSignPostMesh());
+    this.rubbleMesh = new InstancedMesh(gl, buildRubbleMesh());
+    this.reedsMesh = new InstancedMesh(gl, buildReedMesh());
+    this.polesMesh = new InstancedMesh(gl, buildUtilityPoleMesh());
     this.fogTexture = this.createTexture();
     this.fogTextureOld = this.createTexture();
     this.shoreTexture = this.createTexture();
@@ -437,6 +530,7 @@ export class Renderer {
       this.buildingMeshes.set(id, {
         body: new StaticMesh(gl, body),
         garrisoned: style?.garrisoned ? new StaticMesh(gl, style.garrisoned) : null,
+        ruined: style?.ruined ? new StaticMesh(gl, style.ruined) : null,
         turret: style?.turret ? new StaticMesh(gl, style.turret) : null,
         turretOffset: style?.turretOffset ?? [0, 0, 0],
         door: style?.door ? new StaticMesh(gl, style.door.mesh) : null,
@@ -464,6 +558,33 @@ export class Renderer {
     gl.depthFunc(gl.LEQUAL);
     gl.disable(gl.CULL_FACE);
     gl.clearColor(...this.clearColor, 1);
+  }
+
+  /**
+   * Rebuild map-derived GPU resources after the presentation map changed.
+   *
+   * A networked client paints the room's authoritative terrain, which arrives
+   * with the first sync — after the battle screen is already standing. Every
+   * map-derived resource is rebuilt from the adopted scenario, while the camera
+   * and the event cursor are preserved so the view and the effect stream do not
+   * jump.
+   */
+  rebuildTerrain(): void {
+    const scenario = this.scenario;
+    if (!scenario) return;
+    const cameraX = this.camera.cx;
+    const cameraZ = this.camera.cz;
+    const zoom = this.camera.zoom;
+    const game = this.game;
+    const eventSeq = this.lastEventSeq;
+    this.setScenario(scenario);
+    // setScenario clears the scene and the game link; the battle itself has not
+    // changed, only the ground under it.
+    this.game = game;
+    this.camera.cx = cameraX;
+    this.camera.cz = cameraZ;
+    this.camera.setZoom(zoom);
+    this.lastEventSeq = eventSeq;
   }
 
   /** Rebuild GPU resources and the current scene after a context restore. */
@@ -591,10 +712,20 @@ export class Renderer {
     this.camera.setViewport(w, h);
   }
 
+  /**
+   * A brief warm pulse on one hull after its crew earns a rank. The clock is
+   * the renderer's own, so the flash fades in real time even while the battle
+   * is paused or the tick rate changes.
+   */
+  flashPromotion(entityId: number): void {
+    this.promotionFlashes.set(entityId, this.time);
+  }
+
   setScenario(scenario: Scenario): void {
     this.scenario = scenario;
     this.game = null;
     this.visuals.clear();
+    this.promotionFlashes.clear();
     this.wrecks.clear();
     this.decals.clear();
     this.projectileViews.clear();
@@ -617,6 +748,10 @@ export class Renderer {
     this.tuftInstances = props.tufts;
     this.fenceInstances = props.fences;
     this.lampInstances = props.lamps;
+    this.signInstances = props.signs;
+    this.rubbleInstances = props.rubble;
+    this.reedInstances = props.reeds;
+    this.poleInstances = props.poles;
     this.treesMesh.setInstances(this.treeInstances);
     this.rocksMesh.setInstances(this.rockInstances);
     this.oreMesh.setInstances(this.oreInstances);
@@ -625,6 +760,10 @@ export class Renderer {
     this.tuftsMesh.setInstances(this.tuftInstances);
     this.fencesMesh.setInstances(this.fenceInstances);
     this.lampsMesh.setInstances(this.lampInstances);
+    this.signsMesh.setInstances(this.signInstances);
+    this.rubbleMesh.setInstances(this.rubbleInstances);
+    this.reedsMesh.setInstances(this.reedInstances);
+    this.polesMesh.setInstances(this.poleInstances);
     this.rebuildPropShadows();
     this.shoreData = buildShoreTexture(scenario);
     // The coast field packs land and water distance into separate channels; the
@@ -644,6 +783,7 @@ export class Renderer {
     }
     this.game = game;
     this.visuals.clear();
+    this.promotionFlashes.clear();
     this.wrecks.clear();
     this.decals.clear();
     this.trailTimers.clear();
@@ -651,6 +791,8 @@ export class Renderer {
     this.projectileViews.clear();
     this.particles.clear();
     if (game) {
+      this.dayNight = game.dayNight;
+      this.applyLighting();
       this.lastEventSeq = game.state.eventSeq;
       this.lastFogTick = -999;
       const local = game.player(game.localPlayerId);
@@ -668,38 +810,486 @@ export class Renderer {
     this.applyLighting();
   }
 
+  /**
+   * Continuous time-of-day lighting.
+   *
+   * The clock is the simulation's, not the renderer's: this only reads it and
+   * turns the hour into a sun direction, an ambient floor, a colour grade and a
+   * sky colour. Dawn and dusk are warm and low, midnight is dim and blue, and
+   * the battlefield never reaches black.
+   */
   private applyLighting(): void {
-    const tod = this.scenario?.settings.timeOfDay ?? 'dusk';
-    if (tod === 'day') {
-      this.sun = [-0.42, 0.86, 0.3];
-      this.ambient = 0.5;
-      this.clearColor = [0.035, 0.055, 0.07];
-    } else if (tod === 'dawn') {
-      this.sun = [-0.72, 0.55, 0.32];
-      this.ambient = 0.36;
-      this.clearColor = [0.045, 0.05, 0.065];
-    } else if (tod === 'night') {
-      this.sun = [-0.35, 0.7, 0.25];
-      this.ambient = 0.24;
-      this.clearColor = [0.012, 0.02, 0.033];
-    } else {
-      this.sun = [-0.62, 0.6, 0.38];
-      this.ambient = 0.35;
-      this.clearColor = [0.03, 0.043, 0.058];
+    const dn = this.dayNight;
+    const light = dn.light;
+    const hour = dn.hour;
+    // Warmth peaks around sunrise and sunset, when the sun is low and red.
+    const lowSun =
+      Math.exp(-((hour - 18.2) ** 2) / 4) + Math.exp(-((hour - 5.8) ** 2) / 4);
+    const warm = Math.min(1, lowSun);
+    const azimuth = (hour / 24) * Math.PI * 2 - Math.PI / 2;
+    const elevation = 0.3 + 0.62 * light;
+    const len = Math.hypot(Math.cos(azimuth) * 0.85, elevation, Math.sin(azimuth) * 0.85);
+    this.sun = [
+      (Math.cos(azimuth) * 0.85) / len,
+      elevation / len,
+      (Math.sin(azimuth) * 0.85) / len,
+    ];
+    // A night floor that keeps terrain and units readable, warmed at the edges
+    // of the day and cooled under moonlight. These are the *base* values: the
+    // lightning pass layers its flash on top of them every frame.
+    this.baseAmbient = 0.24 + 0.26 * light;
+    this.baseTone = [
+      (0.58 + 0.42 * light) * (1 + 0.13 * warm),
+      (0.67 + 0.33 * light) * (1 + 0.02 * warm),
+      (0.95 + 0.05 * light) * (1 - 0.1 * warm),
+    ];
+    this.baseClear = [
+      0.006 + 0.03 * light,
+      0.012 + 0.04 * light,
+      0.03 + 0.03 * light,
+    ];
+    // Weather is the second half of the sky. Gloom lifts the ambient floor and
+    // pulls the grade toward neutral, which is what actually makes an overcast
+    // afternoon look flat: the shadows stop reading as hard-edged. Dim is the
+    // other half — a storm is genuinely darker, not merely flatter, which is
+    // also what makes the rain and the lightning read against it. Snow is cold
+    // and reflective rather than dark, so it brightens the blue back in.
+    const profile = weatherFor(this.scenario?.settings.weather);
+    this.weather = profile;
+    const gloom = profile.gloom;
+    if (gloom > 0) {
+      this.baseAmbient += (0.035 + 0.05 * light) * gloom;
+      this.baseTone = [
+        this.baseTone[0] * (1 - 0.16 * gloom),
+        this.baseTone[1] * (1 - 0.12 * gloom),
+        this.baseTone[2] * (1 - 0.04 * gloom),
+      ];
+      const skyMix = gloom * (0.35 + 0.65 * light);
+      this.baseClear = [
+        this.baseClear[0] * (1 - skyMix) + 0.075 * skyMix,
+        this.baseClear[1] * (1 - skyMix) + 0.082 * skyMix,
+        this.baseClear[2] * (1 - skyMix) + 0.09 * skyMix,
+      ];
     }
-    if (this.scenario?.settings.weather === 'overcast' || this.scenario?.settings.weather === 'rain') {
-      this.ambient += 0.06;
-      this.sun = [0.2, 0.9, 0.3];
+    if (profile.dim > 0) {
+      const dim = profile.dim;
+      // Partial, never total: the darkest storm still has to be readable ground.
+      this.baseAmbient *= 1 - 0.55 * dim;
+      this.baseTone = [
+        this.baseTone[0] * (1 - 0.3 * dim),
+        this.baseTone[1] * (1 - 0.28 * dim),
+        this.baseTone[2] * (1 - 0.2 * dim),
+      ];
+      this.baseClear = [
+        this.baseClear[0] * (1 - 0.5 * dim),
+        this.baseClear[1] * (1 - 0.48 * dim),
+        this.baseClear[2] * (1 - 0.42 * dim),
+      ];
     }
+    if (profile.kind === 'snow' || profile.kind === 'blizzard') {
+      // Snow is a reflector, not a darkness: the fallen cover bounces light back
+      // up, so a whiteout stays bright even while the sun is gone.
+      const lift = profile.kind === 'blizzard' ? 1.16 : 1.09;
+      this.baseTone = [
+        this.baseTone[0] * (1 + (lift - 1) * 0.4),
+        this.baseTone[1] * (1 + (lift - 1) * 0.6),
+        this.baseTone[2] * lift,
+      ];
+    }
+    if (profile.kind === 'fog') {
+      // Mist is milky, not grey: the air itself glows, so the far field washes
+      // out toward a pale, slightly warm haze instead of just getting darker.
+      const haze = 0.85;
+      this.baseClear = [
+        this.baseClear[0] * (1 - haze) + 0.30 * haze,
+        this.baseClear[1] * (1 - haze) + 0.31 * haze,
+        this.baseClear[2] * (1 - haze) + 0.32 * haze,
+      ];
+      this.baseAmbient += 0.05 * light;
+    }
+    // The air itself. Haze is the "how far away is it" half of visibility: a
+    // fog map fades out with distance instead of merely being dim, which is
+    // what makes it read as a volume the units are inside.
+    // The air's own colour. Fog and a whiteout are pale by definition; every
+    // other sky gets a cool grey wash rather than white, so rain reads as
+    // distance instead of as a screen of milk.
+    const airy: Vec3 =
+      profile.kind === 'blizzard'
+        ? [0.72, 0.76, 0.8]
+        : profile.kind === 'fog'
+          ? [0.62, 0.66, 0.68]
+          : profile.kind === 'snow'
+            ? [0.6, 0.65, 0.7]
+            : profile.kind === 'storm'
+              ? [0.44, 0.5, 0.55]
+              : [0.5, 0.56, 0.61];
+    // Night thickens it the way shadow does: the same mist at midnight is a
+    // dark grey, not a bright one, or the battlefield would glow after dark.
+    const daylight = 0.12 + 0.92 * light;
+    this.baseHazeColor = [
+      airy[0] * daylight * (1 + 0.2 * warm),
+      airy[1] * daylight * (1 + 0.05 * warm),
+      airy[2] * daylight,
+    ];
+    this.baseHaze = profile.haze;
+    this.applyFlash();
     this.gl.clearColor(...this.clearColor, 1);
   }
 
+  /**
+   * Layer the storm's lightning over the graded scene.
+   *
+   * Flashes are presentation only: they never touch the simulation and never
+   * reveal anything the fog hides, because they change colour and ambient light
+   * rather than a fog field. A strike is a sharp attack with a two-step decay,
+   * which is what makes it read as lightning rather than as a brightness bug.
+   */
+  private applyFlash(): void {
+    const f = this.flash;
+    const s = this.sheet;
+    if (f <= 0.002 && s <= 0.002) {
+      this.ambient = this.baseAmbient;
+      this.tone = this.baseTone;
+      this.clearColor = this.baseClear;
+      this.hazeColor = this.baseHazeColor;
+      this.hazeDensity = this.baseHaze;
+      return;
+    }
+    // Lightning lights the air as well as the ground: a bolt in a wet or foggy
+    // battlefield turns the whole volume pale for a frame, which is the single
+    // clearest volumetric cue the renderer has.
+    const airLift = 1 + f * 0.75 + s * 0.45;
+    this.hazeColor = [
+      Math.min(1, this.baseHazeColor[0] * airLift),
+      Math.min(1, this.baseHazeColor[1] * airLift),
+      Math.min(1, this.baseHazeColor[2] * airLift),
+    ];
+    this.hazeDensity = this.baseHaze * (1 + s * 0.55);
+    this.ambient = Math.min(1.6, this.baseAmbient + f * 1.15 + s * 0.2);
+    this.tone = [
+      Math.min(2.6, this.baseTone[0] * (1 + f * 0.55 + s * 0.16)),
+      Math.min(2.6, this.baseTone[1] * (1 + f * 0.5 + s * 0.16)),
+      Math.min(2.6, this.baseTone[2] * (1 + f * 0.4 + s * 0.18)),
+    ];
+    // Sheet lightning is the sky, not the ground: the clear colour climbs far
+    // more than the ambient does, which is what puts the glow behind the cloud
+    // cover instead of on the battlefield.
+    this.clearColor = [
+      Math.min(1, this.baseClear[0] + f * 0.32 + s * 0.85),
+      Math.min(1, this.baseClear[1] + f * 0.34 + s * 0.88),
+      Math.min(1, this.baseClear[2] + f * 0.36 + s * 0.92),
+    ];
+  }
+
+  /**
+   * The clock a preview should show.
+   *
+   * The forge renders the real battlefield through the real pipeline but has no
+   * `Game`, so without this the scene sat at whatever the renderer last held and
+   * the time-of-day control appeared to do nothing. Cached on the authored hour
+   * itself, because the editor mutates the settings object in place.
+   */
+  private previewDayNight(): DayNightState {
+    const scenario = this.scenario;
+    if (!scenario) return this.dayNight;
+    const settings = scenario.settings;
+    const key = `${settings.startHour}:${settings.dayLengthMinutes}`;
+    if (this.previewClock?.key === key) return this.previewClock.state;
+    const state = dayNightAt(0, {
+      startHour: settings.startHour,
+      dayLengthMinutes: 0,
+    });
+    this.previewClock = { key, state };
+    return state;
+  }
+
+  /**
+   * Lightning: schedule the next strike and fade the current one.
+   *
+   * Purely presentational, so it is allowed to be stochastic — a client seeing a
+   * bolt a moment before the other changes nothing about the battle. The flash
+   * doubles as a camera kick, because thunder you can feel is the difference
+   * between weather and a brightness slider.
+   */
+  private updateStorm(): void {
+    if (this.weather.kind !== 'storm') {
+      this.flash = 0;
+      this.sheet = 0;
+      if (this.nextStrikeAt < this.time) this.nextStrikeAt = this.time + 2 + Math.random() * 4;
+      if (this.nextSheetAt < this.time) this.nextSheetAt = this.time + 3 + Math.random() * 6;
+      return;
+    }
+    if (this.time >= this.nextStrikeAt) {
+      this.flashAt = this.time;
+      this.flashEnergy = 0.55 + Math.random() * 0.45;
+      // Storms strike in clusters: usually a wait, sometimes a second bolt on
+      // the heels of the first.
+      this.nextStrikeAt =
+        this.time +
+        (Math.random() < 0.3 ? 0.35 + Math.random() * 0.6 : 3.2 + Math.random() * 6.5);
+      this.shake = Math.max(this.shake, 0.3 + Math.random() * 0.5);
+    }
+    // Distant sheet flashes run on their own clock, so a storm is never lit only
+    // by the close strikes: most of the lightning is inside the cloud.
+    if (this.time >= this.nextSheetAt) {
+      this.sheetAt = this.time;
+      this.sheetEnergy = 0.22 + Math.random() * 0.4;
+      this.nextSheetAt = this.time + 1.6 + Math.random() * 5.5;
+    }
+    const since = this.time - this.flashAt;
+    if (since < 0 || since > 0.9) {
+      this.flash = 0;
+    } else {
+      // Sharp attack, then a second softer sheet-lightning tail.
+      const bolt = Math.exp(-since * 26);
+      const tail = since > 0.1 ? Math.exp(-(since - 0.1) * 9) * 0.45 : 0;
+      this.flash = Math.min(1.2, (bolt + tail) * this.flashEnergy);
+    }
+    const sheetSince = this.time - this.sheetAt;
+    if (sheetSince < 0 || sheetSince > 1.7) {
+      this.sheet = 0;
+      return;
+    }
+    // A cloud flash is soft on both edges and flickers rather than cracking: a
+    // slow rise, a plateau with two dimming beats, then a long fade.
+    const rise = Math.min(1, sheetSince / 0.16);
+    const fade = Math.exp(-Math.max(0, sheetSince - 0.4) * 3.1);
+    const flicker = 0.82 + 0.18 * Math.sin(sheetSince * 47 + this.sheetAt * 3.1);
+    this.sheet = Math.min(1, rise * fade * flicker * this.sheetEnergy);
+  }
+
+  /**
+   * Ground mist.
+   *
+   * Distance haze alone is a static wash: it says where the air gets thick, not
+   * that anything is in it. Mist is a handful of large, soft, slow puffs that
+   * drift with the wind and take ten seconds to cross the view, so the layers
+   * pass in front of and behind a hull and the fog has depth you can see move.
+   * It is presentation only; the fog of war mask and the weather's detection
+   * numbers are untouched.
+   */
+  private emitMist(dt: number): void {
+    const profile = this.weather;
+    // Mist is a garnish on every wet sky and the substance of a fog map, but it
+    // is never the whole effect: the distance haze does the thickening, and this
+    // only supplies the layers. Kept deliberately sparse for that reason.
+    const density =
+      profile.kind === 'fog'
+        ? 1
+        : profile.kind === 'blizzard'
+          ? 0.7
+          : profile.kind === 'snow'
+            ? 0.3
+            : profile.kind === 'storm'
+              ? 0.3
+              : profile.kind === 'rain'
+                ? 0.15
+                : 0;
+    if (density <= 0 || !this.settings.effects || !this.scenario) {
+      this.mistBudget = 0;
+      return;
+    }
+    const camera = this.camera;
+    const spread = Math.max(camera.halfW, camera.halfH) * 1.6;
+    // Slow: a bank every half second in thick fog, far fewer in rain.
+    this.mistBudget += 2 * density * dt * Math.max(0.5, spread / 80);
+    const room = Math.floor(this.particles.maxParticles * 0.55) - this.particles.particles.length;
+    if (room <= 0) {
+      this.mistBudget = 0;
+      return;
+    }
+    const count = Math.min(6, room, Math.floor(this.mistBudget));
+    if (count <= 0) return;
+    this.mistBudget -= count;
+    for (let i = 0; i < count; i++) {
+      this.particles.mist(
+        camera.cx + (Math.random() - 0.5) * spread * 2,
+        camera.cz + (Math.random() - 0.5) * spread * 2,
+        profile.wind,
+        density,
+      );
+    }
+  }
+
+  /**
+   * Precipitation for the current weather.
+   *
+   * Presentation-only: the simulation reads the weather profile's numbers and
+   * never these particles. Emission is bounded to a box around the camera and
+   * paced by a fractional budget, so the count is frame-rate independent and a
+   * storm costs the same at 144 Hz as at 60 Hz.
+   */
+  private emitWeather(dt: number): void {
+    const profile = this.weather;
+    if (profile.precipitation <= 0 || !this.settings.effects || !this.scenario) {
+      this.weatherBudget = 0;
+      return;
+    }
+    const camera = this.camera;
+    const heavy = profile.kind === 'storm' || profile.kind === 'blizzard';
+    // A heavy front fills more of the screen than a shower does: a storm is
+    // authored at a wider spread as well as a higher rate, so the frame edge
+    // stops reading as the edge of the weather.
+    const spread = Math.max(camera.halfW, camera.halfH) * (heavy ? 2.05 : 1.85);
+    const drop = profile.kind !== 'snow' && profile.kind !== 'blizzard';
+    // A downpour is a downpour: the old rate drew a handful of drops per frame,
+    // which read as a drizzle whatever the weather was called. Snow needs its
+    // own, lower base because each flake is much larger and lives far longer.
+    const rate = profile.precipitation * (drop ? 980 : 560) * (spread / 60);
+    this.weatherBudget += rate * dt;
+    // Precipitation never takes the whole budget: an explosion has to be able
+    // to push smoke into the field even in a storm, so rain stops short of the
+    // cap and leaves the rest for combat effects.
+    const room = Math.floor(this.particles.maxParticles * 0.78) - this.particles.particles.length;
+    if (room <= 0) {
+      this.weatherBudget = 0;
+      return;
+    }
+    const count = Math.min(300, room, Math.floor(this.weatherBudget));
+    if (count <= 0) return;
+    this.weatherBudget -= count;
+    for (let i = 0; i < count; i++) {
+      this.particles.precipitation(
+        camera.cx + (Math.random() - 0.5) * spread * 2,
+        camera.cz + (Math.random() - 0.5) * spread * 2,
+        profile.wind,
+        drop,
+        profile.precipitation,
+      );
+    }
+  }
+
+  /**
+   * Turn the simulation's light list into one instanced batch. Ground pools sit
+   * on the terrain surface, beams stretch along the vehicle's facing, and lit
+   * windows and beacons are camera-facing glows nudged toward the viewer so a
+   * facade does not hide its own light.
+   */
+  /** How brightly a structure's own windows glow, 0 by day. */
+  private nightGlow(): number {
+    return windowGlow(this.dayNight, this.settings.nightLights);
+  }
+
+  /**
+   * Window glow for one structure. The glazing is part of the compound's own
+   * load, so a brownout dims it along with production and a grid with no supply
+   * at all leaves it dark, matching the wall lamps that already cut out. A site
+   * still under construction has no supply to light glass it has not installed.
+   *
+   * A structure the team has only charted is drawn from memory, and memory does
+   * not carry whether the lights are on: a compound in the fog must not advertise
+   * itself with glowing glass, so it stays dark until it is seen again.
+   */
+  private buildingWindowGlow(owner: number, construction: boolean, remembered = false): number {
+    const glow = this.nightGlow();
+    if (glow <= 0) return 0;
+    const game = this.game;
+    return structureWindowGlow(glow, {
+      construction,
+      remembered,
+      power: game && owner >= 0 ? game.powerStatus(owner) : null,
+    });
+  }
+
+  private buildLightInstances(): void {
+    const game = this.game;
+    const scenario = this.scenario;
+    this.lightPools.length = 0;
+    this.lightGlows.length = 0;
+    if (!game || !scenario || !this.settings.nightLights) return;
+    if (this.dayNight.darkness <= 0) return;
+    const width = scenario.width;
+    const height = scenario.height;
+    const tiles = scenario.tiles;
+    const team = game.teamOf(game.localPlayerId);
+    // Live entity state, not the vision-cadence snapshot: a moving vehicle's
+    // beams must follow the hull, not trail it by half a second.
+    const lights = buildLightView({
+      entities: game.state.entities,
+      dayNight: this.dayNight,
+      bloom: this.settings.lightBloom,
+      effects: this.settings.effects,
+      powered: (owner) => !game.powerStatus(owner).brownout,
+      eye: this.camera.eye,
+      groundY: (x, z) => {
+        const tx = Math.max(0, Math.min(width - 1, Math.floor(x / TILE_SIZE)));
+        const tz = Math.max(0, Math.min(height - 1, Math.floor(z / TILE_SIZE)));
+        return tiles[tz * width + tx].e * ELEVATION_HEIGHT;
+      },
+      // Only what this player can see is lit. A remembered structure stays on
+      // the map as a dim silhouette, and an unseen one must not glow through
+      // the fog of war.
+      visible: (e) => game.visionStateOf(team, e.id) === 'visible',
+      // The drawn pose, not the tick pose: the same eased position and heading
+      // the hull mesh uses, including the travel heading while it is driving.
+      pose: (e) => {
+        const v = this.visuals.get(e.id);
+        if (!v) return null;
+        const def = e.kind === 'unit' ? UNITS[e.defId] : undefined;
+        const driving = e.state === 'moving' && !!def && def.moveClass !== 'foot' && def.domain !== 'air';
+        return { x: v.x, z: v.z, facing: driving ? v.motion : v.facing };
+      },
+    });
+    for (const light of lights) {
+      (light.glow > 0.5 ? this.lightGlows : this.lightPools).push(light);
+    }
+    // Crystal seams light their own ground once the sun is down, but only in
+    // ground the player has actually explored.
+    const seen = (x: number, z: number): boolean =>
+      game.fogAt(
+        team,
+        Math.max(0, Math.min(width - 1, Math.floor(x / TILE_SIZE))),
+        Math.max(0, Math.min(height - 1, Math.floor(z / TILE_SIZE))),
+      ) === 2;
+    for (const light of oreGlowLights(this.oreInstances, this.nightGlow(), this.camera.eye, seen)) {
+      this.lightPools.push(light);
+    }
+  }
+
+  /**
+   * The sea surface, as a grid rather than a quad.
+   *
+   * A four-corner plane can only ever be tilted, so a swell drawn on it was
+   * limited to shading. Displacing a grid in the vertex shader is what makes
+   * heavy water actually move: crests rise and travel, the silhouette against a
+   * hull changes, and the shore keeps a flat shelf because the displacement is
+   * gated on the depth field. One quad per ~2 tiles is plenty at battle zoom and
+   * costs a few thousand triangles.
+   */
   private buildWater(scenario: Scenario): void {
     const gl = this.gl;
     const w = scenario.width * TILE_SIZE;
     const h = scenario.height * TILE_SIZE;
     const y = 0.12;
-    const positions = new Float32Array([0, y, 0, w, y, 0, w, y, h, 0, y, h]);
+    const segmentsX = Math.max(24, Math.min(96, scenario.width));
+    const segmentsZ = Math.max(24, Math.min(96, scenario.height));
+    const cols = segmentsX + 1;
+    const rows = segmentsZ + 1;
+    const positions = new Float32Array(cols * rows * 3);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const o = (r * cols + c) * 3;
+        positions[o] = (c / segmentsX) * w;
+        positions[o + 1] = y;
+        positions[o + 2] = (r / segmentsZ) * h;
+      }
+    }
+    const indices = new Uint32Array(segmentsX * segmentsZ * 6);
+    let i = 0;
+    for (let r = 0; r < segmentsZ; r++) {
+      for (let c = 0; c < segmentsX; c++) {
+        const a = r * cols + c;
+        const b = a + 1;
+        const d = a + cols;
+        const e = d + 1;
+        indices[i++] = a;
+        indices[i++] = b;
+        indices[i++] = e;
+        indices[i++] = a;
+        indices[i++] = e;
+        indices[i++] = d;
+      }
+    }
     const vao = gl.createVertexArray()!;
     gl.bindVertexArray(vao);
     const vbo = gl.createBuffer()!;
@@ -709,9 +1299,10 @@ export class Renderer {
     gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 12, 0);
     const ibo = gl.createBuffer()!;
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0, 1, 2, 0, 2, 3]), gl.STATIC_DRAW);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
     gl.bindVertexArray(null);
     this.waterVao = vao;
+    this.waterCount = indices.length;
   }
 
   private uploadTexture(
@@ -808,6 +1399,11 @@ export class Renderer {
 
   update(dt: number): void {
     this.time += dt;
+    this.weather = weatherFor(this.scenario?.settings.weather);
+    this.particles.wind = this.weather.wind;
+    this.updateStorm();
+    this.emitWeather(dt);
+    this.emitMist(dt);
     // The fog cross-fade is driven by wall time, not ticks, so it finishes in
     // step with the next mask upload even while the battle is paused.
     this.fogBlend = Math.min(1, this.fogBlend + dt / FOG_UPDATE_SECONDS);
@@ -1338,6 +1934,21 @@ export class Renderer {
     this.camera.shakeX = Math.sin(this.time * 91) * this.shake;
     this.camera.shakeY = Math.cos(this.time * 73) * this.shake * 0.6;
     this.camera.update();
+    // The simulation owns the clock; the renderer reads it once per frame and
+    // rebuilds the grade only when the visible hour changes.
+    // In battle the simulation owns the clock; in the forge there is no
+    // simulation yet, so the authored start hour is shown frozen at tick 0 —
+    // exactly the light the match will open in.
+    if (this.game) this.dayNight = this.game.dayNight;
+    else this.dayNight = this.previewDayNight();
+    const key = `${this.dayNight.phase}:${this.dayNight.light.toFixed(3)}:${this.settings.nightLights}:${this.settings.lightBloom}:${this.scenario.settings.weather}`;
+    if (key !== this.lightingKey) {
+      this.lightingKey = key;
+      this.applyLighting();
+    }
+    // Lightning changes every frame, so it is layered on after the grade rather
+    // than folded into it.
+    this.applyFlash();
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.clearColor(...this.clearColor, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -1347,6 +1958,10 @@ export class Renderer {
     this.drawGroundDecals();
     this.drawShadows();
     this.drawProps();
+    if (this.game && this.settings.nightLights && this.dayNight.darkness > 0) {
+      this.buildLightInstances();
+      this.lightGpu.draw(this.camera, this.lightPools);
+    }
     if (this.game) {
       // Silhouettes go down before the units themselves. The depth buffer then
       // holds only terrain, structures and props, so a friendly hull in front of
@@ -1357,6 +1972,12 @@ export class Renderer {
       this.drawWrecks(this.game);
     } else {
       this.drawScenarioEntities();
+    }
+    // Wall lamps, lit windows and lens glows ride on top of the models, so a
+    // building cannot cover the light it is carrying. Depth still hides the
+    // ones on the far side of it.
+    if (this.lightGlows.length > 0) {
+      this.lightGpu.draw(this.camera, this.lightGlows);
     }
     this.drawParticles();
   }
@@ -1372,6 +1993,22 @@ export class Renderer {
     gl.uniform1f(u.uNear, NEAR);
     gl.uniform1f(u.uFar, FAR);
     gl.uniform1f(u.uTime ?? null, this.time);
+    gl.uniform3fv(u.uTone ?? null, this.tone);
+    // Aerial perspective belongs to every lit program, so it is bound with the
+    // camera rather than repeated in each draw call. A program that does not
+    // declare it simply has no location and skips the upload.
+    gl.uniform1f(u.uHaze ?? null, this.hazeDensity);
+    gl.uniform3fv(u.uHazeColor ?? null, this.hazeColor);
+    // Haze is measured from the camera's focus point, not from an eye parked
+    // 1400 units back along an orthographic axis: see HAZE_GLSL.
+    gl.uniform1f(
+      u.uHazeRef ?? null,
+      Math.hypot(
+        this.camera.eye[0] - this.camera.cx,
+        this.camera.eye[1],
+        this.camera.eye[2] - this.camera.cz,
+      ),
+    );
   }
 
   /**
@@ -1412,6 +2049,9 @@ export class Renderer {
     gl.uniform1f(p.u.uUseFog, this.game && this.settings.showFog ? 1 : 0);
     gl.uniform1f(p.u.uTime, this.time);
     gl.uniform1f(p.u.uGrid, this.settings.grid ? 1 : 0);
+    // Ground wetness is authored by the weather, not by the frame: a rainy map
+    // is soaked when the first unit lands and stays soaked.
+    gl.uniform1f(p.u.uWet ?? null, this.weather.wet);
     bindTextureUnit(gl, 1, this.shoreTexture, p.u.uShoreTex ?? null);
     // Fog at unit 0, the previous field at unit 2; the shore map keeps unit 1.
     this.bindFogFields(p.u, 0, 2);
@@ -1459,11 +2099,22 @@ export class Renderer {
     // Low quality keeps the sea surface but stops paying for animated normals.
     gl.uniform1f(p.u.uTime, this.settings.waterDetail ? this.time : 0);
     gl.uniform1f(p.u.uUseFog, this.game && this.settings.showFog ? 1 : 0);
+    // Sea state comes from the weather, so a storm map is fought on heavy water
+    // from the first frame and a calm one is glassy.
+    gl.uniform1f(p.u.uSea ?? null, this.settings.waterDetail ? this.weather.sea : 0.12);
     gl.uniform2f(p.u.uWorldSize, this.scenario.width * TILE_SIZE, this.scenario.height * TILE_SIZE);
     bindTextureUnit(gl, 1, this.shoreTexture, p.u.uShoreTex ?? null);
     this.bindFogFields(p.u, 0, 2);
+    // The sea is one plane across the whole map, so every coastal triangle meets
+    // it at a grazing angle. Geometric clearance alone still left the shoreline
+    // interleaving at long range, so the plane is biased away from the camera in
+    // depth as well: land always wins the boundary, and the waterline reads as a
+    // line instead of a flicker.
+    gl.enable(gl.POLYGON_OFFSET_FILL);
+    gl.polygonOffset(1.5, 2.0);
     gl.bindVertexArray(this.waterVao);
-    gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+    gl.drawElements(gl.TRIANGLES, this.waterCount, gl.UNSIGNED_INT, 0);
+    gl.disable(gl.POLYGON_OFFSET_FILL);
     gl.bindVertexArray(null);
     gl.activeTexture(gl.TEXTURE0);
   }
@@ -1480,6 +2131,11 @@ export class Renderer {
     this.bindFogFields(p.u, 0, 2);
     bindTextureUnit(gl, PROP_MATERIAL_TEXTURE_UNIT, this.materialTexture, p.u.uMatLut ?? null);
     gl.uniform1f(p.u.uEmissive, 0);
+    gl.uniform3f(p.u.uGlow, 0, 0, 0);
+    // Wind reaches the canopy through the prop shader; fences, lamps and rock
+    // are tagged with a rigid material and never move.
+    gl.uniform2f(p.u.uWind, this.weather.wind[0], this.weather.wind[1]);
+    gl.uniform1f(p.u.uTime ?? null, this.time);
     this.treesMesh.draw(this.treeInstances.length);
     this.rocksMesh.draw(this.rockInstances.length);
     // The authored detail set. Three instanced batches, not one draw per prop:
@@ -1489,7 +2145,15 @@ export class Renderer {
     this.tuftsMesh.draw(this.tuftInstances.length);
     this.fencesMesh.draw(this.fenceInstances.length);
     this.lampsMesh.draw(this.lampInstances.length);
-    gl.uniform1f(p.u.uEmissive, 0.22);
+    this.signsMesh.draw(this.signInstances.length);
+    this.rubbleMesh.draw(this.rubbleInstances.length);
+    this.reedsMesh.draw(this.reedInstances.length);
+    this.polesMesh.draw(this.poleInstances.length);
+    // The deposit is the one prop lit from inside: after dark the crystal
+    // faces burn cyan on their own, brighter than the ground they stand on.
+    const crystal = this.nightGlow() * 0.85;
+    gl.uniform1f(p.u.uEmissive, 0.16);
+    gl.uniform3f(p.u.uGlow, 0.16 * crystal, 0.8 * crystal, 1.0 * crystal);
     this.oreMesh.draw(this.oreInstances.length);
   }
 
@@ -1544,13 +2208,12 @@ export class Renderer {
 
   /** How strongly a structure's cast shadow reads, by time of day and weather. */
   private castShadowStrength(): number {
-    const settings = this.scenario?.settings;
-    if (settings?.weather === 'overcast' || settings?.weather === 'rain') return 0.35;
-    const tod = settings?.timeOfDay ?? 'dusk';
-    if (tod === 'day') return 1;
-    if (tod === 'dawn') return 0.66;
-    if (tod === 'night') return 0.3;
-    return 0.58;
+    const tod = this.scenario?.settings.timeOfDay ?? 'dusk';
+    const time = tod === 'day' ? 1 : tod === 'dawn' ? 0.66 : tod === 'night' ? 0.3 : 0.58;
+    // Overcast and precipitation diffuse the sun: under a storm the sky is the
+    // light source, so a hard cast shadow would be a lie. The profile says how
+    // much of the sun survives, and the time of day scales what is left.
+    return time * this.weather.shadow;
   }
 
   /** Ground height for a shadow, lifting it clear of the water surface at sea. */
@@ -1808,6 +2471,45 @@ export class Renderer {
         alpha: 0.6,
       });
     }
+    for (const sign of this.signInstances) {
+      const lean = this.shadowLean(0.4 * sign.scale);
+      out.push({
+        x: sign.x + lean.x,
+        y: sign.y + 0.07,
+        z: sign.z + lean.z,
+        rx: 0.55 * sign.scale,
+        rz: 0.2 * sign.scale,
+        rotation: sign.rotation,
+        alpha: 0.5,
+      });
+    }
+    for (const heap of this.rubbleInstances) {
+      const s = heap.scale;
+      const lean = this.shadowLean(0.2 * s);
+      out.push({
+        x: heap.x + lean.x,
+        y: heap.y + 0.07,
+        z: heap.z + lean.z,
+        rx: 1.1 * s,
+        rz: 0.95 * s,
+        rotation: heap.rotation,
+        alpha: 0.7,
+      });
+    }
+    for (const pole of this.poleInstances) {
+      // A tall pole throws a long thin shadow: the sun direction is what makes
+      // a telegraph run read as standing up rather than painted on.
+      const lean = this.shadowLean(1.6 * pole.scale);
+      out.push({
+        x: pole.x + lean.x,
+        y: pole.y + 0.07,
+        z: pole.z + lean.z,
+        rx: 0.35,
+        rz: 0.35,
+        rotation: 0,
+        alpha: 0.55,
+      });
+    }
     for (const ore of this.oreInstances) {
       const s = ore.scale;
       const lean = this.shadowLean(0.12 * s);
@@ -1837,6 +2539,8 @@ export class Renderer {
     gl.uniform1f(mp.u.uUseFog, 0);
     gl.uniform1f(mp.u.uSilhouette, 0);
     gl.uniform1f(mp.u.uDepthPull, 0);
+    // A scenario preview is not a lit battlefield: no windows glow off the clock.
+    gl.uniform1f(mp.u.uNightGlow, 0);
     this.bindFogFields(mp.u, MESH_FOG_TEXTURE_UNIT, MESH_FOG_OLD_TEXTURE_UNIT);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -2005,6 +2709,24 @@ export class Renderer {
     gl.uniform3f(mp.u.uTint, 1, 1, 1);
   }
 
+  /**
+   * Additive glow left on a hull by a rank-up. It dies away faster than the hit
+   * flash so the two never read as the same event, and a spent id is dropped so
+   * a long battle cannot accumulate them.
+   */
+  private promotionFlash(id: number): number {
+    const at = this.promotionFlashes.get(id);
+    if (at === undefined) return 0;
+    const since = this.time - at;
+    const duration = 1.15;
+    if (since < 0 || since >= duration) {
+      this.promotionFlashes.delete(id);
+      return 0;
+    }
+    const remaining = 1 - since / duration;
+    return 1.05 * remaining * remaining;
+  }
+
   private drawBattleEntities(game: Game): void {
     const gl = this.gl;
     const mp = this.meshProgram;
@@ -2024,7 +2746,10 @@ export class Renderer {
     bindTextureUnit(gl, MESH_MATERIAL_TEXTURE_UNIT, this.materialTexture, mp.u.uMatLut ?? null);
     const team = game.teamOf(game.localPlayerId);
     for (const e of game.state.entities) {
-      if (e.hp <= 0) continue;
+      // A shot-out bridge stays on the map as wreckage, so it is still drawn:
+      // the closed crossing has to be visible to both sides.
+      const collapsedSpan = e.kind === 'building' && e.hp <= 0 && !!BUILDINGS[e.defId]?.walkable;
+      if (e.hp <= 0 && !collapsedSpan) continue;
       if (e.kind === 'unit' && e.garrisonId) continue;
       // Units are only ever drawn in vision. A structure the team has charted
       // stays on the map as a dimmed silhouette once it leaves vision, and a
@@ -2039,7 +2764,9 @@ export class Renderer {
       const turret = remembered ? e.facing : v?.turret ?? e.turretFacing;
       const def = BUILDINGS[e.defId] ? null : UNITS[e.defId];
       const isAir = def?.domain === 'air';
-      const groundY = tileWorldHeight(this.scenario!, x, z);
+      // A unit crossing a bridge stands on the deck, not on the sea bed the
+      // terrain surface reports under it.
+      const groundY = game.deckHeightAt(x, z) ?? tileWorldHeight(this.scenario!, x, z);
       const alt = v?.emergeAlt ?? 1;
       const y = isAir
         ? e.aircraft?.landed
@@ -2050,7 +2777,8 @@ export class Renderer {
             Math.sin(this.time * 1.7 + e.id) * 0.16 * alt
         : groundY + (def?.domain === 'naval' ? 0.12 : 0);
       const bob = def?.domain === 'naval' ? Math.sin(this.time * 1.2 + e.id * 0.7) * 0.06 : 0;
-      const flash = !remembered && game.state.tick - e.lastHitTick < 3 ? 0.75 : 0;
+      const hitFlash = !remembered && game.state.tick - e.lastHitTick < 3 ? 0.75 : 0;
+      const flash = Math.max(hitFlash, remembered ? 0 : this.promotionFlash(e.id));
       // An occupied shelter switches to its garrisoned model and takes the trim
       // colour of the infantry inside, whoever owns the building itself. A
       // remembered structure shows the shape that was charted, not live state.
@@ -2064,7 +2792,18 @@ export class Renderer {
       // at roughly a tenth of its height and grows into the frame from there.
       const progress = construction ? 0.04 + e.buildProgress * 0.96 : 1;
       const liveAlpha = construction ? 0.72 : e.hp / e.maxHp < 0.25 ? 0.94 : 1;
-      const alpha = remembered ? 0.5 : liveAlpha;
+      const alpha = remembered ? 0.46 : liveAlpha;
+      // A charted structure is memory, not sight, and it has to read that way at
+      // a glance: half alpha alone left a garrisonable tenement looking exactly
+      // as solid and as brightly trimmed as a building the team can see right
+      // now. The cold, desaturated tint is the fog of war's own colour, and it
+      // applies to every structure on the map — torch-lit objectives included.
+      gl.uniform3f(
+        mp.u.uTint,
+        remembered ? 0.52 : 1,
+        remembered ? 0.6 : 1,
+        remembered ? 0.66 : 1,
+      );
       // Moving parts are frozen on a remembered silhouette: the shape that was
       // charted is all the team can know, not what it is doing now.
       const rig = e.kind === 'building' ? this.buildingMeshes.get(e.defId) : null;
@@ -2096,8 +2835,12 @@ export class Renderer {
         rotorAngle,
         remembered,
         !remembered && !!e.submarine?.dived,
+        // A shot-out bridge is drawn as wreckage rather than removed: the
+        // crossing is closed, and the span is what shows it.
+        e.kind === 'building' && e.hp <= 0 && !!BUILDINGS[e.defId]?.walkable,
       );
     }
+    gl.uniform3f(mp.u.uTint, 1, 1, 1);
     gl.disable(gl.BLEND);
   }
 
@@ -2201,14 +2944,25 @@ export class Renderer {
     rotorAngle = 0,
     remembered = false,
     submerged = false,
+    collapsed = false,
   ): void {
     const mp = this.meshProgram;
     const gl = this.gl;
     const team = this.teamColorOf(this.game!, owner);
+    // Only a structure's glazing is lit from inside. A vehicle's windscreen
+    // shares the glass material but is not a window in a wall.
+    gl.uniform1f(
+      mp.u.uNightGlow,
+      kind === 'building' ? this.buildingWindowGlow(owner, construction, remembered) : 0,
+    );
     if (kind === 'building') {
       const rig = this.buildingMeshes.get(defId);
       if (!rig) return;
-      const occupied = garrisonOwner !== null && rig.garrisoned ? rig.garrisoned : rig.body;
+      const occupied = collapsed && rig.ruined
+        ? rig.ruined
+        : garrisonOwner !== null && rig.garrisoned
+          ? rig.garrisoned
+          : rig.body;
       const model = modelFor(x, y, z, -facing, 1, verticalScale);
       gl.uniformMatrix4fv(mp.u.uModel, false, model);
       gl.uniform3fv(
@@ -2454,9 +3208,17 @@ export class Renderer {
       const size = p.size0 + (p.size1 - p.size0) * k;
       const fade = p.additive ? Math.max(0, 1 - k * k) : Math.max(0, 1 - k * k * 0.9);
       if (p.additive) {
-        additive.push({ x: p.x, y: p.y, z: p.z, size, r: p.r, g: p.g, b: p.b, a: p.alpha * fade });
+        additive.push({
+          x: p.x, y: p.y, z: p.z, size, r: p.r, g: p.g, b: p.b, a: p.alpha * fade,
+          stretch: p.stretch, soft: p.soft,
+          dirX: p.dir?.[0], dirY: p.dir?.[1], dirZ: p.dir?.[2],
+        });
       } else {
-        normal.push({ x: p.x, y: p.y, z: p.z, size, r: p.r, g: p.g, b: p.b, a: p.alpha * fade });
+        normal.push({
+          x: p.x, y: p.y, z: p.z, size, r: p.r, g: p.g, b: p.b, a: p.alpha * fade,
+          stretch: p.stretch, soft: p.soft,
+          dirX: p.dir?.[0], dirY: p.dir?.[1], dirZ: p.dir?.[2],
+        });
       }
     }
     if (this.game) {

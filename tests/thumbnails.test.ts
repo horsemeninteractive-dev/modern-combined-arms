@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import type { Vec3 } from '../src/render/math';
 import { portraitFrame, thumbnailKey } from '../src/render/thumbnailFrame';
 import { buildingMesh, buildingStyle } from '../src/render/buildingMeshes';
@@ -106,6 +107,22 @@ describe('occupied shelter models', () => {
       // The wire ring and firing positions sit outside the walls, so the
       // occupied state is legible from the tactical camera.
       expect(extent(dressed)).toBeGreaterThan(extent(body));
+    }
+  });
+});
+
+describe('thumbnail program uniforms', () => {
+  const source = readFileSync(new URL('../src/render/thumbnails.ts', import.meta.url), 'utf8');
+
+  it('sets the grade uniforms that otherwise render every card black', () => {
+    // A mesh program leaves an unset uniform at zero, and the shared mesh shader
+    // multiplies the whole lit colour by uTone. Forgetting it here is what turned
+    // every production card into a flat silhouette, so the studio shot must pin
+    // its own neutral grade instead of inheriting the battle's.
+    expect(source).toContain("'uTone'");
+    expect(source).toContain('gl.uniform3fv(u.uTone ?? null, [1, 1, 1])');
+    for (const name of ['uNightGlow', 'uSilhouette', 'uUseFog']) {
+      expect(source).toContain(`gl.uniform1f(u.${name} ?? null, 0)`);
     }
   });
 });

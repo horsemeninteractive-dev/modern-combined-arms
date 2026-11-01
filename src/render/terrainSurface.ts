@@ -3,8 +3,37 @@ import { TERRAIN, inBounds, tileIndex, type TerrainId } from '../sim/terrain';
 import type { Scenario } from '../sim/scenario';
 import type { Vec3 } from './math';
 
-/** Flat water surface; land slopes meet this plane at the shoreline. */
+/** Flat water surface; the sea is drawn as one plane at this height. */
 export const WATER_LEVEL = 0.12;
+
+/**
+ * Height that land corners touching water ramp down to.
+ *
+ * It used to be exactly `WATER_LEVEL`, which put the last ring of land
+ * triangles in the same plane as the sea and made the whole coastline shimmer
+ * with z-fighting. The ramp now finishes a few centimetres *under* the surface:
+ * the water plane is unambiguously above it, the shoreline reads as a waterline
+ * rather than a seam, and nothing is coplanar.
+ */
+export const SHORE_LEVEL = WATER_LEVEL - 0.05;
+
+/**
+ * Lowest drawn height for land that does not touch water.
+ *
+ * Authored beaches and fords sit at elevation 0, which used to place them at
+ * world height 0 — under the sea plane, so a five-tile sand band was drawn
+ * underwater and the coast read as water stretching inland. Land now always
+ * clears the surface, which turns that band into a visible beach and leaves the
+ * only sub-surface geometry at the shoreline ramp.
+ *
+ * The clearance is a fifth of a unit, not a few centimetres. Every flat coastal
+ * tile is drawn at exactly this height, and a four-centimetre gap between it
+ * and the sea plane is inside the depth buffer's own error at battle zoom: the
+ * beach and the water interleaved and the whole shoreline shimmered. The water
+ * plane is also depth-biased away from the camera (see `drawWater`), so the two
+ * surfaces now have both geometric and raster separation.
+ */
+const MIN_LAND_LEVEL = WATER_LEVEL + 0.2;
 
 const EPSILON = 1e-6;
 
@@ -42,10 +71,11 @@ export function terrainCornerHeight(scenario: Scenario, cornerX: number, cornerZ
     }
   }
   if (count === 0) return 0;
-  // Shoreline corners meet the water plane so the land ramps into the sea
-  // instead of leaving a cliff gap against the translucent water surface.
-  if (touchesWater) return WATER_LEVEL;
-  return (sum / count) * ELEVATION_HEIGHT;
+  // Shoreline corners dip just below the water plane so the land ramps into the
+  // sea instead of leaving a cliff gap, without landing in the same plane as
+  // the sea surface (which is what produced the shoreline z-fighting).
+  if (touchesWater) return SHORE_LEVEL;
+  return Math.max(MIN_LAND_LEVEL, (sum / count) * ELEVATION_HEIGHT);
 }
 
 /**

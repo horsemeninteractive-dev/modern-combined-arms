@@ -1,7 +1,8 @@
 import { MAP_FORMAT, MAP_FORMAT_VERSION } from '../sim/constants';
 import { Terrain, inBounds, tileIndex, type TerrainId } from '../sim/terrain';
 import {
-  defaultSettings,
+  clearOreUnderStructures,
+  phaseSettings,
   type Scenario,
   type ScenarioPlayer,
   type ScenarioStructure,
@@ -235,7 +236,7 @@ function assemble(
       startZ: ground.startZ,
     },
   ];
-  return {
+  const scenario: Scenario = {
     format: MAP_FORMAT,
     version: MAP_FORMAT_VERSION,
     meta,
@@ -247,7 +248,7 @@ function assemble(
     units: draft.units,
     objectives: ground.objectives,
     settings: {
-      ...defaultSettings(),
+      ...phaseSettings('day'),
       seed,
       startingMats: 3000,
       startingReq: 180,
@@ -257,6 +258,9 @@ function assemble(
       timeOfDay: 'day',
     },
   };
+  // A deposit under a footprint can never be mined; harvesters would park on it.
+  clearOreUnderStructures(scenario);
+  return scenario;
 }
 
 /* ------------------------------------------------------------------ */

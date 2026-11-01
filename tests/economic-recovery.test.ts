@@ -214,7 +214,12 @@ describe('economic recovery', () => {
   it('keeps earning with one surviving refinery and expands from it', () => {
     const r = run({ refineries: 1, harvesters: 2, mats: 100 }, 120);
     expect(r.passiveRate).toBe(0);
-    expect(r.bank.at(-1)).toBeGreaterThan(100);
+    // The bank is sampled second by second and the commander spends from it, so
+    // the final reading can be a few materials left over from a purchase (a
+    // drop-off costs 600). What the fixture is guarding is that income actually
+    // cleared the starting 100 instead of the base stalling, so it reads the
+    // high-water mark rather than the last sample.
+    expect(Math.max(...r.bank)).toBeGreaterThan(100);
     // Saturated drop-off: the second one is bought out of ordinary income.
     expect(r.refineryOrderedAt).not.toBeNull();
     expect(r.refineryCount).toBe(2);

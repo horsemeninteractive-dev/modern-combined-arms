@@ -26,9 +26,11 @@ import { seatTokenMatches, type RoomSeatDefinition, type RoomSocket } from './ro
 import {
   isLobbyColor,
   isLobbyNation,
+  isPlayableMapId,
   validateLobbyConfig,
   type LobbyConfigV1,
 } from './lobbyConfig';
+import { isWeatherKind } from '../sim/weather';
 
 export interface LobbyChangeResult {
   ok: boolean;
@@ -210,6 +212,90 @@ export class RoomLobby {
   }
 
   /**
+   * Change the battlefield.
+   *
+   * Host only, and only to an id the scenario catalogue marks available for
+   * multiplayer: the room never accepts a client-supplied scenario, just an
+   * identifier it resolves itself. Both seats lose their ready state, because
+   * the other player agreed to a different map.
+   */
+  setMapId(seatId: number, mapId: string): LobbyChangeResult {
+    if (seatId !== this.hostSeatId) {
+      return { ok: false, code: 'host-only', message: 'Only the host can change the battlefield.' };
+    }
+    if (!isPlayableMapId(mapId)) {
+      return { ok: false, code: 'invalid-map', message: 'That battlefield is not available for multiplayer.' };
+    }
+    if (this.config.mapId === mapId) return { ok: true };
+    const candidate: LobbyConfigV1 = {
+      ...this.config,
+      mapId,
+      seats: this.config.seats.map((seat) => ({ ...seat, ready: false })),
+    };
+    const parsed = validateLobbyConfig(candidate);
+    if (!parsed.ok) return { ok: false, code: parsed.problem.code, message: parsed.problem.message };
+    this.config.mapId = parsed.config.mapId;
+    this.config.seats = parsed.config.seats;
+    this.broadcast();
+    this.onChanged?.();
+    return { ok: true };
+  }
+
+  /**
+   * Change the match start hour. Host only, validated, and both seats lose
+   * readiness because the other player agreed to a different battle.
+   */
+  setStartHour(seatId: number, startHour: number): LobbyChangeResult {
+    if (seatId !== this.hostSeatId) {
+      return { ok: false, code: 'host-only', message: 'Only the host can change the start time.' };
+    }
+    if (!Number.isFinite(startHour) || startHour < 0 || startHour >= 24) {
+      return { ok: false, code: 'invalid-time', message: 'Start hour must be between 00:00 and 23:59.' };
+    }
+    if (this.config.startHour === startHour) return { ok: true };
+    const candidate: LobbyConfigV1 = {
+      ...this.config,
+      startHour,
+      seats: this.config.seats.map((seat) => ({ ...seat, ready: false })),
+    };
+    const parsed = validateLobbyConfig(candidate);
+    if (!parsed.ok) return { ok: false, code: parsed.problem.code, message: parsed.problem.message };
+    this.config.startHour = parsed.config.startHour;
+    this.config.seats = parsed.config.seats;
+    this.broadcast();
+    this.onChanged?.();
+    return { ok: true };
+  }
+
+  /**
+   * Change the weather. Host only, and only to a kind the simulation defines:
+   * the profile's numbers reach detection and mobility, so the room resolves it
+   * from its own catalogue rather than trusting a client's description. Both
+   * seats lose readiness, because the other player agreed to different ground.
+   */
+  setWeather(seatId: number, weather: string): LobbyChangeResult {
+    if (seatId !== this.hostSeatId) {
+      return { ok: false, code: 'host-only', message: 'Only the host can change the weather.' };
+    }
+    if (!isWeatherKind(weather)) {
+      return { ok: false, code: 'invalid-weather', message: 'That weather is not a known profile.' };
+    }
+    if (this.config.weather === weather) return { ok: true };
+    const candidate: LobbyConfigV1 = {
+      ...this.config,
+      weather,
+      seats: this.config.seats.map((seat) => ({ ...seat, ready: false })),
+    };
+    const parsed = validateLobbyConfig(candidate);
+    if (!parsed.ok) return { ok: false, code: parsed.problem.code, message: parsed.problem.message };
+    this.config.weather = parsed.config.weather;
+    this.config.seats = parsed.config.seats;
+    this.broadcast();
+    this.onChanged?.();
+    return { ok: true };
+  }
+
+  /**
    * A lobby accepts only transport keepalive and readiness. A gameplay command
    * or a resync is rejected by name so a client cannot believe the match began.
    */
@@ -253,6 +339,33 @@ export class RoomLobby {
       return;
     }
     if (parsed.message.type === 'lobbySet') {
+      // A map change is a host-only room action, not a seat configuration; a
+      // client may not smuggle a scenario id through the seat patch.
+      if (parsed.message.mapId !== undefined) {
+        const mapResult = this.setMapId(seatId, parsed.message.mapId);
+        if (!mapResult.ok) {
+          this.sendError(seat, mapResult.code ?? 'invalid-map', mapResult.message ?? 'Map change rejected.');
+        }
+        return;
+      }
+      if (parsed.message.startHour !== undefined) {
+        const timeResult = this.setStartHour(seatId, parsed.message.startHour);
+        if (!timeResult.ok) {
+          this.sendError(seat, timeResult.code ?? 'invalid-time', timeResult.message ?? 'Time change rejected.');
+        }
+        return;
+      }
+      if (parsed.message.weather !== undefined) {
+        const weatherResult = this.setWeather(seatId, parsed.message.weather);
+        if (!weatherResult.ok) {
+          this.sendError(
+            seat,
+            weatherResult.code ?? 'invalid-weather',
+            weatherResult.message ?? 'Weather change rejected.',
+          );
+        }
+        return;
+      }
       const result = this.setSeatConfig(seatId, {
         ...(parsed.message.nation === undefined ? {} : { nation: parsed.message.nation }),
         ...(parsed.message.color === undefined ? {} : { color: parsed.message.color }),
@@ -285,6 +398,8 @@ export class RoomLobby {
         version: this.config.version,
         mapId: this.config.mapId,
         matchDurationMs: this.config.matchDurationMs,
+        startHour: this.config.startHour,
+        weather: this.config.weather,
         seats: this.config.seats.map((seat, index) => ({
           nation: seat.nation,
           color: seat.color,

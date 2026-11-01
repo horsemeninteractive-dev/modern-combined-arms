@@ -4,7 +4,7 @@
 **Version:** 0.1.1  
 **Date:** 31 October 2026  
 **Project title:** Modern Combined Arms (MCA)  
-**Shipped build:** 0.2.0 BETA — four skirmish theatres, six nations, a campaign prologue, the Scenario Forge editor, a single-player skirmish AI and playable online 1v1. Release notes are in [CHANGELOG.md](CHANGELOG.md).  
+**Shipped build:** 0.3.0 BETA — seventeen competitive battlefields, eight new terrains and six surface layers, selectable weather and a running time of day, unit veterancy, garrisonable shelters and bridges, an expanded Scenario Forge and playable online 1v1. Release notes are in [CHANGELOG.md](CHANGELOG.md).  
 **Important status note:** This document consolidates the current interview decisions and fills unanswered details with recommended defaults where the user authorised recommendations. It is a working baseline, not a claim that every narrative or balance detail is permanently locked. Explicitly provisional ideas are labelled as such. The first playable slice should validate the core experience before the design is expanded into a full production specification.
 
 ---
@@ -701,7 +701,7 @@ Avoid a bland collection of panels over a battlefield. The interface should feel
 
 ---
 
-### 13.9 Shipped interface state (v0.2.0 BETA)
+### 13.9 Shipped interface state (v0.3.0 BETA)
 
 The implemented interface follows the sections above with these concrete choices:
 

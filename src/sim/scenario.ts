@@ -1,12 +1,19 @@
 import { MAP_FORMAT, MAP_FORMAT_VERSION, PLAYER } from './constants';
 import {
   ELEVATION_STEP,
+  OVERLAY_BYTE_MAX,
+  OVERLAYS,
   TERRAIN,
+  TERRAIN_ID_MAX,
   Terrain,
   canStandOn,
   inBounds,
   isNavigable,
   moveCost,
+  overlayAllowedOn,
+  overlayIdOf,
+  overlayLabel,
+  tileBuildable,
   tileIndex,
   type TerrainId,
 } from './terrain';
@@ -15,12 +22,27 @@ import { BUILDINGS } from '../data/buildings';
 import { dist2 } from '../core/math';
 import { UNITS } from '../data/units';
 import { identityLabel, isKnownFactionId } from '../data/factions';
+import {
+  DEFAULT_DAY_LENGTH_MINUTES,
+  PHASE_START_HOURS,
+  configFromPhase,
+  normaliseDayLength,
+  normaliseStartHour,
+} from './dayNight';
+import { isWeatherKind, type WeatherKind } from './weather';
 
 export interface ScenarioTile {
+  /** Base terrain id. */
   t: number;
   e: number;
   /** Remaining material in this tile (0 = none). */
   o: number;
+  /**
+   * Packed surface/vegetation overlay (0 or absent = none). The base terrain is
+   * never replaced by an overlay, so "farmland + crops" stays one tile with one
+   * buildability answer and one movement cost.
+   */
+  v?: number;
 }
 
 export interface ScenarioPlayer {
@@ -71,13 +93,35 @@ export interface ScenarioSettings {
   fog: boolean;
   victory: VictoryType;
   timeLimitSec: number | null;
-  weather: 'clear' | 'overcast' | 'rain';
+  weather: WeatherKind;
+  /** Legacy phase label: still the authored intent, and the default start hour. */
   timeOfDay: 'dawn' | 'day' | 'dusk' | 'night';
+  /**
+   * Authoritative start hour, 0..24. `timeOfDay` seeds it when absent, so an
+   * older scenario keeps the time it was authored for.
+   */
+  startHour: number;
+  /** Real minutes per in-game day; 0 freezes the clock at `startHour`. */
+  dayLengthMinutes: number;
 }
 
 export interface ScenarioCampaignRef {
   campaignId: string;
   missionId: string;
+}
+
+/**
+ * One declared starting position.
+ *
+ * Competitive maps declare four, one per 90-degree rotation of the map. A 1v1
+ * uses the opposite pair; a future 2v2 uses adjacent pairs. Campaign and
+ * editor scenarios leave `slots` out and rely on `players[].startX/startZ`, so
+ * this is additive metadata on the single shared scenario format rather than a
+ * second map system.
+ */
+export interface ScenarioSlot {
+  x: number;
+  z: number;
 }
 
 export interface Scenario {
@@ -105,6 +149,8 @@ export interface Scenario {
   units: ScenarioUnit[];
   objectives: string[];
   settings: ScenarioSettings;
+  /** Four rotated starts on competitive maps; absent elsewhere. */
+  slots?: ScenarioSlot[];
 }
 
 export interface ValidationIssue {
@@ -124,6 +170,15 @@ export class ScenarioFormatError extends Error {
   }
 }
 
+/**
+ * Default settings for an in-code scenario, with the start hour taken from the
+ * authored phase. A builder that only knows it wants daylight gets noon, not
+ * whatever the neutral default happens to be.
+ */
+export function phaseSettings(timeOfDay: ScenarioSettings['timeOfDay']): ScenarioSettings {
+  return { ...defaultSettings(), timeOfDay, ...configFromPhase(timeOfDay) };
+}
+
 export function defaultSettings(): ScenarioSettings {
   return {
     seed: 1337,
@@ -133,7 +188,10 @@ export function defaultSettings(): ScenarioSettings {
     victory: 'destroyHQ',
     timeLimitSec: null,
     weather: 'clear',
-    timeOfDay: 'dusk',
+    // A neutral scenario is a daylight battle; authors ask for anything else.
+    timeOfDay: 'day',
+    startHour: PHASE_START_HOURS.day,
+    dayLengthMinutes: DEFAULT_DAY_LENGTH_MINUTES,
   };
 }
 
@@ -206,10 +264,13 @@ export function parseScenario(raw: unknown): Scenario {
   const tiles: ScenarioTile[] = tilesRaw.map((v, i) => {
     if (!v || typeof v !== 'object') fail(`tiles[${i}]`, 'object');
     const t = v as Record<string, unknown>;
-    const terrain = asNumber(t.t, `tiles[${i}].t`, 0, 7);
+    const terrain = asNumber(t.t, `tiles[${i}].t`, 0, TERRAIN_ID_MAX);
     const e = asNumber(t.e, `tiles[${i}].e`, 0, 4);
     const o = asNumber(t.o ?? 0, `tiles[${i}].o`, 0, 65535);
-    return { t: terrain, e, o };
+    // Overlays are optional: a tile without one is the format every earlier
+    // scenario already used, so nothing has to be migrated.
+    const overlay = t.v === undefined ? 0 : asNumber(t.v, `tiles[${i}].v`, 0, OVERLAY_BYTE_MAX);
+    return overlay > 0 ? { t: terrain, e, o, v: overlay } : { t: terrain, e, o };
   });
   const metaRaw = (r.meta ?? {}) as Record<string, unknown>;
   // Campaign provenance is optional metadata, not a second scenario format.
@@ -280,10 +341,15 @@ export function parseScenario(raw: unknown): Scenario {
   const fog = asBool(settingsRaw.fog ?? true, 'settings.fog');
   const victory = settingsRaw.victory ?? 'destroyHQ';
   if (victory !== 'destroyHQ' && victory !== 'annihilation') fail('settings.victory', 'known victory type');
+  // A file written before storms and snow existed keeps the weather it named;
+  // an unknown value is a hard failure rather than a silent clear day.
   const weather = settingsRaw.weather ?? 'clear';
-  if (!['clear', 'overcast', 'rain'].includes(weather as string)) fail('settings.weather', 'known weather');
+  if (!isWeatherKind(weather)) fail('settings.weather', 'known weather');
   const timeOfDay = settingsRaw.timeOfDay ?? 'dusk';
   if (!['dawn', 'day', 'dusk', 'night'].includes(timeOfDay as string)) fail('settings.timeOfDay', 'known time');
+  // Start hour and cycle length are the authoritative clock; the phase label is
+  // retained as authored intent and as the fallback when a file predates them.
+  const phaseDefaults = configFromPhase(timeOfDay as string, DEFAULT_DAY_LENGTH_MINUTES);
   const settings: ScenarioSettings = {
     seed: asNumber(settingsRaw.seed ?? 1337, 'settings.seed', 0, 0xffffffff),
     startingMats: asNumber(settingsRaw.startingMats ?? 2600, 'settings.startingMats', 0, 1000000),
@@ -296,7 +362,21 @@ export function parseScenario(raw: unknown): Scenario {
         : asNumber(settingsRaw.timeLimitSec, 'settings.timeLimitSec', 10, 7200),
     weather: weather as ScenarioSettings['weather'],
     timeOfDay: timeOfDay as ScenarioSettings['timeOfDay'],
+    startHour: normaliseStartHour(settingsRaw.startHour, phaseDefaults.startHour),
+    dayLengthMinutes: normaliseDayLength(
+      settingsRaw.dayLengthMinutes,
+      phaseDefaults.dayLengthMinutes,
+    ),
   };
+  const slots: ScenarioSlot[] | undefined = Array.isArray(r.slots)
+    ? r.slots.map((value, i) => {
+        const slot = value as Record<string, unknown>;
+        return {
+          x: asNumber(slot?.x, `slots[${i}].x`, 0, width - 1),
+          z: asNumber(slot?.z, `slots[${i}].z`, 0, height - 1),
+        };
+      })
+    : undefined;
   return {
     format: MAP_FORMAT,
     version: MAP_FORMAT_VERSION,
@@ -319,6 +399,7 @@ export function parseScenario(raw: unknown): Scenario {
       ? r.objectives.filter((o): o is string => typeof o === 'string')
       : [],
     settings,
+    ...(slots ? { slots } : {}),
   };
 }
 
@@ -354,9 +435,11 @@ export function reachableFrom(
   const { width, height, tiles } = scenario;
   const terrain = new Uint8Array(tiles.length);
   const elevation = new Uint8Array(tiles.length);
+  const overlay = new Uint8Array(tiles.length);
   for (let i = 0; i < tiles.length; i++) {
     terrain[i] = tiles[i].t;
     elevation[i] = tiles[i].e;
+    overlay[i] = tiles[i].v ?? 0;
   }
   const seen = new Uint8Array(tiles.length);
   const queue: number[] = [];
@@ -382,7 +465,7 @@ export function reachableFrom(
       const ni = tileIndex(width, nx, nz);
       if (seen[ni] || blocked?.[ni]) continue;
       if (Math.abs(elevation[ni] - elevation[cur]) > ELEVATION_STEP[moveClass]) continue;
-      const cost = moveCost(width, height, terrain, elevation, nx, nz, cx, cz, moveClass);
+      const cost = moveCost(width, height, terrain, elevation, nx, nz, cx, cz, moveClass, overlay);
       if (!Number.isFinite(cost)) continue;
       seen[ni] = 1;
       queue.push(ni);
@@ -486,6 +569,37 @@ export function adjacentWater(
 /* Validation                                                          */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Structures cannot be mined: a harvester that targets a deposit under a
+ * footprint drives to the nearest open ground, never gets within mining reach,
+ * and waits there forever. Ore and structures are authored separately, so every
+ * assembled scenario passes through here and any tile inside a footprint loses
+ * its material. Returns the number of tiles cleared.
+ *
+ * Structure coordinates are the top-left tile of the footprint, exactly as
+ * `stampFootprint` reads them when the game builds its blocking grid.
+ */
+export function clearOreUnderStructures(scenario: Scenario): number {
+  const { width, height, tiles } = scenario;
+  let cleared = 0;
+  for (const s of scenario.structures) {
+    const footprint = BUILDINGS[s.defId]?.footprint;
+    if (!footprint) continue;
+    for (let dz = 0; dz < footprint.h; dz++) {
+      for (let dx = 0; dx < footprint.w; dx++) {
+        const x = s.x + dx;
+        const z = s.z + dz;
+        if (!inBounds(width, height, x, z)) continue;
+        const i = tileIndex(width, x, z);
+        if (tiles[i].o <= 0) continue;
+        tiles[i].o = 0;
+        cleared++;
+      }
+    }
+  }
+  return cleared;
+}
+
 export function validateScenario(scenario: Scenario): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   const add = (
@@ -519,7 +633,13 @@ export function validateScenario(scenario: Scenario): ValidationIssue[] {
     if (TERRAIN[tile.t as TerrainId].water) {
       add('error', 'start-on-water', `${p.name}'s start is on water.`, p.startX, p.startZ);
     }
-    if (tile.t === Terrain.Rock || tile.t === Terrain.Forest) {
+    if (
+      tile.t === Terrain.Rock ||
+      tile.t === Terrain.Forest ||
+      tile.t === Terrain.Marsh ||
+      tile.t === Terrain.Rocks ||
+      tile.t === Terrain.Dune
+    ) {
       add(
         'warning',
         'start-obstructed',
@@ -540,6 +660,19 @@ export function validateScenario(scenario: Scenario): ValidationIssue[] {
       add('warning', 'force-empty', `${p.name} has no starting units.`, p.startX, p.startZ);
     }
   }
+
+  // Declared slots are authored start positions, not players: a competitive
+  // map declares four so 1v1 and a future 2v2 read the same ground truth.
+  scenario.slots?.forEach((slot, index) => {
+    if (!inBounds(scenario.width, scenario.height, slot.x, slot.z)) {
+      add('error', 'slot-out-of-bounds', `Start slot ${index} is outside the map.`, slot.x, slot.z);
+      return;
+    }
+    const tile = scenario.tiles[tileIndex(scenario.width, slot.x, slot.z)];
+    if (TERRAIN[tile.t as TerrainId].water) {
+      add('error', 'slot-on-water', `Start slot ${index} is on water.`, slot.x, slot.z);
+    }
+  });
 
   // Structures: footprint validity, overlap, water requirements
   const occupied = new Int32Array(scenario.width * scenario.height).fill(-1);
@@ -574,18 +707,26 @@ export function validateScenario(scenario: Scenario): ValidationIssue[] {
       }
       occupied[idx] = si;
       if (tile.t === Terrain.Road) roadTiles++;
-      if (TERRAIN[tile.t as TerrainId].water) {
-        add('error', 'building-water', `${def.name} is placed on water.`, t.x, t.z);
-      } else if (!TERRAIN[tile.t as TerrainId].buildable) {
+      if (def.walkable) {
+        // A deck is laid across whatever the crossing runs over: channel, mud,
+        // towpath or bank. Only its abutments need to be ground, and those are
+        // the map's business, not a placement error.
+      } else if (TERRAIN[tile.t as TerrainId].water) {
+        // A span is authored over the channel it bridges: water under it is the
+        // point, not a placement mistake.
+        if (!def.waterStructure) {
+          add('error', 'building-water', `${def.name} is placed on water.`, t.x, t.z);
+        }
+      } else if (!tileBuildable(tile.t, tile.v ?? 0)) {
         add(
           'error',
           'building-terrain',
-          `${def.name} is on ${TERRAIN[tile.t as TerrainId].name.toLowerCase()}, which cannot be built on.`,
+          `${def.name} is on ${TERRAIN[tile.t as TerrainId].name.toLowerCase()}${overlayLabel(tile.v)}, which cannot be built on.`,
           t.x,
           t.z,
         );
       }
-      if (tile.o > 0) {
+      if (tile.o > 0 && !def.walkable) {
         add(
           'warning',
           'building-on-ore',
@@ -841,6 +982,27 @@ export function validateScenario(scenario: Scenario): ValidationIssue[] {
     );
   }
 
+  // Surface layer. An overlay that does not belong on its base terrain is a
+  // design slip rather than a broken map, so it is a warning and reported once
+  // per overlay/terrain pair instead of once per tile.
+  const mismatched = new Map<string, { terrain: number; overlay: number; count: number }>();
+  for (const tile of scenario.tiles) {
+    const overlay = tile.v ?? 0;
+    if (overlay <= 0) continue;
+    if (overlayAllowedOn(overlay, tile.t)) continue;
+    const key = `${tile.t}:${overlay}`;
+    const entry = mismatched.get(key);
+    if (entry) entry.count++;
+    else mismatched.set(key, { terrain: tile.t, overlay, count: 1 });
+  }
+  for (const entry of mismatched.values()) {
+    add(
+      'warning',
+      'overlay-unsupported',
+      `${TERRAIN[entry.terrain as TerrainId].name} carries ${OVERLAYS[overlayIdOf(entry.overlay)].name.toLowerCase()} on ${entry.count} tile${entry.count === 1 ? '' : 's'}; that ground does not support it.`,
+    );
+  }
+
   return issues;
 }
 
@@ -881,6 +1043,13 @@ export function checkPlacement(
   tileX: number,
   tileZ: number,
   occupied?: Uint8Array,
+  /**
+   * Live deposit amounts. The simulation passes its runtime ore field, because
+   * a harvested tile stays an ore tile in the authored scenario forever and
+   * would otherwise block building on ground the player has already cleared.
+   * Authored checks (editor, scenario validation) omit it and read the tiles.
+   */
+  ore?: ArrayLike<number>,
 ): PlacementCheck {
   const def = BUILDINGS[defId];
   if (!def) return { ok: false, code: 'unknown', reason: 'Unknown structure type.' };
@@ -899,6 +1068,12 @@ export function checkPlacement(
         return { ok: false, code: 'occupied', reason: 'A unit or structure already occupies this ground.' };
       }
       const tile = scenario.tiles[i];
+      // A bridge deck is laid across whatever the crossing runs over — channel,
+      // towpath, muddy bank — so its footprint is not held to buildable ground.
+      if (def.walkable) {
+        if (TERRAIN[tile.t as TerrainId].water) waterCount++;
+        continue;
+      }
       if (TERRAIN[tile.t as TerrainId].water) {
         waterCount++;
         if (!def.waterStructure) {
@@ -908,21 +1083,23 @@ export function checkPlacement(
             reason: 'This structure cannot be built on water. Move it inland or onto a suitable coast.',
           };
         }
-      } else if (!TERRAIN[tile.t as TerrainId].buildable) {
+      } else if (!tileBuildable(tile.t, tile.v ?? 0)) {
         return {
           ok: false,
           code: 'terrain',
-          reason: `${TERRAIN[tile.t as TerrainId].name} cannot support this structure.`,
+          reason: `${TERRAIN[tile.t as TerrainId].name}${overlayLabel(tile.v)} cannot support this structure.`,
         };
       }
-      if (tile.o > 0) {
+      if ((ore ? (ore[i] ?? 0) : tile.o) > 0) {
         return { ok: false, code: 'ore', reason: 'Clear the material deposit before building here.' };
       }
       minElevation = Math.min(minElevation, tile.e);
       maxElevation = Math.max(maxElevation, tile.e);
     }
   }
-  if (minElevation !== maxElevation) {
+  // A deck spans banks that are not level by definition; every other structure
+  // needs a flat foundation.
+  if (!def.walkable && minElevation !== maxElevation) {
     return { ok: false, code: 'slope', reason: 'The foundation must be level; flatten this terrain first.' };
   }
   if (waterCount > 0 && !def.waterStructure) {

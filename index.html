@@ -287,6 +287,21 @@
                 </div>
                 <p class="difficulty-note" id="difficulty-note">Veteran — balanced expansion, production and attack timing.</p>
               </div>
+              <div class="side-field menu-difficulty">
+                <span class="menu-difficulty-label" id="time-label">TIME OF DAY</span>
+                <div class="difficulty-options" role="group" aria-labelledby="time-label">
+                  <button type="button" class="difficulty-btn" data-start-time="06" aria-pressed="false">DAWN</button>
+                  <button type="button" class="difficulty-btn" data-start-time="12" aria-pressed="false">DAY</button>
+                  <button type="button" class="difficulty-btn" data-start-time="18" aria-pressed="true">DUSK</button>
+                  <button type="button" class="difficulty-btn" data-start-time="22" aria-pressed="false">NIGHT</button>
+                </div>
+                <p class="difficulty-note" id="time-note">Dusk — light falls through the first half of the battle. The full cycle is one hour.</p>
+              </div>
+              <div class="side-field menu-difficulty">
+                <span class="menu-difficulty-label" id="weather-label">WEATHER</span>
+                <div class="difficulty-options" id="weather-options" role="group" aria-labelledby="weather-label"></div>
+                <p class="difficulty-note" id="weather-note">Clear — full visibility, full engagement range, dry ground.</p>
+              </div>
               <div class="menu-actions">
                 <button id="btn-deploy" class="btn btn-primary btn-large">
                   <span class="btn-kicker">DEPLOY</span>
@@ -305,10 +320,10 @@
 
             <section class="menu-view" data-menu-panel="skirmish" aria-label="Skirmish">
               <div class="menu-view-head">
-                <p class="eyebrow" id="skirmish-eyebrow">SKIRMISH · OPERATION KESTREL</p>
-                <h2 id="skirmish-title">Island Assault — Kestrel Bay</h2>
+                <p class="eyebrow" id="skirmish-eyebrow">SKIRMISH · COMBINED</p>
+                <h2 id="skirmish-title">Open Front</h2>
                 <p class="lede" id="skirmish-lede">
-                  Establish a beachhead, break the ridge and take the 11th Expeditionary Corps' command post.
+                  Open rolling ground with scattered treelines and two low ridges. The reference competitive map.
                 </p>
               </div>
               <div class="menu-columns skirmish-columns">
@@ -320,7 +335,7 @@
                 </div>
                 <aside class="menu-brief">
                   <div class="brief-head">
-                    <span>MISSION BRIEF</span><span class="mono" id="brief-code">KESTREL / 01</span>
+                    <span>MISSION BRIEF</span><span class="mono" id="brief-code">COMBINED / 01</span>
                   </div>
                   <div class="brief-map" id="brief-map">
                     <canvas id="brief-map-canvas" aria-label="Theatre terrain map"></canvas>
@@ -333,8 +348,11 @@
                     <div><span>DOCTRINE</span><b id="brief-doctrine">Reconnaissance screen</b></div>
                     <div><span>OPPOSITION</span><b id="brief-opposition">Russia</b></div>
                     <div><span>ALLIANCE</span><b id="brief-alliance">Defender Coalition</b></div>
-                    <div><span>THEATRE</span><b id="brief-size">96 × 72 tiles</b></div>
-                    <div><span>DOMAINS</span><b id="brief-domains">Ground · Air · Naval</b></div>
+                    <div><span>THEATRE</span><b id="brief-size">84 × 84 tiles</b></div>
+                    <div><span>DOMAINS</span><b id="brief-domains">Ground · Air</b></div>
+                    <div><span>STRATEGIC</span><b id="brief-tags">balanced · open · objectives</b></div>
+                    <div><span>PLAYERS</span><b id="brief-players">2 or 4</b></div>
+                    <div><span>WEATHER</span><b id="brief-weather">Clear</b></div>
                   </div>
                 </aside>
               </div>
@@ -426,7 +444,7 @@
 
         <footer class="menu-footer">
           <span>© 2026 MCA PROJECT · HORSEMEN INTERACTIVE</span>
-          <span class="menu-footer-mid" id="menu-build">v0.2.0 BETA · BUILD 0 · IRONTIDE ENGINE</span>
+          <span class="menu-footer-mid" id="menu-build">v0.3.0 BETA · BUILD 0 · IRONTIDE ENGINE</span>
           <div class="menu-footer-links">
             <button id="btn-changelog" class="menu-footer-link" type="button">Changelog</button>
             <button id="btn-briefing" class="menu-footer-link" type="button">Briefing &amp; Controls</button>

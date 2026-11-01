@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Game } from '../src/sim/game';
 import { createIslandAssault } from '../src/data/scenarios';
+import { checkPlacement } from '../src/sim/scenario';
+import { tileIndex } from '../src/sim/terrain';
 import type { Entity } from '../src/sim/types';
 
 function newGame(extraEngineer = false): Game {
@@ -16,7 +18,7 @@ function engineers(game: Game): Entity[] {
 function barracksSite(game: Game): { x: number; z: number } {
   for (let z = 28; z <= 40; z++) {
     for (let x = 12; x <= 24; x++) {
-      if (game.placementStatus(0, 'barracks', x, z).ok) return { x, z };
+      if (game.placementStatus(0, 'mgNest', x, z).ok) return { x, z };
     }
   }
   throw new Error('no barracks site');
@@ -114,6 +116,47 @@ describe('automatic construction', () => {
     });
     game.advance(20 * 12);
     expect(game.player(0)!.stats.matsGathered - gathered).toBeCloseTo(60, 5);
+  });
+
+  it('frees a foundation once the deposit on it has been worked out', () => {
+    const game = newGame();
+    const map = game.state.map;
+    let site: { x: number; z: number } | null = null;
+    let reason = '';
+    for (let z = 0; z < map.height && !site; z++) {
+      for (let x = 0; x < map.width && !site; x++) {
+        const i = tileIndex(map.width, x, z);
+        if (map.ore[i] <= 0) continue;
+        const before = game.placementStatus(0, 'mgNest', x, z);
+        if (before.code !== 'ore') continue;
+        reason = before.reason;
+        // Harvesters drain the runtime field, the authored tiles never change.
+        // A barracks covers a 2x2, so clear its whole footprint.
+        if (x + 1 >= map.width || z + 1 >= map.height) continue;
+        map.ore[i] = 0;
+        map.ore[i + 1] = 0;
+        map.ore[i + map.width] = 0;
+        map.ore[i + map.width + 1] = 0;
+        if (game.placementStatus(0, 'mgNest', x, z).ok) site = { x, z };
+      }
+    }
+    expect(reason).toBe('Clear the material deposit before building here.');
+    expect(site).not.toBeNull();
+  });
+
+  it('reads the live ore field rather than the authored tiles for a deposit', () => {
+    const scenario = createIslandAssault();
+    let deposit: { x: number; z: number } | null = null;
+    for (let z = 0; z < scenario.height && !deposit; z++) {
+      for (let x = 0; x < scenario.width && !deposit; x++) {
+        if (checkPlacement(scenario, 'barracks', x, z).code === 'ore') deposit = { x, z };
+      }
+    }
+    expect(deposit).not.toBeNull();
+    const drained = new Uint16Array(scenario.width * scenario.height);
+    expect(
+      checkPlacement(scenario, 'barracks', deposit!.x, deposit!.z, undefined, drained).code,
+    ).not.toBe('ore');
   });
 
   it('does not place foundations without any engineer', () => {

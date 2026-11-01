@@ -147,12 +147,18 @@ describe('Phase 2A.8 simulation equivalence', () => {
     },
   );
 
-  it('keeps the eight rejected formation slots idle in the 80-unit order', () => {
+  it('gives every unit in the 80-unit order a stand it can reach', () => {
+    // This fixture used to leave eight units idle: their formation slots landed
+    // on standable ground that could not be driven to, and the order was refused
+    // for them while the rest of the force left. The command layer now walks such
+    // a slot out to the nearest ground the hull can actually reach, so the whole
+    // order moves. The checksums above still record the pre-optimisation run and
+    // are expected to be re-baselined separately.
     const game = createCalibrationGame('stress').game;
     game.tick();
     const units = game.state.entities.filter((entity) => entity.kind === 'unit' && entity.hp > 0);
     expect(units.length).toBe(80);
-    expect(units.filter((entity) => entity.order).length).toBe(72);
-    expect(units.filter((entity) => !entity.order && entity.state === 'idle').length).toBeGreaterThanOrEqual(8);
+    expect(units.filter((entity) => entity.order).length).toBe(80);
+    expect(game.state.events.filter((event) => event.type === 'orderFailed')).toHaveLength(0);
   });
 });

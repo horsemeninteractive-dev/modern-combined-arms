@@ -7,7 +7,7 @@
  * charted silhouettes would lose the fog-of-war memory the renderer relies on.
  */
 import { Game } from '../src/sim/game';
-import { builtinScenario } from '../src/data/scenarios';
+import { scenarioById } from '../src/data/scenarioCatalog';
 import { cloneScenario, type Scenario } from '../src/sim/scenario';
 import { createTeamSnapshot } from '../src/multiplayer/projection';
 import {
@@ -20,7 +20,7 @@ import { TILE_SIZE } from '../src/sim/constants';
 import type { Command } from '../src/sim/types';
 
 function scenario(): Scenario {
-  return builtinScenario('rust-valley').create();
+  return scenarioById('open-front')!.create();
 }
 
 function authoritative(seed: Scenario): Game {

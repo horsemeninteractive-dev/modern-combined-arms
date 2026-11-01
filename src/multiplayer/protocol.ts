@@ -78,6 +78,19 @@ export interface ClientLobbySetMessage {
   v: typeof ROOM_PROTOCOL_VERSION;
   nation?: string;
   color?: string;
+  /**
+   * Battlefield id. Only the host may set it, and only to an id the shared
+   * scenario catalogue marks available for multiplayer; the room checks that
+   * itself rather than trusting this field.
+   */
+  mapId?: string;
+  /** Start hour, 0..24. Host only; the room validates and broadcasts it. */
+  startHour?: number;
+  /**
+   * Weather profile id. Host only, and only a kind the simulation defines: the
+   * room resolves the profile itself rather than accepting a client's numbers.
+   */
+  weather?: string;
 }
 
 export type ClientMessage =
@@ -137,7 +150,7 @@ export function parseClientMessage(
   const allowed = ready
     ? ['type', 'v', 'ready']
     : lobbySet
-      ? ['type', 'v', 'nation', 'color']
+      ? ['type', 'v', 'nation', 'color', 'mapId', 'startHour', 'weather']
       : keepalive || resync
         ? ['type', 'v']
         : ['type', 'v', 'command'];
@@ -166,7 +179,13 @@ export function parseClientMessage(
     return { ok: true, message: { type: 'ready', v: ROOM_PROTOCOL_VERSION, ready: parsed.ready } };
   }
   if (lobbySet) {
-    if (parsed.nation === undefined && parsed.color === undefined) {
+    if (
+      parsed.nation === undefined &&
+      parsed.color === undefined &&
+      parsed.mapId === undefined &&
+      parsed.startHour === undefined &&
+      parsed.weather === undefined
+    ) {
       return { ok: false, code: 'malformed-message', message: 'Nothing to change.' };
     }
     if (parsed.nation !== undefined && typeof parsed.nation !== 'string') {
@@ -175,6 +194,15 @@ export function parseClientMessage(
     if (parsed.color !== undefined && typeof parsed.color !== 'string') {
       return { ok: false, code: 'malformed-message', message: 'Colour must be a string.' };
     }
+    if (parsed.mapId !== undefined && typeof parsed.mapId !== 'string') {
+      return { ok: false, code: 'malformed-message', message: 'Map id must be a string.' };
+    }
+    if (parsed.startHour !== undefined && typeof parsed.startHour !== 'number') {
+      return { ok: false, code: 'malformed-message', message: 'Start hour must be a number.' };
+    }
+    if (parsed.weather !== undefined && typeof parsed.weather !== 'string') {
+      return { ok: false, code: 'malformed-message', message: 'Weather must be a string.' };
+    }
     return {
       ok: true,
       message: {
@@ -182,6 +210,9 @@ export function parseClientMessage(
         v: ROOM_PROTOCOL_VERSION,
         ...(parsed.nation === undefined ? {} : { nation: parsed.nation }),
         ...(parsed.color === undefined ? {} : { color: parsed.color }),
+        ...(parsed.mapId === undefined ? {} : { mapId: parsed.mapId }),
+        ...(parsed.startHour === undefined ? {} : { startHour: parsed.startHour }),
+        ...(parsed.weather === undefined ? {} : { weather: parsed.weather }),
       },
     };
   }
@@ -233,6 +264,14 @@ export interface LobbyMessage {
     version: number;
     mapId: string;
     matchDurationMs: number;
+    /**
+     * Authoritative start hour, 0..24. Both seats fight the same clock, so the
+     * guest must receive it: without it the host's choice of time never left
+     * the host's screen and the guest was told a time nobody was playing.
+     */
+    startHour: number;
+    /** Authoritative weather kind, so both seats fight the same sky. */
+    weather: string;
     /** Seat order, so index 0 is always the host. */
     seats: Array<{
       nation: string;

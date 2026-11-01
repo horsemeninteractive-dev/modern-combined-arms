@@ -9,6 +9,7 @@ import { AIR_UNIT_ALTITUDE, unitBannerHeight } from '../render/unitMeshes';
 import { buildingBannerAnchor, buildingBannerPoints, buildingTopHeight } from '../render/buildingMeshes';
 import { buildingWireframe } from '../render/buildingWireframe';
 import { relayMeterState } from './relayMeter';
+import { experienceOf, rankForXp } from '../sim/veterancy';
 
 const BLUE = '#52c5e6';
 const RED = '#ef6c4d';
@@ -315,10 +316,18 @@ export class Overlay {
     const ctx = this.ctx;
     const width = 68;
     ctx.textAlign = 'center';
+    const team = game.teamOf(app.localPlayerId);
     for (const relay of game.state.entities) {
-      if (!isIndestructibleStructure(relay.defId) || !BUILDINGS[relay.defId]?.capturable) continue;
+      // Every strategic objective carries its control meter, destructible or
+      // not. A radar station changes hands by capture exactly like a relay, so
+      // it cannot be the one objective with no readable owner.
+      if (!BUILDINGS[relay.defId]?.capturable) continue;
       if (relay.hp <= 0) continue;
-      if (relay.owner !== app.localPlayerId && !game.isVisibleTo(app.localPlayerId, relay.id)) continue;
+      // Remembered ground still names the holder: a charted objective keeps its
+      // owner label, but not live capture progress nobody is watching.
+      const state = game.visionStateOf(team, relay.id);
+      if (state === 'hidden') continue;
+      const remembered = state !== 'visible';
       const def = BUILDINGS[relay.defId];
       const p = camera.worldToScreen(
         relay.x,
@@ -329,25 +338,27 @@ export class Overlay {
       );
       if (!p.visible) continue;
       const meter = relayMeterState(game, relay);
+      const caption = remembered ? meter.ownerLabel : meter.caption;
+      const progress = remembered ? 0 : meter.progress;
       const x = p.x - width / 2;
       const y = p.y - 6;
       ctx.font = '600 8px SFMono-Regular, Consolas, monospace';
-      const labelWidth = ctx.measureText(meter.caption).width;
+      const labelWidth = ctx.measureText(caption).width;
       ctx.fillStyle = 'rgba(7,12,14,0.78)';
       ctx.fillRect(p.x - labelWidth / 2 - 3, y - 12, labelWidth + 6, 10);
       ctx.fillStyle =
         meter.owner === app.localPlayerId ? '#a6e8f8' : meter.owner === -1 ? '#d8e2dd' : '#ffb29b';
-      ctx.fillText(meter.caption, p.x, y - 4);
+      ctx.fillText(caption, p.x, y - 4);
       ctx.fillStyle = 'rgba(4,8,9,0.82)';
       ctx.fillRect(x - 1, y - 1, width + 2, 7);
       // Ownership tint, then the engineer's live capture progress over it.
-      ctx.globalAlpha = meter.owner === -1 ? 0.22 : 0.5;
+      ctx.globalAlpha = (meter.owner === -1 ? 0.22 : 0.5) * (remembered ? 0.6 : 1);
       ctx.fillStyle = meter.ownerColor;
       ctx.fillRect(x, y, width, 5);
       ctx.globalAlpha = 1;
-      if (meter.progress > 0) {
+      if (progress > 0) {
         ctx.fillStyle = meter.capturerColor;
-        ctx.fillRect(x, y, width * Math.max(0, Math.min(1, meter.progress)), 5);
+        ctx.fillRect(x, y, width * Math.max(0, Math.min(1, progress)), 5);
       }
       ctx.strokeStyle = 'rgba(167,190,184,0.5)';
       ctx.lineWidth = 1;
@@ -601,6 +612,25 @@ export class Overlay {
           : RED;
     ctx.fillStyle = team;
     ctx.fillRect(x - 1, y - 1, 2, 6);
+    // Rank chevrons ride above the bar: one for a Veteran crew, two for Elite.
+    // They are the only battlefield cue that a hull is worth more than its
+    // armour, and they read at the same glance as the health it sits above.
+    const rank = e.kind === 'unit' ? rankForXp(experienceOf(e)) : 0;
+    if (rank > 0) {
+      ctx.fillStyle = 'rgba(240,196,110,0.95)';
+      for (let i = 0; i < rank; i++) {
+        const cy = y - 4 - i * 3;
+        ctx.beginPath();
+        ctx.moveTo(x + 1, cy);
+        ctx.lineTo(x + 4, cy - 2.5);
+        ctx.lineTo(x + 7, cy);
+        ctx.lineTo(x + 7, cy + 1.4);
+        ctx.lineTo(x + 4, cy - 1.1);
+        ctx.lineTo(x + 1, cy + 1.4);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
     if (selected && e.suppression > 0.2) {
       ctx.fillStyle = 'rgba(224,163,74,0.8)';
       ctx.fillRect(x, y + 5, width * Math.min(1, e.suppression), 2);
@@ -625,18 +655,41 @@ export class Overlay {
     const sub = remembered
       ? `${faction} · LAST KNOWN POSITION`
       : `${faction} · ${Math.ceil(e.hp)}/${Math.ceil(e.maxHp)}${e.construction ? ' · UNDER CONSTRUCTION' : ''}`;
+    // A charted objective is a legal order even with nobody looking at it. The
+    // ghost is dim by design, so the label has to carry the invitation: without
+    // it there is nothing on screen to tell the player the silhouette can still
+    // be taken from memory.
+    const capturable = !!BUILDINGS[e.defId]?.capturable && e.owner !== app.localPlayerId;
+    const engineerReady =
+      capturable &&
+      app.ownSelected().some((u) => UNITS[u.defId]?.canCapture && !u.garrisonId);
+    const action = engineerReady
+      ? remembered
+        ? 'RIGHT-CLICK · CAPTURE FROM MEMORY'
+        : 'RIGHT-CLICK · CAPTURE'
+      : '';
     ctx.font = '600 11px Inter, Segoe UI, sans-serif';
-    const w = Math.max(ctx.measureText(title).width, ctx.measureText(sub).width) + 18;
+    let w = Math.max(ctx.measureText(title).width, ctx.measureText(sub).width) + 18;
+    if (action) {
+      ctx.font = '9px SFMono-Regular, Consolas, monospace';
+      w = Math.max(w, ctx.measureText(action).width + 18);
+    }
+    const h = action ? 50 : 38;
     ctx.fillStyle = 'rgba(7,12,14,0.9)';
     ctx.strokeStyle = 'rgba(167,190,184,0.3)';
     ctx.lineWidth = 1;
-    ctx.fillRect(x, y, w, 38);
-    ctx.strokeRect(x + 0.5, y + 0.5, w, 38);
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeRect(x + 0.5, y + 0.5, w, h);
+    ctx.font = '600 11px Inter, Segoe UI, sans-serif';
     ctx.fillStyle = e.owner === app.localPlayerId ? '#a6e8f8' : e.owner === -1 ? '#d8e2dd' : '#ffb29b';
     ctx.fillText(title, x + 9, y + 15);
     ctx.font = '9px SFMono-Regular, Consolas, monospace';
     ctx.fillStyle = 'rgba(141,157,152,0.9)';
     ctx.fillText(sub, x + 9, y + 28);
+    if (action) {
+      ctx.fillStyle = 'rgba(224,163,74,0.95)';
+      ctx.fillText(action, x + 9, y + 42);
+    }
   }
 
   private drawPlacement(app: App, defId: string, tileX: number, tileZ: number, ok: boolean, reason: string): void {

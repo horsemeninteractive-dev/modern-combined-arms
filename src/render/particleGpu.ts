@@ -11,7 +11,18 @@ export interface GpuParticle {
   g: number;
   b: number;
   a: number;
+  /** Length along `dir`; 1 is round. Rain and sparks streak. */
+  stretch?: number;
+  /** Edge softness 0..1; 0 is a tight hot core, 1 a fully feathered puff. */
+  soft?: number;
+  /** World-space streak axis, already normalised. Defaults to world up. */
+  dirX?: number;
+  dirY?: number;
+  dirZ?: number;
 }
+
+/** Floats per instance: centre(3) size(1) rgba(4) shape(2) dir(3). */
+const FLOATS_PER_INSTANCE = 13;
 
 interface Batch {
   vao: WebGLVertexArrayObject;
@@ -56,16 +67,23 @@ export class ParticleGpu {
       gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 4 * 4, 2 * 4);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, index);
       const buffer = gl.createBuffer()!;
+      const stride = FLOATS_PER_INSTANCE * 4;
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
       gl.enableVertexAttribArray(2);
-      gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 8 * 4, 0);
+      gl.vertexAttribPointer(2, 3, gl.FLOAT, false, stride, 0);
       gl.vertexAttribDivisor(2, 1);
       gl.enableVertexAttribArray(3);
-      gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 8 * 4, 3 * 4);
+      gl.vertexAttribPointer(3, 1, gl.FLOAT, false, stride, 3 * 4);
       gl.vertexAttribDivisor(3, 1);
       gl.enableVertexAttribArray(4);
-      gl.vertexAttribPointer(4, 4, gl.FLOAT, false, 8 * 4, 4 * 4);
+      gl.vertexAttribPointer(4, 4, gl.FLOAT, false, stride, 4 * 4);
       gl.vertexAttribDivisor(4, 1);
+      gl.enableVertexAttribArray(5);
+      gl.vertexAttribPointer(5, 2, gl.FLOAT, false, stride, 8 * 4);
+      gl.vertexAttribDivisor(5, 1);
+      gl.enableVertexAttribArray(6);
+      gl.vertexAttribPointer(6, 3, gl.FLOAT, false, stride, 10 * 4);
+      gl.vertexAttribDivisor(6, 1);
       gl.bindVertexArray(null);
       return { vao, buffer, capacity: 0, data: new Float32Array(0), count: 0 };
     };
@@ -80,12 +98,12 @@ export class ParticleGpu {
     const gl = this.gl;
     if (batch.capacity < particles.length) {
       batch.capacity = Math.max(particles.length, 256);
-      batch.data = new Float32Array(batch.capacity * 8);
+      batch.data = new Float32Array(batch.capacity * FLOATS_PER_INSTANCE);
     }
     const d = batch.data;
     for (let i = 0; i < particles.length; i++) {
       const p = particles[i];
-      const o = i * 8;
+      const o = i * FLOATS_PER_INSTANCE;
       d[o] = p.x;
       d[o + 1] = p.y;
       d[o + 2] = p.z;
@@ -94,9 +112,18 @@ export class ParticleGpu {
       d[o + 5] = p.g;
       d[o + 6] = p.b;
       d[o + 7] = p.a;
+      d[o + 8] = p.stretch ?? 1;
+      d[o + 9] = p.soft ?? 0.5;
+      d[o + 10] = p.dirX ?? 0;
+      d[o + 11] = p.dirY ?? 1;
+      d[o + 12] = p.dirZ ?? 0;
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, batch.buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, d.subarray(0, particles.length * 8), gl.DYNAMIC_DRAW);
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      d.subarray(0, particles.length * FLOATS_PER_INSTANCE),
+      gl.DYNAMIC_DRAW,
+    );
     batch.count = particles.length;
   }
 

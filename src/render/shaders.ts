@@ -1,3 +1,5 @@
+import { MATERIAL } from './materials';
+
 const CAMERA = /* glsl */ `
 uniform vec3 uEye;
 uniform vec3 uRight;
@@ -52,6 +54,39 @@ vec3 applyFog(vec3 lit, float fog) {
   vec3 unseen = vec3(0.012, 0.027, 0.038);
   vec3 seen = mix(unseen, chartedTone(lit), fogCharted(fog));
   return mix(seen, lit, fogSeen(fog));
+}
+`;
+
+/**
+ * Aerial perspective.
+ *
+ * Fog of war answers "may I know this is here"; haze answers "how far away is
+ * it", and the two are different questions. Every lit surface fades toward the
+ * weather's own air colour with distance, measured from the camera eye, so the
+ * far side of a foggy map genuinely disappears into the murk while the ground a
+ * scout is standing on stays legible. It is one exp per fragment and it is what
+ * turns the weather from a tint into a volume.
+ */
+const HAZE_GLSL = /* glsl */ `
+uniform vec3 uHazeColor;
+uniform float uHaze;
+/**
+ * Distance from the eye to the camera's focus point, in world units.
+ *
+ * The camera is orthographic and sits far back along its own view axis, so raw
+ * distance from the eye is nearly the same for every fragment on screen — haze
+ * measured that way replaced the whole view with the air colour instead of
+ * fading the far edge. Measuring *past* the focus point instead keeps the
+ * ground under the crosshair clear, pushes the wash toward the horizon of the
+ * view, and behaves the same at every zoom level.
+ */
+uniform float uHazeRef;
+
+vec3 applyHaze(vec3 col, vec3 world) {
+  if (uHaze < 0.0001) return col;
+  float d = max(0.0, length(world - uEye) - uHazeRef);
+  // Exponential extinction, saturated so a very thick profile cannot overflow.
+  return mix(col, uHazeColor, clamp(1.0 - exp(-d * uHaze), 0.0, 0.97));
 }
 `;
 
@@ -126,14 +161,23 @@ uniform vec3 uSun;
 uniform vec3 uEye;
 uniform vec3 uTint;
 uniform float uAmbient;
+/** Global time-of-day grade: warm at dusk, cool and dim at night. */
+uniform vec3 uTone;
 uniform float uAlpha;
 uniform float uFlash;
+/**
+ * How strongly a structure's own glazing is lit from inside, 0 by day. Only the
+ * mesh pass reads it, and the renderer raises it for buildings alone so a
+ * vehicle windscreen never glows like an office window.
+ */
+uniform float uNightGlow;
 uniform sampler2D uFlagTex;
 uniform sampler2D uMatLut;
 uniform float uUseFog;
 /** 1 while drawing the occluded-unit silhouette pass. */
 uniform float uSilhouette;
 ${FOG_FIELD}
+${HAZE_GLSL}
 out vec4 outColor;
 
 float hash21(vec2 p) {
@@ -271,11 +315,22 @@ void main() {
     lit += vec3(0.2, 0.28, 0.3) * fresnel * (0.05 + gloss * 0.16) * (1.0 - metalness * 0.6);
   }
 
+  lit *= uTone;
   lit += vec3(1.0, 0.86, 0.66) * uFlash;
+  // Lit windows are the model's own glass, glowing from the inside after dark.
+  // Slight facing falloff keeps a facade from reading as one flat panel.
+  if (!isFlag && materialId > 4.5 && materialId < 5.5) {
+    float inward = 1.0 - abs(dot(n, normalize(uEye - vWorld)));
+    lit += (vec3(1.0, 0.84, 0.55) * 0.8 + base * 0.5) * uNightGlow * (0.55 + 0.45 * inward);
+  }
   // Only the road pass samples fog: roads are ground features, so they are
   // known where the team has vision, cooled and desaturated where the ground
   // was charted and lost again in ground nobody has ever seen.
   float fog = uUseFog > 0.5 ? fogField(vWorld.xz / uWorldSize) : 1.0;
+  // Haze first, fog of war second: aerial perspective is weather, while the
+  // fog mask is knowledge. Charted and unseen ground must still read as dark,
+  // so the mask always has the last word over the air.
+  lit = applyHaze(lit, vWorld);
   lit = applyFog(lit, fog);
   outColor = vec4(lit, uAlpha);
 }
@@ -486,11 +541,14 @@ in vec4 vGround;
 uniform vec3 uSun;
 uniform vec3 uEye;
 uniform float uAmbient;
+uniform vec3 uTone;
 uniform sampler2D uShoreTex;
 uniform float uUseFog;
 uniform float uTime;
 uniform float uGrid;
+uniform float uWet;
 ${FOG_FIELD}
+${HAZE_GLSL}
 out vec4 outColor;
 
 float hash21(vec2 p) {
@@ -621,11 +679,67 @@ void main() {
   vec2 cell = abs(fract(p / 4.0) - 0.5);
   float edge = smoothstep(0.46, 0.5, max(cell.x, cell.y));
   base *= 1.0 - edge * 0.14 * uGrid;
+
+  // Wet ground. Rain does not paint the whole field one colour: it darkens and
+  // cools what it lands on, and pools in the hollows. Both come from the same
+  // noise field already used for ground cover, so a puddle sits in the low
+  // patch the eye already reads as damp and the sheen follows it there.
+  float puddle = 0.0;
+  if (uWet > 0.001) {
+    puddle = smoothstep(0.5, 0.74, noise2(p * 0.19 + 31.7) * 0.7 + noise2(p * 0.66 + 3.3) * 0.3);
+    puddle *= uWet;
+    vec3 soaked = base * vec3(0.55, 0.6, 0.65) + vec3(0.006, 0.013, 0.02);
+    // Slopes shed water and keep their stone; hollows and grass take it.
+    float soak = uWet * (0.30 + 0.26 * (1.0 - steep)) * (1.0 - rockMask * 0.45);
+    base = mix(base, soaked, soak);
+    base = mix(base, soaked * 0.78, puddle * 0.6);
+  }
+
   float diffuse = max(dot(n, normalize(uSun)), 0.0);
   vec3 lit = base * (uAmbient + (1.0 - uAmbient) * diffuse * 0.88 + 0.06 * n.y);
+  // Standing water is a mirror: a broad, low-power highlight over the whole
+  // soaked field, tightening to a hard sun-glint on the puddles themselves.
+  if (uWet > 0.001) {
+    vec3 viewDir = normalize(uEye - vWorld);
+    vec3 halfDir = normalize(normalize(uSun) + viewDir);
+    float sheen = pow(max(dot(n, halfDir), 0.0), 28.0) * uWet * 0.34;
+    float glint = pow(max(dot(n, halfDir), 0.0), 140.0) * puddle * 1.5;
+    // Grazing angles catch far more of the sky than a top-down look does.
+    float grazing = 1.0 - abs(viewDir.y);
+    vec3 sky = mix(vec3(0.34, 0.40, 0.46), vec3(0.62, 0.68, 0.74), diffuse);
+    lit += (sky * (sheen + glint * 1.4) + vec3(1.0, 0.97, 0.9) * glint * 0.35) * (0.35 + 0.65 * grazing);
+    // A wet surface is a darker diffuse body even where the sun does not glint.
+    lit *= 1.0 - 0.1 * uWet * (1.0 - grazing);
+  }
+  lit *= uTone;
   float fog = uUseFog > 0.5 ? fogField(vUv) : 1.0;
+  lit = applyHaze(lit, vWorld);
   lit = applyFog(lit, fog);
   outColor = vec4(lit, 1.0);
+}
+`;
+
+/**
+ * Sea state, shared by both water stages.
+ *
+ * The height field is one function of world position, time and sea state. The
+ * vertex stage samples it to move the surface, the fragment stage takes its
+ * finite differences for the normal, so the shape the eye sees and the slope
+ * the light bounces off can never disagree. `sea` scales each octave by a
+ * different amount: a storm does not just lift the long swell, it breaks the
+ * surface into short chop, which is what actually reads as heavy water.
+ */
+const SEA_GLSL = /* glsl */ `
+float wave(vec2 p, float t) {
+  return sin(p.x * 0.55 + t * 0.8) * 0.5 + sin(p.y * 0.7 - t * 0.63) * 0.5
+       + sin((p.x + p.y) * 0.33 + t * 0.4) * 0.25;
+}
+
+float seaSurface(vec2 p, float t, float sea) {
+  float swell = wave(p * 0.14, t) * 0.6;
+  float ridge = wave(p * 0.43 + 7.0, t * 1.35) * 0.28;
+  float chop = wave(p * 1.15 - 3.0, t * 1.8) * 0.12;
+  return swell * (0.7 + 1.1 * sea) + ridge * (0.8 + 1.6 * sea) + chop * (0.9 + 2.2 * sea);
 }
 `;
 
@@ -633,13 +747,24 @@ export const WATER_VS = /* glsl */ `#version 300 es
 precision highp float;
 layout(location=0) in vec3 aPos;
 uniform vec2 uWorldSize;
+uniform float uTime;
+uniform float uSea;
+uniform sampler2D uShoreTex;
 ${CAMERA}
+${SEA_GLSL}
 out vec3 vWorld;
 out vec2 vUv;
 void main() {
-  vWorld = aPos;
-  vUv = aPos.xz / uWorldSize;
-  gl_Position = projectWorld(aPos);
+  vec2 uv = aPos.xz / uWorldSize;
+  vUv = uv;
+  // Only the open water carries the swell. The shelf is flat, so the surf line
+  // stays against the beach instead of riding up it in a storm.
+  float shallowness = texture(uShoreTex, uv).r;
+  float openSea = 1.0 - smoothstep(0.3, 0.86, shallowness);
+  float height = seaSurface(aPos.xz, uTime, uSea) * openSea * (0.16 + 0.52 * uSea);
+  vec3 displaced = vec3(aPos.x, aPos.y + height, aPos.z);
+  vWorld = displaced;
+  gl_Position = projectWorld(displaced);
 }
 `;
 
@@ -651,9 +776,13 @@ uniform vec3 uSun;
 uniform vec3 uEye;
 uniform float uTime;
 uniform float uAmbient;
+uniform vec3 uTone;
 uniform sampler2D uShoreTex;
 uniform float uUseFog;
+uniform float uSea;
 ${FOG_FIELD}
+${HAZE_GLSL}
+${SEA_GLSL}
 out vec4 outColor;
 
 float hash21(vec2 p) {
@@ -672,18 +801,6 @@ float noise2(vec2 p) {
   return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
-float wave(vec2 p, float t) {
-  return sin(p.x * 0.55 + t * 0.8) * 0.5 + sin(p.y * 0.7 - t * 0.63) * 0.5
-       + sin((p.x + p.y) * 0.33 + t * 0.4) * 0.25;
-}
-
-// One combined surface height. The finite difference is taken in world space,
-// so the normal is stable at every camera orientation and never uses dFdx.
-float surface(vec2 p, float t) {
-  return wave(p * 0.14, t) * 0.6 + wave(p * 0.43 + 7.0, t * 1.35) * 0.28
-       + wave(p * 1.15 - 3.0, t * 1.8) * 0.12;
-}
-
 void main() {
   // R is shallowness, B is the water's distance from land. The two together
   // separate the shallow shelf from the surf line without a painted mask.
@@ -693,11 +810,14 @@ void main() {
   float t = uTime;
   vec2 p = vWorld.xz;
   float e = 0.4;
-  float h0 = surface(p, t);
-  float hx = surface(p + vec2(e, 0.0), t);
-  float hz = surface(p + vec2(0.0, e), t);
+  float h0 = seaSurface(p, t, uSea);
+  float hx = seaSurface(p + vec2(e, 0.0), t, uSea);
+  float hz = seaSurface(p + vec2(0.0, e), t, uSea);
   vec2 grad = vec2((hx - h0) / e, (hz - h0) / e);
-  vec3 n = normalize(vec3(-grad.x * 3.2, 1.0, -grad.y * 3.2));
+  // A heavy sea is not only taller, it is steeper: the same slope in a rising
+  // swell catches the sun far harder than a lazy one does.
+  float steepness = 3.2 * (0.85 + 0.75 * uSea);
+  vec3 n = normalize(vec3(-grad.x * steepness, 1.0, -grad.y * steepness));
   // Fine chop breaks the long swell into water rather than a printed gradient.
   // Its two terms are animated in opposite directions so the pattern does not
   // sit still under the camera.
@@ -708,6 +828,11 @@ void main() {
   vec3 sunDir = normalize(uSun);
 
   float depth = smoothstep(0.12, 0.96, shallowness);
+  // "depth" here is the shallowness weight the shelf field carries, so open
+  // water is its complement. The seaway belongs to open water: a breaking swell
+  // is a deep-water phenomenon, and keeping it off the shelf is also what keeps
+  // the surf line where the beach is.
+  float openSea = 1.0 - depth;
   vec3 deep = vec3(0.035, 0.145, 0.205);
   vec3 shallow = vec3(0.1, 0.34, 0.36);
   vec3 col = mix(deep, shallow, depth * 0.82 + h0 * 0.05);
@@ -719,9 +844,23 @@ void main() {
   // Short chop is a colour layer as well as a normal layer: at battle zoom the
   // glints alone are too sparse to read as moving water.
   float chop = wave(p * 1.15 - 3.0, t * 1.8);
-  col += vec3(0.014, 0.026, 0.028) * chop;
+  col += vec3(0.014, 0.026, 0.028) * chop * (1.0 + 2.4 * uSea * openSea);
   float crest = smoothstep(0.5, 0.9, h0);
-  col = mix(col, vec3(0.3, 0.44, 0.46), crest * 0.1);
+  col = mix(col, vec3(0.3, 0.44, 0.46), crest * (0.1 + 0.3 * uSea * openSea));
+  // Whitecaps. They are not foam on a beach: they break wherever the surface is
+  // steep and the sea is running, which is why they are keyed on the height
+  // field rather than on the coast channel.
+  float caps = smoothstep(0.58, 0.95, uSea * (0.45 + 0.55 * openSea));
+  if (caps > 0.001) {
+    float breakUp = 0.5 + 0.5 * sin(t * 2.1 + p.x * 0.9 - p.y * 0.75)
+                  * (0.6 + 0.4 * noise2(p * 1.3 - t * 0.07));
+    float crestline = smoothstep(0.62, 0.92, h0 * 0.7 + 0.3);
+    float whitecap = caps * crestline * smoothstep(0.35, 0.8, breakUp);
+    col = mix(col, vec3(0.68, 0.75, 0.76), whitecap * 0.42);
+  }
+  // Spray haze: in a gale the sea reads through a film of its own water, which
+  // is the visual half of the naval detection penalty.
+  col = mix(col, vec3(0.36, 0.45, 0.47), uSea * uSea * 0.12);
   float fleck = smoothstep(0.76, 0.94, noise2(p * 2.1 + vec2(t * 0.08, t * 0.05)));
   col = mix(col, vec3(0.44, 0.56, 0.56), fleck * smoothstep(0.15, 0.55, h0) * 0.08);
   // A restrained sky term, not a planar reflection: the tactical camera is
@@ -749,8 +888,10 @@ void main() {
   float waterline = smoothstep(0.93, 1.0, coast) * (0.4 + 0.6 * noise2(p * 2.1 + t * 0.1));
   col = mix(col, vec3(0.6, 0.69, 0.65), waterline * 0.2);
   col = mix(col, vec3(0.22, 0.38, 0.4), (1.0 - depth) * 0.1);
+  col *= uTone;
 
   float fog = uUseFog > 0.5 ? fogField(vUv) : 1.0;
+  col = applyHaze(col, vWorld);
   col = applyFog(col, fog);
   outColor = vec4(col, 1.0);
 }
@@ -767,6 +908,8 @@ layout(location=5) in float iRot;
 layout(location=6) in float iScale;
 layout(location=7) in vec3 iColor;
 layout(location=8) in float aMaterial;
+uniform vec2 uWind;
+uniform float uTime;
 ${CAMERA}
 out vec3 vNormal;
 out vec3 vColor;
@@ -779,6 +922,21 @@ void main() {
   vec3 rotated = vec3(p.x * c - p.z * s, p.y, p.x * s + p.z * c);
   vec3 n = vec3(aNormal.x * c - aNormal.z * s, aNormal.y, aNormal.x * s + aNormal.z * c);
   vec3 world = rotated + iPos;
+  // Wind in the canopy. Only foliage is tagged with the canvas material, so
+  // fences, kerbs and rock stay planted by construction rather than by a
+  // per-prop flag. Displacement grows with height squared: the trunk base does
+  // not move and the crown travels, which is how a tree actually bends. Two
+  // out-of-phase sines give a gust that arrives across the field instead of
+  // every tree nodding in unison.
+  float foliage = abs(aMaterial - ${MATERIAL.canvas}.0) < 0.5 ? 1.0 : 0.0;
+  if (foliage > 0.5) {
+    float h = max(0.0, rotated.y) * 0.25;
+    float gust = 0.55 + 0.45 * sin(uTime * 2.3 + iPos.x * 0.35 + iPos.z * 0.27);
+    gust += 0.18 * sin(uTime * 5.9 + iPos.z * 0.8);
+    vec2 sway = uWind * h * h * gust * 0.045;
+    world.x += sway.x;
+    world.z += sway.y;
+  }
   vNormal = n;
   vColor = aColor * iColor;
   vWorld = world;
@@ -796,10 +954,13 @@ in float vMaterial;
 uniform vec3 uSun;
 uniform vec3 uEye;
 uniform float uAmbient;
+uniform vec3 uTone;
 uniform float uEmissive;
+uniform vec3 uGlow;
 uniform sampler2D uMatLut;
 uniform float uUseFog;
 ${FOG_FIELD}
+${HAZE_GLSL}
 out vec4 outColor;
 
 float hash21(vec2 p) {
@@ -859,8 +1020,13 @@ void main() {
   float gloss = 1.0 - roughness;
   float highlight = pow(max(dot(n, halfDir), 0.0), mix(6.0, 100.0, gloss));
   col += mix(vec3(1.0), col, 0.5) * highlight * specular * (0.08 + metalness * 0.5);
-  col += vColor * uEmissive;
+  // uGlow is the self-lit colour a prop adds after the light grade: the crystal
+  // seams use it to burn cyan once the sun is down. Scaling it by the facet's
+  // own brightness keeps the cut faces readable instead of flooding the shard
+  // with one flat colour.
+  col = col * uTone + vColor * uEmissive + uGlow * dot(vColor, vec3(0.299, 0.587, 0.114));
   float fog = uUseFog > 0.5 ? fogField(vWorld.xz / uWorldSize) : 1.0;
+  col = applyHaze(col, vWorld);
   col = applyFog(col, fog);
   outColor = vec4(col, 1.0);
 }
@@ -873,15 +1039,34 @@ layout(location=1) in vec2 aUv;
 layout(location=2) in vec3 iCenter;
 layout(location=3) in float iSize;
 layout(location=4) in vec4 iColor;
+// x = vertical stretch, y = edge softness. One spare instance attribute buys
+// rain that reads as falling water instead of a column of dots, and smoke with
+// a feathered edge instead of a hard-edged disc.
+layout(location=5) in vec2 iShape;
+// World-space streak axis. A stretched quad billboarded on the camera's right
+// axis draws a horizontal line whatever the particle is doing; laying the quad
+// along the particle's own direction of travel is what makes rain read as rain
+// at any camera pitch.
+layout(location=6) in vec3 iDir;
 uniform vec3 uRightDir;
 uniform vec3 uUpDir;
 ${CAMERA}
 out vec4 vColor;
 out vec2 vUv;
+out float vSoft;
 void main() {
-  vec3 world = iCenter + uRightDir * aPos.x * iSize + uUpDir * aPos.y * iSize;
+  vec3 axis = normalize(iDir + vec3(0.0, 0.0001, 0.0));
+  // Width axis: perpendicular to both the streak and the view, so the quad
+  // always faces the camera and stays thin side-on.
+  vec3 side = cross(axis, uForward);
+  float sideLen = length(side);
+  side = sideLen > 0.001 ? side / sideLen : uRightDir;
+  vec3 world = iCenter
+    + side * aPos.x * iSize
+    + axis * aPos.y * iSize * max(iShape.x, 0.05);
   vColor = iColor;
   vUv = aUv;
+  vSoft = iShape.y;
   gl_Position = projectWorld(world);
 }
 `;
@@ -890,16 +1075,107 @@ export const PARTICLE_FS = /* glsl */ `#version 300 es
 precision highp float;
 in vec4 vColor;
 in vec2 vUv;
+in float vSoft;
 uniform float uAdditive;
 out vec4 outColor;
 void main() {
   float d = length(vUv - vec2(0.5)) * 2.0;
-  float circle = smoothstep(1.0, 0.15, d);
-  float a = circle * vColor.a;
+  // A soft puff fades from most of its radius; a hot core stays solid almost to
+  // the rim and then drops off hard.
+  float core = mix(0.86, 0.18, clamp(vSoft, 0.0, 1.0));
+  float edge = smoothstep(1.0, core, d);
+  // Break the perfect circle. Weightless puffs get a fixed per-fragment wobble
+  // on their rim, which reads as billowing vapour; sparks stay clean.
+  if (vSoft > 0.6) {
+    float n = fract(sin(dot(vUv * 41.0, vec2(12.9898, 78.233))) * 43758.5453);
+    edge *= 0.82 + 0.36 * n;
+  }
+  float a = clamp(edge, 0.0, 1.0) * vColor.a;
   if (uAdditive > 0.5) {
     outColor = vec4(vColor.rgb * a, a);
   } else {
     outColor = vec4(vColor.rgb, a);
   }
+}
+`;
+
+/**
+ * Night lighting pass.
+ *
+ * One instanced quad batch for every light in the battle: a radial ellipse for
+ * ground pools, beams and floodlit yards, and camera-facing glows for lit
+ * windows and beacons. Additive, depth-tested, depth-write off, and capped by
+ * the simulation's own light list, so a night map costs one draw call rather
+ * than one per lamp and never allocates shadow maps.
+ */
+export const LIGHT_VS = /* glsl */ `#version 300 es
+precision highp float;
+layout(location=0) in vec2 aPos;
+layout(location=1) in vec3 iCenter;
+layout(location=2) in vec4 iColor;
+layout(location=3) in vec4 iShape;
+layout(location=4) in float iCone;
+uniform vec3 uRightDir;
+uniform vec3 uUpDir;
+${CAMERA}
+out vec2 vLocal;
+out vec4 vColor;
+out float vCone;
+void main() {
+  // shape: x = radius, y = rotation, z = stretch along facing, w = 1 for a
+  // camera-facing glow (windows, beacons) rather than a ground pool.
+  // iCone (the spare instance float) turns a pool into a forward cone beam.
+  float radius = iShape.x;
+  float rot = iShape.y;
+  float stretch = iShape.z;
+  vec3 world;
+  if (iShape.w > 0.5) {
+    world = iCenter + uRightDir * aPos.x * radius + uUpDir * aPos.y * radius;
+  } else {
+    float c = cos(rot);
+    float s = sin(rot);
+    vec2 p = vec2(aPos.x * radius * stretch, aPos.y * radius);
+    world = iCenter + vec3(p.x * c - p.y * s, 0.0, p.x * s + p.y * c);
+  }
+  vLocal = aPos;
+  vColor = iColor;
+  vCone = iCone;
+  gl_Position = projectWorld(world);
+}
+`;
+
+export const LIGHT_FS = /* glsl */ `#version 300 es
+precision highp float;
+in vec2 vLocal;
+in vec4 vColor;
+in float vCone;
+out vec4 outColor;
+void main() {
+  float d = length(vLocal);
+  if (d > 1.0) discard;
+  float a;
+  if (vCone > 0.5) {
+    // Headlamp cone. vLocal.x runs from the bumper (-1) to the far end (+1). The
+    // beam is a soft field, not a shape: the spread widens with distance, the
+    // lateral edge is a wide smoothstep rather than a cutoff, and both the near
+    // and far ends fade out so the pool has no visible boundary anywhere.
+    float t = clamp(vLocal.x * 0.5 + 0.5, 0.0, 1.0);
+    float lateral = abs(vLocal.y);
+    float spread = mix(0.30, 1.0, t);
+    float edge = 1.0 - smoothstep(spread * 0.05, spread, lateral);
+    float startFade = smoothstep(0.0, 0.22, t);
+    float endFade = 1.0 - smoothstep(0.50, 1.0, t);
+    float near = 1.0 - 0.45 * t;
+    // Squared once more so the core is not a plateau with a lip around it.
+    float beam = edge * edge * startFade * endFade * near;
+    a = beam * vColor.a;
+  } else {
+    // Squared smooth falloff; the rim fades to nothing so pools never show an edge.
+    float falloff = 1.0 - d;
+    falloff *= falloff;
+    a = falloff * vColor.a;
+  }
+  if (a <= 0.001) discard;
+  outColor = vec4(vColor.rgb * a, a);
 }
 `;

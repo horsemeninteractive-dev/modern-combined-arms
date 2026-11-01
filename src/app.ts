@@ -3,12 +3,13 @@ import { Game } from './sim/game';
 import { TICK_MS, TILE_SIZE } from './sim/constants';
 import { BUILDINGS } from './data/buildings';
 import { UNITS } from './data/units';
+import { createIslandAssault } from './data/scenarios';
 import {
-  BUILTIN_SCENARIOS,
-  DEFAULT_SCENARIO_ID,
-  builtinScenario,
-  createIslandAssault,
-} from './data/scenarios';
+  SCENARIOS,
+  defaultScenarioId,
+  scenarioById,
+  scenariosForMode,
+} from './data/scenarioCatalog';
 import {
   createTutorialScenario,
   TUTORIAL_BRIEF,
@@ -72,6 +73,13 @@ import {
   currentBuildStamp,
   versionTitle,
 } from './version';
+import {
+  WEATHER,
+  WEATHER_KINDS,
+  normaliseWeather,
+  weatherFor,
+  type WeatherKind,
+} from './sim/weather';
 import { pickTerrain, terrainVisualHeight, type TerrainHit } from './render/terrainSurface';
 import { constructionGridVisible } from './render/gridVisibility';
 import { contextOrderFor } from './ui/orderIntent';
@@ -91,14 +99,22 @@ import {
   graphicsPreset,
   normaliseEscBehavior,
   normaliseGraphicsQuality,
+  normaliseLightBloom,
   nextIdleIndex,
   normaliseRenderScale,
   normaliseUiScale,
+  presetNightLights,
   UI_SCALE_MAX,
   UI_SCALE_MIN,
   type EscBehavior,
   type GraphicsQuality,
 } from './settings';
+
+import {
+  normaliseDayLength,
+  normaliseStartHour,
+  phaseForStartHour,
+} from './sim/dayNight';
 
 export type Screen = 'menu' | 'battle' | 'editor';
 /** Panels inside the main menu shell. */
@@ -167,6 +183,16 @@ export interface AppSettings {
   escBehavior: EscBehavior;
   /** Team-coloured outline where a unit is hidden behind a structure. */
   silhouettes: boolean;
+  /** Building and vehicle lights after dark; presentation only. */
+  nightLights: boolean;
+  /** Additive light intensity multiplier; never touches detection. */
+  lightBloom: number;
+  /** Start hour for a new skirmish, 0..24. */
+  startHour: number;
+  /** Weather a new skirmish opens in; the simulation reads the profile. */
+  weather: WeatherKind;
+  /** Real minutes per in-game day; 0 freezes the clock at the start hour. */
+  dayLengthMinutes: number;
 }
 
 /** Skirmish team colours: the alliance defaults, then four distinct picks. */
@@ -364,7 +390,7 @@ export class App {
       fogVisual: true,
       edgePan: true,
       difficulty: 'veteran',
-      mapId: DEFAULT_SCENARIO_ID,
+      mapId: defaultScenarioId('skirmish'),
       nationId: PLAYABLE_NATION_IDS[0],
       opponentNationId: '',
       teamColor: TEAM_COLORS[0].hex,
@@ -375,6 +401,13 @@ export class App {
       fpsReadout: false,
       escBehavior: 'pause',
       silhouettes: true,
+      nightLights: true,
+      lightBloom: 1,
+      startHour: 18,
+      weather: 'clear',
+      // One in-game day is four real hours, so a skirmish lives inside a phase
+      // and only a long battle actually crosses into the dark.
+      dayLengthMinutes: 240,
     };
     try {
       const raw = localStorage.getItem(SETTINGS_KEY);
@@ -383,7 +416,7 @@ export class App {
       const difficulty = DIFFICULTIES.includes(parsed.difficulty as AIDifficulty)
         ? (parsed.difficulty as AIDifficulty)
         : defaults.difficulty;
-      const mapId = BUILTIN_SCENARIOS.some((s) => s.id === parsed.mapId)
+      const mapId = scenariosForMode('skirmish').some((s) => s.id === parsed.mapId)
         ? (parsed.mapId as string)
         : defaults.mapId;
       // Only a playable nation is a valid selection; an older or hand-edited
@@ -425,6 +458,13 @@ export class App {
         fpsReadout: typeof parsed.fpsReadout === 'boolean' ? parsed.fpsReadout : defaults.fpsReadout,
         escBehavior: normaliseEscBehavior(parsed.escBehavior),
         silhouettes: typeof parsed.silhouettes === 'boolean' ? parsed.silhouettes : defaults.silhouettes,
+        nightLights: typeof parsed.nightLights === 'boolean' ? parsed.nightLights : defaults.nightLights,
+        lightBloom: normaliseLightBloom(parsed.lightBloom),
+        startHour: normaliseStartHour(parsed.startHour, defaults.startHour),
+        // An older settings blob has no weather; an unknown id is a clear day
+        // rather than a rejected settings file.
+        weather: normaliseWeather(parsed.weather),
+        dayLengthMinutes: normaliseDayLength(parsed.dayLengthMinutes, defaults.dayLengthMinutes),
       };
     } catch {
       return defaults;
@@ -442,6 +482,8 @@ export class App {
     this.renderer.settings.shadows = preset.shadows;
     this.renderer.settings.waterDetail = preset.waterDetail;
     this.renderer.settings.silhouettes = this.settings.silhouettes;
+    this.renderer.settings.nightLights = this.settings.nightLights;
+    this.renderer.settings.lightBloom = normaliseLightBloom(this.settings.lightBloom);
     this.renderer.particles.setCap(preset.maxParticles);
     const scale = normaliseUiScale(this.settings.uiScale);
     document.documentElement.style.setProperty('--ui-scale', String(scale));
@@ -521,6 +563,20 @@ export class App {
         this.applyDifficultyUi();
       });
     });
+    document.querySelectorAll<HTMLButtonElement>('[data-start-time]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const hour = Number(btn.dataset.startTime);
+        if (!Number.isFinite(hour)) return;
+        this.audio.init();
+        this.audio.play('ui');
+        this.settings.startHour = normaliseStartHour(hour);
+        this.saveSettings();
+        this.applyTimeOfDayUi();
+        // The menu backdrop is the selected theatre at the selected hour, so the
+        // player sees the light they are choosing before deploying.
+        this.setMenuBackdrop(this.selectedScenario());
+      });
+    });
     this.configureMultiplayerNav();
     this.renderVersionStamp();
     this.changelogAck = readAcknowledged(this.localStore());
@@ -529,9 +585,12 @@ export class App {
     this.buildNationSelector();
     this.buildOpponentSelector();
     this.buildTeamColors();
+    this.buildWeatherSelector();
     this.buildCampaignScreen();
     document.addEventListener('fullscreenchange', () => this.syncFullscreenControls());
     this.applyDifficultyUi();
+    this.applyTimeOfDayUi();
+    this.applyWeatherUi();
     this.showMenuView(this.menuView);
     this.renderMenuSettings();
     this.refreshEditorAutosaveButton();
@@ -860,7 +919,7 @@ export class App {
 
   /** Swap the map behind the shell, used both on arrival and on selection. */
   private setMenuBackdrop(scenario: Scenario): void {
-    const index = BUILTIN_SCENARIOS.findIndex((entry) => entry.id === scenario.meta.id);
+    const index = SCENARIOS.findIndex((entry) => entry.id === scenario.meta.id);
     this.attractIndex = index >= 0 ? index : 0;
     this.startAttractMatch(scenario);
     this.paintBriefMap();
@@ -985,8 +1044,8 @@ export class App {
     }
     this.attractElapsed += dt;
     if (this.attractElapsed >= ATTRACT_MATCH_SECONDS) {
-      this.attractIndex = (this.attractIndex + 1) % BUILTIN_SCENARIOS.length;
-      this.startAttractMatch(this.scenarioFor(BUILTIN_SCENARIOS[this.attractIndex].id));
+      this.attractIndex = (this.attractIndex + 1) % SCENARIOS.length;
+      this.startAttractMatch(this.scenarioFor(SCENARIOS[this.attractIndex].id));
       // The next theatre arrives as a signal cut, not a jump cut: the same tear
       // the menu uses for a view change sells the new downlink.
       this.glitchSwitch();
@@ -1081,6 +1140,73 @@ export class App {
     if (note) note.textContent = DIFFICULTY_COPY[current];
   }
 
+  /** Time-of-day picker: four authored starts, each with its own light. */
+  private applyTimeOfDayUi(): void {
+    const phase = phaseForStartHour(this.settings.startHour);
+    const start = Math.round(this.settings.startHour);
+    document.querySelectorAll<HTMLButtonElement>('[data-start-time]').forEach((btn) => {
+      const on = Number(btn.dataset.startTime) === start;
+      btn.classList.toggle('on', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    const note = document.getElementById('time-note');
+    if (note) {
+      note.textContent =
+        phase === 'night'
+          ? 'Night — detection and engagement ranges are cut; thermal optics and lighting decide the fight.'
+          : phase === 'dawn'
+            ? 'Dawn — light returns through the opening minutes; night optics lose their edge.'
+            : phase === 'day'
+              ? 'Day — full visual detection. The cycle runs a full day every hour.'
+              : 'Dusk — light falls through the first half of the battle. The full cycle is one hour.';
+    }
+  }
+
+  /**
+   * Weather picker: one button per authored profile.
+   *
+   * The catalogue is the single source of truth, so a weather kind added to the
+   * simulation appears here (and in the forge) without a second list to keep in
+   * step. Weather is fought on, not merely seen, so the note spells out what the
+   * choice does rather than describing the sky.
+   */
+  private buildWeatherSelector(): void {
+    const host = document.getElementById('weather-options');
+    if (!host) return;
+    host.innerHTML = '';
+    for (const kind of WEATHER_KINDS) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'difficulty-btn';
+      btn.dataset.weather = kind;
+      btn.setAttribute('aria-pressed', 'false');
+      btn.textContent = WEATHER[kind].label.toUpperCase();
+      btn.addEventListener('click', () => {
+        this.audio.init();
+        this.audio.play('ui');
+        this.settings.weather = kind;
+        this.saveSettings();
+        this.applyWeatherUi();
+        this.applyMapUi();
+        // The menu backdrop is the selected theatre in the selected weather, so
+        // the choice is visible before a single unit lands.
+        this.setMenuBackdrop(this.selectedScenario());
+      });
+      host.appendChild(btn);
+    }
+  }
+
+  private applyWeatherUi(): void {
+    const profile = weatherFor(this.settings.weather);
+    document.querySelectorAll<HTMLButtonElement>('[data-weather]').forEach((btn) => {
+      const on = btn.dataset.weather === profile.kind;
+      btn.classList.toggle('on', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    const note = document.getElementById('weather-note');
+    if (note) note.textContent = `${profile.label} — ${profile.hint}`;
+  }
+
   /* ------------------------------------------------------------------ */
   /* Theatre selection                                                   */
   /* ------------------------------------------------------------------ */
@@ -1089,8 +1215,9 @@ export class App {
   private scenarioFor(id: string): Scenario {
     const cached = this.mapCache.get(id);
     if (cached) return cached;
-    const scenario = builtinScenario(id).create();
-    this.mapCache.set(id, scenario);
+    const entry = scenarioById(id) ?? scenarioById(defaultScenarioId('skirmish'))!;
+    const scenario = entry.create();
+    this.mapCache.set(entry.id, scenario);
     return scenario;
   }
 
@@ -1119,6 +1246,14 @@ export class App {
       scenario.players[1].name = `${theirs.name} Task Force`;
       scenario.players[1].color = this.settings.opponentColor;
     }
+    // A skirmish starts at the time the player chose; the authored phase label
+    // stays as the map's own default for campaign missions and multiplayer.
+    scenario.settings.startHour = normaliseStartHour(this.settings.startHour);
+    scenario.settings.dayLengthMinutes = normaliseDayLength(this.settings.dayLengthMinutes);
+    scenario.settings.timeOfDay = phaseForStartHour(scenario.settings.startHour);
+    // Weather stacks with the clock rather than replacing it: the same dusk in
+    // fog is a different battle from the same dusk in a storm.
+    scenario.settings.weather = this.settings.weather;
     return scenario;
   }
 
@@ -1253,7 +1388,9 @@ export class App {
     const root = document.getElementById('map-cards');
     if (!root) return;
     root.innerHTML = '';
-    for (const entry of BUILTIN_SCENARIOS) {
+    // The selector shows exactly what the catalogue makes available for
+    // skirmish. It does not decide availability, size or player count itself.
+    for (const entry of scenariosForMode('skirmish')) {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'map-card';
@@ -1263,8 +1400,8 @@ export class App {
       btn.innerHTML = `
         <canvas class="map-card-canvas" aria-hidden="true"></canvas>
         <span class="map-card-text">
-          <b>${escapeHtml(entry.name.replace('Island Assault — ', ''))}</b>
-          <small>${escapeHtml(entry.focus)} · ${entry.width}×${entry.height}</small>
+          <b>${escapeHtml(entry.name)}</b>
+          <small>${escapeHtml(entry.focus)} · ${entry.width}×${entry.height} · ${escapeHtml(entry.tags.slice(0, 2).join(' · '))}</small>
         </span>`;
       btn.addEventListener('click', () => {
         this.audio.init();
@@ -1289,9 +1426,9 @@ export class App {
 
   /** The head, the brief and the selector all describe the selected theatre. */
   private applyMapUi(): void {
-    const entry = builtinScenario(this.settings.mapId);
+    const entry = scenarioById(this.settings.mapId) ?? scenarioById(defaultScenarioId('skirmish'))!;
     const scenario = this.selectedScenario();
-    const index = Math.max(0, BUILTIN_SCENARIOS.findIndex((s) => s.id === entry.id));
+    const index = Math.max(0, scenariosForMode('skirmish').findIndex((s) => s.id === entry.id));
     const text = (id: string, value: string) => {
       const el = document.getElementById(id);
       if (el) el.textContent = value;
@@ -1307,6 +1444,12 @@ export class App {
     text('brief-code', `${entry.focus.toUpperCase()} / 0${index + 1}`);
     text('brief-size', `${scenario.width} × ${scenario.height} tiles`);
     text('brief-domains', entry.domains);
+    text('brief-tags', entry.tags.join(' · '));
+    text('brief-players', `${entry.playerCounts.join(' or ')} commanders`);
+    const weather = weatherFor(this.settings.weather);
+    text('brief-weather', weather.label);
+    const weatherRow = document.getElementById('brief-weather');
+    if (weatherRow) weatherRow.title = weather.hint;
     const canvas = document.getElementById('brief-map-canvas');
     canvas?.setAttribute('aria-label', `${entry.name} terrain map`);
     // Command, formation and the map's side labels are nation-driven; see
@@ -1569,7 +1712,7 @@ export class App {
     const campaign = this.campaignDef();
     const mission = this.campaignMission();
     const scenario = this.campaignScenario();
-    const entry = builtinScenario(mission.mapId);
+    const entry = scenarioById(mission.mapId) ?? scenarioById(defaultScenarioId('campaign'))!;
     const command = identityDef(mission.playerNationId);
     const opposition = identityDef(mission.opponentNationId);
     const alliance = identityAlliance(command.id);
@@ -1713,8 +1856,8 @@ export class App {
 
   private fillLoading(scenario: Scenario): void {
     const entry =
-      BUILTIN_SCENARIOS.find((s) => s.id === scenario.meta.id) ??
-      (scenario.meta.id === TUTORIAL_SCENARIO_ID ? TUTORIAL_BRIEF : BUILTIN_SCENARIOS[0]);
+      SCENARIOS.find((s) => s.id === scenario.meta.id) ??
+      (scenario.meta.id === TUTORIAL_SCENARIO_ID ? TUTORIAL_BRIEF : SCENARIOS[0]);
     const text = (id: string, value: string) => {
       const el = document.getElementById(id);
       if (el) el.textContent = value;
@@ -1828,6 +1971,9 @@ export class App {
       this.frameBattleCamera();
       this.setLoading(false);
       this.audio.startMatchMusic();
+      // The opening line belongs to the battle, not to the deck: the announcer is
+      // reset above, so each engagement establishes its own field once.
+      this.audio.announce('battlefieldEstablished');
       if (isTutorial) {
         this.tutorial = new TutorialDirector(this);
         this.tutorial.start();
@@ -1878,6 +2024,12 @@ export class App {
       version: 1 as const,
       mapId: view.mapId ?? '',
       matchDurationMs: view.matchDurationMs,
+      // The client builds its own copy of the battlefield from the room's
+      // configuration, so the host's hour and weather have to be carried across
+      // rather than left to the map's authored defaults: without them a guest
+      // fought the same ground in a different sky.
+      startHour: view.startHour,
+      weather: view.weather,
       seats: view.seats.map((seat) => ({
         nation: seat.nation,
         color: seat.color,
@@ -1949,7 +2101,15 @@ export class App {
         send: (command) => client.sendCommand(command),
       });
       this.networkClient = client;
-      client.onSnapshot((snapshot) => this.network?.apply(snapshot));
+      client.onSnapshot((snapshot) => {
+        // The room's map is the battlefield: adopt its layers before the update
+        // lands so the first painted frame already shows the real ground. A
+        // resync re-ships the same map, and nothing is rebuilt then.
+        if (snapshot.map && this.game?.adoptNetworkMap(snapshot.map)) {
+          this.renderer.rebuildTerrain();
+        }
+        this.network?.apply(snapshot);
+      });
       this.renderer.settings.showFog = this.settings.fogVisual && scenario.settings.fog;
       this.renderer.setGame(game);
       this.renderer.camera.setBattleZoom();
@@ -1970,6 +2130,7 @@ export class App {
       this.hud.mount(game);
       this.frameBattleCamera();
       this.audio.startMatchMusic();
+      this.audio.announce('battlefieldEstablished');
       this.notify(`Linked to the room as seat ${seat + 1}. The server is authoritative.`, 'info');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -2137,6 +2298,16 @@ export class App {
       const isLocal = ev.team === local;
       const cue = announcementForEvent(ev, local);
       if (cue) this.audio.announce(cue);
+      // A rank-up is felt on the map before it is read: the promoted hull pulses
+      // for about a second, and the commander gets the same field-report line as
+      // every other battle event. The log entry is added below with the rest of
+      // this team's news, so a promotion survives as history, not just a flash.
+      if (ev.type === 'notice' && ev.code === 'unitPromoted') {
+        if (ev.entityId !== undefined && eventVisibleToLocal(this.game, ev)) {
+          this.renderer.flashPromotion(ev.entityId);
+        }
+        if (isLocal) this.notify(ev.text, 'success');
+      }
       // Visible enemy fire is part of the battle, not hidden information. Feed
       // it through the same fog gate the renderer uses, with distance trim so
       // a firefight across the island does not sound like one in the base.
@@ -3255,6 +3426,8 @@ export class App {
       <div class="setting-row"><div><label>Unit silhouettes</label><small>Outline a unit hidden behind a structure</small></div><button class="switch ${s.silhouettes ? 'on' : ''}" data-toggle="silhouettes"></button></div>
       <div class="setting-row"><div><label>Screen shake</label><small>Explosion camera movement</small></div><button class="switch ${s.shake ? 'on' : ''}" data-toggle="shake"></button></div>
       <div class="setting-row"><div><label>Fog of war</label><small>Visual fog; gameplay detection is unchanged</small></div><button class="switch ${s.fogVisual ? 'on' : ''}" data-toggle="fogVisual"></button></div>
+      <div class="setting-row"><div><label>Night lights</label><small>Building and vehicle lights; their detection effect is unchanged</small></div><button class="switch ${s.nightLights ? 'on' : ''}" data-toggle="nightLights"></button></div>
+      <div class="setting-row"><div><label>Light glow</label><small>Additive brightness of lamps and beams</small></div><div class="set-inline"><input type="range" min="0" max="150" step="5" value="${Math.round(s.lightBloom * 100)}" data-set="lightBloom"><output data-value-for="lightBloom">${Math.round(s.lightBloom * 100)}%</output></div></div>
       <div class="setting-row"><div><label>Edge panning</label><small>Move camera at screen edges</small></div><button class="switch ${s.edgePan ? 'on' : ''}" data-toggle="edgePan"></button></div>
       <div class="setting-row"><div><label>Fullscreen</label><small>Fill the screen; Esc leaves it</small></div><button class="switch ${isFullscreen() ? 'on' : ''}" data-toggle="fullscreen"></button></div>
     `;
@@ -3276,6 +3449,9 @@ export class App {
         else if (key === 'renderScale') this.settings.renderScale = normaliseRenderScale(raw / 100);
         else if (key === 'sfx' || key === 'voice' || key === 'unitVoice' || key === 'ambient' || key === 'music') {
           this.settings[key] = raw;
+        } else if (key === 'lightBloom') {
+          this.settings.lightBloom = normaliseLightBloom(raw / 100);
+          this.renderer.settings.lightBloom = this.settings.lightBloom;
         } else return;
         const out = root.querySelector<HTMLElement>(`[data-value-for="${key}"]`);
         if (out) out.textContent = `${Math.round(raw)}%`;
@@ -3291,6 +3467,9 @@ export class App {
           this.settings.renderScale = normaliseRenderScale(
             graphicsPreset(this.settings.graphicsQuality).renderScale,
           );
+          // Low quality keeps the darkness but drops the additive light pass;
+          // the switch can turn it back on, because it is presentation only.
+          this.settings.nightLights = presetNightLights(this.settings.graphicsQuality);
           const slider = root.querySelector<HTMLInputElement>('[data-set="renderScale"]');
           if (slider) slider.value = String(Math.round(this.settings.renderScale * 100));
           const out = root.querySelector<HTMLElement>('[data-value-for="renderScale"]');
@@ -3326,7 +3505,8 @@ export class App {
           key !== 'shake' &&
           key !== 'fogVisual' &&
           key !== 'edgePan' &&
-          key !== 'silhouettes'
+          key !== 'silhouettes' &&
+          key !== 'nightLights'
         ) {
           return;
         }
@@ -3339,6 +3519,9 @@ export class App {
         }
         if (key === 'silhouettes') {
           this.renderer.settings.silhouettes = this.settings.silhouettes;
+        }
+        if (key === 'nightLights') {
+          this.renderer.settings.nightLights = this.settings.nightLights;
         }
       });
     });

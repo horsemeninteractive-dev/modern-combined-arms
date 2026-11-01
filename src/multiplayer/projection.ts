@@ -27,6 +27,12 @@ export interface ProjectedMap {
   terrain: number[];
   elevation: number[];
   ore: number[];
+  /**
+   * Packed surface/vegetation layer per tile (0 = bare). Optional so a sync
+   * from a build without the layer stays valid; a recipient that receives it
+   * paints the same ground the server is fighting over instead of bare terrain.
+   */
+  overlay?: number[];
 }
 
 export interface ProjectedPlayer {
@@ -57,6 +63,12 @@ export interface ProjectedEntity {
   stance?: Entity['stance'];
   buildProgress: number | null;
   construction: boolean | null;
+  /**
+   * Veterancy experience. Visible on both sides: chevrons on an enemy crew are
+   * what the eye reads across the map, not hidden bookkeeping. Omitted on a
+   * remembered silhouette, which carries no live state at all.
+   */
+  xp?: number;
   /** True only for a structure the team charted but cannot currently see. */
   remembered?: true;
   /** Own/allied entities only. */
@@ -107,6 +119,9 @@ export function projectMap(game: Game): ProjectedMap {
     terrain: Array.from(map.terrain),
     elevation: Array.from(map.elevation),
     ore: Array.from(map.ore),
+    // The surface layer is part of the battlefield, not a client-side decal:
+    // crops, reeds and hedgerows change what a tile looks like on both seats.
+    overlay: Array.from(map.overlay ?? new Uint8Array(map.width * map.height)),
   };
 }
 
@@ -166,6 +181,7 @@ function liveEntity(game: Game, entity: Entity, team: number, own: boolean): Pro
     state: entity.state,
     buildProgress: entity.buildProgress,
     construction: entity.construction,
+    xp: entity.xp ?? 0,
   };
   if (!own) return projected;
   projected.stance = entity.stance;

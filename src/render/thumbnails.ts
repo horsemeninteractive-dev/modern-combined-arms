@@ -30,6 +30,13 @@ const UNIFORM_NAMES = [
   'uAlpha',
   'uFlash',
   'uMatLut',
+  // Added with the day/night grade. These default to zero when a program
+  // declares them, and `uTone` multiplies the whole lit colour, so leaving it
+  // unset renders every card as a black silhouette.
+  'uTone',
+  'uNightGlow',
+  'uSilhouette',
+  'uUseFog',
 ] as const;
 type UniformName = (typeof UNIFORM_NAMES)[number];
 
@@ -317,6 +324,12 @@ export class ThumbnailRenderer {
       gl.uniform1f(u.uAmbient ?? null, 0.58);
       gl.uniform1f(u.uAlpha ?? null, 1);
       gl.uniform1f(u.uFlash ?? null, 0);
+      // Card art is its own studio shot: neutral grade, no window glow, no fog
+      // and no silhouette pass. The card's own CSS dims it for state.
+      gl.uniform3fv(u.uTone ?? null, [1, 1, 1]);
+      gl.uniform1f(u.uNightGlow ?? null, 0);
+      gl.uniform1f(u.uSilhouette ?? null, 0);
+      gl.uniform1f(u.uUseFog ?? null, 0);
       gl.uniform3fv(u.uTeamColor ?? null, this.teamRgb(request.color));
       if (this.materialTexture) {
         bindTextureUnit(gl, MESH_MATERIAL_TEXTURE_UNIT, this.materialTexture, u.uMatLut ?? null);

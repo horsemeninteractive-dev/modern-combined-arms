@@ -1,5 +1,5 @@
 import { TILE_SIZE } from './constants';
-import { Terrain, inBounds, tileIndex, type TerrainId } from './terrain';
+import { inBounds, tileCover, tileIndex, tileSight } from './terrain';
 import { BUILDINGS, isIndestructibleStructure } from '../data/buildings';
 import { UNITS } from '../data/units';
 import { WEAPONS } from '../data/weapons';
@@ -92,7 +92,8 @@ export function hasLineOfSight(
   const startElevation = map.elevation[tileIndex(map.width, x0, z0)];
   const endElevation = map.elevation[tileIndex(map.width, x1, z1)];
   const ridgeCeiling = Math.max(startElevation, endElevation) + 0.4;
-  let forestTiles = 0;
+  // Running soft obscuration along the line; three soft tiles close it.
+  let obscured = 0;
   let guard = 0;
   while (guard++ < 500) {
     if (x0 === x1 && z0 === z1) break;
@@ -107,13 +108,39 @@ export function hasLineOfSight(
     }
     if ((x0 === x1 && z0 === z1) || !inBounds(map.width, map.height, x0, z0)) break;
     const i = tileIndex(map.width, x0, z0);
-    const terrain = map.terrain[i] as TerrainId;
-    if (terrain === Terrain.Rock) return false;
     if (map.elevation[i] > ridgeCeiling) return false;
-    if (terrain === Terrain.Forest) forestTiles++;
+    // Obscuration is data-driven: a tile either hard-blocks the line, or adds
+    // its soft cost to the running total. Canopy, scrub, boulder fields, crop
+    // rows, reeds and hedgerows all feed the same accounting, so a new terrain
+    // cannot forget to be seen through.
+    const obscuration = tileSight(map.terrain[i], map.overlay?.[i] ?? 0);
+    if (obscuration >= 2) return false;
+    obscured += obscuration;
+    if (obscured >= 3) return false;
   }
-  if (forestTiles >= 3) return false;
   return true;
+}
+
+/**
+ * Terrain cover on the tile an entity stands on, in 0..1.
+ *
+ * Cover is physical protection: masonry, boulders, a hedgerow bank, a scrape.
+ * Crops and reeds add concealment, never cover, so standing in a field makes a
+ * unit harder to find but no harder to kill. Indirect fire arcs over field
+ * cover, so only direct-fire weapons are reduced.
+ */
+export function coverFactor(
+  map: RuntimeMap,
+  x: number,
+  z: number,
+  weapon: { indirect?: boolean } | undefined,
+): number {
+  if (weapon?.indirect) return 0;
+  const tx = Math.floor(x / TILE_SIZE);
+  const tz = Math.floor(z / TILE_SIZE);
+  if (!inBounds(map.width, map.height, tx, tz)) return 0;
+  const i = tileIndex(map.width, tx, tz);
+  return tileCover(map.terrain[i], map.overlay?.[i] ?? 0);
 }
 
 /** Damage after armour multipliers, rounded to one decimal for stability. */

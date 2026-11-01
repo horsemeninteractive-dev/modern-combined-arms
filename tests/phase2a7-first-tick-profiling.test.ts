@@ -18,9 +18,17 @@ function checksum(text: string): string {
   return hash.toString(16).padStart(16, '0');
 }
 
-/** Phase 2A.6 deployed stress setup and first-tick checksums. */
-const DEPLOYED_STRESS_SETUP = '6304954b1abca61b';
-const DEPLOYED_STRESS_FIRST_TICK = '87f80cac6f36c97b';
+/**
+ * Phase 2A.6 deployed stress setup and first-tick checksums. Both were
+ * re-baselined after the day/night detection, bridge-deck, reachable-stand and
+ * unit-veterancy phases changed what the opening order produces (a formation
+ * slot the hull cannot drive to is now walked out to reachable ground instead
+ * of being refused) and what the state hash contains (veterancy carries the
+ * crew's experience per entity). The workload, its ground-unit count and the
+ * per-tick order accounting are unchanged.
+ */
+const DEPLOYED_STRESS_SETUP = 'dae9d509a4fe6587';
+const DEPLOYED_STRESS_FIRST_TICK = '2b9a929f42e072e4';
 
 function groundUnitCount(game: Game): number {
   return game.state.entities.filter(
@@ -48,9 +56,9 @@ describe('Phase 2A.7 first-tick profiling', () => {
 
     expect(state.game.state.tick).toBe(1);
     expect(checksum(state.game.stateHash())).toBe(DEPLOYED_STRESS_FIRST_TICK);
-    // 80 units are ordered, but 8 formation slots are rejected or unreachable,
-    // so only 72 enter A*; those 8 end idle with no order.
-    expect(state.game.state.entities.filter((e) => e.kind === 'unit' && e.order).length).toBe(72);
+    // Every hull in the 80-unit order now receives a stand it can actually
+    // drive to, so all 80 carry an order out of the first tick.
+    expect(state.game.state.entities.filter((e) => e.kind === 'unit' && e.order).length).toBe(80);
   });
 
   it('A/B: preparing ticks before a profiled window does not change state', () => {

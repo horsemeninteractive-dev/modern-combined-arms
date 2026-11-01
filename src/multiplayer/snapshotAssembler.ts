@@ -112,22 +112,31 @@ function checkKeys(value: Record<string, unknown>, allowed: readonly string[], w
 
 function validateMap(map: unknown): ProjectedMap {
   assert(isRecord(map), 'Map must be an object.');
-  checkKeys(map, ['width', 'height', 'tileSize', 'terrain', 'elevation', 'ore'], 'Map');
+  checkKeys(
+    map,
+    ['width', 'height', 'tileSize', 'terrain', 'elevation', 'ore', 'overlay'],
+    'Map',
+  );
   const width = map.width;
   const height = map.height;
   assert(isInt(width, 1, MAX_GRID) && isInt(height, 1, MAX_GRID), 'Map dimensions are invalid.');
   assert(isNum(map.tileSize) && map.tileSize > 0 && map.tileSize <= 256, 'Map tile size is invalid.');
   const tiles = width * height;
-  // Terrain and elevation are byte layers; ore is a 16-bit amount per tile.
-  const limits = { terrain: 255, elevation: 255, ore: 65535 } as const;
-  for (const key of ['terrain', 'elevation', 'ore'] as const) {
+  // Terrain, elevation and the packed surface layer are byte layers; ore is a
+  // 16-bit amount per tile. The layer byte ceiling matches OVERLAY_BYTE_MAX; it
+  // is repeated here because this module deliberately has no runtime imports.
+  const limits = { terrain: 255, elevation: 255, ore: 65535, overlay: 31 } as const;
+  const layers = map.overlay === undefined
+    ? (['terrain', 'elevation', 'ore'] as const)
+    : (['terrain', 'elevation', 'ore', 'overlay'] as const);
+  for (const key of layers) {
     const layer = map[key];
     assert(Array.isArray(layer) && layer.length === tiles, `Map ${key} has the wrong length.`);
     for (const value of layer) {
       assert(isInt(value, 0, limits[key]), `Map ${key} contains an invalid value.`);
     }
   }
-  return {
+  const projected: ProjectedMap = {
     width,
     height,
     tileSize: map.tileSize,
@@ -135,6 +144,10 @@ function validateMap(map: unknown): ProjectedMap {
     elevation: map.elevation as number[],
     ore: map.ore as number[],
   };
+  // Absent means the sender's build predates the surface layer: the client then
+  // paints base terrain exactly as it did before.
+  if (map.overlay !== undefined) projected.overlay = map.overlay as number[];
+  return projected;
 }
 
 function validateQueue(value: unknown): void {
@@ -154,7 +167,7 @@ function validateEntity(value: unknown, worldWidth: number, worldHeight: number)
     [
       'id', 'kind', 'defId', 'owner', 'team', 'x', 'z', 'facing', 'turretFacing', 'hp', 'maxHp',
       'state', 'stance', 'buildProgress', 'construction', 'remembered', 'queue', 'rallyX',
-      'rallyZ', 'targetId', 'garrisonId',
+      'rallyZ', 'targetId', 'garrisonId', 'xp',
     ],
     'Entity',
   );
@@ -185,6 +198,10 @@ function validateEntity(value: unknown, worldWidth: number, worldHeight: number)
   assert(value.rallyZ === undefined || isNum(value.rallyZ), 'Entity rallyZ is invalid.');
   assert(value.targetId === undefined || isInt(value.targetId, 0), 'Entity targetId is invalid.');
   assert(value.garrisonId === undefined || isInt(value.garrisonId, 0), 'Entity garrisonId is invalid.');
+  assert(
+    value.xp === undefined || (isNum(value.xp) && value.xp >= 0),
+    'Entity veterancy is invalid.',
+  );
   if (value.remembered === true) {
     assert(value.hp === null && value.maxHp === null, 'A remembered entity must not carry live hp.');
     assert(value.state === null && value.buildProgress === null, 'A remembered entity must not carry live state.');

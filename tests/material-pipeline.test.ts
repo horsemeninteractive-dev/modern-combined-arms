@@ -55,7 +55,8 @@ describe('material pipeline', () => {
   it('marks props with their own families', () => {
     expect(Array.from(buildTreeMesh().materials!).every((id) => id === MATERIAL.canvas)).toBe(true);
     expect(Array.from(buildRockMesh().materials!).every((id) => id === MATERIAL.rock)).toBe(true);
-    expect(Array.from(buildOreMesh().materials!).every((id) => id === MATERIAL.bareMetal)).toBe(true);
+    // Crystal facets need the glossy glass family, not bare metal.
+    expect(Array.from(buildOreMesh().materials!).every((id) => id === MATERIAL.glass)).toBe(true);
   });
 
   it('publishes a complete, stable 8-row property LUT', () => {

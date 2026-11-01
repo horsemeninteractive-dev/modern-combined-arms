@@ -5,7 +5,8 @@ import { ELEVATION_HEIGHT, MAX_ELEVATION, TILE_SIZE } from '../src/sim/constants
 import { Terrain, TERRAIN, tileIndex, type TerrainId } from '../src/sim/terrain';
 import { buildPropInstances, buildTerrainGeometry } from '../src/render/terrainMesh';
 import { terrainCornerHeight } from '../src/render/terrainSurface';
-import { buildBushMesh, buildShrubMesh } from '../src/render/geometry';
+import { buildBushMesh, buildOreMesh, buildShrubMesh } from '../src/render/geometry';
+import { MATERIAL } from '../src/render/materials';
 
 const scenario = createIslandAssault();
 const W = scenario.width;
@@ -36,6 +37,31 @@ for (const structure of scenario.structures) {
     }
   }
 }
+
+describe('material deposits', () => {
+  it('are a cluster of faceted gold crystals, not a cone fan', () => {
+    const mesh = buildOreMesh();
+    const ys: number[] = [];
+    for (let i = 1; i < mesh.positions.length; i += 3) ys.push(mesh.positions[i]);
+    // A tall central spire with shorter shards around it.
+    expect(Math.max(...ys)).toBeGreaterThan(2.2);
+    expect(Math.min(...ys)).toBeLessThan(0);
+    // Shards lean out of a common foot, so the cluster reaches into more than
+    // one quadrant instead of standing on a single axis.
+    const quadrants = new Set<string>();
+    for (let i = 0; i < mesh.positions.length; i += 3) {
+      const x = mesh.positions[i];
+      const y = mesh.positions[i + 1];
+      const z = mesh.positions[i + 2];
+      if (y < 0.85) continue;
+      if (Math.hypot(x, z) < 0.45) continue;
+      quadrants.add(`${x > 0 ? 'e' : 'w'}${z > 0 ? 's' : 'n'}`);
+    }
+    expect(quadrants.size).toBeGreaterThanOrEqual(3);
+    // Crystal, not painted metal: the facets need the glossy material to read.
+    expect(new Set(mesh.materials)).toEqual(new Set([MATERIAL.glass]));
+  });
+});
 
 describe('battlefield props', () => {
   const props = buildPropInstances(scenario);

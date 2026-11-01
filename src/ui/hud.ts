@@ -14,6 +14,9 @@ import { CAMPAIGNS } from '../data/campaign';
 import { TUTORIAL_SCENARIO_ID } from '../data/tutorial';
 import { TERRAIN, Terrain, tileIndex, type TerrainId } from '../sim/terrain';
 import { REPAIR_SUPPRESSION_TICKS, TILE_SIZE } from '../sim/constants';
+import { sensorFor } from '../sim/sensors';
+import { PHASE_LABELS, formatHour } from '../sim/dayNight';
+import { veterancyProgress } from '../sim/veterancy';
 import { icon, iconSvg } from './icons';
 import { escapeHtml } from './modal';
 import {
@@ -22,6 +25,7 @@ import {
   gridAlertCopy,
   minimapBackingSize,
   minimapStatus,
+  cardArtState,
   productionBlockReason,
   productionCardState,
   productionDomain,
@@ -33,6 +37,7 @@ import {
   type HudPanel,
   type ProductionTab,
   type SelectionChipView,
+  type ThumbnailArtState,
 } from './hudLayout';
 import { ThumbnailRenderer } from '../render/thumbnails';
 import { flagNationForFaction, flagTextureUrl } from '../render/flags';
@@ -288,7 +293,7 @@ export class HUD {
         </button>
         <div class="rail-bottom">
           <div class="rail-groups" aria-label="Control groups">${this.groupStripMarkup()}</div>
-          <div class="rail-clock"><span>MISSION</span><b id="clock">0:00</b></div>
+          <div class="rail-clock" title="Battlefield time of day — darkness shortens detection and engagement range"><span>MISSION</span><b id="clock">0:00</b><span class="clock-phase" id="clock-phase">DUSK</span></div>
           <div class="rail-actions">
             <button class="rail-btn" data-act="save" title="Save battle" aria-label="Save battle">${icon('save')}</button>
             <button class="rail-btn" data-act="pause" id="btn-pause-top" title="Pause (P)" aria-label="Pause battle">${icon('pause')}</button>
@@ -419,7 +424,7 @@ export class HUD {
       <button class="mobile-backdrop" data-act="close-sheets" aria-label="Close panel"></button>
       <section class="mobile-sheet objective-sheet" role="dialog" aria-label="Primary objective">
         <div class="sheet-head"><span>PRIMARY OBJECTIVE</span><button class="sheet-close" data-act="close-sheets" aria-label="Close objective">×</button></div>
-        <div class="objective-sheet-body"><h3 data-objective-primary></h3><p data-objective-sub></p><ul class="objective-sheet-list" data-objective-list hidden></ul><p class="sheet-note" data-objective-note>Capture signals relays for requisition, forward supply depots for supplementary materials and radar stations for reconnaissance. Destroy the enemy command post to secure the island.</p></div>
+        <div class="objective-sheet-body"><h3 data-objective-primary></h3><p data-objective-sub></p><ul class="objective-sheet-list" data-objective-list hidden></ul><p class="sheet-note" data-objective-note>Capture signals relays for requisition, forward supply depots for supplementary materials and radar stations for reconnaissance. Destroy the enemy command post to win the battle.</p></div>
       </section>
       <section class="mobile-sheet selection-sheet" role="dialog" aria-label="Selection">
         <div class="sheet-head"><span>SELECTION</span><span class="mono" id="sel-count">NONE</span><button class="sheet-close" data-act="close-sheets" aria-label="Close selection">×</button></div>
@@ -637,8 +642,17 @@ export class HUD {
       this.renderGroups();
       this.renderAddMode();
       this.decorateThumbnails();
+      // The mission stopwatch keeps the big slot; the authoritative battlefield
+      // clock and its phase ride underneath it, so neither hides the other.
+      const dn = game.dayNight;
       const clock = this.root.querySelector('#clock');
       if (clock) clock.textContent = fmtTime(game.state.tick);
+      const phase = this.root.querySelector('#clock-phase');
+      if (phase) {
+        phase.textContent = `${formatHour(dn.hour)} ${PHASE_LABELS[dn.phase].toUpperCase()}`;
+        phase.classList.toggle('is-night', dn.night > 0.6);
+        phase.classList.toggle('is-transition', dn.night > 0.15 && dn.night < 0.85);
+      }
       const key = `${signature}|${this.tab}|${this.selectedKey()}|${Math.floor((this.app.localPlayer?.mats ?? 0) / 40)}|${Math.floor((this.app.localPlayer?.req ?? 0) / 20)}`;
       if (key !== this.lastProductionKey) {
         this.lastProductionKey = key;
@@ -893,6 +907,11 @@ export class HUD {
     return identity.doctrine ? `${label} · ${identity.doctrine}` : label;
   }
 
+  /**
+   * Card art carries its availability the way the card does: a full model when
+   * the player can buy it now, greyed when it is unlocked but unaffordable, and
+   * a black silhouette when the technology is still missing.
+   */
   private thumbMarkup(
     kind: ThumbnailKind,
     defId: string,
@@ -901,8 +920,11 @@ export class HUD {
     iconName: string,
     className = '',
     badge = 0,
+    artState: ThumbnailArtState = 'ready',
   ): string {
-    const classes = ['thumb-frame', className].filter(Boolean).join(' ');
+    const classes = ['thumb-frame', className, artState === 'ready' ? '' : `state-${artState}`]
+      .filter(Boolean)
+      .join(' ');
     return `<span class="${classes}">
       <span class="thumb-art" data-thumb-kind="${kind}" data-thumb-id="${escapeHtml(defId)}" data-thumb-shape="${shape}" data-thumb-color="${escapeHtml(color)}" aria-hidden="true"></span>
       <span class="thumb-fallback" aria-hidden="true">${iconSvg(iconName)}</span>
@@ -1104,9 +1126,17 @@ export class HUD {
         ? `<div class="ammo-dots">${Array.from({ length: e.maxAmmo }, (_, i) => `<i class="${i >= e.ammo ? 'empty' : ''}"></i>`).join('')}</div><b>${e.ammo}/${e.maxAmmo}</b>`
         : `<b>—</b>`;
       const fuel = e.maxFuel > 0 ? `<b>${Math.max(0, Math.round((e.fuel / e.maxFuel) * 100))}%</b>` : `<b>—</b>`;
+      // Rank is the crew's own record, so it sits beside the state rather than
+      // buried under the hull figures: a Veteran crew is a reason to keep the
+      // unit alive and a reason to expect more from it.
+      const vet = veterancyProgress(e);
+      const rankText = vet.next
+        ? `${vet.rank.name} · ${Math.round(vet.fraction * 100)}%`
+        : `${vet.rank.name} · MAX`;
       stats = `
         <div class="stat-grid">
           <div class="stat"><span>STATE</span><b>${escapeHtml(stateLabel(e))}</b></div>
+          <div class="stat"><span>RANK</span><b title="${escapeHtml(vet.rank.hint)}">${escapeHtml(rankText)}</b></div>
           <div class="stat"><span>SPEED</span><b>${def.speed.toFixed(1)} m/s</b></div>
           <div class="stat"><span>AMMO</span>${ammo}</div>
           <div class="stat"><span>FUEL</span>${fuel}</div>
@@ -1136,6 +1166,7 @@ export class HUD {
           <div class="stat"><span>STATE</span><b>${escapeHtml(compactState)}</b></div>
           <div class="stat"><span>${benefit ? 'BENEFIT' : 'QUEUE'}</span><b>${benefit ? escapeHtml(benefit) : `${e.queue.length}${q ? ` · ${UNITS[q.defId]?.shortName ?? q.defId}` : ''}`}</b></div>
           <div class="stat"><span>VISION</span><b>${def.vision} tiles</b></div>
+          <div class="stat"><span>SENSORS</span><b>${escapeHtml(sensorFor(e).label)}</b></div>
           <div class="stat"><span>POWER</span><b>${power > 0 ? `+${power}` : `${power}`}</b></div>
         </div>`;
     }
@@ -1429,6 +1460,11 @@ export class HUD {
         const title = status.ok ? `${udef.description}${dragHint}` : `${status.reason}${dragHint}`;
         const block = status.ok ? null : productionBlockReason(status.reason);
         const disabled = !status.ok && !reorderable ? 'disabled' : '';
+        const unlocked = (game.missingTech(this.app.localPlayerId, id) ?? []).length === 0;
+        const commander = this.app.localPlayer;
+        const payable =
+          !!commander && commander.mats >= udef.cost.mats && commander.req >= udef.cost.req;
+        const artState = cardArtState(unlocked, payable);
         const cardClass = [
           'unit-card',
           queued.active ? 'training' : '',
@@ -1440,7 +1476,7 @@ export class HUD {
           <button class="${cardClass}" data-produce="${f.id}:${id}" data-queued="${queued.queued}" ${status.ok ? '' : 'aria-disabled="true"'} ${disabled} title="${escapeHtml(title)}">
             <span class="u-hot">${udef.hotkey ?? ''}</span>
             <span class="u-art">
-              ${this.thumbMarkup('unit', id, this.teamColor(), 'card', udef.icon, 'u-thumb')}
+              ${this.thumbMarkup('unit', id, this.teamColor(), 'card', udef.icon, 'u-thumb', 0, artState)}
               <span class="u-progress" style="--p:${(queued.progress * 100).toFixed(1)}%" aria-hidden="true"></span>
             </span>
             <span class="u-name">${escapeHtml(udef.shortName)}${national}</span>
@@ -1763,7 +1799,7 @@ export class HUD {
             : affordable ? '' : shortfall.toUpperCase();
         return `<button class="build-card${affordable ? '' : ' unavailable'}${locked ? ' locked' : ''}" data-build="${def.id}" ${engineer && !locked ? '' : 'disabled'} title="${escapeHtml(title)}">
           ${def.id === 'powerPlant' ? '<span class="b-flag">GRID FIX</span>' : def.id === 'radar' ? '<span class="b-flag">RADAR</span>' : ''}
-          ${this.thumbMarkup('building', def.id, this.teamColor(), 'card', def.icon, 'b-thumb')}
+          ${this.thumbMarkup('building', def.id, this.teamColor(), 'card', def.icon, 'b-thumb', 0, cardArtState(!locked, affordable))}
           <span class="b-copy">
             <span class="b-name">${escapeHtml(def.name)}${def.variantOf ? '<span class="u-national">NATIONAL</span>' : ''}</span>
             ${block ? `<span class="b-req${locked ? '' : ' short'}">${escapeHtml(block)}</span>` : ''}
@@ -2289,7 +2325,7 @@ function primaryObjective(game: Game): string {
   const enemyHq = game.state.entities.find(
     (e) => e.owner !== game.localPlayerId && e.defId === 'commandPost' && e.hp > 0,
   );
-  if (!enemyHq) return 'Enemy command destroyed — secure the island.';
+  if (!enemyHq) return 'Enemy command destroyed — victory is yours.';
   if (game.state.scenario.settings.victory === 'annihilation') return 'Destroy all enemy forces.';
   // Name the actual opposing identity: a nation battle must not inherit the
   // map's legacy callsign in the objective line.
