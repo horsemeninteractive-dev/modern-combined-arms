@@ -376,8 +376,10 @@ describe('match soundtrack playback', () => {
     const load = app.slice(app.indexOf('loadFromSlot'), app.indexOf('private pauseForModal'));
     expect(load).toContain('this.audio.startMatchMusic()');
     expect(load).toContain('this.audio.stopMatchMusic()');
+    // Anchor on the name rather than the full signature: the handoff became
+    // async when it gained a loading brief, and this test is about the music.
     const network = app.slice(
-      app.indexOf('private startNetworkBattle'),
+      app.indexOf('async startNetworkBattle('),
       app.indexOf('private dispatchCommand'),
     );
     expect(network).toContain('this.audio.startMatchMusic()');

@@ -378,6 +378,14 @@ export class App {
    * a dropped link looks like a battle where every order is ignored.
    */
   private networkStale = false;
+  /**
+   * Room+seat currently linking behind the loading brief. The room reports
+   * "playing" before its first update has arrived, so the brief is held until
+   * that update is applied instead of dropping the player onto an empty map.
+   */
+  private networkLoadingKey: string | null = null;
+  private networkLoadingShownAt = 0;
+  private networkLoadingTimer: number | null = null;
 
   constructor(canvas: HTMLCanvasElement, overlayCanvas: HTMLCanvasElement) {
     this.renderer = new Renderer(canvas);
@@ -1846,7 +1854,11 @@ export class App {
    * The loading screen is a screen, not a modal: it fills the viewport over the
    * chosen map while the task force is assembled, and carries the brief.
    */
-  private setLoading(active: boolean, scenario?: Scenario): void {
+  private setLoading(
+    active: boolean,
+    scenario?: Scenario,
+    options: { commandPlayerId?: number; network?: boolean } = {},
+  ): void {
     const screen = document.getElementById('loading-screen');
     if (!screen) return;
     if (active) this.stopAttract();
@@ -1854,7 +1866,7 @@ export class App {
     screen.classList.toggle('hidden', !active);
     if (active && scenario) {
       this.showLoadingBackdrop(scenario);
-      this.fillLoading(scenario);
+      this.fillLoading(scenario, options);
     }
   }
 
@@ -1879,7 +1891,15 @@ export class App {
     this.setMenuMode(false);
   }
 
-  private fillLoading(scenario: Scenario): void {
+  private fillLoading(
+    scenario: Scenario,
+    options: { commandPlayerId?: number; network?: boolean } = {},
+  ): void {
+    // The brief names the side the viewer fights as, so a networked guest reads
+    // its own nation rather than the host's.
+    const commandPlayer = scenario.players[options.commandPlayerId ?? 0] ?? scenario.players[0];
+    const opponentPlayer =
+      scenario.players.find((player) => player !== commandPlayer) ?? scenario.players[1];
     const entry =
       SCENARIOS.find((s) => s.id === scenario.meta.id) ??
       (scenario.meta.id === TUTORIAL_SCENARIO_ID ? TUTORIAL_BRIEF : SCENARIOS[0]);
@@ -1890,30 +1910,35 @@ export class App {
     const difficulty = this.settings.difficulty;
     // The loading screen reads the scenario, not the menu settings, so an
     // editor launch or a restarted battle names the side it is actually fought as.
-    const command = tryIdentityDef(scenario.players[0]?.factionId ?? '');
-    const opponent = tryIdentityDef(scenario.players[1]?.factionId ?? '');
+    const command = tryIdentityDef(commandPlayer?.factionId ?? '');
+    const opponent = tryIdentityDef(opponentPlayer?.factionId ?? '');
     text('loading-title', scenario.meta.name || entry.name);
     text('loading-lede', scenario.meta.description || entry.description);
     text('loading-size', `${scenario.width} × ${scenario.height} tiles`);
-    text('loading-command', command?.name ?? scenario.players[0]?.name ?? 'Task force');
-    text('loading-formation', scenario.players[0]?.name ?? 'Task force');
+    text('loading-command', command?.name ?? commandPlayer?.name ?? 'Task force');
+    text('loading-formation', commandPlayer?.name ?? 'Task force');
     text('loading-doctrine', command?.doctrine ?? 'Alliance task force');
-    text('loading-opposition', opponent?.name ?? scenario.players[1]?.name ?? 'Opposing corps');
+    text('loading-opposition', opponent?.name ?? opponentPlayer?.name ?? 'Opposing corps');
     text(
       'loading-alliance',
       command ? identityAlliance(command.id).name : 'Unallied force',
     );
     text('loading-domains', entry.domains);
+    // A human opponent is not a difficulty setting, but the brief has one slot
+    // for naming who is on the other side.
     text(
       'loading-difficulty',
-      scenario.meta.id === TUTORIAL_SCENARIO_ID
-        ? 'Training cadre'
-        : difficulty[0].toUpperCase() + difficulty.slice(1),
+      options.network
+        ? 'Remote commander'
+        : scenario.meta.id === TUTORIAL_SCENARIO_ID
+          ? 'Training cadre'
+          : difficulty[0].toUpperCase() + difficulty.slice(1),
     );
     const hint = document.getElementById('loading-hint');
     if (hint) {
-      hint.textContent =
-        scenario.meta.id === TUTORIAL_SCENARIO_ID
+      hint.textContent = options.network
+        ? 'Linking to the room · receiving battlefield · briefing commander'
+        : scenario.meta.id === TUTORIAL_SCENARIO_ID
           ? 'Marking training lanes · briefing instructor · checking live-fire range'
           : 'Building terrain mesh · plotting navigation · briefing AI commander';
     }
@@ -1922,7 +1947,7 @@ export class App {
     // render: it rises out of the bottom of the frame behind the copy.
     const flag = document.getElementById('loading-flag');
     if (flag) {
-      const factionId = scenario.players[0]?.factionId ?? '';
+      const factionId = commandPlayer?.factionId ?? '';
       const nation = factionId ? flagNationForFaction(factionId) : undefined;
       flag.style.backgroundImage = nation ? `url(${flagTextureUrl(nation)})` : 'none';
     }
@@ -2041,8 +2066,13 @@ export class App {
    * first update onward, every entity, player row and visibility state on
    * screen comes from the room's team projection, and every order goes back to
    * the room instead of into the local simulation.
+   *
+   * The handoff arrives on the frame the room goes live and all of the assembly
+   * below is synchronous, so it is done behind the same loading brief the
+   * single-player launch uses, and that brief stays up until the room's first
+   * update has been applied.
    */
-  private startNetworkBattle(client: LobbyClient, view: LobbyView): void {
+  private async startNetworkBattle(client: LobbyClient, view: LobbyView): Promise<void> {
     if (this.screen === 'battle' && this.network) return;
     const handoffKey = `${view.roomId ?? ''}:${view.seat ?? 0}`;
     if (this.networkHandoffKey === handoffKey) return;
@@ -2073,8 +2103,21 @@ export class App {
       this.notify('This room selected a map that cannot launch here.', 'critical');
       return;
     }
+    const seat = view.seat ?? 0;
+    // Assembling the shell is synchronous: terrain, meshes, HUD and camera all
+    // happen on the frame the room hands off, which is why the tab used to stall
+    // before the battlefield appeared. Put up the same briefing the single-player
+    // launch uses and let it paint before any of that work starts.
+    this.networkLoadingKey = handoffKey;
+    this.networkLoadingShownAt = performance.now();
+    this.setLoading(true, scenario, { commandPlayerId: seat, network: true });
+    document.getElementById('menu-screen')?.classList.add('hidden');
+    this.hud.unmount();
+    this.overlay.clear();
+    await new Promise((resolve) => window.setTimeout(resolve, 240));
+    // The seat can be given up while the brief is painting.
+    if (this.networkLoadingKey !== handoffKey) return;
     try {
-      const seat = view.seat ?? 0;
       const game = new Game(cloneScenario(scenario), {
         localPlayerId: seat,
         // The room runs the only AI. A second one here would fight the stream.
@@ -2088,11 +2131,6 @@ export class App {
       this.audio.init();
       this.audio.stopMenuMusic();
       this.audio.resetAnnouncer();
-      this.hud.unmount();
-      this.overlay.clear();
-      document.getElementById('menu-screen')?.classList.add('hidden');
-      document.getElementById('loading-screen')?.classList.add('hidden');
-      this.loading = false;
       // The shell has no forces yet (skipInit), but the HUD and the order
       // intents need both seats to exist from the first frame. Seed the player
       // rows from the scenario and leave the world empty: the room's first
@@ -2138,6 +2176,8 @@ export class App {
           this.renderer.rebuildTerrain();
         }
         this.network?.apply(snapshot);
+        // The room's first update is on screen, so the brief has done its job.
+        this.releaseNetworkLoading();
       });
       this.renderer.settings.showFog = this.settings.fogVisual && scenario.settings.fog;
       this.renderer.setGame(game);
@@ -2161,12 +2201,18 @@ export class App {
       this.audio.startMatchMusic();
       this.audio.announce('battlefieldEstablished');
       this.notify(`Linked to the room as seat ${seat + 1}. The server is authoritative.`, 'info');
+      // A silent room must not leave the player staring at a brief forever.
+      if (this.networkLoadingKey === handoffKey) {
+        this.networkLoadingTimer = window.setTimeout(() => this.releaseNetworkLoading(), 5_000);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error('Networked battle failed to start', error);
       this.network = null;
       this.networkClient = null;
       this.networkHandoffKey = null;
+      this.cancelNetworkLoading();
+      this.setLoading(false);
       this.notify(`Networked battle failed to start: ${message}`, 'critical');
       this.showMenu();
     }
@@ -2194,12 +2240,41 @@ export class App {
   private endNetworkBattle(): void {
     this.networkHandoffKey = null;
     this.networkStale = false;
+    this.cancelNetworkLoading();
     if (!this.network && !this.networkClient) return;
     this.networkClient?.onSnapshot(null);
     this.networkClient?.leave();
     this.networkClient = null;
     this.network = null;
     this.multiplayerPanel?.returnFromBattle();
+  }
+
+  /**
+   * Lift the brief once the room's first update is applied. It is held for a
+   * short minimum so a fast connection does not flash it for a single frame,
+   * which is the same floor the single-player launch uses.
+   */
+  private releaseNetworkLoading(): void {
+    if (!this.networkLoadingKey) return;
+    this.networkLoadingKey = null;
+    if (this.networkLoadingTimer !== null) {
+      window.clearTimeout(this.networkLoadingTimer);
+      this.networkLoadingTimer = null;
+    }
+    const remaining = Math.max(0, 780 - (performance.now() - this.networkLoadingShownAt));
+    window.setTimeout(() => {
+      // A newer handoff owns the screen by now; leave its brief alone.
+      if (this.networkLoadingKey === null) this.setLoading(false);
+    }, remaining);
+  }
+
+  /** Drop the brief's bookkeeping without touching what is on screen. */
+  private cancelNetworkLoading(): void {
+    this.networkLoadingKey = null;
+    if (this.networkLoadingTimer !== null) {
+      window.clearTimeout(this.networkLoadingTimer);
+      this.networkLoadingTimer = null;
+    }
   }
 
   finishTutorial(): void {

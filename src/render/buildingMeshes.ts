@@ -682,24 +682,48 @@ function buildShipyard(): MeshBuffers {
   return b.build();
 }
 
-function buildSam(): MeshBuffers {
+/** Turntable height the SAM launcher pivots on, in the site's own frame. */
+const SAM_LAUNCHER_PIVOT: [number, number, number] = [-0.4, 1.2, 0];
+
+/**
+ * Everything that stays put: the pad, the fire-control mast, the revetment.
+ * The four ready rounds live in `buildSamTurret` so the launcher can train on
+ * an aircraft instead of firing out of a welded rack.
+ */
+function buildSamBody(): MeshBuffers {
   const b = new MeshBuilder();
   b.box(0, 0.3, 0, 7.6, 0.6, 7.6, PALETTE.concreteDark);
   b.box(0, 0.8, 0, 7.0, 0.4, 7.0, PALETTE.concrete);
-  b.box(-0.4, 1.8, 0, 4.2, 1.2, 3.0, PALETTE.hull);
-  b.box(-0.4, 1.8, 1.6, 4.2, 0.9, 0.25, PALETTE.oliveDark);
-  for (const z of [-0.9, -0.3, 0.3, 0.9]) {
-    b.box(0.6, 2.6, z, 3.8, 0.36, 0.35, PALETTE.oliveDark);
-    b.cylinderX(2.15, 2.6, z, 0.16, 1.2, 6, PALETTE.darkMetal);
-    b.box(2.75, 2.6, z, 0.12, 0.18, 0.18, PALETTE.warning);
-  }
-  b.box(-2.2, 3.4, 0, 0.15, 2.6, 0.15, PALETTE.metal);
+  // Turntable ring the launcher trains on.
+  b.box(-0.4, 1.1, 0, 2.0, 0.25, 2.0, PALETTE.darkMetal);
+  // The mast used to stand on the launcher block; it is anchored to the pad now
+  // that the block beneath it swings away.
+  b.box(-2.2, 2.85, 0, 0.15, 3.7, 0.15, PALETTE.metal);
   b.box(-2.2, 4.7, 0, 1.4, 0.2, 0.9, PALETTE.metal);
-  b.box(1.5, 3.4, -1.5, 1.0, 0.8, 0.3, PALETTE.darkMetal);
   sandbagWall(b, 0, 3.6, 6.0, true);
   sandbagWall(b, -3.0, 0, 5.2, false);
   b.box(2.6, 1.0, 2.6, 0.6, 0.4, 0.6, PALETTE.warning);
-  ownershipPanel(b, -0.4, 2.52, 0, 3.0, 1.9);
+  // Team colour stays on the pad, so it does not swing with the launcher.
+  ownershipPanel(b, 1.7, 1.03, -2.42, 2.4, 1.2);
+  return b.build();
+}
+
+/**
+ * The launcher block, built around the pivot at the origin so the renderer can
+ * yaw it with the structure's turret facing. Rounds point +X, like every other
+ * turret in the roster.
+ */
+function buildSamTurret(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.box(0, 0.6, 0, 4.2, 1.2, 3.0, PALETTE.hull);
+  b.box(0, 0.6, 1.6, 4.2, 0.9, 0.25, PALETTE.oliveDark);
+  for (const z of [-0.9, -0.3, 0.3, 0.9]) {
+    b.box(1.0, 1.4, z, 3.8, 0.36, 0.35, PALETTE.oliveDark);
+    b.cylinderX(2.55, 1.4, z, 0.16, 1.2, 6, PALETTE.darkMetal);
+    b.box(3.15, 1.4, z, 0.12, 0.18, 0.18, PALETTE.warning);
+  }
+  // Raised sight and exhaust housing behind the rack.
+  b.box(1.9, 2.2, -1.5, 1.0, 0.8, 0.3, PALETTE.darkMetal);
   return b.build();
 }
 
@@ -2215,7 +2239,11 @@ const STYLES: Record<string, BuildingStyle> = {
   researchCentre: { body: buildResearchCentre() },
   // The shipyard has no shutter: its corvettes launch from the open slipway
   // basin, not through a door in a wall it does not have.
-  samBattery: { body: buildSam() },
+  samBattery: {
+    body: buildSamBody(),
+    turret: buildSamTurret(),
+    turretOffset: SAM_LAUNCHER_PIVOT,
+  },
   mgNest: {
     body: buildMgNestBody(),
     turret: buildMgNestTurret(),
@@ -2239,7 +2267,11 @@ const STYLES: Record<string, BuildingStyle> = {
     body: mergeMeshes(buildAirfield(), expeditionaryDressing()),
     door: { mesh: buildHangarDoor(), offset: [-8.2, 3.85, -3.36], retract: 0.9 },
   },
-  longRangeSam: { body: mergeMeshes(buildSam(), longRangeSamMast()) },
+  longRangeSam: {
+    body: mergeMeshes(buildSamBody(), longRangeSamMast()),
+    turret: buildSamTurret(),
+    turretOffset: SAM_LAUNCHER_PIVOT,
+  },
   garrisonBarracks: {
     body: mergeMeshes(buildBarracks(), garrisonBarracksDressing()),
     door: { mesh: buildBarracksDoor(), offset: [2.6, 2.45, 2.74], retract: 0.9 },

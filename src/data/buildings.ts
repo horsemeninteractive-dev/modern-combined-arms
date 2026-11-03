@@ -208,6 +208,8 @@ const ROSTER: BuildingDef[] = [
     power: -20,
     requires: ['factory'],
     weapons: ['samBattery'],
+    // The launcher trains on its target instead of standing welded to the pad.
+    turretRate: 1.6,
     description:
       'Static long-range surface-to-air battery. Denies airspace around the base; cannot engage ground forces.',
     icon: 'sam',
@@ -672,6 +674,8 @@ const NATIONAL_BUILDINGS: BuildingDef[] = [
     power: -26,
     requires: ['factory'],
     weapons: ['longRangeSamMissile'],
+    // Heavier mount than the shared battery, so it traverses more slowly.
+    turretRate: 1.1,
     variantOf: 'samBattery',
     national: true,
     description:

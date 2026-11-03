@@ -8,6 +8,31 @@ The release version and stage come from `package.json`; the build number shown
 in the menu is the repository commit count at build time. The same file is
 rendered in game from **Changelog** in the main-menu footer.
 
+## [0.4.1 BETA] — 2026-11-03
+
+A patch release for the two things the 0.4.0 build got wrong in play: static
+defences that did not train their weapons, and the pause before a networked
+battle appeared.
+
+### Defence
+
+- **SAM batteries now traverse onto their target.** The launcher is no longer welded to the pad: the four ready rounds turn on a turntable at 1.6 rad/s on the shared battery and 1.1 rad/s on the Russian long-range site, so the mount visibly trains ahead of the shot instead of firing out of a fixed rack. The pad, fire-control mast, revetment and team panel stay put, the national colour moved to the rear pad corner so it no longer turns with the launch rails, and the site still returns to its own facing when no aircraft is in range.
+- The Russian long-range site and the national coastal batteries keep their own train rates, so the heavier mounts still lay more slowly than the shared battery.
+
+### Interface
+
+- **Starting or joining an online battle shows the standard loading brief** while the room links and the first battlefield arrives, instead of a frozen frame with no explanation. The brief names the side you actually fight as, reads "Remote commander" in the opposition slot and shows a linking hint, and it is held until the room's first update has been applied rather than dropping the player onto an empty map.
+
+### Tooling
+
+- The deployed multiplayer smoke script was rewritten against the current lobby lifecycle: it opens a room, joins by code, starts the match, plays it out and checks the authoritative result instead of the retired protocol.
+
+### Verification
+
+- `npx tsc --noEmit` clean and `npm run build` clean. `npm run release -- --dry-run` confirms that `package.json`, this file and the menu footer all agree on `v0.4.1 BETA` and stamps the built bundle with it.
+- The SAM traverse was verified in the running game: the site acquired an inbound fighter, its `turretFacing` turned from 0 to -0.46 rad and the rendered launcher followed the same angle, with the pad and mast unmoved.
+- Full `vitest` run: 128 files, 1,684 tests, 1,683 passed. The one failure is the tracked difficulty-ladder baseline in `tests/ai-matchups.test.ts` (`recruitVsVeteran.margin` -16,547 against its < -30,000 bar), unchanged from 0.4.0; nothing was re-tuned to make it green. A first pass also caught a real regression from the launcher split — the SAM flag pole anchored to the old rack and floated 0.25 above the pad — which is fixed by mounting the pole on the rear pad corner.
+
 ## [0.4.0 BETA] — 2026-11-03
 
 A research and roster release. The four-branch technology tree is now playable

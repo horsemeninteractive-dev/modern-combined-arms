@@ -132,7 +132,9 @@ export const BUILDING_FLAG_ANCHORS: Record<string, FlagAnchor> = {
   // footprint, so the pole must start on the new roof, not inside it.
   researchCentre: { x: 1.6, y: 4.8, z: -0.4 },
   radar: { x: -2.6, y: 3.12, z: 1.2 },
-  samBattery: { x: -0.4, y: 2.65, z: 0 },
+  // The launcher trains now, so the pole stands on the rear pad corner where
+  // the old rack anchor used to be — a flag must not swing with the turret.
+  samBattery: { x: -3.0, y: 1.0, z: 2.9 },
   mgNest: { x: -1.9, y: 1.67, z: 2.1 },
   atTurret: { x: 3.15, y: 0.53, z: -3.05 },
   coastalBattery: { x: -3.0, y: 1.61, z: -2.2 },
