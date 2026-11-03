@@ -140,13 +140,14 @@
       <h1>Unit radio barks</h1>
       <p class="lede">
         Selection, movement, attack and unable-to-comply lines for every unit in the roster.
-        Each unit type has its own voice; each clip is trimmed, band-limited, compressed and
-        finished with a low carrier-noise bed.
+        Every canonical slot, alliance platform and national variant has its own cast with three
+        recorded takes per cue; each clip is trimmed, band-limited, compressed and finished with a
+        low carrier-noise bed.
       </p>
       <p class="note">
-        Generated locally with Kokoro-82M. Every unit type has a different voice; eight of the
-        nineteen are British. Kokoro has no Lithuanian, Polish or Russian voices, so the national
-        variants use English voices. See <code>docs/UNIT_VOICE_SET.md</code>.
+        Generated locally with Kokoro-82M. Kokoro has no Lithuanian, Polish or Russian voices, so the
+        national units use English voices chosen to fit their coalition. See
+        <code>docs/UNIT_VOICE_SET.md</code>.
       </p>
       <div class="now" id="now">Select any line to audition it.</div>
     </header>
@@ -272,30 +273,33 @@
         const items = [];
 
         for (const [cue, label] of CUES) {
-          const line = unit.lines[cue];
-          if (!line) continue;
-          const item = { file: line.file, text: line.text, label, unit };
-          items.push(item);
-          const button = document.createElement("button");
-          button.type = "button";
-          button.className = "cue";
-          button.dataset.file = line.file;
-          const cueName = document.createElement("span");
-          cueName.textContent = label;
-          const detail = document.createElement("small");
-          detail.textContent = `${line.text} · ${(line.durationMs / 1000).toFixed(2)} s`;
-          button.append(cueName, detail);
-          button.addEventListener("click", () => {
-            clearError();
-            playQueue([item]);
-          });
-          cues.append(button);
+          const takes = unit.lines[cue];
+          if (!takes) continue;
+          for (const [index, line] of takes.entries()) {
+            const takeLabel = `${label} ${index + 1}`;
+            const item = { file: line.file, text: line.text, label: takeLabel, unit };
+            items.push(item);
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "cue";
+            button.dataset.file = line.file;
+            const cueName = document.createElement("span");
+            cueName.textContent = takeLabel;
+            const detail = document.createElement("small");
+            detail.textContent = `${line.text} · ${(line.durationMs / 1000).toFixed(2)} s`;
+            button.append(cueName, detail);
+            button.addEventListener("click", () => {
+              clearError();
+              playQueue([item]);
+            });
+            cues.append(button);
+          }
         }
 
         const all = document.createElement("button");
         all.type = "button";
         all.className = "all";
-        all.textContent = "Play all four";
+        all.textContent = "Play all twelve";
         all.addEventListener("click", () => {
           clearError();
           playQueue(items);
@@ -312,7 +316,12 @@
           const manifest = await response.json();
           const entries = Object.entries(manifest.units);
           const uniqueVoices = new Set(entries.map(([, unit]) => unit.voice));
-          const clipCount = entries.reduce((total, [, unit]) => total + Object.keys(unit.lines).length, 0);
+          const clipCount = entries.reduce(
+            (total, [, unit]) =>
+              total +
+              Object.values(unit.lines).reduce((count, takes) => count + takes.length, 0),
+            0
+          );
 
           const roles = [...new Set(entries.map(([, unit]) => unit.role))].sort();
           for (const role of roles) {

@@ -3,6 +3,7 @@ import {
   PRODUCTION_TABS,
   cardArtState,
   edgeAutoScrollVelocity,
+  edgePanVector,
   minimapBackingSize,
   minimapStatus,
   productionBlockReason,
@@ -31,6 +32,33 @@ describe('battle HUD layout selection', () => {
 
   it('uses the touch composition on a short desktop window', () => {
     expect(resolveHudLayout(1200, 460, false)).toBe('mobile');
+  });
+});
+
+describe('edge panning', () => {
+  // Desktop battlefield between a 96 px rail, a 236 px sidebar and a 156 px
+  // console. The old canvas-edge test could only fire along the top.
+  const view = { left: 96, top: 0, right: 1044, bottom: 564 };
+  const margin = 18;
+  const speed = 4;
+
+  it('pans from all four inner edges of the battlefield', () => {
+    expect(edgePanVector(100, 300, view, margin, speed)).toEqual({ dx: -speed, dz: 0 });
+    expect(edgePanVector(1040, 300, view, margin, speed)).toEqual({ dx: speed, dz: 0 });
+    expect(edgePanVector(500, 5, view, margin, speed)).toEqual({ dx: 0, dz: -speed });
+    expect(edgePanVector(500, 560, view, margin, speed)).toEqual({ dx: 0, dz: speed });
+  });
+
+  it('does not pan from the middle of the battlefield', () => {
+    expect(edgePanVector(570, 280, view, margin, speed)).toEqual({ dx: 0, dz: 0 });
+  });
+
+  it('does not pan while the pointer is over a HUD panel', () => {
+    // Rail on the left, sidebar on the right, console below: each used to sit
+    // inside the old canvas-edge band and could never trigger.
+    expect(edgePanVector(20, 300, view, margin, speed)).toEqual({ dx: 0, dz: 0 });
+    expect(edgePanVector(1200, 300, view, margin, speed)).toEqual({ dx: 0, dz: 0 });
+    expect(edgePanVector(500, 700, view, margin, speed)).toEqual({ dx: 0, dz: 0 });
   });
 });
 

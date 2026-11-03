@@ -44,6 +44,44 @@ export function resolveHudLayout(width: number, height: number, coarsePointer: b
   return 'desktop';
 }
 
+/** Screen rectangle the edge-pan cursor can actually reach. */
+export interface PanViewport {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+export interface PanVector {
+  dx: number;
+  dz: number;
+}
+
+/**
+ * Edge pan against the visible battlefield rather than the raw canvas. The
+ * command rail, production sidebar and battle console cover three of the four
+ * canvas edges, so a canvas-edge test only ever fired along the top. A pointer
+ * outside the battlefield rectangle — over a panel — never pans the camera.
+ */
+export function edgePanVector(
+  px: number,
+  py: number,
+  view: PanViewport,
+  margin: number,
+  speed: number,
+): PanVector {
+  if (px < view.left || px > view.right || py < view.top || py > view.bottom) {
+    return { dx: 0, dz: 0 };
+  }
+  let dx = 0;
+  let dz = 0;
+  if (px < view.left + margin) dx -= speed;
+  if (px > view.right - margin) dx += speed;
+  if (py < view.top + margin) dz -= speed;
+  if (py > view.bottom - margin) dz += speed;
+  return { dx, dz };
+}
+
 /** A second tap on the active panel closes it; another panel replaces it. */
 export function toggleHudPanel(current: HudPanel, requested: Exclude<HudPanel, 'none'>): HudPanel {
   return current === requested ? 'none' : requested;
@@ -179,7 +217,7 @@ export function selectionChips(
  * The simulation owns the authoritative sentence; the HUD only classifies it
  * so the reason is visible without hover and the tone is consistent.
  */
-export type ProductionBlockTone = 'materials' | 'requisition' | 'queue' | 'tech' | 'other';
+export type ProductionBlockTone = 'materials' | 'requisition' | 'queue' | 'tech' | 'research' | 'other';
 
 export interface ProductionBlockReason {
   text: string;
@@ -191,6 +229,7 @@ export function productionBlockReason(reason: string): ProductionBlockReason {
   if (text.includes('materials')) return { text: 'NO MATERIALS', tone: 'materials' };
   if (text.includes('requisition')) return { text: 'NO REQUISITION', tone: 'requisition' };
   if (text.includes('queue is full')) return { text: 'QUEUE FULL', tone: 'queue' };
+  if (text.includes('research')) return { text: 'RESEARCH REQUIRED', tone: 'research' };
   if (text.includes('airfield')) return { text: 'NEEDS AIRFIELD', tone: 'tech' };
   if (text.includes('shipyard')) return { text: 'NEEDS SHIPYARD', tone: 'tech' };
   if (text.includes('factory')) return { text: 'NEEDS VEHICLE FACTORY', tone: 'tech' };

@@ -5,10 +5,11 @@ Pipeline per line:
   Kokoro-82M (24 kHz) -> trim -> radio EQ -> compression -> saturation
   -> carrier noise -> peak normalise -> 24 kHz mono MP3
 
-The text, voice and delivery settings live in lines.json. Generated clips are
-written as public/audio/unit-voice/<unit>/<cue>.mp3 together with a manifest.
-Raw Kokoro WAVs are cached under tmp/unit-voice-raw-kokoro so the processing
-chain can be re-run without synthesising again.
+The text, voice and delivery settings live in lines.json. Every cue has three
+takes so the same order does not play the same sentence twice in a row. Generated
+clips are written as public/audio/unit-voice/<unit>/<cue>-<take>.mp3 together
+with a manifest. Raw Kokoro WAVs are cached under tmp/unit-voice-raw-kokoro so
+the processing chain can be re-run without synthesising again.
 
 Setup:
   python -m venv .dev/voice-venv
@@ -47,6 +48,8 @@ except ImportError:  # pragma: no cover - environment guidance
 SAMPLE_RATE = 24_000
 BITRATE_KBPS = 64
 CUES = ("select", "move", "attack", "unableToComply")
+TAKES = (1, 2, 3)
+MANIFEST_VERSION = 3
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_LINES = Path(__file__).with_name("lines.json")
@@ -323,12 +326,17 @@ def main() -> int:
         if selected and unit_id not in selected:
             continue
         for cue in CUES:
-            text = unit["cues"].get(cue)
-            if not text:
-                parser.error(f"{unit_id} is missing cue {cue}")
-            raw = args.raw_dir / unit_id / f"{cue}.wav"
-            if args.refresh or not raw.exists() or raw.stat().st_size == 0:
-                pending.append((unit_id, text, unit["voice"], float(unit.get("speed", 1.0)), raw))
+            texts = unit["cues"].get(cue)
+            if not isinstance(texts, list) or len(texts) != len(TAKES):
+                parser.error(f"{unit_id} cue {cue} must be a list of {len(TAKES)} lines")
+            for take, text in zip(TAKES, texts):
+                if not text or not text.strip():
+                    parser.error(f"{unit_id} cue {cue} take {take} is empty")
+                raw = args.raw_dir / unit_id / f"{cue}-{take}.wav"
+                if args.refresh or not raw.exists() or raw.stat().st_size == 0:
+                    pending.append(
+                        (unit_id, text, unit["voice"], float(unit.get("speed", 1.0)), raw)
+                    )
 
     if pending:
         print(f"Synthesising {len(pending)} line(s) with Kokoro-82M...")
@@ -340,15 +348,39 @@ def main() -> int:
         print("Using cached speech (pass --refresh to regenerate).")
 
     out_manifest: dict = {
-        "version": 2,
+        "version": MANIFEST_VERSION,
         "engine": "kokoro-82m-onnx",
         "preset": preset_name,
         "sampleRate": SAMPLE_RATE,
         "bitrateKbps": BITRATE_KBPS,
         "cues": list(CUES),
+        "takesPerCue": len(TAKES),
         "processing": preset,
         "units": {},
     }
+
+    # A partial run keeps the manifest entries it is not regenerating, so
+    # `--only tank` does not wipe the other 51 casts from the contract.
+    manifest_path = args.out / "manifest.json"
+    if selected and manifest_path.exists():
+        try:
+            existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            existing = {}
+        if existing.get("version") == MANIFEST_VERSION:
+            out_manifest["units"] = {
+                unit_id: entry
+                for unit_id, entry in existing.get("units", {}).items()
+                if unit_id not in selected
+            }
+
+    if not selected:
+        for stale in args.out.iterdir():
+            if stale.is_dir() and stale.name not in units:
+                for clip in stale.glob("*.mp3"):
+                    clip.unlink()
+                stale.rmdir()
+                print(f"  removed stale cast {stale.name}")
 
     processed_count = 0
     for unit_id, unit in units.items():
@@ -363,23 +395,33 @@ def main() -> int:
             "speed": float(unit.get("speed", 1.0)),
             "lines": {},
         }
+        unit_dir = args.out / unit_id
+        # Take naming changed with the three-take schema; drop single-take files
+        # from an older build so no orphan clip is served or counted.
+        if unit_dir.is_dir():
+            for previous in unit_dir.glob("*.mp3"):
+                previous.unlink()
         for cue in CUES:
-            raw = args.raw_dir / unit_id / f"{cue}.wav"
-            if not raw.exists() or raw.stat().st_size == 0:
-                raise FileNotFoundError(f"missing raw line: {raw}")
-            samples = process(decode_wav(raw), preset)
-            destination = args.out / unit_id / f"{cue}.mp3"
-            encode_mp3(destination, samples)
-            entry["lines"][cue] = {
-                "text": unit["cues"][cue],
-                "file": f"{unit_id}/{cue}.mp3",
-                "durationMs": round(len(samples) / SAMPLE_RATE * 1000),
-            }
-            processed_count += 1
+            takes: list[dict] = []
+            for take, text in zip(TAKES, unit["cues"][cue]):
+                raw = args.raw_dir / unit_id / f"{cue}-{take}.wav"
+                if not raw.exists() or raw.stat().st_size == 0:
+                    raise FileNotFoundError(f"missing raw line: {raw}")
+                samples = process(decode_wav(raw), preset)
+                filename = f"{cue}-{take}.mp3"
+                encode_mp3(unit_dir / filename, samples)
+                takes.append(
+                    {
+                        "text": text,
+                        "file": f"{unit_id}/{filename}",
+                        "durationMs": round(len(samples) / SAMPLE_RATE * 1000),
+                    }
+                )
+                processed_count += 1
+            entry["lines"][cue] = takes
         out_manifest["units"][unit_id] = entry
-        print(f"  {unit_id}: {len(entry['lines'])} clips")
+        print(f"  {unit_id}: {sum(len(v) for v in entry['lines'].values())} clips")
 
-    manifest_path = args.out / "manifest.json"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_path.write_text(
         json.dumps(out_manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"

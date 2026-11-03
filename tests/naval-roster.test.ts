@@ -4,16 +4,19 @@ import { TILE_SIZE } from '../src/sim/constants';
 import { UNITS } from '../src/data/units';
 import { WEAPONS } from '../src/data/weapons';
 import { isNavigable } from '../src/sim/terrain';
-import { islandWith } from './helpers';
+import { completeResearch, islandWith } from './helpers';
 
 function fleetGame(units: Array<{ defId: string; owner: number; x: number; z: number }> = []) {
-  return new Game(
+  const game = new Game(
     islandWith({
       structures: [{ defId: 'shipyard', owner: 0, x: 12, z: 37 }],
       units,
     }),
     { enableAI: false },
   );
+  // Hull identity, not the research gate, is what this suite measures.
+  completeResearch(game, 0);
+  return game;
 }
 
 function unit(game: Game, defId: string, owner = 0) {
@@ -31,6 +34,7 @@ describe('naval roster', () => {
       'corvette',
       'submarine',
       'frigate',
+      'navalSupport',
     ]);
 
     game.player(0)!.mats = 6000;

@@ -1,4 +1,4 @@
-import type { QueueItem } from '../sim/types';
+import type { QueueItem, SmokeCloud } from '../sim/types';
 import type {
   ProjectedEntity,
   ProjectedMatchResult,
@@ -26,6 +26,7 @@ export interface SyncBaseline {
   fog: Uint8Array;
   contacts: string;
   charted: string;
+  smoke: string;
   resultKey: string;
 }
 
@@ -42,6 +43,15 @@ function sameQueue(a: QueueItem[] | undefined, b: QueueItem[] | undefined): bool
     ) {
       return false;
     }
+  }
+  return true;
+}
+
+function sameIds(a: string[] | undefined, b: string[] | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index++) {
+    if (a[index] !== b[index]) return false;
   }
   return true;
 }
@@ -68,8 +78,30 @@ export function sameProjectedEntity(a: ProjectedEntity, b: ProjectedEntity): boo
     a.rallyZ === b.rallyZ &&
     a.targetId === b.targetId &&
     a.garrisonId === b.garrisonId &&
+    sameIds(a.upgrades, b.upgrades) &&
+    sameIds(a.modules, b.modules) &&
+    sameCooldowns(a.cooldowns, b.cooldowns) &&
     sameQueue(a.queue, b.queue)
   );
+}
+
+/** Reload clocks change continuously, so compare them by value. */
+function sameCooldowns(
+  a: Record<string, number> | undefined,
+  b: Record<string, number> | undefined,
+): boolean {
+  const left = Object.keys(a ?? {});
+  const right = Object.keys(b ?? {});
+  if (left.length !== right.length) return false;
+  for (const key of left) {
+    if (!b || a?.[key] !== b[key]) return false;
+  }
+  return true;
+}
+
+/** Clouds are a small list compared as a whole; ids keep the order stable. */
+function smokeKey(smoke: readonly SmokeCloud[]): string {
+  return JSON.stringify([...smoke].sort((a, b) => a.id - b.id));
 }
 
 function sameProjectile(a: ProjectedProjectile, b: ProjectedProjectile): boolean {
@@ -129,6 +161,7 @@ export function createBaseline(
     fog: Uint8Array.from(fogBytes),
     contacts: JSON.stringify(state.contacts),
     charted: JSON.stringify(state.charted),
+    smoke: smokeKey(state.smoke),
     resultKey: resultKey(state.result),
   };
 }
@@ -208,6 +241,11 @@ export function buildDelta(
 
   const charted = JSON.stringify(state.charted);
   if (charted !== baseline.charted) changes.charted = state.charted;
+
+  // A cloud appearing, expiring or being drawn into view is a whole-list change:
+  // the list is tiny, and a diff would cost more than it saves.
+  const smoke = smokeKey(state.smoke);
+  if (smoke !== baseline.smoke) changes.smoke = state.smoke.map((cloud) => ({ ...cloud }));
 
   if (state.events.length > 0) changes.events = state.events;
 

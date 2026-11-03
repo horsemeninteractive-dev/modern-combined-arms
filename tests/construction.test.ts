@@ -159,6 +159,49 @@ describe('automatic construction', () => {
     ).not.toBe('ore');
   });
 
+  it('resumes a paused site when the engineer is sent back to it', () => {
+    const game = newGame();
+    const site = barracksSite(game);
+    place(game, 'barracks', site.x, site.z);
+    game.tick();
+    const building = game.entitiesOf(0, 'building').find((e) => e.defId === 'barracks')!;
+    const engineer = engineers(game)[0];
+    game.advance(20 * 3);
+    const paused = building.buildProgress;
+    expect(paused).toBeGreaterThan(0);
+
+    // Called away, then shot off the site: nothing advances while it is gone.
+    game.enqueueCommand({ type: 'move', team: 0, ids: [engineer.id], x: 30, z: 30 });
+    game.tick();
+    building.lastHitTick = game.state.tick;
+    game.advance(20 * 3);
+    expect(building.buildProgress).toBeCloseTo(paused, 5);
+    expect(engineer.buildTargetId).toBe(0);
+
+    // The site is not damaged, so this is not a repair — but the same order has
+    // to put an engineer back on it, or the site is stuck for good.
+    game.enqueueCommand({ type: 'repair', team: 0, ids: [engineer.id], targetId: building.id });
+    game.tick();
+    expect(engineer.buildTargetId).toBe(building.id);
+    game.advance(20 * 8);
+    expect(building.buildProgress).toBeGreaterThan(paused + 0.05);
+  });
+
+  it('refuses an enemy construction site as a work target', () => {
+    const scenario = createIslandAssault();
+    scenario.units.push({ defId: 'engineer', owner: 1, x: 60, z: 60 });
+    const game = new Game(scenario, { enableAI: false });
+    const enemyEngineer = game.entitiesOf(1, 'unit').find((e) => e.defId === 'engineer')!;
+    const site = barracksSite(game);
+    place(game, 'barracks', site.x, site.z);
+    game.tick();
+    const building = game.entitiesOf(0, 'building').find((e) => e.defId === 'barracks')!;
+    game.enqueueCommand({ type: 'repair', team: 1, ids: [enemyEngineer.id], targetId: building.id });
+    game.tick();
+    expect(enemyEngineer.buildTargetId).toBe(0);
+    expect(game.state.events.some((e) => e.type === 'orderFailed')).toBe(true);
+  });
+
   it('does not place foundations without any engineer', () => {
     const scenario = createIslandAssault();
     scenario.units = scenario.units.filter((u) => u.defId !== 'engineer');

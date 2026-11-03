@@ -758,9 +758,12 @@ void main() {
   vec2 uv = aPos.xz / uWorldSize;
   vUv = uv;
   // Only the open water carries the swell. The shelf is flat, so the surf line
-  // stays against the beach instead of riding up it in a storm.
-  float shallowness = texture(uShoreTex, uv).r;
-  float openSea = 1.0 - smoothstep(0.3, 0.86, shallowness);
+  // stays against the beach instead of riding up it in a storm, and the alpha
+  // channel holds the field's open-water weight: zero on land and over the
+  // first few tiles off the coast. Without that mask a storm lifted its crests
+  // through the beach and the shoreline geometry.
+  vec4 shore = texture(uShoreTex, uv);
+  float openSea = shore.a * (1.0 - smoothstep(0.3, 0.86, shore.r));
   float height = seaSurface(aPos.xz, uTime, uSea) * openSea * (0.16 + 0.52 * uSea);
   vec3 displaced = vec3(aPos.x, aPos.y + height, aPos.z);
   vWorld = displaced;

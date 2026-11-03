@@ -16,7 +16,10 @@ function teamCoverage(positions: Float32Array, teamMask: Float32Array): number[]
 
 describe('building ownership surfaces', () => {
   it('gives every player-buildable structure a substantial team-masked surface', () => {
-    expect(BUILDABLE_BY_PLAYER).toHaveLength(13);
+    // Twelve shared structures plus one national variant per nation. Every
+    // national variant is player-buildable for its own nation, so it has to
+    // carry the same ownership surface as the shared building it replaces.
+    expect(BUILDABLE_BY_PLAYER).toHaveLength(23);
     for (const def of BUILDABLE_BY_PLAYER) {
       const mesh = buildingMesh(def.id);
       expect(mesh, def.id).toBeDefined();
@@ -147,6 +150,35 @@ describe('building presentation contracts', () => {
       expect(mesh, def.id).toBeDefined();
       expect(mesh!.indices.length, def.id).toBeGreaterThan(0);
       for (const v of mesh!.positions) expect(Number.isFinite(v), def.id).toBe(true);
+    }
+  });
+
+  it('draws the research centres across the ground they occupy', () => {
+    // Both the shared Applied Research Centre and the Belarusian Signals Bureau
+    // are drawn against their own footprints. The centre used to be authored at
+    // roughly two tiles by two, so it sat as a small block in the middle of a
+    // four-by-three pad.
+    const TILE = 4;
+    for (const id of ['researchCentre', 'signalsBureau'] as const) {
+      const def = BUILDINGS[id];
+      const positions = buildingStyle(id)!.body.positions;
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minZ = Infinity;
+      let maxZ = -Infinity;
+      for (let i = 0; i < positions.length; i += 3) {
+        minX = Math.min(minX, positions[i]);
+        maxX = Math.max(maxX, positions[i]);
+        minZ = Math.min(minZ, positions[i + 2]);
+        maxZ = Math.max(maxZ, positions[i + 2]);
+      }
+      const width = maxX - minX;
+      const depth = maxZ - minZ;
+      expect(width, id).toBeGreaterThanOrEqual(def.footprint.w * TILE * 0.8);
+      expect(depth, id).toBeGreaterThanOrEqual(def.footprint.h * TILE * 0.8);
+      // and never spills outside the tiles the player can place it on
+      expect(width, id).toBeLessThanOrEqual(def.footprint.w * TILE);
+      expect(depth, id).toBeLessThanOrEqual(def.footprint.h * TILE);
     }
   });
 });

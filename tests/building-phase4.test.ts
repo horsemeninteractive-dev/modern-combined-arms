@@ -225,8 +225,11 @@ describe('Phase 4 flag and overlay anchors', () => {
       const top = surfaceAt(mesh, anchor.x, anchor.z);
       expect(Number.isFinite(top), def.id).toBe(true);
       if (anchor.apron) {
-        // The two open yards mount at ground level by design.
-        expect(['airfield', 'shipyard'], def.id).toContain(def.id);
+        // The open yards and the expeditionary strip mount at ground level.
+        expect(
+          ['airfield', 'expeditionaryAirfield', 'shipyard', 'kockumsYard'],
+          def.id,
+        ).toContain(def.id);
         expect(anchor.y, def.id).toBeLessThan(1.2);
         continue;
       }

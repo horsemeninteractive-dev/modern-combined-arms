@@ -1,7 +1,10 @@
 # Unit voice generation
 
-Generates the 22-unit selection / move / attack / unable-to-comply radio bark set
-with local [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) ONNX speech.
+Generates the selection / move / attack / unable-to-comply radio bark set for all
+62 unit definitions — canonical slots, Eastern platforms, national replacements,
+national exclusives and the two national naval hulls — with local
+[Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) ONNX speech. Each cue has
+three takes, so 744 clips in total, and every unit's twelve lines are unique.
 The existing strategic announcer clips in `public/audio/battlesys/` are **not**
 touched.
 
@@ -32,7 +35,7 @@ checked in, so playing the game does not need the model or Python.
 # everything
 .dev/voice-venv/Scripts/python tools/unit-voice/generate.py
 
-# one unit while iterating
+# one unit while iterating (keeps the other 51 manifest entries)
 .dev/voice-venv/Scripts/python tools/unit-voice/generate.py --only tank
 
 # after editing text, voice or speed
@@ -44,15 +47,19 @@ Output:
 ```
 public/audio/unit-voice/
   manifest.json
-  engineer/select.mp3  move.mp3  attack.mp3  unableToComply.mp3
+  engineer/select-1.mp3  select-2.mp3  select-3.mp3  move-1.mp3  ...
   rifle/...
   ...
 ```
 
-`manifest.json` records the spoken text, Kokoro voice, language, speed, duration
-and relative file path for every cue. `src/ui/unitVoice.ts` uses the same
-`defId/cue` contract at runtime; the manifest remains the authoritative record
-for the generated assets.
+`manifest.json` is version 3. For every unit and cue it records an array of
+three takes, each with the spoken text, relative file path and duration, plus the
+Kokoro voice, language and speed. `src/ui/unitVoice.ts` uses the same
+`defId/<cue>-<take>.mp3` contract at runtime; the manifest remains the
+authoritative record for the generated assets.
+
+A full run deletes single-take files and cast directories that no longer exist
+in `lines.json`, so re-running after this schema change leaves no orphan clips.
 
 Raw Kokoro WAVs are cached in `tmp/unit-voice-raw-kokoro/` (git-ignored) so
 re-running the processing chain does not synthesize again. Use `--refresh` when
@@ -76,40 +83,19 @@ change a sample slightly.
 
 ## Voice cast
 
-Kokoro-82M has 28 English voices: 20 American and 8 British. Every unit gets a
-different voice. British voices are used for the UK/European units, including the
-British Rocket Battery.
-
-| Unit | Voice | Accent | Speed |
-|---|---|---|---:|
-| Combat Engineer | `bm_george` | British | 1.00 |
-| Rifleman | `am_echo` | American | 1.08 |
-| ATGM Gunner | `am_michael` | American | 1.04 |
-| Field Medic | `bf_emma` | British | 1.10 |
-| Main Battle Tank | `am_onyx` | American | 0.98 |
-| Self-Propelled Howitzer | `am_eric` | American | 0.95 |
-| Recon Vehicle | `am_liam` | American | 1.06 |
-| AA Vehicle | `bf_alice` | British | 1.00 |
-| Field Recovery Vehicle | `bm_fable` | British | 0.98 |
-| Harvester | `am_puck` | American | 0.96 |
-| Strike Fighter | `bf_lily` | British | 1.12 |
-| Interceptor | `af_nova` | American | 1.12 |
-| Recon UAV | `af_sky` | American | 1.10 |
-| Missile Corvette | `bm_lewis` | British | 1.00 |
-| Missile Boat | `af_river` | American | 1.04 |
-| Attack Submarine | `am_santa` | American | 1.00 |
-| Escort Frigate | `af_nicole` | American | 0.98 |
-| Pathfinder Recon Team | `bf_isabella` | British | 1.06 |
-| Spearhead MBT | `am_fenrir` | American | 0.98 |
-| Rocket Battery | `bm_daniel` | British | 0.96 |
-| Heavy Howitzer | `am_adam` | American | 0.94 |
-| Deep Recon UAV | `af_sarah` | American | 1.08 |
+Kokoro-82M has 28 English voices: 20 American and 8 British. There are 62 unit
+definitions, so the cast is reused across campaign families while the spoken text
+is unique per unit. British voices carry the UK and most Defender infantry and
+armour; Eastern platforms reuse American voices at different delivery speeds so a
+T-72-style hull does not sound identical to its Defender counterpart. The full
+per-unit table is in `docs/UNIT_VOICE_SET.md`; `lines.json` is authoritative.
 
 ### National accents
 
-Kokoro does not ship Lithuanian, Polish or Russian voices. The five national
-variants therefore use distinct English voices: Pathfinder and Rocket Battery are
-British, while Spearhead, Heavy Howitzer and Deep Recon UAV are American.
+Kokoro does not ship Lithuanian, Polish, Russian or Belarusian voices. National
+replacements and exclusives therefore use English voices fitted to their
+coalition: Pathfinder, Kestrel and Rocket Battery are British, while Spearhead,
+Heavy Howitzer, Hedgehog, TOS-P and Deep Recon UAV are American.
 
 The alternative — Edge TTS with `lt-LT-LeonasNeural`, `pl-PL-MarekNeural`,
 `ru-RU-DmitryNeural` or `ru-RU-SvetlanaNeural` — was tested. Those voices do not
@@ -135,5 +121,7 @@ Then open `http://127.0.0.1:8788/docs/unit-voice-audition.html`.
 - Synthesis is local; no network call is made after the model is downloaded.
 - The lines are presentation assets. `src/ui/unitVoice.ts` maps local selection,
 move, attack and refusal events to them; they never affect simulation state.
-- `lines.json` is the single source of truth for text, voice and speed. Add a unit
-  there and re-run; the generator writes the four cue files and manifest entry.
+- `lines.json` is the single source of truth for text, voice and speed. Each cue
+  must be a three-element array. Add a unit there and re-run; the generator writes
+  twelve files and the manifest entry. `tests/unit-voice.test.ts` fails if a
+  registered unit is missing from the manifest or repeats another unit's line.

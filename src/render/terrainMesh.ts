@@ -622,6 +622,10 @@ export function buildRoadDetails(scenario: Scenario): MeshBuffers {
  *   R  legacy water shallowness (shallow 220, deep 15, land 0)
  *   G  land proximity to water, 1 on the first land tile, 0 six tiles inland
  *   B  water proximity to land, 1 on the first water tile, 0 seven tiles out
+ *   A  open-water weight for the swell: 0 on land and close to the coast, up to
+ *      255 well offshore. The water plane is displaced by the sea state, and a
+ *      crest raised over a shoreline corner pushed straight up through the
+ *      beach; the swell now belongs to water that is clear of the coast.
  *
  * Distances are a four-neighbour tile flood, so the result is deterministic and
  * costs one pass over the map at scenario load. The visible transition is still
@@ -678,18 +682,30 @@ export function buildShoreTexture(scenario: Scenario): Uint8Array {
     if (distance === UNREACHED) return 0;
     return Math.round(Math.max(0, Math.min(1, 1 - (distance - 1) / span)) * 255);
   };
+  /**
+   * Fetch of open water, in tiles from the shore, at which the swell is full.
+   * The ramp is padded well past the shoreline so a linear-filtered sample can
+   * never average a non-zero weight onto the beach.
+   */
+  const openWater = (distance: number): number => {
+    if (distance === UNREACHED) return 255;
+    return Math.round(Math.max(0, Math.min(1, (distance - 5) / 4)) * 255);
+  };
   for (let i = 0; i < count; i++) {
     const t = scenario.tiles[i].t as TerrainId;
     const water = TERRAIN[t].water;
     const o = i * 4;
-    data[o + 3] = 255;
     if (water) {
       data[o] = t === Terrain.ShallowWater ? 220 : 15;
       // The surf belongs to the first tile or two, not to half the sea. A wide
       // water-distance band produced broad pale stripes parallel to the coast.
       data[o + 2] = band(waterDist[i], 1.25);
+      data[o + 3] = openWater(waterDist[i]);
     } else {
       data[o + 1] = band(landDist[i], 3.2);
+      // Land never carries a swell. This is the mask that kept a storm's crests
+      // from rising through the beach and the shoreline geometry.
+      data[o + 3] = 0;
     }
   }
   return data;

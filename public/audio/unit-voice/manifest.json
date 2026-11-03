@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "engine": "kokoro-82m-onnx",
   "preset": "field",
   "sampleRate": 24000,
@@ -10,6 +10,7 @@
     "attack",
     "unableToComply"
   ],
+  "takesPerCue": 3,
   "processing": {
     "highpass": 200.0,
     "lowpass": 4400.0,
@@ -33,26 +34,74 @@
       "lang": "en-gb",
       "speed": 1.0,
       "lines": {
-        "select": {
-          "text": "Engineer, standing by.",
-          "file": "engineer/select.mp3",
-          "durationMs": 1984
-        },
-        "move": {
-          "text": "Moving out.",
-          "file": "engineer/move.mp3",
-          "durationMs": 1010
-        },
-        "attack": {
-          "text": "Unarmed, cannot engage.",
-          "file": "engineer/attack.mp3",
-          "durationMs": 2010
-        },
-        "unableToComply": {
-          "text": "Cannot comply.",
-          "file": "engineer/unableToComply.mp3",
-          "durationMs": 1330
-        }
+        "select": [
+          {
+            "text": "Engineer section, standing by.",
+            "file": "engineer/select-1.mp3",
+            "durationMs": 2430
+          },
+          {
+            "text": "Combat engineers, ready to build.",
+            "file": "engineer/select-2.mp3",
+            "durationMs": 2610
+          },
+          {
+            "text": "Sappers on the net, go ahead.",
+            "file": "engineer/select-3.mp3",
+            "durationMs": 2133
+          }
+        ],
+        "move": [
+          {
+            "text": "Engineer team moving out.",
+            "file": "engineer/move-1.mp3",
+            "durationMs": 2240
+          },
+          {
+            "text": "On the way, sirs.",
+            "file": "engineer/move-2.mp3",
+            "durationMs": 1450
+          },
+          {
+            "text": "Wheels up, engineer detail.",
+            "file": "engineer/move-3.mp3",
+            "durationMs": 2300
+          }
+        ],
+        "attack": [
+          {
+            "text": "Unarmed, cannot engage.",
+            "file": "engineer/attack-1.mp3",
+            "durationMs": 2010
+          },
+          {
+            "text": "No weapons on this rig.",
+            "file": "engineer/attack-2.mp3",
+            "durationMs": 2120
+          },
+          {
+            "text": "We build it, we don't shoot it.",
+            "file": "engineer/attack-3.mp3",
+            "durationMs": 1980
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Cannot comply with that.",
+            "file": "engineer/unableToComply-1.mp3",
+            "durationMs": 1750
+          },
+          {
+            "text": "Negative, engineers can't do it.",
+            "file": "engineer/unableToComply-2.mp3",
+            "durationMs": 2380
+          },
+          {
+            "text": "That's outside my remit.",
+            "file": "engineer/unableToComply-3.mp3",
+            "durationMs": 2048
+          }
+        ]
       }
     },
     "rifle": {
@@ -62,26 +111,74 @@
       "lang": "en-us",
       "speed": 1.08,
       "lines": {
-        "select": {
-          "text": "Rifle squad, ready.",
-          "file": "rifle/select.mp3",
-          "durationMs": 1590
-        },
-        "move": {
-          "text": "On the way.",
-          "file": "rifle/move.mp3",
-          "durationMs": 930
-        },
-        "attack": {
-          "text": "Target acquired.",
-          "file": "rifle/attack.mp3",
-          "durationMs": 1330
-        },
-        "unableToComply": {
-          "text": "Negative, unable.",
-          "file": "rifle/unableToComply.mp3",
-          "durationMs": 1490
-        }
+        "select": [
+          {
+            "text": "Rifle squad, ready.",
+            "file": "rifle/select-1.mp3",
+            "durationMs": 1590
+          },
+          {
+            "text": "First squad, up and waiting.",
+            "file": "rifle/select-2.mp3",
+            "durationMs": 1905
+          },
+          {
+            "text": "Riflemen on the net.",
+            "file": "rifle/select-3.mp3",
+            "durationMs": 1610
+          }
+        ],
+        "move": [
+          {
+            "text": "On the way.",
+            "file": "rifle/move-1.mp3",
+            "durationMs": 930
+          },
+          {
+            "text": "Squad moving, watch our lane.",
+            "file": "rifle/move-2.mp3",
+            "durationMs": 1900
+          },
+          {
+            "text": "Boots moving now.",
+            "file": "rifle/move-3.mp3",
+            "durationMs": 1340
+          }
+        ],
+        "attack": [
+          {
+            "text": "Target acquired.",
+            "file": "rifle/attack-1.mp3",
+            "durationMs": 1330
+          },
+          {
+            "text": "Rifles up, engaging.",
+            "file": "rifle/attack-2.mp3",
+            "durationMs": 1740
+          },
+          {
+            "text": "Contact, laying fire.",
+            "file": "rifle/attack-3.mp3",
+            "durationMs": 1620
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Negative, unable.",
+            "file": "rifle/unableToComply-1.mp3",
+            "durationMs": 1490
+          },
+          {
+            "text": "Can't reach that, over.",
+            "file": "rifle/unableToComply-2.mp3",
+            "durationMs": 1590
+          },
+          {
+            "text": "No line on it.",
+            "file": "rifle/unableToComply-3.mp3",
+            "durationMs": 1360
+          }
+        ]
       }
     },
     "atgm": {
@@ -91,26 +188,74 @@
       "lang": "en-us",
       "speed": 1.04,
       "lines": {
-        "select": {
-          "text": "Missile team, ready.",
-          "file": "atgm/select.mp3",
-          "durationMs": 1245
-        },
-        "move": {
-          "text": "Missile team moving.",
-          "file": "atgm/move.mp3",
-          "durationMs": 1275
-        },
-        "attack": {
-          "text": "Tank in sight.",
-          "file": "atgm/attack.mp3",
-          "durationMs": 1000
-        },
-        "unableToComply": {
-          "text": "No shot.",
-          "file": "atgm/unableToComply.mp3",
-          "durationMs": 905
-        }
+        "select": [
+          {
+            "text": "Missile team, ready.",
+            "file": "atgm/select-1.mp3",
+            "durationMs": 1245
+          },
+          {
+            "text": "ATGM up, tubes cold.",
+            "file": "atgm/select-2.mp3",
+            "durationMs": 1355
+          },
+          {
+            "text": "Gunner here, missile armed.",
+            "file": "atgm/select-3.mp3",
+            "durationMs": 1540
+          }
+        ],
+        "move": [
+          {
+            "text": "Missile team moving.",
+            "file": "atgm/move-1.mp3",
+            "durationMs": 1275
+          },
+          {
+            "text": "Relocating the launcher.",
+            "file": "atgm/move-2.mp3",
+            "durationMs": 1440
+          },
+          {
+            "text": "Tubes up, moving.",
+            "file": "atgm/move-3.mp3",
+            "durationMs": 1080
+          }
+        ],
+        "attack": [
+          {
+            "text": "Tank in sight.",
+            "file": "atgm/attack-1.mp3",
+            "durationMs": 1000
+          },
+          {
+            "text": "Armour identified, locking.",
+            "file": "atgm/attack-2.mp3",
+            "durationMs": 1805
+          },
+          {
+            "text": "Missile away on the hull.",
+            "file": "atgm/attack-3.mp3",
+            "durationMs": 1455
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "No shot.",
+            "file": "atgm/unableToComply-1.mp3",
+            "durationMs": 905
+          },
+          {
+            "text": "Blocked, no line of sight.",
+            "file": "atgm/unableToComply-2.mp3",
+            "durationMs": 1455
+          },
+          {
+            "text": "Can't get a lock.",
+            "file": "atgm/unableToComply-3.mp3",
+            "durationMs": 1100
+          }
+        ]
       }
     },
     "medic": {
@@ -120,26 +265,74 @@
       "lang": "en-gb",
       "speed": 1.1,
       "lines": {
-        "select": {
-          "text": "Medic, ready.",
-          "file": "medic/select.mp3",
-          "durationMs": 1055
-        },
-        "move": {
-          "text": "Medic moving up.",
-          "file": "medic/move.mp3",
-          "durationMs": 1190
-        },
-        "attack": {
-          "text": "Unarmed, cannot engage.",
-          "file": "medic/attack.mp3",
-          "durationMs": 1600
-        },
-        "unableToComply": {
-          "text": "Cannot comply.",
-          "file": "medic/unableToComply.mp3",
-          "durationMs": 1130
-        }
+        "select": [
+          {
+            "text": "Medic, ready.",
+            "file": "medic/select-1.mp3",
+            "durationMs": 1055
+          },
+          {
+            "text": "Field hospital on the move.",
+            "file": "medic/select-2.mp3",
+            "durationMs": 1685
+          },
+          {
+            "text": "Corpsman here, who's hurt?",
+            "file": "medic/select-3.mp3",
+            "durationMs": 1472
+          }
+        ],
+        "move": [
+          {
+            "text": "Medic moving up.",
+            "file": "medic/move-1.mp3",
+            "durationMs": 1190
+          },
+          {
+            "text": "Stretchers loaded, going.",
+            "file": "medic/move-2.mp3",
+            "durationMs": 1590
+          },
+          {
+            "text": "Casualty team en route.",
+            "file": "medic/move-3.mp3",
+            "durationMs": 1510
+          }
+        ],
+        "attack": [
+          {
+            "text": "No rifle, only a medkit.",
+            "file": "medic/attack-1.mp3",
+            "durationMs": 1728
+          },
+          {
+            "text": "I carry bandages, not bullets.",
+            "file": "medic/attack-2.mp3",
+            "durationMs": 1877
+          },
+          {
+            "text": "No weapon here, sorry.",
+            "file": "medic/attack-3.mp3",
+            "durationMs": 1408
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Cannot comply.",
+            "file": "medic/unableToComply-1.mp3",
+            "durationMs": 1130
+          },
+          {
+            "text": "Not my job, over.",
+            "file": "medic/unableToComply-2.mp3",
+            "durationMs": 1400
+          },
+          {
+            "text": "Can't do that, sorry.",
+            "file": "medic/unableToComply-3.mp3",
+            "durationMs": 1270
+          }
+        ]
       }
     },
     "tank": {
@@ -149,26 +342,74 @@
       "lang": "en-us",
       "speed": 0.98,
       "lines": {
-        "select": {
-          "text": "Main battle tank, ready.",
-          "file": "tank/select.mp3",
-          "durationMs": 2185
-        },
-        "move": {
-          "text": "Rolling out.",
-          "file": "tank/move.mp3",
-          "durationMs": 1035
-        },
-        "attack": {
-          "text": "Target acquired.",
-          "file": "tank/attack.mp3",
-          "durationMs": 1325
-        },
-        "unableToComply": {
-          "text": "Negative.",
-          "file": "tank/unableToComply.mp3",
-          "durationMs": 895
-        }
+        "select": [
+          {
+            "text": "Main battle tank, ready.",
+            "file": "tank/select-1.mp3",
+            "durationMs": 2185
+          },
+          {
+            "text": "Tank crew up, sabots loaded.",
+            "file": "tank/select-2.mp3",
+            "durationMs": 2435
+          },
+          {
+            "text": "Armour on the net.",
+            "file": "tank/select-3.mp3",
+            "durationMs": 1536
+          }
+        ],
+        "move": [
+          {
+            "text": "Rolling out.",
+            "file": "tank/move-1.mp3",
+            "durationMs": 1035
+          },
+          {
+            "text": "Tracks turning, moving.",
+            "file": "tank/move-2.mp3",
+            "durationMs": 1992
+          },
+          {
+            "text": "Hull moving, keep clear.",
+            "file": "tank/move-3.mp3",
+            "durationMs": 2005
+          }
+        ],
+        "attack": [
+          {
+            "text": "Gunner, sabot up.",
+            "file": "tank/attack-1.mp3",
+            "durationMs": 1685
+          },
+          {
+            "text": "Gunner, sabot, fire.",
+            "file": "tank/attack-2.mp3",
+            "durationMs": 2190
+          },
+          {
+            "text": "Engaging armour now.",
+            "file": "tank/attack-3.mp3",
+            "durationMs": 1835
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "No shot from this hull.",
+            "file": "tank/unableToComply-1.mp3",
+            "durationMs": 2040
+          },
+          {
+            "text": "Can't get the gun on it.",
+            "file": "tank/unableToComply-2.mp3",
+            "durationMs": 1725
+          },
+          {
+            "text": "No shot from here.",
+            "file": "tank/unableToComply-3.mp3",
+            "durationMs": 1875
+          }
+        ]
       }
     },
     "spg": {
@@ -178,26 +419,74 @@
       "lang": "en-us",
       "speed": 0.95,
       "lines": {
-        "select": {
-          "text": "Gun battery, ready.",
-          "file": "spg/select.mp3",
-          "durationMs": 1390
-        },
-        "move": {
-          "text": "Gun battery moving.",
-          "file": "spg/move.mp3",
-          "durationMs": 1340
-        },
-        "attack": {
-          "text": "Fire mission.",
-          "file": "spg/attack.mp3",
-          "durationMs": 1030
-        },
-        "unableToComply": {
-          "text": "Cannot fire.",
-          "file": "spg/unableToComply.mp3",
-          "durationMs": 1090
-        }
+        "select": [
+          {
+            "text": "Gun battery, ready.",
+            "file": "spg/select-1.mp3",
+            "durationMs": 1390
+          },
+          {
+            "text": "Howitzer up, charges laid.",
+            "file": "spg/select-2.mp3",
+            "durationMs": 1820
+          },
+          {
+            "text": "Indirect fire, standing by.",
+            "file": "spg/select-3.mp3",
+            "durationMs": 2010
+          }
+        ],
+        "move": [
+          {
+            "text": "Gun battery moving.",
+            "file": "spg/move-1.mp3",
+            "durationMs": 1340
+          },
+          {
+            "text": "Relocating the gun.",
+            "file": "spg/move-2.mp3",
+            "durationMs": 1480
+          },
+          {
+            "text": "Prime mover rolling.",
+            "file": "spg/move-3.mp3",
+            "durationMs": 1370
+          }
+        ],
+        "attack": [
+          {
+            "text": "Fire mission.",
+            "file": "spg/attack-1.mp3",
+            "durationMs": 1030
+          },
+          {
+            "text": "Shot out, adjusting.",
+            "file": "spg/attack-2.mp3",
+            "durationMs": 1465
+          },
+          {
+            "text": "Rounds away, on the way.",
+            "file": "spg/attack-3.mp3",
+            "durationMs": 1550
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Cannot fire.",
+            "file": "spg/unableToComply-1.mp3",
+            "durationMs": 1090
+          },
+          {
+            "text": "Out of range, no mission.",
+            "file": "spg/unableToComply-2.mp3",
+            "durationMs": 1630
+          },
+          {
+            "text": "Tube's not laid for that.",
+            "file": "spg/unableToComply-3.mp3",
+            "durationMs": 1565
+          }
+        ]
       }
     },
     "recon": {
@@ -207,26 +496,74 @@
       "lang": "en-us",
       "speed": 1.06,
       "lines": {
-        "select": {
-          "text": "Scout vehicle, ready.",
-          "file": "recon/select.mp3",
-          "durationMs": 1450
-        },
-        "move": {
-          "text": "Scout vehicle moving out.",
-          "file": "recon/move.mp3",
-          "durationMs": 1600
-        },
-        "attack": {
-          "text": "Target acquired.",
-          "file": "recon/attack.mp3",
-          "durationMs": 1220
-        },
-        "unableToComply": {
-          "text": "Negative.",
-          "file": "recon/unableToComply.mp3",
-          "durationMs": 850
-        }
+        "select": [
+          {
+            "text": "Scout vehicle, ready.",
+            "file": "recon/select-1.mp3",
+            "durationMs": 1450
+          },
+          {
+            "text": "Recon up, optics clean.",
+            "file": "recon/select-2.mp3",
+            "durationMs": 1840
+          },
+          {
+            "text": "Eyes forward, go ahead.",
+            "file": "recon/select-3.mp3",
+            "durationMs": 1550
+          }
+        ],
+        "move": [
+          {
+            "text": "Scout vehicle moving out.",
+            "file": "recon/move-1.mp3",
+            "durationMs": 1600
+          },
+          {
+            "text": "Screening ahead now.",
+            "file": "recon/move-2.mp3",
+            "durationMs": 1420
+          },
+          {
+            "text": "Rolling quiet, moving.",
+            "file": "recon/move-3.mp3",
+            "durationMs": 1510
+          }
+        ],
+        "attack": [
+          {
+            "text": "Scout has eyes on it.",
+            "file": "recon/attack-1.mp3",
+            "durationMs": 1540
+          },
+          {
+            "text": "Contact, engaging light.",
+            "file": "recon/attack-2.mp3",
+            "durationMs": 1810
+          },
+          {
+            "text": "Scout engaging.",
+            "file": "recon/attack-3.mp3",
+            "durationMs": 1350
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Scout says negative.",
+            "file": "recon/unableToComply-1.mp3",
+            "durationMs": 1490
+          },
+          {
+            "text": "Too far to see it.",
+            "file": "recon/unableToComply-2.mp3",
+            "durationMs": 1300
+          },
+          {
+            "text": "Can't reach that far.",
+            "file": "recon/unableToComply-3.mp3",
+            "durationMs": 1460
+          }
+        ]
       }
     },
     "aa": {
@@ -236,26 +573,74 @@
       "lang": "en-gb",
       "speed": 1.0,
       "lines": {
-        "select": {
-          "text": "Air defence, ready.",
-          "file": "aa/select.mp3",
-          "durationMs": 1575
-        },
-        "move": {
-          "text": "Air defence moving.",
-          "file": "aa/move.mp3",
-          "durationMs": 1595
-        },
-        "attack": {
-          "text": "Target acquired.",
-          "file": "aa/attack.mp3",
-          "durationMs": 1395
-        },
-        "unableToComply": {
-          "text": "No target.",
-          "file": "aa/unableToComply.mp3",
-          "durationMs": 1300
-        }
+        "select": [
+          {
+            "text": "Air defence, ready.",
+            "file": "aa/select-1.mp3",
+            "durationMs": 1575
+          },
+          {
+            "text": "AA up, radar sweeping.",
+            "file": "aa/select-2.mp3",
+            "durationMs": 1815
+          },
+          {
+            "text": "Sky watch, standing by.",
+            "file": "aa/select-3.mp3",
+            "durationMs": 1860
+          }
+        ],
+        "move": [
+          {
+            "text": "Air defence moving.",
+            "file": "aa/move-1.mp3",
+            "durationMs": 1595
+          },
+          {
+            "text": "Radar displacing.",
+            "file": "aa/move-2.mp3",
+            "durationMs": 1660
+          },
+          {
+            "text": "AA rolling to new ground.",
+            "file": "aa/move-3.mp3",
+            "durationMs": 2005
+          }
+        ],
+        "attack": [
+          {
+            "text": "Aircraft in the net.",
+            "file": "aa/attack-1.mp3",
+            "durationMs": 1575
+          },
+          {
+            "text": "Air target, guns up.",
+            "file": "aa/attack-2.mp3",
+            "durationMs": 1770
+          },
+          {
+            "text": "Engaging aircraft.",
+            "file": "aa/attack-3.mp3",
+            "durationMs": 1740
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "No target.",
+            "file": "aa/unableToComply-1.mp3",
+            "durationMs": 1300
+          },
+          {
+            "text": "Nothing in the sky.",
+            "file": "aa/unableToComply-2.mp3",
+            "durationMs": 1540
+          },
+          {
+            "text": "Can't track that.",
+            "file": "aa/unableToComply-3.mp3",
+            "durationMs": 1320
+          }
+        ]
       }
     },
     "recovery": {
@@ -265,26 +650,74 @@
       "lang": "en-gb",
       "speed": 0.98,
       "lines": {
-        "select": {
-          "text": "Recovery, standing by.",
-          "file": "recovery/select.mp3",
-          "durationMs": 2289
-        },
-        "move": {
-          "text": "Recovery moving.",
-          "file": "recovery/move.mp3",
-          "durationMs": 1805
-        },
-        "attack": {
-          "text": "Unarmed, cannot engage.",
-          "file": "recovery/attack.mp3",
-          "durationMs": 2389
-        },
-        "unableToComply": {
-          "text": "Cannot comply.",
-          "file": "recovery/unableToComply.mp3",
-          "durationMs": 1664
-        }
+        "select": [
+          {
+            "text": "Recovery, standing by.",
+            "file": "recovery/select-1.mp3",
+            "durationMs": 2289
+          },
+          {
+            "text": "Wrecker up, hook ready.",
+            "file": "recovery/select-2.mp3",
+            "durationMs": 2075
+          },
+          {
+            "text": "Recovery crew on the net.",
+            "file": "recovery/select-3.mp3",
+            "durationMs": 2069
+          }
+        ],
+        "move": [
+          {
+            "text": "Recovery moving.",
+            "file": "recovery/move-1.mp3",
+            "durationMs": 1805
+          },
+          {
+            "text": "Wrecker rolling out.",
+            "file": "recovery/move-2.mp3",
+            "durationMs": 1621
+          },
+          {
+            "text": "On the way to the break.",
+            "file": "recovery/move-3.mp3",
+            "durationMs": 1950
+          }
+        ],
+        "attack": [
+          {
+            "text": "Wrecker has no main gun.",
+            "file": "recovery/attack-1.mp3",
+            "durationMs": 2245
+          },
+          {
+            "text": "I tow tanks, I don't fight them.",
+            "file": "recovery/attack-2.mp3",
+            "durationMs": 2709
+          },
+          {
+            "text": "No gun on the wrecker.",
+            "file": "recovery/attack-3.mp3",
+            "durationMs": 1877
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Wrecker can't do that.",
+            "file": "recovery/unableToComply-1.mp3",
+            "durationMs": 1680
+          },
+          {
+            "text": "Can't pull that, over.",
+            "file": "recovery/unableToComply-2.mp3",
+            "durationMs": 2135
+          },
+          {
+            "text": "Negative on that task.",
+            "file": "recovery/unableToComply-3.mp3",
+            "durationMs": 2091
+          }
+        ]
       }
     },
     "harvester": {
@@ -294,26 +727,74 @@
       "lang": "en-us",
       "speed": 0.96,
       "lines": {
-        "select": {
-          "text": "Harvester, ready.",
-          "file": "harvester/select.mp3",
-          "durationMs": 1110
-        },
-        "move": {
-          "text": "Harvester moving.",
-          "file": "harvester/move.mp3",
-          "durationMs": 1090
-        },
-        "attack": {
-          "text": "Unarmed, cannot engage.",
-          "file": "harvester/attack.mp3",
-          "durationMs": 1380
-        },
-        "unableToComply": {
-          "text": "Negative.",
-          "file": "harvester/unableToComply.mp3",
-          "durationMs": 830
-        }
+        "select": [
+          {
+            "text": "Harvester, ready.",
+            "file": "harvester/select-1.mp3",
+            "durationMs": 1110
+          },
+          {
+            "text": "Ore rig up, hopper empty.",
+            "file": "harvester/select-2.mp3",
+            "durationMs": 1420
+          },
+          {
+            "text": "Miner here, go ahead.",
+            "file": "harvester/select-3.mp3",
+            "durationMs": 1250
+          }
+        ],
+        "move": [
+          {
+            "text": "Harvester moving.",
+            "file": "harvester/move-1.mp3",
+            "durationMs": 1090
+          },
+          {
+            "text": "Heading for the seam.",
+            "file": "harvester/move-2.mp3",
+            "durationMs": 1120
+          },
+          {
+            "text": "Rig rolling, moving.",
+            "file": "harvester/move-3.mp3",
+            "durationMs": 1190
+          }
+        ],
+        "attack": [
+          {
+            "text": "Mining rig, no armament.",
+            "file": "harvester/attack-1.mp3",
+            "durationMs": 1490
+          },
+          {
+            "text": "This rig has no guns.",
+            "file": "harvester/attack-2.mp3",
+            "durationMs": 1280
+          },
+          {
+            "text": "Just a mining bucket here.",
+            "file": "harvester/attack-3.mp3",
+            "durationMs": 1440
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Rig says no.",
+            "file": "harvester/unableToComply-1.mp3",
+            "durationMs": 1010
+          },
+          {
+            "text": "Can't do that, over.",
+            "file": "harvester/unableToComply-2.mp3",
+            "durationMs": 1140
+          },
+          {
+            "text": "No, not with this rig.",
+            "file": "harvester/unableToComply-3.mp3",
+            "durationMs": 1260
+          }
+        ]
       }
     },
     "fighter": {
@@ -323,26 +804,74 @@
       "lang": "en-gb",
       "speed": 1.12,
       "lines": {
-        "select": {
-          "text": "Strike flight, ready.",
-          "file": "fighter/select.mp3",
-          "durationMs": 1440
-        },
-        "move": {
-          "text": "Course set.",
-          "file": "fighter/move.mp3",
-          "durationMs": 1040
-        },
-        "attack": {
-          "text": "Missiles armed.",
-          "file": "fighter/attack.mp3",
-          "durationMs": 1420
-        },
-        "unableToComply": {
-          "text": "Unable.",
-          "file": "fighter/unableToComply.mp3",
-          "durationMs": 1005
-        }
+        "select": [
+          {
+            "text": "Strike flight, ready.",
+            "file": "fighter/select-1.mp3",
+            "durationMs": 1440
+          },
+          {
+            "text": "Bomber up, wings clean.",
+            "file": "fighter/select-2.mp3",
+            "durationMs": 1630
+          },
+          {
+            "text": "Strike package on the net.",
+            "file": "fighter/select-3.mp3",
+            "durationMs": 1830
+          }
+        ],
+        "move": [
+          {
+            "text": "Course set.",
+            "file": "fighter/move-1.mp3",
+            "durationMs": 1040
+          },
+          {
+            "text": "Turning to new heading.",
+            "file": "fighter/move-2.mp3",
+            "durationMs": 1470
+          },
+          {
+            "text": "Flight rerouted.",
+            "file": "fighter/move-3.mp3",
+            "durationMs": 1300
+          }
+        ],
+        "attack": [
+          {
+            "text": "Missiles armed.",
+            "file": "fighter/attack-1.mp3",
+            "durationMs": 1420
+          },
+          {
+            "text": "Bombs released.",
+            "file": "fighter/attack-2.mp3",
+            "durationMs": 1230
+          },
+          {
+            "text": "Rolling in on the target.",
+            "file": "fighter/attack-3.mp3",
+            "durationMs": 1800
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Unable.",
+            "file": "fighter/unableToComply-1.mp3",
+            "durationMs": 1005
+          },
+          {
+            "text": "Can't make that pass.",
+            "file": "fighter/unableToComply-2.mp3",
+            "durationMs": 1470
+          },
+          {
+            "text": "Negative, no run-in.",
+            "file": "fighter/unableToComply-3.mp3",
+            "durationMs": 1640
+          }
+        ]
       }
     },
     "interceptor": {
@@ -352,26 +881,74 @@
       "lang": "en-us",
       "speed": 1.12,
       "lines": {
-        "select": {
-          "text": "Air cover, ready.",
-          "file": "interceptor/select.mp3",
-          "durationMs": 1250
-        },
-        "move": {
-          "text": "Course set.",
-          "file": "interceptor/move.mp3",
-          "durationMs": 1040
-        },
-        "attack": {
-          "text": "Target locked.",
-          "file": "interceptor/attack.mp3",
-          "durationMs": 1130
-        },
-        "unableToComply": {
-          "text": "Unable.",
-          "file": "interceptor/unableToComply.mp3",
-          "durationMs": 885
-        }
+        "select": [
+          {
+            "text": "Air cover, ready.",
+            "file": "interceptor/select-1.mp3",
+            "durationMs": 1250
+          },
+          {
+            "text": "Interceptor up, clean jet.",
+            "file": "interceptor/select-2.mp3",
+            "durationMs": 1790
+          },
+          {
+            "text": "Fighter cover on station.",
+            "file": "interceptor/select-3.mp3",
+            "durationMs": 1675
+          }
+        ],
+        "move": [
+          {
+            "text": "Vector set, climbing.",
+            "file": "interceptor/move-1.mp3",
+            "durationMs": 1430
+          },
+          {
+            "text": "Climbing to the new vector.",
+            "file": "interceptor/move-2.mp3",
+            "durationMs": 1600
+          },
+          {
+            "text": "Repositioning for cover.",
+            "file": "interceptor/move-3.mp3",
+            "durationMs": 1520
+          }
+        ],
+        "attack": [
+          {
+            "text": "Target locked.",
+            "file": "interceptor/attack-1.mp3",
+            "durationMs": 1130
+          },
+          {
+            "text": "Splash one, engaging.",
+            "file": "interceptor/attack-2.mp3",
+            "durationMs": 1540
+          },
+          {
+            "text": "Missile away, tracking.",
+            "file": "interceptor/attack-3.mp3",
+            "durationMs": 1480
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Negative, no joy.",
+            "file": "interceptor/unableToComply-1.mp3",
+            "durationMs": 1490
+          },
+          {
+            "text": "No lock, can't take it.",
+            "file": "interceptor/unableToComply-2.mp3",
+            "durationMs": 1550
+          },
+          {
+            "text": "No joy, bandit is gone.",
+            "file": "interceptor/unableToComply-3.mp3",
+            "durationMs": 1700
+          }
+        ]
       }
     },
     "uav": {
@@ -381,84 +958,74 @@
       "lang": "en-us",
       "speed": 1.1,
       "lines": {
-        "select": {
-          "text": "Drone, on station.",
-          "file": "uav/select.mp3",
-          "durationMs": 1365
-        },
-        "move": {
-          "text": "Climbing to station.",
-          "file": "uav/move.mp3",
-          "durationMs": 1320
-        },
-        "attack": {
-          "text": "Unarmed, cannot engage.",
-          "file": "uav/attack.mp3",
-          "durationMs": 1620
-        },
-        "unableToComply": {
-          "text": "Unable.",
-          "file": "uav/unableToComply.mp3",
-          "durationMs": 765
-        }
-      }
-    },
-    "corvette": {
-      "name": "Missile Corvette",
-      "role": "Naval combatant",
-      "voice": "bm_lewis",
-      "lang": "en-gb",
-      "speed": 1.0,
-      "lines": {
-        "select": {
-          "text": "Warship, standing by.",
-          "file": "corvette/select.mp3",
-          "durationMs": 1579
-        },
-        "move": {
-          "text": "Under way.",
-          "file": "corvette/move.mp3",
-          "durationMs": 850
-        },
-        "attack": {
-          "text": "Target acquired.",
-          "file": "corvette/attack.mp3",
-          "durationMs": 1131
-        },
-        "unableToComply": {
-          "text": "Unable.",
-          "file": "corvette/unableToComply.mp3",
-          "durationMs": 760
-        }
-      }
-    },
-    "submarine": {
-      "name": "Attack Submarine",
-      "role": "Subsurface raider",
-      "voice": "am_santa",
-      "lang": "en-us",
-      "speed": 1.0,
-      "lines": {
-        "select": {
-          "text": "Submarine, standing by.",
-          "file": "submarine/select.mp3",
-          "durationMs": 1899
-        },
-        "move": {
-          "text": "Under way.",
-          "file": "submarine/move.mp3",
-          "durationMs": 811
-        },
-        "attack": {
-          "text": "Torpedoes away.",
-          "file": "submarine/attack.mp3",
-          "durationMs": 1420
-        },
-        "unableToComply": {
-          "text": "Cannot comply.",
-          "file": "submarine/unableToComply.mp3",
-          "durationMs": 1230
-        }
+        "select": [
+          {
+            "text": "Drone, on station.",
+            "file": "uav/select-1.mp3",
+            "durationMs": 1365
+          },
+          {
+            "text": "Eyes in the sky, ready.",
+            "file": "uav/select-2.mp3",
+            "durationMs": 1470
+          },
+          {
+            "text": "Recon drone, link good.",
+            "file": "uav/select-3.mp3",
+            "durationMs": 1720
+          }
+        ],
+        "move": [
+          {
+            "text": "Climbing to station.",
+            "file": "uav/move-1.mp3",
+            "durationMs": 1320
+          },
+          {
+            "text": "Drone shifting orbit.",
+            "file": "uav/move-2.mp3",
+            "durationMs": 1505
+          },
+          {
+            "text": "New grid, drone moving.",
+            "file": "uav/move-3.mp3",
+            "durationMs": 1540
+          }
+        ],
+        "attack": [
+          {
+            "text": "Drone carries cameras only.",
+            "file": "uav/attack-1.mp3",
+            "durationMs": 1720
+          },
+          {
+            "text": "Drone carries no weapons.",
+            "file": "uav/attack-2.mp3",
+            "durationMs": 1664
+          },
+          {
+            "text": "Just a camera up here.",
+            "file": "uav/attack-3.mp3",
+            "durationMs": 1475
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Drone can't, over.",
+            "file": "uav/unableToComply-1.mp3",
+            "durationMs": 1280
+          },
+          {
+            "text": "Can't do that from altitude.",
+            "file": "uav/unableToComply-2.mp3",
+            "durationMs": 1630
+          },
+          {
+            "text": "Negative, no payload.",
+            "file": "uav/unableToComply-3.mp3",
+            "durationMs": 1590
+          }
+        ]
       }
     },
     "missileBoat": {
@@ -468,26 +1035,228 @@
       "lang": "en-us",
       "speed": 1.04,
       "lines": {
-        "select": {
-          "text": "Fast attack, ready.",
-          "file": "missileBoat/select.mp3",
-          "durationMs": 1425
-        },
-        "move": {
-          "text": "Boat moving.",
-          "file": "missileBoat/move.mp3",
-          "durationMs": 1030
-        },
-        "attack": {
-          "text": "Missiles away.",
-          "file": "missileBoat/attack.mp3",
-          "durationMs": 1190
-        },
-        "unableToComply": {
-          "text": "Cannot comply.",
-          "file": "missileBoat/unableToComply.mp3",
-          "durationMs": 1240
-        }
+        "select": [
+          {
+            "text": "Fast attack, ready.",
+            "file": "missileBoat/select-1.mp3",
+            "durationMs": 1425
+          },
+          {
+            "text": "Missile boat, engines hot.",
+            "file": "missileBoat/select-2.mp3",
+            "durationMs": 1850
+          },
+          {
+            "text": "Boat crew on the net.",
+            "file": "missileBoat/select-3.mp3",
+            "durationMs": 1270
+          }
+        ],
+        "move": [
+          {
+            "text": "Boat moving.",
+            "file": "missileBoat/move-1.mp3",
+            "durationMs": 1030
+          },
+          {
+            "text": "Coming to new heading.",
+            "file": "missileBoat/move-2.mp3",
+            "durationMs": 1280
+          },
+          {
+            "text": "Throttles up, under way.",
+            "file": "missileBoat/move-3.mp3",
+            "durationMs": 1540
+          }
+        ],
+        "attack": [
+          {
+            "text": "Missiles away.",
+            "file": "missileBoat/attack-1.mp3",
+            "durationMs": 1190
+          },
+          {
+            "text": "Salvo launched.",
+            "file": "missileBoat/attack-2.mp3",
+            "durationMs": 1160
+          },
+          {
+            "text": "Anti-ship missiles out.",
+            "file": "missileBoat/attack-3.mp3",
+            "durationMs": 1590
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Boat can't do that.",
+            "file": "missileBoat/unableToComply-1.mp3",
+            "durationMs": 1260
+          },
+          {
+            "text": "No firing solution on that.",
+            "file": "missileBoat/unableToComply-2.mp3",
+            "durationMs": 1850
+          },
+          {
+            "text": "Can't make that run.",
+            "file": "missileBoat/unableToComply-3.mp3",
+            "durationMs": 1250
+          }
+        ]
+      }
+    },
+    "corvette": {
+      "name": "Missile Corvette",
+      "role": "Naval combatant",
+      "voice": "bm_lewis",
+      "lang": "en-gb",
+      "speed": 1.0,
+      "lines": {
+        "select": [
+          {
+            "text": "Warship, standing by.",
+            "file": "corvette/select-1.mp3",
+            "durationMs": 1579
+          },
+          {
+            "text": "Corvette on the net.",
+            "file": "corvette/select-2.mp3",
+            "durationMs": 1450
+          },
+          {
+            "text": "Deck ready, captain here.",
+            "file": "corvette/select-3.mp3",
+            "durationMs": 1643
+          }
+        ],
+        "move": [
+          {
+            "text": "Boat under way, silent.",
+            "file": "corvette/move-1.mp3",
+            "durationMs": 1749
+          },
+          {
+            "text": "Ship turning to course.",
+            "file": "corvette/move-2.mp3",
+            "durationMs": 1344
+          },
+          {
+            "text": "Helm answered, moving.",
+            "file": "corvette/move-3.mp3",
+            "durationMs": 1640
+          }
+        ],
+        "attack": [
+          {
+            "text": "Bearing set, locked on.",
+            "file": "corvette/attack-1.mp3",
+            "durationMs": 1620
+          },
+          {
+            "text": "Corvette missiles away.",
+            "file": "corvette/attack-2.mp3",
+            "durationMs": 1680
+          },
+          {
+            "text": "Main battery engaging.",
+            "file": "corvette/attack-3.mp3",
+            "durationMs": 1920
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Ship cannot comply.",
+            "file": "corvette/unableToComply-1.mp3",
+            "durationMs": 1387
+          },
+          {
+            "text": "Negative, out of arc here.",
+            "file": "corvette/unableToComply-2.mp3",
+            "durationMs": 1813
+          },
+          {
+            "text": "Negative, out of arc.",
+            "file": "corvette/unableToComply-3.mp3",
+            "durationMs": 1579
+          }
+        ]
+      }
+    },
+    "submarine": {
+      "name": "Attack Submarine",
+      "role": "Subsurface raider",
+      "voice": "am_santa",
+      "lang": "en-us",
+      "speed": 1.0,
+      "lines": {
+        "select": [
+          {
+            "text": "Submarine, standing by.",
+            "file": "submarine/select-1.mp3",
+            "durationMs": 1899
+          },
+          {
+            "text": "Boat rigged for quiet.",
+            "file": "submarine/select-2.mp3",
+            "durationMs": 1550
+          },
+          {
+            "text": "Sonar here, go ahead.",
+            "file": "submarine/select-3.mp3",
+            "durationMs": 1579
+          }
+        ],
+        "move": [
+          {
+            "text": "Boat under way, quiet.",
+            "file": "submarine/move-1.mp3",
+            "durationMs": 1621
+          },
+          {
+            "text": "Diving to new depth.",
+            "file": "submarine/move-2.mp3",
+            "durationMs": 1457
+          },
+          {
+            "text": "Coming to periscope depth.",
+            "file": "submarine/move-3.mp3",
+            "durationMs": 1685
+          }
+        ],
+        "attack": [
+          {
+            "text": "Torpedoes away.",
+            "file": "submarine/attack-1.mp3",
+            "durationMs": 1420
+          },
+          {
+            "text": "Tubes one and two fired.",
+            "file": "submarine/attack-2.mp3",
+            "durationMs": 1813
+          },
+          {
+            "text": "Solution set, firing.",
+            "file": "submarine/attack-3.mp3",
+            "durationMs": 1792
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Sub can't comply.",
+            "file": "submarine/unableToComply-1.mp3",
+            "durationMs": 1490
+          },
+          {
+            "text": "No solution on that hull.",
+            "file": "submarine/unableToComply-2.mp3",
+            "durationMs": 1720
+          },
+          {
+            "text": "Too shallow to run.",
+            "file": "submarine/unableToComply-3.mp3",
+            "durationMs": 1390
+          }
+        ]
       }
     },
     "frigate": {
@@ -497,26 +1266,459 @@
       "lang": "en-us",
       "speed": 0.98,
       "lines": {
-        "select": {
-          "text": "Escort on station.",
-          "file": "frigate/select.mp3",
-          "durationMs": 1640
-        },
-        "move": {
-          "text": "Escort moving.",
-          "file": "frigate/move.mp3",
-          "durationMs": 1270
-        },
-        "attack": {
-          "text": "Engaging.",
-          "file": "frigate/attack.mp3",
-          "durationMs": 1030
-        },
-        "unableToComply": {
-          "text": "Unable.",
-          "file": "frigate/unableToComply.mp3",
-          "durationMs": 885
-        }
+        "select": [
+          {
+            "text": "Escort on station.",
+            "file": "frigate/select-1.mp3",
+            "durationMs": 1640
+          },
+          {
+            "text": "Frigate ready, screen set.",
+            "file": "frigate/select-2.mp3",
+            "durationMs": 2064
+          },
+          {
+            "text": "Escort duty, go ahead.",
+            "file": "frigate/select-3.mp3",
+            "durationMs": 2140
+          }
+        ],
+        "move": [
+          {
+            "text": "Escort moving.",
+            "file": "frigate/move-1.mp3",
+            "durationMs": 1270
+          },
+          {
+            "text": "Screen shifting with you.",
+            "file": "frigate/move-2.mp3",
+            "durationMs": 1728
+          },
+          {
+            "text": "Taking station, under way.",
+            "file": "frigate/move-3.mp3",
+            "durationMs": 2225
+          }
+        ],
+        "attack": [
+          {
+            "text": "Engaging.",
+            "file": "frigate/attack-1.mp3",
+            "durationMs": 1030
+          },
+          {
+            "text": "Guns and missiles out.",
+            "file": "frigate/attack-2.mp3",
+            "durationMs": 1749
+          },
+          {
+            "text": "Firing on the contact.",
+            "file": "frigate/attack-3.mp3",
+            "durationMs": 1862
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Escort can't, over.",
+            "file": "frigate/unableToComply-1.mp3",
+            "durationMs": 1760
+          },
+          {
+            "text": "Negative, escort holds station.",
+            "file": "frigate/unableToComply-2.mp3",
+            "durationMs": 2758
+          },
+          {
+            "text": "Negative, holding station.",
+            "file": "frigate/unableToComply-3.mp3",
+            "durationMs": 1979
+          }
+        ]
+      }
+    },
+    "ifv": {
+      "name": "Infantry Fighting Vehicle",
+      "role": "Mechanised fire support",
+      "voice": "am_liam",
+      "lang": "en-us",
+      "speed": 1.02,
+      "lines": {
+        "select": [
+          {
+            "text": "Fighting vehicle, ready.",
+            "file": "ifv/select-1.mp3",
+            "durationMs": 1545
+          },
+          {
+            "text": "IFV up, autocannon loaded.",
+            "file": "ifv/select-2.mp3",
+            "durationMs": 1800
+          },
+          {
+            "text": "Mechanised section, go ahead.",
+            "file": "ifv/select-3.mp3",
+            "durationMs": 1890
+          }
+        ],
+        "move": [
+          {
+            "text": "IFV rolling.",
+            "file": "ifv/move-1.mp3",
+            "durationMs": 1390
+          },
+          {
+            "text": "Moving with the infantry.",
+            "file": "ifv/move-2.mp3",
+            "durationMs": 1640
+          },
+          {
+            "text": "Tracked carrier under way.",
+            "file": "ifv/move-3.mp3",
+            "durationMs": 1550
+          }
+        ],
+        "attack": [
+          {
+            "text": "Autocannon up.",
+            "file": "ifv/attack-1.mp3",
+            "durationMs": 1365
+          },
+          {
+            "text": "Engaging with the chain gun.",
+            "file": "ifv/attack-2.mp3",
+            "durationMs": 1920
+          },
+          {
+            "text": "Contact, suppressing.",
+            "file": "ifv/attack-3.mp3",
+            "durationMs": 1535
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "IFV can't, over.",
+            "file": "ifv/unableToComply-1.mp3",
+            "durationMs": 1550
+          },
+          {
+            "text": "Can't elevate that high.",
+            "file": "ifv/unableToComply-2.mp3",
+            "durationMs": 1560
+          },
+          {
+            "text": "No shot for the cannon.",
+            "file": "ifv/unableToComply-3.mp3",
+            "durationMs": 1570
+          }
+        ]
+      }
+    },
+    "td": {
+      "name": "Tank Destroyer",
+      "role": "Anti-armour",
+      "voice": "am_michael",
+      "lang": "en-us",
+      "speed": 1.0,
+      "lines": {
+        "select": [
+          {
+            "text": "Tank destroyer, ready.",
+            "file": "td/select-1.mp3",
+            "durationMs": 1450
+          },
+          {
+            "text": "Hunting armour, gun laid.",
+            "file": "td/select-2.mp3",
+            "durationMs": 1665
+          },
+          {
+            "text": "Destroyer crew up.",
+            "file": "td/select-3.mp3",
+            "durationMs": 1280
+          }
+        ],
+        "move": [
+          {
+            "text": "Destroyer moving.",
+            "file": "td/move-1.mp3",
+            "durationMs": 1200
+          },
+          {
+            "text": "Hunting ground shifting.",
+            "file": "td/move-2.mp3",
+            "durationMs": 1405
+          },
+          {
+            "text": "Rolling to the next hide.",
+            "file": "td/move-3.mp3",
+            "durationMs": 1490
+          }
+        ],
+        "attack": [
+          {
+            "text": "Tank destroyer sees the hull.",
+            "file": "td/attack-1.mp3",
+            "durationMs": 1860
+          },
+          {
+            "text": "Firing on the hull.",
+            "file": "td/attack-2.mp3",
+            "durationMs": 1305
+          },
+          {
+            "text": "Kill shot away.",
+            "file": "td/attack-3.mp3",
+            "durationMs": 1100
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "No firing solution.",
+            "file": "td/unableToComply-1.mp3",
+            "durationMs": 1480
+          },
+          {
+            "text": "He's behind cover.",
+            "file": "td/unableToComply-2.mp3",
+            "durationMs": 1335
+          },
+          {
+            "text": "Can't punch through that.",
+            "file": "td/unableToComply-3.mp3",
+            "durationMs": 1275
+          }
+        ]
+      }
+    },
+    "rocketArtillery": {
+      "name": "Multiple Rocket Launcher",
+      "role": "Rocket artillery",
+      "voice": "am_eric",
+      "lang": "en-us",
+      "speed": 1.0,
+      "lines": {
+        "select": [
+          {
+            "text": "Rocket battery, ready.",
+            "file": "rocketArtillery/select-1.mp3",
+            "durationMs": 1465
+          },
+          {
+            "text": "Launcher up, pods full.",
+            "file": "rocketArtillery/select-2.mp3",
+            "durationMs": 1570
+          },
+          {
+            "text": "Rockets on the rail.",
+            "file": "rocketArtillery/select-3.mp3",
+            "durationMs": 1370
+          }
+        ],
+        "move": [
+          {
+            "text": "Rocket battery moving.",
+            "file": "rocketArtillery/move-1.mp3",
+            "durationMs": 1465
+          },
+          {
+            "text": "Launcher displacing.",
+            "file": "rocketArtillery/move-2.mp3",
+            "durationMs": 1485
+          },
+          {
+            "text": "Pods up, rolling out.",
+            "file": "rocketArtillery/move-3.mp3",
+            "durationMs": 1440
+          }
+        ],
+        "attack": [
+          {
+            "text": "Full salvo, rocket battery.",
+            "file": "rocketArtillery/attack-1.mp3",
+            "durationMs": 1825
+          },
+          {
+            "text": "Full salvo, fire.",
+            "file": "rocketArtillery/attack-2.mp3",
+            "durationMs": 1455
+          },
+          {
+            "text": "Saturation fire, on the way.",
+            "file": "rocketArtillery/attack-3.mp3",
+            "durationMs": 1920
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Rockets can't fire.",
+            "file": "rocketArtillery/unableToComply-1.mp3",
+            "durationMs": 1460
+          },
+          {
+            "text": "Too close for rockets.",
+            "file": "rocketArtillery/unableToComply-2.mp3",
+            "durationMs": 1450
+          },
+          {
+            "text": "No safe release.",
+            "file": "rocketArtillery/unableToComply-3.mp3",
+            "durationMs": 1250
+          }
+        ]
+      }
+    },
+    "attackHelo": {
+      "name": "Attack Helicopter",
+      "role": "Rotary attack",
+      "voice": "bf_lily",
+      "lang": "en-gb",
+      "speed": 1.06,
+      "lines": {
+        "select": [
+          {
+            "text": "Gunship, ready.",
+            "file": "attackHelo/select-1.mp3",
+            "durationMs": 1224
+          },
+          {
+            "text": "Rotor up, weapons hot.",
+            "file": "attackHelo/select-2.mp3",
+            "durationMs": 1830
+          },
+          {
+            "text": "Attack helicopter on the net.",
+            "file": "attackHelo/select-3.mp3",
+            "durationMs": 2027
+          }
+        ],
+        "move": [
+          {
+            "text": "Gunship moving.",
+            "file": "attackHelo/move-1.mp3",
+            "durationMs": 1325
+          },
+          {
+            "text": "Pulling pitch, en route.",
+            "file": "attackHelo/move-2.mp3",
+            "durationMs": 1700
+          },
+          {
+            "text": "Rotors turning to new grid.",
+            "file": "attackHelo/move-3.mp3",
+            "durationMs": 2020
+          }
+        ],
+        "attack": [
+          {
+            "text": "Helo rockets away.",
+            "file": "attackHelo/attack-1.mp3",
+            "durationMs": 1660
+          },
+          {
+            "text": "Hellfire out.",
+            "file": "attackHelo/attack-2.mp3",
+            "durationMs": 1325
+          },
+          {
+            "text": "Rolling in, guns hot.",
+            "file": "attackHelo/attack-3.mp3",
+            "durationMs": 1740
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Gunship can't.",
+            "file": "attackHelo/unableToComply-1.mp3",
+            "durationMs": 1295
+          },
+          {
+            "text": "Can't get a bead on it.",
+            "file": "attackHelo/unableToComply-2.mp3",
+            "durationMs": 1540
+          },
+          {
+            "text": "Negative, too low.",
+            "file": "attackHelo/unableToComply-3.mp3",
+            "durationMs": 1580
+          }
+        ]
+      }
+    },
+    "navalSupport": {
+      "name": "Fire Support Ship",
+      "role": "Naval support",
+      "voice": "af_nicole",
+      "lang": "en-us",
+      "speed": 0.96,
+      "lines": {
+        "select": [
+          {
+            "text": "Fire support, ready.",
+            "file": "navalSupport/select-1.mp3",
+            "durationMs": 1625
+          },
+          {
+            "text": "Gun ship on the net.",
+            "file": "navalSupport/select-2.mp3",
+            "durationMs": 1680
+          },
+          {
+            "text": "Support battery standing by.",
+            "file": "navalSupport/select-3.mp3",
+            "durationMs": 2380
+          }
+        ],
+        "move": [
+          {
+            "text": "Support ship moving.",
+            "file": "navalSupport/move-1.mp3",
+            "durationMs": 1820
+          },
+          {
+            "text": "Shifting bombardment station.",
+            "file": "navalSupport/move-2.mp3",
+            "durationMs": 2020
+          },
+          {
+            "text": "Under way to new water.",
+            "file": "navalSupport/move-3.mp3",
+            "durationMs": 1715
+          }
+        ],
+        "attack": [
+          {
+            "text": "Shore bombardment, fire.",
+            "file": "navalSupport/attack-1.mp3",
+            "durationMs": 2120
+          },
+          {
+            "text": "Main guns, shot out.",
+            "file": "navalSupport/attack-2.mp3",
+            "durationMs": 1835
+          },
+          {
+            "text": "Bombardment commencing.",
+            "file": "navalSupport/attack-3.mp3",
+            "durationMs": 1850
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Guns can't range it.",
+            "file": "navalSupport/unableToComply-1.mp3",
+            "durationMs": 1579
+          },
+          {
+            "text": "Out of range of the shore.",
+            "file": "navalSupport/unableToComply-2.mp3",
+            "durationMs": 1728
+          },
+          {
+            "text": "No mission, no guns.",
+            "file": "navalSupport/unableToComply-3.mp3",
+            "durationMs": 1771
+          }
+        ]
       }
     },
     "pathfinder": {
@@ -526,26 +1728,74 @@
       "lang": "en-gb",
       "speed": 1.06,
       "lines": {
-        "select": {
-          "text": "Scout team, ready.",
-          "file": "pathfinder/select.mp3",
-          "durationMs": 1270
-        },
-        "move": {
-          "text": "Scout team moving.",
-          "file": "pathfinder/move.mp3",
-          "durationMs": 1300
-        },
-        "attack": {
-          "text": "Unarmed, cannot engage.",
-          "file": "pathfinder/attack.mp3",
-          "durationMs": 1630
-        },
-        "unableToComply": {
-          "text": "Negative.",
-          "file": "pathfinder/unableToComply.mp3",
-          "durationMs": 930
-        }
+        "select": [
+          {
+            "text": "Scout team, ready.",
+            "file": "pathfinder/select-1.mp3",
+            "durationMs": 1270
+          },
+          {
+            "text": "Pathfinders, eyes open.",
+            "file": "pathfinder/select-2.mp3",
+            "durationMs": 1650
+          },
+          {
+            "text": "Recon team on the net.",
+            "file": "pathfinder/select-3.mp3",
+            "durationMs": 1670
+          }
+        ],
+        "move": [
+          {
+            "text": "Scout team moving.",
+            "file": "pathfinder/move-1.mp3",
+            "durationMs": 1300
+          },
+          {
+            "text": "Slipping forward quietly.",
+            "file": "pathfinder/move-2.mp3",
+            "durationMs": 1600
+          },
+          {
+            "text": "Pathfinders moving out.",
+            "file": "pathfinder/move-3.mp3",
+            "durationMs": 1510
+          }
+        ],
+        "attack": [
+          {
+            "text": "Scouts travel light, no guns.",
+            "file": "pathfinder/attack-1.mp3",
+            "durationMs": 1920
+          },
+          {
+            "text": "We carry optics, not rifles.",
+            "file": "pathfinder/attack-2.mp3",
+            "durationMs": 1880
+          },
+          {
+            "text": "No weapons on this team.",
+            "file": "pathfinder/attack-3.mp3",
+            "durationMs": 1500
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Pathfinders can't.",
+            "file": "pathfinder/unableToComply-1.mp3",
+            "durationMs": 1250
+          },
+          {
+            "text": "Can't hold that ground.",
+            "file": "pathfinder/unableToComply-2.mp3",
+            "durationMs": 1410
+          },
+          {
+            "text": "Not with this team.",
+            "file": "pathfinder/unableToComply-3.mp3",
+            "durationMs": 1310
+          }
+        ]
       }
     },
     "spearhead": {
@@ -555,26 +1805,74 @@
       "lang": "en-us",
       "speed": 0.98,
       "lines": {
-        "select": {
-          "text": "Main battle tank, ready.",
-          "file": "spearhead/select.mp3",
-          "durationMs": 1350
-        },
-        "move": {
-          "text": "Tank rolling.",
-          "file": "spearhead/move.mp3",
-          "durationMs": 900
-        },
-        "attack": {
-          "text": "Target acquired.",
-          "file": "spearhead/attack.mp3",
-          "durationMs": 1000
-        },
-        "unableToComply": {
-          "text": "Negative.",
-          "file": "spearhead/unableToComply.mp3",
-          "durationMs": 780
-        }
+        "select": [
+          {
+            "text": "Spearhead, ready.",
+            "file": "spearhead/select-1.mp3",
+            "durationMs": 990
+          },
+          {
+            "text": "Polish armour up.",
+            "file": "spearhead/select-2.mp3",
+            "durationMs": 1080
+          },
+          {
+            "text": "Spearhead crew on the net.",
+            "file": "spearhead/select-3.mp3",
+            "durationMs": 1320
+          }
+        ],
+        "move": [
+          {
+            "text": "Tank rolling.",
+            "file": "spearhead/move-1.mp3",
+            "durationMs": 900
+          },
+          {
+            "text": "Spearhead moving out.",
+            "file": "spearhead/move-2.mp3",
+            "durationMs": 1195
+          },
+          {
+            "text": "Hull forward, on the way.",
+            "file": "spearhead/move-3.mp3",
+            "durationMs": 1280
+          }
+        ],
+        "attack": [
+          {
+            "text": "Spearhead has the target.",
+            "file": "spearhead/attack-1.mp3",
+            "durationMs": 1350
+          },
+          {
+            "text": "Smoothbore, fire.",
+            "file": "spearhead/attack-2.mp3",
+            "durationMs": 1060
+          },
+          {
+            "text": "Spearhead engaging.",
+            "file": "spearhead/attack-3.mp3",
+            "durationMs": 1150
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Spearhead says no.",
+            "file": "spearhead/unableToComply-1.mp3",
+            "durationMs": 1130
+          },
+          {
+            "text": "Gun can't bear.",
+            "file": "spearhead/unableToComply-2.mp3",
+            "durationMs": 980
+          },
+          {
+            "text": "No shot, over.",
+            "file": "spearhead/unableToComply-3.mp3",
+            "durationMs": 1045
+          }
+        ]
       }
     },
     "mlrs": {
@@ -584,26 +1882,74 @@
       "lang": "en-gb",
       "speed": 0.96,
       "lines": {
-        "select": {
-          "text": "Rocket battery, standing by.",
-          "file": "mlrs/select.mp3",
-          "durationMs": 2130
-        },
-        "move": {
-          "text": "Rocket battery moving.",
-          "file": "mlrs/move.mp3",
-          "durationMs": 1735
-        },
-        "attack": {
-          "text": "Fire mission.",
-          "file": "mlrs/attack.mp3",
-          "durationMs": 1195
-        },
-        "unableToComply": {
-          "text": "Cannot fire.",
-          "file": "mlrs/unableToComply.mp3",
-          "durationMs": 1320
-        }
+        "select": [
+          {
+            "text": "Rocket battery, standing by.",
+            "file": "mlrs/select-1.mp3",
+            "durationMs": 2130
+          },
+          {
+            "text": "British rockets up.",
+            "file": "mlrs/select-2.mp3",
+            "durationMs": 1570
+          },
+          {
+            "text": "Battery ready, pods loaded.",
+            "file": "mlrs/select-3.mp3",
+            "durationMs": 2035
+          }
+        ],
+        "move": [
+          {
+            "text": "British battery on the road.",
+            "file": "mlrs/move-1.mp3",
+            "durationMs": 2095
+          },
+          {
+            "text": "Launcher on the road.",
+            "file": "mlrs/move-2.mp3",
+            "durationMs": 1690
+          },
+          {
+            "text": "Displacing to the next grid.",
+            "file": "mlrs/move-3.mp3",
+            "durationMs": 2000
+          }
+        ],
+        "attack": [
+          {
+            "text": "Battery, fire mission.",
+            "file": "mlrs/attack-1.mp3",
+            "durationMs": 1670
+          },
+          {
+            "text": "Salvo away.",
+            "file": "mlrs/attack-2.mp3",
+            "durationMs": 1300
+          },
+          {
+            "text": "Rockets out, good effect.",
+            "file": "mlrs/attack-3.mp3",
+            "durationMs": 1770
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Rockets can't release.",
+            "file": "mlrs/unableToComply-1.mp3",
+            "durationMs": 1660
+          },
+          {
+            "text": "Inside the dead zone.",
+            "file": "mlrs/unableToComply-2.mp3",
+            "durationMs": 1800
+          },
+          {
+            "text": "Too close to release.",
+            "file": "mlrs/unableToComply-3.mp3",
+            "durationMs": 1525
+          }
+        ]
       }
     },
     "heavyHowitzer": {
@@ -613,26 +1959,151 @@
       "lang": "en-us",
       "speed": 0.94,
       "lines": {
-        "select": {
-          "text": "Heavy guns, ready.",
-          "file": "heavyHowitzer/select.mp3",
-          "durationMs": 1344
-        },
-        "move": {
-          "text": "Heavy battery moving.",
-          "file": "heavyHowitzer/move.mp3",
-          "durationMs": 1400
-        },
-        "attack": {
-          "text": "Fire mission.",
-          "file": "heavyHowitzer/attack.mp3",
-          "durationMs": 1003
-        },
-        "unableToComply": {
-          "text": "Cannot fire.",
-          "file": "heavyHowitzer/unableToComply.mp3",
-          "durationMs": 1060
-        }
+        "select": [
+          {
+            "text": "Heavy guns, ready.",
+            "file": "heavyHowitzer/select-1.mp3",
+            "durationMs": 1344
+          },
+          {
+            "text": "Big tube up.",
+            "file": "heavyHowitzer/select-2.mp3",
+            "durationMs": 1000
+          },
+          {
+            "text": "Heavy battery on the net.",
+            "file": "heavyHowitzer/select-3.mp3",
+            "durationMs": 1579
+          }
+        ],
+        "move": [
+          {
+            "text": "Heavy battery moving.",
+            "file": "heavyHowitzer/move-1.mp3",
+            "durationMs": 1400
+          },
+          {
+            "text": "Towing the big gun out.",
+            "file": "heavyHowitzer/move-2.mp3",
+            "durationMs": 1408
+          },
+          {
+            "text": "Heavy section displacing.",
+            "file": "heavyHowitzer/move-3.mp3",
+            "durationMs": 1685
+          }
+        ],
+        "attack": [
+          {
+            "text": "Heavy battery, fire.",
+            "file": "heavyHowitzer/attack-1.mp3",
+            "durationMs": 1408
+          },
+          {
+            "text": "Heavy round away.",
+            "file": "heavyHowitzer/attack-2.mp3",
+            "durationMs": 1237
+          },
+          {
+            "text": "Two-oh-three, shot out.",
+            "file": "heavyHowitzer/attack-3.mp3",
+            "durationMs": 1420
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Heavy gun cannot fire.",
+            "file": "heavyHowitzer/unableToComply-1.mp3",
+            "durationMs": 1659
+          },
+          {
+            "text": "Too far for the tube.",
+            "file": "heavyHowitzer/unableToComply-2.mp3",
+            "durationMs": 1408
+          },
+          {
+            "text": "No mission for that grid.",
+            "file": "heavyHowitzer/unableToComply-3.mp3",
+            "durationMs": 1510
+          }
+        ]
+      }
+    },
+    "hedgehogTeam": {
+      "name": "Hedgehog AT Team",
+      "role": "Anti-armour",
+      "voice": "am_michael",
+      "lang": "en-us",
+      "speed": 0.98,
+      "lines": {
+        "select": [
+          {
+            "text": "Hedgehog team, ready.",
+            "file": "hedgehogTeam/select-1.mp3",
+            "durationMs": 1525
+          },
+          {
+            "text": "Anti-tank team, loaded.",
+            "file": "hedgehogTeam/select-2.mp3",
+            "durationMs": 1765
+          },
+          {
+            "text": "Hedgehog on the net.",
+            "file": "hedgehogTeam/select-3.mp3",
+            "durationMs": 1405
+          }
+        ],
+        "move": [
+          {
+            "text": "Hedgehog moving.",
+            "file": "hedgehogTeam/move-1.mp3",
+            "durationMs": 1235
+          },
+          {
+            "text": "Team shifting to cover.",
+            "file": "hedgehogTeam/move-2.mp3",
+            "durationMs": 1550
+          },
+          {
+            "text": "AT team relocating.",
+            "file": "hedgehogTeam/move-3.mp3",
+            "durationMs": 1435
+          }
+        ],
+        "attack": [
+          {
+            "text": "Hedgehog sees the hull.",
+            "file": "hedgehogTeam/attack-1.mp3",
+            "durationMs": 1545
+          },
+          {
+            "text": "Hedgehog firing.",
+            "file": "hedgehogTeam/attack-2.mp3",
+            "durationMs": 1345
+          },
+          {
+            "text": "Missile on the hull.",
+            "file": "hedgehogTeam/attack-3.mp3",
+            "durationMs": 1325
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Hedgehog can't take it.",
+            "file": "hedgehogTeam/unableToComply-1.mp3",
+            "durationMs": 1415
+          },
+          {
+            "text": "Nothing in the reticle.",
+            "file": "hedgehogTeam/unableToComply-2.mp3",
+            "durationMs": 1355
+          },
+          {
+            "text": "Can't reach that one.",
+            "file": "hedgehogTeam/unableToComply-3.mp3",
+            "durationMs": 1275
+          }
+        ]
       }
     },
     "deepReconUAV": {
@@ -642,26 +2113,2692 @@
       "lang": "en-us",
       "speed": 1.08,
       "lines": {
-        "select": {
-          "text": "Recon drone, on station.",
-          "file": "deepReconUAV/select.mp3",
-          "durationMs": 1595
-        },
-        "move": {
-          "text": "Drone moving to station.",
-          "file": "deepReconUAV/move.mp3",
-          "durationMs": 1387
-        },
-        "attack": {
-          "text": "Unarmed, cannot engage.",
-          "file": "deepReconUAV/attack.mp3",
-          "durationMs": 1457
-        },
-        "unableToComply": {
-          "text": "Unable.",
-          "file": "deepReconUAV/unableToComply.mp3",
-          "durationMs": 715
-        }
+        "select": [
+          {
+            "text": "Recon drone, on station.",
+            "file": "deepReconUAV/select-1.mp3",
+            "durationMs": 1595
+          },
+          {
+            "text": "Deep eye ready.",
+            "file": "deepReconUAV/select-2.mp3",
+            "durationMs": 980
+          },
+          {
+            "text": "Long-range drone, link good.",
+            "file": "deepReconUAV/select-3.mp3",
+            "durationMs": 1660
+          }
+        ],
+        "move": [
+          {
+            "text": "Drone moving to station.",
+            "file": "deepReconUAV/move-1.mp3",
+            "durationMs": 1387
+          },
+          {
+            "text": "Pushing the orbit deeper.",
+            "file": "deepReconUAV/move-2.mp3",
+            "durationMs": 1280
+          },
+          {
+            "text": "New grid, climbing.",
+            "file": "deepReconUAV/move-3.mp3",
+            "durationMs": 1216
+          }
+        ],
+        "attack": [
+          {
+            "text": "Deep eye is unarmed.",
+            "file": "deepReconUAV/attack-1.mp3",
+            "durationMs": 1237
+          },
+          {
+            "text": "This drone only watches.",
+            "file": "deepReconUAV/attack-2.mp3",
+            "durationMs": 1470
+          },
+          {
+            "text": "No stores on the wing.",
+            "file": "deepReconUAV/attack-3.mp3",
+            "durationMs": 1250
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Deep eye can't.",
+            "file": "deepReconUAV/unableToComply-1.mp3",
+            "durationMs": 960
+          },
+          {
+            "text": "Too far from the link.",
+            "file": "deepReconUAV/unableToComply-2.mp3",
+            "durationMs": 1200
+          },
+          {
+            "text": "Negative, no weapons.",
+            "file": "deepReconUAV/unableToComply-3.mp3",
+            "durationMs": 1387
+          }
+        ]
+      }
+    },
+    "kestrelTeam": {
+      "name": "Kestrel Air Team",
+      "role": "Air defence",
+      "voice": "bf_alice",
+      "lang": "en-gb",
+      "speed": 1.08,
+      "lines": {
+        "select": [
+          {
+            "text": "Kestrel team, ready.",
+            "file": "kestrelTeam/select-1.mp3",
+            "durationMs": 1525
+          },
+          {
+            "text": "Kestrel launcher up.",
+            "file": "kestrelTeam/select-2.mp3",
+            "durationMs": 1515
+          },
+          {
+            "text": "Air team on the net.",
+            "file": "kestrelTeam/select-3.mp3",
+            "durationMs": 1380
+          }
+        ],
+        "move": [
+          {
+            "text": "Kestrel moving.",
+            "file": "kestrelTeam/move-1.mp3",
+            "durationMs": 1190
+          },
+          {
+            "text": "Launcher team relocating.",
+            "file": "kestrelTeam/move-2.mp3",
+            "durationMs": 1925
+          },
+          {
+            "text": "Setting up new sky watch.",
+            "file": "kestrelTeam/move-3.mp3",
+            "durationMs": 1805
+          }
+        ],
+        "attack": [
+          {
+            "text": "Kestrel, missile away.",
+            "file": "kestrelTeam/attack-1.mp3",
+            "durationMs": 1695
+          },
+          {
+            "text": "Air target engaged.",
+            "file": "kestrelTeam/attack-2.mp3",
+            "durationMs": 1645
+          },
+          {
+            "text": "Splash, bird down.",
+            "file": "kestrelTeam/attack-3.mp3",
+            "durationMs": 1460
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "No track.",
+            "file": "kestrelTeam/unableToComply-1.mp3",
+            "durationMs": 1080
+          },
+          {
+            "text": "Sky is clear.",
+            "file": "kestrelTeam/unableToComply-2.mp3",
+            "durationMs": 1260
+          },
+          {
+            "text": "Can't lock that vector.",
+            "file": "kestrelTeam/unableToComply-3.mp3",
+            "durationMs": 1485
+          }
+        ]
+      }
+    },
+    "wilk": {
+      "name": "Wilk Heavy IFV",
+      "role": "Infantry fighting vehicle",
+      "voice": "am_onyx",
+      "lang": "en-us",
+      "speed": 1.02,
+      "lines": {
+        "select": [
+          {
+            "text": "Wilk up, ready.",
+            "file": "wilk/select-1.mp3",
+            "durationMs": 1260
+          },
+          {
+            "text": "Heavy fighting vehicle, loaded.",
+            "file": "wilk/select-2.mp3",
+            "durationMs": 2435
+          },
+          {
+            "text": "Wilk crew on the net.",
+            "file": "wilk/select-3.mp3",
+            "durationMs": 1445
+          }
+        ],
+        "move": [
+          {
+            "text": "Wilk rolling.",
+            "file": "wilk/move-1.mp3",
+            "durationMs": 1173
+          },
+          {
+            "text": "Heavy track moving.",
+            "file": "wilk/move-2.mp3",
+            "durationMs": 1702
+          },
+          {
+            "text": "Wilk advancing with the infantry.",
+            "file": "wilk/move-3.mp3",
+            "durationMs": 2605
+          }
+        ],
+        "attack": [
+          {
+            "text": "Wilk engaging.",
+            "file": "wilk/attack-1.mp3",
+            "durationMs": 1355
+          },
+          {
+            "text": "Autocannon on the contact.",
+            "file": "wilk/attack-2.mp3",
+            "durationMs": 2165
+          },
+          {
+            "text": "Heavy fire, suppressing.",
+            "file": "wilk/attack-3.mp3",
+            "durationMs": 2150
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Wilk can't do it.",
+            "file": "wilk/unableToComply-1.mp3",
+            "durationMs": 1451
+          },
+          {
+            "text": "Can't get the gun up.",
+            "file": "wilk/unableToComply-2.mp3",
+            "durationMs": 1467
+          },
+          {
+            "text": "No line for the cannon.",
+            "file": "wilk/unableToComply-3.mp3",
+            "durationMs": 2155
+          }
+        ]
+      }
+    },
+    "stormShadow": {
+      "name": "Storm Shadow Battery",
+      "role": "Deep strike",
+      "voice": "bm_daniel",
+      "lang": "en-gb",
+      "speed": 0.94,
+      "lines": {
+        "select": [
+          {
+            "text": "Storm Shadow, ready.",
+            "file": "stormShadow/select-1.mp3",
+            "durationMs": 1630
+          },
+          {
+            "text": "Deep strike battery up.",
+            "file": "stormShadow/select-2.mp3",
+            "durationMs": 1820
+          },
+          {
+            "text": "Cruise missiles on the rail.",
+            "file": "stormShadow/select-3.mp3",
+            "durationMs": 2050
+          }
+        ],
+        "move": [
+          {
+            "text": "Deep strike moving.",
+            "file": "stormShadow/move-1.mp3",
+            "durationMs": 1510
+          },
+          {
+            "text": "Launcher displacing quietly.",
+            "file": "stormShadow/move-2.mp3",
+            "durationMs": 2200
+          },
+          {
+            "text": "Battery on the road.",
+            "file": "stormShadow/move-3.mp3",
+            "durationMs": 1720
+          }
+        ],
+        "attack": [
+          {
+            "text": "Missile away.",
+            "file": "stormShadow/attack-1.mp3",
+            "durationMs": 1410
+          },
+          {
+            "text": "Storm Shadow launched.",
+            "file": "stormShadow/attack-2.mp3",
+            "durationMs": 1710
+          },
+          {
+            "text": "Deep strike inbound.",
+            "file": "stormShadow/attack-3.mp3",
+            "durationMs": 1670
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Storm Shadow can't launch.",
+            "file": "stormShadow/unableToComply-1.mp3",
+            "durationMs": 1990
+          },
+          {
+            "text": "Too close to the launcher.",
+            "file": "stormShadow/unableToComply-2.mp3",
+            "durationMs": 1750
+          },
+          {
+            "text": "No viable target.",
+            "file": "stormShadow/unableToComply-3.mp3",
+            "durationMs": 1690
+          }
+        ]
+      }
+    },
+    "tosp": {
+      "name": "TOSP Thermobaric Launcher",
+      "role": "Area denial",
+      "voice": "am_eric",
+      "lang": "en-us",
+      "speed": 0.92,
+      "lines": {
+        "select": [
+          {
+            "text": "Thermobaric, ready.",
+            "file": "tosp/select-1.mp3",
+            "durationMs": 1400
+          },
+          {
+            "text": "TOSP launcher up.",
+            "file": "tosp/select-2.mp3",
+            "durationMs": 1390
+          },
+          {
+            "text": "Fuel-air battery on the net.",
+            "file": "tosp/select-3.mp3",
+            "durationMs": 1750
+          }
+        ],
+        "move": [
+          {
+            "text": "TOSP moving.",
+            "file": "tosp/move-1.mp3",
+            "durationMs": 1100
+          },
+          {
+            "text": "Launcher shifting position.",
+            "file": "tosp/move-2.mp3",
+            "durationMs": 1810
+          },
+          {
+            "text": "Heavy rocket on the road.",
+            "file": "tosp/move-3.mp3",
+            "durationMs": 1700
+          }
+        ],
+        "attack": [
+          {
+            "text": "Thermobaric away.",
+            "file": "tosp/attack-1.mp3",
+            "durationMs": 1360
+          },
+          {
+            "text": "Fuel-air launched.",
+            "file": "tosp/attack-2.mp3",
+            "durationMs": 1210
+          },
+          {
+            "text": "Burning the grid down.",
+            "file": "tosp/attack-3.mp3",
+            "durationMs": 1455
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Thermobaric can't fire.",
+            "file": "tosp/unableToComply-1.mp3",
+            "durationMs": 1720
+          },
+          {
+            "text": "Too close to burn us.",
+            "file": "tosp/unableToComply-2.mp3",
+            "durationMs": 1480
+          },
+          {
+            "text": "No safe shot.",
+            "file": "tosp/unableToComply-3.mp3",
+            "durationMs": 1150
+          }
+        ]
+      }
+    },
+    "sprut": {
+      "name": "Sprut Recon Buggy",
+      "role": "Reconnaissance",
+      "voice": "af_sky",
+      "lang": "en-us",
+      "speed": 1.06,
+      "lines": {
+        "select": [
+          {
+            "text": "Sprut, ready.",
+            "file": "sprut/select-1.mp3",
+            "durationMs": 1080
+          },
+          {
+            "text": "Buggy up, optics live.",
+            "file": "sprut/select-2.mp3",
+            "durationMs": 1635
+          },
+          {
+            "text": "Recon buggy on the net.",
+            "file": "sprut/select-3.mp3",
+            "durationMs": 1728
+          }
+        ],
+        "move": [
+          {
+            "text": "Sprut moving.",
+            "file": "sprut/move-1.mp3",
+            "durationMs": 1070
+          },
+          {
+            "text": "Buggy running the route.",
+            "file": "sprut/move-2.mp3",
+            "durationMs": 1350
+          },
+          {
+            "text": "Fast recon rolling.",
+            "file": "sprut/move-3.mp3",
+            "durationMs": 1615
+          }
+        ],
+        "attack": [
+          {
+            "text": "Sprut engaging.",
+            "file": "sprut/attack-1.mp3",
+            "durationMs": 1280
+          },
+          {
+            "text": "Light gun on target.",
+            "file": "sprut/attack-2.mp3",
+            "durationMs": 1540
+          },
+          {
+            "text": "Buggy firing.",
+            "file": "sprut/attack-3.mp3",
+            "durationMs": 1090
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Sprut says negative.",
+            "file": "sprut/unableToComply-1.mp3",
+            "durationMs": 1395
+          },
+          {
+            "text": "Buggy can't get there.",
+            "file": "sprut/unableToComply-2.mp3",
+            "durationMs": 1350
+          },
+          {
+            "text": "Too thin to fight that.",
+            "file": "sprut/unableToComply-3.mp3",
+            "durationMs": 1460
+          }
+        ]
+      }
+    },
+    "taszar": {
+      "name": "Taszar Mortar Team",
+      "role": "Infantry support",
+      "voice": "am_echo",
+      "lang": "en-us",
+      "speed": 1.02,
+      "lines": {
+        "select": [
+          {
+            "text": "Taszar mortar team, ready.",
+            "file": "taszar/select-1.mp3",
+            "durationMs": 1920
+          },
+          {
+            "text": "Mortar up, base plate down.",
+            "file": "taszar/select-2.mp3",
+            "durationMs": 1910
+          },
+          {
+            "text": "Tubes ready on the net.",
+            "file": "taszar/select-3.mp3",
+            "durationMs": 1700
+          }
+        ],
+        "move": [
+          {
+            "text": "Mortar team moving.",
+            "file": "taszar/move-1.mp3",
+            "durationMs": 1470
+          },
+          {
+            "text": "Packing the tube out.",
+            "file": "taszar/move-2.mp3",
+            "durationMs": 1460
+          },
+          {
+            "text": "Base plate up, moving.",
+            "file": "taszar/move-3.mp3",
+            "durationMs": 1610
+          }
+        ],
+        "attack": [
+          {
+            "text": "Rounds away.",
+            "file": "taszar/attack-1.mp3",
+            "durationMs": 1120
+          },
+          {
+            "text": "Mortar firing.",
+            "file": "taszar/attack-2.mp3",
+            "durationMs": 1260
+          },
+          {
+            "text": "High angle, shot out.",
+            "file": "taszar/attack-3.mp3",
+            "durationMs": 1660
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Mortar can't fire.",
+            "file": "taszar/unableToComply-1.mp3",
+            "durationMs": 1520
+          },
+          {
+            "text": "Too close for the tube.",
+            "file": "taszar/unableToComply-2.mp3",
+            "durationMs": 1740
+          },
+          {
+            "text": "Out of range.",
+            "file": "taszar/unableToComply-3.mp3",
+            "durationMs": 1180
+          }
+        ]
+      }
+    },
+    "rifleEC": {
+      "name": "Motor Rifleman",
+      "role": "Infantry",
+      "voice": "am_adam",
+      "lang": "en-us",
+      "speed": 1.06,
+      "lines": {
+        "select": [
+          {
+            "text": "Motor rifles, ready.",
+            "file": "rifleEC/select-1.mp3",
+            "durationMs": 1344
+          },
+          {
+            "text": "Eastern rifles up.",
+            "file": "rifleEC/select-2.mp3",
+            "durationMs": 1237
+          },
+          {
+            "text": "Motor section on the net.",
+            "file": "rifleEC/select-3.mp3",
+            "durationMs": 1451
+          }
+        ],
+        "move": [
+          {
+            "text": "Motor rifles moving.",
+            "file": "rifleEC/move-1.mp3",
+            "durationMs": 1429
+          },
+          {
+            "text": "Section advancing.",
+            "file": "rifleEC/move-2.mp3",
+            "durationMs": 1259
+          },
+          {
+            "text": "Rifles moving up the road.",
+            "file": "rifleEC/move-3.mp3",
+            "durationMs": 1493
+          }
+        ],
+        "attack": [
+          {
+            "text": "Engaging infantry.",
+            "file": "rifleEC/attack-1.mp3",
+            "durationMs": 1323
+          },
+          {
+            "text": "Rifles laying fire.",
+            "file": "rifleEC/attack-2.mp3",
+            "durationMs": 1344
+          },
+          {
+            "text": "Motor rifles suppressing.",
+            "file": "rifleEC/attack-3.mp3",
+            "durationMs": 1557
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Motor rifles can't.",
+            "file": "rifleEC/unableToComply-1.mp3",
+            "durationMs": 1323
+          },
+          {
+            "text": "Can't advance there.",
+            "file": "rifleEC/unableToComply-2.mp3",
+            "durationMs": 1109
+          },
+          {
+            "text": "No cover on that line.",
+            "file": "rifleEC/unableToComply-3.mp3",
+            "durationMs": 1429
+          }
+        ]
+      }
+    },
+    "atgmEC": {
+      "name": "Heavy Missile Team",
+      "role": "Anti-armour",
+      "voice": "am_fenrir",
+      "lang": "en-us",
+      "speed": 1.02,
+      "lines": {
+        "select": [
+          {
+            "text": "Heavy missile team, ready.",
+            "file": "atgmEC/select-1.mp3",
+            "durationMs": 1330
+          },
+          {
+            "text": "Big tube up, tracker live.",
+            "file": "atgmEC/select-2.mp3",
+            "durationMs": 1429
+          },
+          {
+            "text": "Missile section on the net.",
+            "file": "atgmEC/select-3.mp3",
+            "durationMs": 1270
+          }
+        ],
+        "move": [
+          {
+            "text": "Missile section moving.",
+            "file": "atgmEC/move-1.mp3",
+            "durationMs": 1230
+          },
+          {
+            "text": "Relocating the heavy tube.",
+            "file": "atgmEC/move-2.mp3",
+            "durationMs": 1408
+          },
+          {
+            "text": "Heavy tubes up, rolling.",
+            "file": "atgmEC/move-3.mp3",
+            "durationMs": 1300
+          }
+        ],
+        "attack": [
+          {
+            "text": "Heavy missile away.",
+            "file": "atgmEC/attack-1.mp3",
+            "durationMs": 1050
+          },
+          {
+            "text": "Armour engaged.",
+            "file": "atgmEC/attack-2.mp3",
+            "durationMs": 981
+          },
+          {
+            "text": "Kill shot, tracking.",
+            "file": "atgmEC/attack-3.mp3",
+            "durationMs": 1152
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Heavy tube has no shot.",
+            "file": "atgmEC/unableToComply-1.mp3",
+            "durationMs": 1390
+          },
+          {
+            "text": "Can't track through that.",
+            "file": "atgmEC/unableToComply-2.mp3",
+            "durationMs": 1150
+          },
+          {
+            "text": "Negative, blocked.",
+            "file": "atgmEC/unableToComply-3.mp3",
+            "durationMs": 1067
+          }
+        ]
+      }
+    },
+    "reconEC": {
+      "name": "Recon BRM",
+      "role": "Reconnaissance",
+      "voice": "af_alloy",
+      "lang": "en-us",
+      "speed": 1.04,
+      "lines": {
+        "select": [
+          {
+            "text": "BRM, ready.",
+            "file": "reconEC/select-1.mp3",
+            "durationMs": 1465
+          },
+          {
+            "text": "Recon vehicle up.",
+            "file": "reconEC/select-2.mp3",
+            "durationMs": 1670
+          },
+          {
+            "text": "Eyes out, go ahead.",
+            "file": "reconEC/select-3.mp3",
+            "durationMs": 1520
+          }
+        ],
+        "move": [
+          {
+            "text": "BRM moving.",
+            "file": "reconEC/move-1.mp3",
+            "durationMs": 1365
+          },
+          {
+            "text": "Running the scout route.",
+            "file": "reconEC/move-2.mp3",
+            "durationMs": 1540
+          },
+          {
+            "text": "Recon rolling forward.",
+            "file": "reconEC/move-3.mp3",
+            "durationMs": 1895
+          }
+        ],
+        "attack": [
+          {
+            "text": "Contact, engaging.",
+            "file": "reconEC/attack-1.mp3",
+            "durationMs": 1630
+          },
+          {
+            "text": "BRM firing.",
+            "file": "reconEC/attack-2.mp3",
+            "durationMs": 1545
+          },
+          {
+            "text": "Light target, on it.",
+            "file": "reconEC/attack-3.mp3",
+            "durationMs": 1560
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "BRM can't, over.",
+            "file": "reconEC/unableToComply-1.mp3",
+            "durationMs": 1725
+          },
+          {
+            "text": "BRM can't hold ground.",
+            "file": "reconEC/unableToComply-2.mp3",
+            "durationMs": 1965
+          },
+          {
+            "text": "Out of my reach.",
+            "file": "reconEC/unableToComply-3.mp3",
+            "durationMs": 1320
+          }
+        ]
+      }
+    },
+    "ifvEC": {
+      "name": "Amphibious IFV",
+      "role": "Mechanised fire support",
+      "voice": "am_liam",
+      "lang": "en-us",
+      "speed": 1.0,
+      "lines": {
+        "select": [
+          {
+            "text": "Amphibious IFV, ready.",
+            "file": "ifvEC/select-1.mp3",
+            "durationMs": 1900
+          },
+          {
+            "text": "Boat hull up, cannon loaded.",
+            "file": "ifvEC/select-2.mp3",
+            "durationMs": 1780
+          },
+          {
+            "text": "IFV section on the net.",
+            "file": "ifvEC/select-3.mp3",
+            "durationMs": 1880
+          }
+        ],
+        "move": [
+          {
+            "text": "IFV swimming.",
+            "file": "ifvEC/move-1.mp3",
+            "durationMs": 1470
+          },
+          {
+            "text": "Entering the water.",
+            "file": "ifvEC/move-2.mp3",
+            "durationMs": 1355
+          },
+          {
+            "text": "Amphibious move under way.",
+            "file": "ifvEC/move-3.mp3",
+            "durationMs": 1830
+          }
+        ],
+        "attack": [
+          {
+            "text": "Cannon engaging.",
+            "file": "ifvEC/attack-1.mp3",
+            "durationMs": 1370
+          },
+          {
+            "text": "Firing on the bank.",
+            "file": "ifvEC/attack-2.mp3",
+            "durationMs": 1485
+          },
+          {
+            "text": "Suppressing the treeline.",
+            "file": "ifvEC/attack-3.mp3",
+            "durationMs": 1690
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Amphibious can't.",
+            "file": "ifvEC/unableToComply-1.mp3",
+            "durationMs": 1340
+          },
+          {
+            "text": "Too deep to cross.",
+            "file": "ifvEC/unableToComply-2.mp3",
+            "durationMs": 1340
+          },
+          {
+            "text": "Can't climb that bank.",
+            "file": "ifvEC/unableToComply-3.mp3",
+            "durationMs": 1480
+          }
+        ]
+      }
+    },
+    "tankEC": {
+      "name": "Main Battle Tank",
+      "role": "Armour",
+      "voice": "am_onyx",
+      "lang": "en-us",
+      "speed": 0.96,
+      "lines": {
+        "select": [
+          {
+            "text": "Eastern tank, ready.",
+            "file": "tankEC/select-1.mp3",
+            "durationMs": 2003
+          },
+          {
+            "text": "Armour up, gun loaded.",
+            "file": "tankEC/select-2.mp3",
+            "durationMs": 2024
+          },
+          {
+            "text": "Tank crew on the net.",
+            "file": "tankEC/select-3.mp3",
+            "durationMs": 1574
+          }
+        ],
+        "move": [
+          {
+            "text": "Eastern tank rolling.",
+            "file": "tankEC/move-1.mp3",
+            "durationMs": 2015
+          },
+          {
+            "text": "Armour moving out.",
+            "file": "tankEC/move-2.mp3",
+            "durationMs": 1490
+          },
+          {
+            "text": "Hull forward, under way.",
+            "file": "tankEC/move-3.mp3",
+            "durationMs": 2155
+          }
+        ],
+        "attack": [
+          {
+            "text": "Target in sight.",
+            "file": "tankEC/attack-1.mp3",
+            "durationMs": 1315
+          },
+          {
+            "text": "Gun, fire.",
+            "file": "tankEC/attack-2.mp3",
+            "durationMs": 1215
+          },
+          {
+            "text": "Engaging the hull.",
+            "file": "tankEC/attack-3.mp3",
+            "durationMs": 1785
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Eastern tank can't.",
+            "file": "tankEC/unableToComply-1.mp3",
+            "durationMs": 1692
+          },
+          {
+            "text": "Can't traverse that far.",
+            "file": "tankEC/unableToComply-2.mp3",
+            "durationMs": 2125
+          },
+          {
+            "text": "Eastern hull, no shot.",
+            "file": "tankEC/unableToComply-3.mp3",
+            "durationMs": 2045
+          }
+        ]
+      }
+    },
+    "tdEC": {
+      "name": "Assault Gun",
+      "role": "Anti-armour",
+      "voice": "am_santa",
+      "lang": "en-us",
+      "speed": 0.98,
+      "lines": {
+        "select": [
+          {
+            "text": "Assault gun, ready.",
+            "file": "tdEC/select-1.mp3",
+            "durationMs": 1450
+          },
+          {
+            "text": "Casemate up, loaded.",
+            "file": "tdEC/select-2.mp3",
+            "durationMs": 1621
+          },
+          {
+            "text": "Gun crew on the net.",
+            "file": "tdEC/select-3.mp3",
+            "durationMs": 1344
+          }
+        ],
+        "move": [
+          {
+            "text": "Assault gun moving.",
+            "file": "tdEC/move-1.mp3",
+            "durationMs": 1344
+          },
+          {
+            "text": "Casemate rolling forward.",
+            "file": "tdEC/move-2.mp3",
+            "durationMs": 1685
+          },
+          {
+            "text": "Hull shifting position.",
+            "file": "tdEC/move-3.mp3",
+            "durationMs": 1707
+          }
+        ],
+        "attack": [
+          {
+            "text": "Assault gun on the hull.",
+            "file": "tdEC/attack-1.mp3",
+            "durationMs": 1540
+          },
+          {
+            "text": "Assault gun, shot out.",
+            "file": "tdEC/attack-2.mp3",
+            "durationMs": 1770
+          },
+          {
+            "text": "Assault gun engaged armour.",
+            "file": "tdEC/attack-3.mp3",
+            "durationMs": 2060
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Casemate cannot bear.",
+            "file": "tdEC/unableToComply-1.mp3",
+            "durationMs": 1493
+          },
+          {
+            "text": "Gun can't turn that far.",
+            "file": "tdEC/unableToComply-2.mp3",
+            "durationMs": 1920
+          },
+          {
+            "text": "Assault gun blocked.",
+            "file": "tdEC/unableToComply-3.mp3",
+            "durationMs": 1429
+          }
+        ]
+      }
+    },
+    "spgEC": {
+      "name": "Self-Propelled Howitzer",
+      "role": "Indirect fire",
+      "voice": "af_kore",
+      "lang": "en-us",
+      "speed": 0.96,
+      "lines": {
+        "select": [
+          {
+            "text": "Eastern howitzer, ready.",
+            "file": "spgEC/select-1.mp3",
+            "durationMs": 1320
+          },
+          {
+            "text": "Gun up, charges set.",
+            "file": "spgEC/select-2.mp3",
+            "durationMs": 1340
+          },
+          {
+            "text": "Battery on the net.",
+            "file": "spgEC/select-3.mp3",
+            "durationMs": 1060
+          }
+        ],
+        "move": [
+          {
+            "text": "Howitzer moving.",
+            "file": "spgEC/move-1.mp3",
+            "durationMs": 1030
+          },
+          {
+            "text": "Gun displacing.",
+            "file": "spgEC/move-2.mp3",
+            "durationMs": 1090
+          },
+          {
+            "text": "Battery rolling to new ground.",
+            "file": "spgEC/move-3.mp3",
+            "durationMs": 1580
+          }
+        ],
+        "attack": [
+          {
+            "text": "Eastern battery, fire.",
+            "file": "spgEC/attack-1.mp3",
+            "durationMs": 1340
+          },
+          {
+            "text": "Shot out.",
+            "file": "spgEC/attack-2.mp3",
+            "durationMs": 760
+          },
+          {
+            "text": "Rounds on the way.",
+            "file": "spgEC/attack-3.mp3",
+            "durationMs": 1010
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Eastern gun can't fire.",
+            "file": "spgEC/unableToComply-1.mp3",
+            "durationMs": 1380
+          },
+          {
+            "text": "Eastern gun out of range.",
+            "file": "spgEC/unableToComply-2.mp3",
+            "durationMs": 1400
+          },
+          {
+            "text": "Eastern gun, no mission.",
+            "file": "spgEC/unableToComply-3.mp3",
+            "durationMs": 1450
+          }
+        ]
+      }
+    },
+    "rocketArtilleryEC": {
+      "name": "Heavy Rocket Battery",
+      "role": "Rocket artillery",
+      "voice": "af_heart",
+      "lang": "en-us",
+      "speed": 1.02,
+      "lines": {
+        "select": [
+          {
+            "text": "Heavy rockets, ready.",
+            "file": "rocketArtilleryEC/select-1.mp3",
+            "durationMs": 1275
+          },
+          {
+            "text": "Big salvo up.",
+            "file": "rocketArtilleryEC/select-2.mp3",
+            "durationMs": 1025
+          },
+          {
+            "text": "Rocket regiment on the net.",
+            "file": "rocketArtilleryEC/select-3.mp3",
+            "durationMs": 1595
+          }
+        ],
+        "move": [
+          {
+            "text": "Heavy rockets moving.",
+            "file": "rocketArtilleryEC/move-1.mp3",
+            "durationMs": 1340
+          },
+          {
+            "text": "Regiment displacing.",
+            "file": "rocketArtilleryEC/move-2.mp3",
+            "durationMs": 1415
+          },
+          {
+            "text": "Pods up, on the road.",
+            "file": "rocketArtilleryEC/move-3.mp3",
+            "durationMs": 1240
+          }
+        ],
+        "attack": [
+          {
+            "text": "Full salvo away.",
+            "file": "rocketArtilleryEC/attack-1.mp3",
+            "durationMs": 1155
+          },
+          {
+            "text": "Heavy rockets out.",
+            "file": "rocketArtilleryEC/attack-2.mp3",
+            "durationMs": 1200
+          },
+          {
+            "text": "Saturation, fire.",
+            "file": "rocketArtilleryEC/attack-3.mp3",
+            "durationMs": 1310
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Heavy salvo can't fire.",
+            "file": "rocketArtilleryEC/unableToComply-1.mp3",
+            "durationMs": 1500
+          },
+          {
+            "text": "Too close for the salvo.",
+            "file": "rocketArtilleryEC/unableToComply-2.mp3",
+            "durationMs": 1390
+          },
+          {
+            "text": "No release, negative.",
+            "file": "rocketArtilleryEC/unableToComply-3.mp3",
+            "durationMs": 1515
+          }
+        ]
+      }
+    },
+    "aaEC": {
+      "name": "SAM Vehicle",
+      "role": "Air defence",
+      "voice": "af_aoede",
+      "lang": "en-us",
+      "speed": 1.02,
+      "lines": {
+        "select": [
+          {
+            "text": "SAM vehicle, ready.",
+            "file": "aaEC/select-1.mp3",
+            "durationMs": 1370
+          },
+          {
+            "text": "Missile rack up.",
+            "file": "aaEC/select-2.mp3",
+            "durationMs": 970
+          },
+          {
+            "text": "Air defence on the net.",
+            "file": "aaEC/select-3.mp3",
+            "durationMs": 1237
+          }
+        ],
+        "move": [
+          {
+            "text": "SAM moving.",
+            "file": "aaEC/move-1.mp3",
+            "durationMs": 1100
+          },
+          {
+            "text": "Rack displacing.",
+            "file": "aaEC/move-2.mp3",
+            "durationMs": 1131
+          },
+          {
+            "text": "Radar shifting ground.",
+            "file": "aaEC/move-3.mp3",
+            "durationMs": 1330
+          }
+        ],
+        "attack": [
+          {
+            "text": "SAM missile away.",
+            "file": "aaEC/attack-1.mp3",
+            "durationMs": 1270
+          },
+          {
+            "text": "SAM engaging aircraft.",
+            "file": "aaEC/attack-2.mp3",
+            "durationMs": 1685
+          },
+          {
+            "text": "Track locked, firing.",
+            "file": "aaEC/attack-3.mp3",
+            "durationMs": 1280
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "SAM has no track.",
+            "file": "aaEC/unableToComply-1.mp3",
+            "durationMs": 1360
+          },
+          {
+            "text": "Nothing to shoot at.",
+            "file": "aaEC/unableToComply-2.mp3",
+            "durationMs": 1067
+          },
+          {
+            "text": "Can't lock that.",
+            "file": "aaEC/unableToComply-3.mp3",
+            "durationMs": 960
+          }
+        ]
+      }
+    },
+    "uavEC": {
+      "name": "Recon UAV",
+      "role": "Reconnaissance aviation",
+      "voice": "af_jessica",
+      "lang": "en-us",
+      "speed": 1.1,
+      "lines": {
+        "select": [
+          {
+            "text": "Eastern drone, ready.",
+            "file": "uavEC/select-1.mp3",
+            "durationMs": 1460
+          },
+          {
+            "text": "Recon link up.",
+            "file": "uavEC/select-2.mp3",
+            "durationMs": 1340
+          },
+          {
+            "text": "Eyes aloft, go ahead.",
+            "file": "uavEC/select-3.mp3",
+            "durationMs": 1460
+          }
+        ],
+        "move": [
+          {
+            "text": "Drone climbing.",
+            "file": "uavEC/move-1.mp3",
+            "durationMs": 1110
+          },
+          {
+            "text": "Orbit shifting.",
+            "file": "uavEC/move-2.mp3",
+            "durationMs": 1067
+          },
+          {
+            "text": "Eastern drone to new grid.",
+            "file": "uavEC/move-3.mp3",
+            "durationMs": 1690
+          }
+        ],
+        "attack": [
+          {
+            "text": "Eastern drone has no stores.",
+            "file": "uavEC/attack-1.mp3",
+            "durationMs": 1960
+          },
+          {
+            "text": "No stores on this drone.",
+            "file": "uavEC/attack-2.mp3",
+            "durationMs": 1630
+          },
+          {
+            "text": "Camera only, no guns.",
+            "file": "uavEC/attack-3.mp3",
+            "durationMs": 1550
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Eastern drone can't.",
+            "file": "uavEC/unableToComply-1.mp3",
+            "durationMs": 1370
+          },
+          {
+            "text": "Link's too weak there.",
+            "file": "uavEC/unableToComply-2.mp3",
+            "durationMs": 1250
+          },
+          {
+            "text": "Eastern drone, unarmed.",
+            "file": "uavEC/unableToComply-3.mp3",
+            "durationMs": 1640
+          }
+        ]
+      }
+    },
+    "interceptorEC": {
+      "name": "Interceptor",
+      "role": "Air superiority",
+      "voice": "af_kore",
+      "lang": "en-us",
+      "speed": 1.14,
+      "lines": {
+        "select": [
+          {
+            "text": "Eastern fighter, ready.",
+            "file": "interceptorEC/select-1.mp3",
+            "durationMs": 1150
+          },
+          {
+            "text": "Interceptor up, clean.",
+            "file": "interceptorEC/select-2.mp3",
+            "durationMs": 1220
+          },
+          {
+            "text": "Air cover on the net.",
+            "file": "interceptorEC/select-3.mp3",
+            "durationMs": 1050
+          }
+        ],
+        "move": [
+          {
+            "text": "Eastern vector set.",
+            "file": "interceptorEC/move-1.mp3",
+            "durationMs": 1080
+          },
+          {
+            "text": "Turning to intercept.",
+            "file": "interceptorEC/move-2.mp3",
+            "durationMs": 1040
+          },
+          {
+            "text": "New vector, climbing.",
+            "file": "interceptorEC/move-3.mp3",
+            "durationMs": 1100
+          }
+        ],
+        "attack": [
+          {
+            "text": "Bandit locked up.",
+            "file": "interceptorEC/attack-1.mp3",
+            "durationMs": 990
+          },
+          {
+            "text": "Eastern missile away.",
+            "file": "interceptorEC/attack-2.mp3",
+            "durationMs": 1030
+          },
+          {
+            "text": "Splash, bandit down.",
+            "file": "interceptorEC/attack-3.mp3",
+            "durationMs": 1095
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Eastern fighter can't.",
+            "file": "interceptorEC/unableToComply-1.mp3",
+            "durationMs": 1070
+          },
+          {
+            "text": "Bandit's too far out.",
+            "file": "interceptorEC/unableToComply-2.mp3",
+            "durationMs": 1220
+          },
+          {
+            "text": "Negative, out of fuel for it.",
+            "file": "interceptorEC/unableToComply-3.mp3",
+            "durationMs": 1420
+          }
+        ]
+      }
+    },
+    "fighterEC": {
+      "name": "Strike Fighter",
+      "role": "Strike aircraft",
+      "voice": "am_puck",
+      "lang": "en-us",
+      "speed": 1.1,
+      "lines": {
+        "select": [
+          {
+            "text": "Eastern strike, ready.",
+            "file": "fighterEC/select-1.mp3",
+            "durationMs": 1200
+          },
+          {
+            "text": "Bomber up, loaded.",
+            "file": "fighterEC/select-2.mp3",
+            "durationMs": 1040
+          },
+          {
+            "text": "Strike flight on the net.",
+            "file": "fighterEC/select-3.mp3",
+            "durationMs": 1150
+          }
+        ],
+        "move": [
+          {
+            "text": "Strike course set.",
+            "file": "fighterEC/move-1.mp3",
+            "durationMs": 1000
+          },
+          {
+            "text": "Turning in on the run.",
+            "file": "fighterEC/move-2.mp3",
+            "durationMs": 1060
+          },
+          {
+            "text": "Eastern flight rerouted.",
+            "file": "fighterEC/move-3.mp3",
+            "durationMs": 1190
+          }
+        ],
+        "attack": [
+          {
+            "text": "Bombs away.",
+            "file": "fighterEC/attack-1.mp3",
+            "durationMs": 811
+          },
+          {
+            "text": "Strike package releasing.",
+            "file": "fighterEC/attack-2.mp3",
+            "durationMs": 1260
+          },
+          {
+            "text": "Rolling in, ordnance out.",
+            "file": "fighterEC/attack-3.mp3",
+            "durationMs": 1320
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Eastern strike can't.",
+            "file": "fighterEC/unableToComply-1.mp3",
+            "durationMs": 1090
+          },
+          {
+            "text": "No run-in on that.",
+            "file": "fighterEC/unableToComply-2.mp3",
+            "durationMs": 1045
+          },
+          {
+            "text": "Can't make the pass.",
+            "file": "fighterEC/unableToComply-3.mp3",
+            "durationMs": 970
+          }
+        ]
+      }
+    },
+    "attackHeloEC": {
+      "name": "Attack Helicopter",
+      "role": "Rotary attack",
+      "voice": "am_fenrir",
+      "lang": "en-us",
+      "speed": 1.04,
+      "lines": {
+        "select": [
+          {
+            "text": "Eastern gunship, ready.",
+            "file": "attackHeloEC/select-1.mp3",
+            "durationMs": 1220
+          },
+          {
+            "text": "Rotor up, rockets loaded.",
+            "file": "attackHeloEC/select-2.mp3",
+            "durationMs": 1450
+          },
+          {
+            "text": "Helo attack on the net.",
+            "file": "attackHeloEC/select-3.mp3",
+            "durationMs": 1250
+          }
+        ],
+        "move": [
+          {
+            "text": "Eastern gunship moving.",
+            "file": "attackHeloEC/move-1.mp3",
+            "durationMs": 1320
+          },
+          {
+            "text": "Pulling pitch to the grid.",
+            "file": "attackHeloEC/move-2.mp3",
+            "durationMs": 1230
+          },
+          {
+            "text": "Rotors shifting position.",
+            "file": "attackHeloEC/move-3.mp3",
+            "durationMs": 1344
+          }
+        ],
+        "attack": [
+          {
+            "text": "Eastern helo rockets out.",
+            "file": "attackHeloEC/attack-1.mp3",
+            "durationMs": 1470
+          },
+          {
+            "text": "Gunship rolling in.",
+            "file": "attackHeloEC/attack-2.mp3",
+            "durationMs": 1060
+          },
+          {
+            "text": "Engaging with rockets.",
+            "file": "attackHeloEC/attack-3.mp3",
+            "durationMs": 1301
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Eastern gunship can't.",
+            "file": "attackHeloEC/unableToComply-1.mp3",
+            "durationMs": 1210
+          },
+          {
+            "text": "Too low for a shot.",
+            "file": "attackHeloEC/unableToComply-2.mp3",
+            "durationMs": 1080
+          },
+          {
+            "text": "Can't get the nose on it.",
+            "file": "attackHeloEC/unableToComply-3.mp3",
+            "durationMs": 1216
+          }
+        ]
+      }
+    },
+    "missileBoatEC": {
+      "name": "Missile Boat",
+      "role": "Fast attack",
+      "voice": "af_bella",
+      "lang": "en-us",
+      "speed": 1.06,
+      "lines": {
+        "select": [
+          {
+            "text": "Eastern boat, ready.",
+            "file": "missileBoatEC/select-1.mp3",
+            "durationMs": 1173
+          },
+          {
+            "text": "Fast attack up.",
+            "file": "missileBoatEC/select-2.mp3",
+            "durationMs": 970
+          },
+          {
+            "text": "Missile crew on the net.",
+            "file": "missileBoatEC/select-3.mp3",
+            "durationMs": 1152
+          }
+        ],
+        "move": [
+          {
+            "text": "Boat under way.",
+            "file": "missileBoatEC/move-1.mp3",
+            "durationMs": 880
+          },
+          {
+            "text": "Throttles open.",
+            "file": "missileBoatEC/move-2.mp3",
+            "durationMs": 980
+          },
+          {
+            "text": "Eastern boat to new heading.",
+            "file": "missileBoatEC/move-3.mp3",
+            "durationMs": 1580
+          }
+        ],
+        "attack": [
+          {
+            "text": "Eastern missiles away.",
+            "file": "missileBoatEC/attack-1.mp3",
+            "durationMs": 1195
+          },
+          {
+            "text": "Salvo out.",
+            "file": "missileBoatEC/attack-2.mp3",
+            "durationMs": 830
+          },
+          {
+            "text": "Anti-ship, firing.",
+            "file": "missileBoatEC/attack-3.mp3",
+            "durationMs": 1259
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Eastern boat can't.",
+            "file": "missileBoatEC/unableToComply-1.mp3",
+            "durationMs": 1109
+          },
+          {
+            "text": "No solution on that.",
+            "file": "missileBoatEC/unableToComply-2.mp3",
+            "durationMs": 1152
+          },
+          {
+            "text": "Can't run that close.",
+            "file": "missileBoatEC/unableToComply-3.mp3",
+            "durationMs": 1100
+          }
+        ]
+      }
+    },
+    "corvetteEC": {
+      "name": "Missile Corvette",
+      "role": "Naval combatant",
+      "voice": "af_heart",
+      "lang": "en-us",
+      "speed": 0.98,
+      "lines": {
+        "select": [
+          {
+            "text": "Eastern corvette, ready.",
+            "file": "corvetteEC/select-1.mp3",
+            "durationMs": 1380
+          },
+          {
+            "text": "Warship on the net.",
+            "file": "corvetteEC/select-2.mp3",
+            "durationMs": 1190
+          },
+          {
+            "text": "Eastern deck ready.",
+            "file": "corvetteEC/select-3.mp3",
+            "durationMs": 1220
+          }
+        ],
+        "move": [
+          {
+            "text": "Corvette under way.",
+            "file": "corvetteEC/move-1.mp3",
+            "durationMs": 1100
+          },
+          {
+            "text": "Helm answered.",
+            "file": "corvetteEC/move-2.mp3",
+            "durationMs": 975
+          },
+          {
+            "text": "Eastern ship turning.",
+            "file": "corvetteEC/move-3.mp3",
+            "durationMs": 1305
+          }
+        ],
+        "attack": [
+          {
+            "text": "Eastern corvette, missiles away.",
+            "file": "corvetteEC/attack-1.mp3",
+            "durationMs": 1850
+          },
+          {
+            "text": "Main battery firing.",
+            "file": "corvetteEC/attack-2.mp3",
+            "durationMs": 1355
+          },
+          {
+            "text": "Contact engaged.",
+            "file": "corvetteEC/attack-3.mp3",
+            "durationMs": 1230
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Eastern ship can't.",
+            "file": "corvetteEC/unableToComply-1.mp3",
+            "durationMs": 1220
+          },
+          {
+            "text": "Out of arc.",
+            "file": "corvetteEC/unableToComply-2.mp3",
+            "durationMs": 825
+          },
+          {
+            "text": "Eastern ship, out of arc.",
+            "file": "corvetteEC/unableToComply-3.mp3",
+            "durationMs": 1500
+          }
+        ]
+      }
+    },
+    "frigateEC": {
+      "name": "Escort Frigate",
+      "role": "Fleet escort",
+      "voice": "af_alloy",
+      "lang": "en-us",
+      "speed": 0.98,
+      "lines": {
+        "select": [
+          {
+            "text": "Eastern escort, ready.",
+            "file": "frigateEC/select-1.mp3",
+            "durationMs": 1720
+          },
+          {
+            "text": "Frigate on the net.",
+            "file": "frigateEC/select-2.mp3",
+            "durationMs": 1475
+          },
+          {
+            "text": "Screen set, go ahead.",
+            "file": "frigateEC/select-3.mp3",
+            "durationMs": 1660
+          }
+        ],
+        "move": [
+          {
+            "text": "Eastern escort moving.",
+            "file": "frigateEC/move-1.mp3",
+            "durationMs": 1710
+          },
+          {
+            "text": "Screen shifting.",
+            "file": "frigateEC/move-2.mp3",
+            "durationMs": 1410
+          },
+          {
+            "text": "Taking station.",
+            "file": "frigateEC/move-3.mp3",
+            "durationMs": 1420
+          }
+        ],
+        "attack": [
+          {
+            "text": "Engaging contact.",
+            "file": "frigateEC/attack-1.mp3",
+            "durationMs": 1710
+          },
+          {
+            "text": "Guns out.",
+            "file": "frigateEC/attack-2.mp3",
+            "durationMs": 1080
+          },
+          {
+            "text": "Firing on the bearing.",
+            "file": "frigateEC/attack-3.mp3",
+            "durationMs": 1650
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Eastern escort can't.",
+            "file": "frigateEC/unableToComply-1.mp3",
+            "durationMs": 1740
+          },
+          {
+            "text": "Eastern escort holds.",
+            "file": "frigateEC/unableToComply-2.mp3",
+            "durationMs": 1750
+          },
+          {
+            "text": "Negative, holding.",
+            "file": "frigateEC/unableToComply-3.mp3",
+            "durationMs": 1420
+          }
+        ]
+      }
+    },
+    "submarineEC": {
+      "name": "Attack Submarine",
+      "role": "Subsurface raider",
+      "voice": "af_aoede",
+      "lang": "en-us",
+      "speed": 0.98,
+      "lines": {
+        "select": [
+          {
+            "text": "Eastern sub, ready.",
+            "file": "submarineEC/select-1.mp3",
+            "durationMs": 1170
+          },
+          {
+            "text": "Submarine rigged quiet.",
+            "file": "submarineEC/select-2.mp3",
+            "durationMs": 1408
+          },
+          {
+            "text": "Sonar here.",
+            "file": "submarineEC/select-3.mp3",
+            "durationMs": 960
+          }
+        ],
+        "move": [
+          {
+            "text": "Diving now.",
+            "file": "submarineEC/move-1.mp3",
+            "durationMs": 860
+          },
+          {
+            "text": "Eastern boat under way.",
+            "file": "submarineEC/move-2.mp3",
+            "durationMs": 1310
+          },
+          {
+            "text": "Coming to new depth.",
+            "file": "submarineEC/move-3.mp3",
+            "durationMs": 1130
+          }
+        ],
+        "attack": [
+          {
+            "text": "Eastern torpedoes away.",
+            "file": "submarineEC/attack-1.mp3",
+            "durationMs": 1460
+          },
+          {
+            "text": "Tubes fired.",
+            "file": "submarineEC/attack-2.mp3",
+            "durationMs": 930
+          },
+          {
+            "text": "Firing solution set.",
+            "file": "submarineEC/attack-3.mp3",
+            "durationMs": 1355
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Eastern sub can't comply.",
+            "file": "submarineEC/unableToComply-1.mp3",
+            "durationMs": 1557
+          },
+          {
+            "text": "No solution.",
+            "file": "submarineEC/unableToComply-2.mp3",
+            "durationMs": 1003
+          },
+          {
+            "text": "Too shallow here.",
+            "file": "submarineEC/unableToComply-3.mp3",
+            "durationMs": 1060
+          }
+        ]
+      }
+    },
+    "navalSupportEC": {
+      "name": "Fire Support Ship",
+      "role": "Naval support",
+      "voice": "af_bella",
+      "lang": "en-us",
+      "speed": 1.0,
+      "lines": {
+        "select": [
+          {
+            "text": "Support ship, ready.",
+            "file": "navalSupportEC/select-1.mp3",
+            "durationMs": 1150
+          },
+          {
+            "text": "Eastern guns on the net.",
+            "file": "navalSupportEC/select-2.mp3",
+            "durationMs": 1429
+          },
+          {
+            "text": "Bombardment ready.",
+            "file": "navalSupportEC/select-3.mp3",
+            "durationMs": 1020
+          }
+        ],
+        "move": [
+          {
+            "text": "Eastern support moving.",
+            "file": "navalSupportEC/move-1.mp3",
+            "durationMs": 1360
+          },
+          {
+            "text": "Shifting station.",
+            "file": "navalSupportEC/move-2.mp3",
+            "durationMs": 1060
+          },
+          {
+            "text": "Eastern ship to new water.",
+            "file": "navalSupportEC/move-3.mp3",
+            "durationMs": 1450
+          }
+        ],
+        "attack": [
+          {
+            "text": "Eastern guns, fire mission.",
+            "file": "navalSupportEC/attack-1.mp3",
+            "durationMs": 1880
+          },
+          {
+            "text": "Eastern main guns, shot out.",
+            "file": "navalSupportEC/attack-2.mp3",
+            "durationMs": 1850
+          },
+          {
+            "text": "Bombarding the shore.",
+            "file": "navalSupportEC/attack-3.mp3",
+            "durationMs": 1045
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Eastern guns can't fire.",
+            "file": "navalSupportEC/unableToComply-1.mp3",
+            "durationMs": 1510
+          },
+          {
+            "text": "Eastern guns out of range.",
+            "file": "navalSupportEC/unableToComply-2.mp3",
+            "durationMs": 1472
+          },
+          {
+            "text": "Eastern guns, no mission.",
+            "file": "navalSupportEC/unableToComply-3.mp3",
+            "durationMs": 1710
+          }
+        ]
+      }
+    },
+    "k9Thunder": {
+      "name": "K9 Thunder",
+      "role": "Indirect fire",
+      "voice": "bf_lily",
+      "lang": "en-gb",
+      "speed": 1.0,
+      "lines": {
+        "select": [
+          {
+            "text": "Thunder battery, laid and ready.",
+            "file": "k9Thunder/select-1.mp3",
+            "durationMs": 2240
+          },
+          {
+            "text": "K9 gun up, rounds in the rack.",
+            "file": "k9Thunder/select-2.mp3",
+            "durationMs": 2400
+          },
+          {
+            "text": "Long gun reporting, go ahead.",
+            "file": "k9Thunder/select-3.mp3",
+            "durationMs": 2325
+          }
+        ],
+        "move": [
+          {
+            "text": "Gun moving, hull down as we go.",
+            "file": "k9Thunder/move-1.mp3",
+            "durationMs": 2275
+          },
+          {
+            "text": "K9 shifting position.",
+            "file": "k9Thunder/move-2.mp3",
+            "durationMs": 2110
+          },
+          {
+            "text": "Rolling to the next fire point.",
+            "file": "k9Thunder/move-3.mp3",
+            "durationMs": 2100
+          }
+        ],
+        "attack": [
+          {
+            "text": "Shot out, sixteen thousand.",
+            "file": "k9Thunder/attack-1.mp3",
+            "durationMs": 2070
+          },
+          {
+            "text": "Thunder firing.",
+            "file": "k9Thunder/attack-2.mp3",
+            "durationMs": 1510
+          },
+          {
+            "text": "One round, on the way.",
+            "file": "k9Thunder/attack-3.mp3",
+            "durationMs": 1740
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Cannot lay that, too close.",
+            "file": "k9Thunder/unableToComply-1.mp3",
+            "durationMs": 1950
+          },
+          {
+            "text": "Gun can't reach it.",
+            "file": "k9Thunder/unableToComply-2.mp3",
+            "durationMs": 1660
+          },
+          {
+            "text": "No fire mission from here.",
+            "file": "k9Thunder/unableToComply-3.mp3",
+            "durationMs": 1930
+          }
+        ]
+      }
+    },
+    "cv90": {
+      "name": "CV90 Fighting Vehicle",
+      "role": "Mechanised fire support",
+      "voice": "bm_lewis",
+      "lang": "en-gb",
+      "speed": 1.02,
+      "lines": {
+        "select": [
+          {
+            "text": "CV90 up, gun ready.",
+            "file": "cv90/select-1.mp3",
+            "durationMs": 2000
+          },
+          {
+            "text": "Fighting vehicle, crew mounted.",
+            "file": "cv90/select-2.mp3",
+            "durationMs": 1930
+          },
+          {
+            "text": "Swedish track on the net.",
+            "file": "cv90/select-3.mp3",
+            "durationMs": 1770
+          }
+        ],
+        "move": [
+          {
+            "text": "CV90 rolling.",
+            "file": "cv90/move-1.mp3",
+            "durationMs": 1640
+          },
+          {
+            "text": "Track moving, gun forward.",
+            "file": "cv90/move-2.mp3",
+            "durationMs": 1856
+          },
+          {
+            "text": "Vehicle moving to the next bound.",
+            "file": "cv90/move-3.mp3",
+            "durationMs": 1963
+          }
+        ],
+        "attack": [
+          {
+            "text": "Forty millimetre, engaging.",
+            "file": "cv90/attack-1.mp3",
+            "durationMs": 2027
+          },
+          {
+            "text": "Gun up, firing.",
+            "file": "cv90/attack-2.mp3",
+            "durationMs": 1195
+          },
+          {
+            "text": "Missile away, target armour.",
+            "file": "cv90/attack-3.mp3",
+            "durationMs": 1960
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "No line on that target.",
+            "file": "cv90/unableToComply-1.mp3",
+            "durationMs": 1621
+          },
+          {
+            "text": "Gun out of range.",
+            "file": "cv90/unableToComply-2.mp3",
+            "durationMs": 1387
+          },
+          {
+            "text": "Cannot engage, over.",
+            "file": "cv90/unableToComply-3.mp3",
+            "durationMs": 1643
+          }
+        ]
+      }
+    },
+    "gripen": {
+      "name": "Gripen Multirole Fighter",
+      "role": "Multirole aircraft",
+      "voice": "bm_fable",
+      "lang": "en-gb",
+      "speed": 1.08,
+      "lines": {
+        "select": [
+          {
+            "text": "Gripen flight, armed and ready.",
+            "file": "gripen/select-1.mp3",
+            "durationMs": 2517
+          },
+          {
+            "text": "Jaktviggen on station, go ahead.",
+            "file": "gripen/select-2.mp3",
+            "durationMs": 2603
+          },
+          {
+            "text": "Multirole up, weapons free on tasking.",
+            "file": "gripen/select-3.mp3",
+            "durationMs": 2901
+          }
+        ],
+        "move": [
+          {
+            "text": "Gripen turning in.",
+            "file": "gripen/move-1.mp3",
+            "durationMs": 1830
+          },
+          {
+            "text": "On the new heading.",
+            "file": "gripen/move-2.mp3",
+            "durationMs": 1536
+          },
+          {
+            "text": "Flight rolling to the next tasking.",
+            "file": "gripen/move-3.mp3",
+            "durationMs": 2475
+          }
+        ],
+        "attack": [
+          {
+            "text": "Fox one, missile away.",
+            "file": "gripen/attack-1.mp3",
+            "durationMs": 2155
+          },
+          {
+            "text": "Strike missile gone.",
+            "file": "gripen/attack-2.mp3",
+            "durationMs": 1810
+          },
+          {
+            "text": "Gripen in, weapons released.",
+            "file": "gripen/attack-3.mp3",
+            "durationMs": 2389
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Winchester, returning to base.",
+            "file": "gripen/unableToComply-1.mp3",
+            "durationMs": 2432
+          },
+          {
+            "text": "Bingo fuel, cannot engage.",
+            "file": "gripen/unableToComply-2.mp3",
+            "durationMs": 2539
+          },
+          {
+            "text": "No weapons left, over.",
+            "file": "gripen/unableToComply-3.mp3",
+            "durationMs": 2285
+          }
+        ]
+      }
+    },
+    "spikeTeam": {
+      "name": "Spike ER Team",
+      "role": "Anti-armour",
+      "voice": "bf_emma",
+      "lang": "en-gb",
+      "speed": 1.04,
+      "lines": {
+        "select": [
+          {
+            "text": "Spike team, missile up.",
+            "file": "spikeTeam/select-1.mp3",
+            "durationMs": 1595
+          },
+          {
+            "text": "Long-range team, set and waiting.",
+            "file": "spikeTeam/select-2.mp3",
+            "durationMs": 2155
+          },
+          {
+            "text": "Anti-tank pair on the net.",
+            "file": "spikeTeam/select-3.mp3",
+            "durationMs": 1702
+          }
+        ],
+        "move": [
+          {
+            "text": "Team moving, launcher on the shoulder.",
+            "file": "spikeTeam/move-1.mp3",
+            "durationMs": 2027
+          },
+          {
+            "text": "Shifting the firing point.",
+            "file": "spikeTeam/move-2.mp3",
+            "durationMs": 1580
+          },
+          {
+            "text": "Spike team, on the way.",
+            "file": "spikeTeam/move-3.mp3",
+            "durationMs": 1440
+          }
+        ],
+        "attack": [
+          {
+            "text": "Spike off the rail, tracking.",
+            "file": "spikeTeam/attack-1.mp3",
+            "durationMs": 1655
+          },
+          {
+            "text": "Spike out, target armour.",
+            "file": "spikeTeam/attack-2.mp3",
+            "durationMs": 1615
+          },
+          {
+            "text": "Long shot, missile gone.",
+            "file": "spikeTeam/attack-3.mp3",
+            "durationMs": 1560
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Missile still reloading.",
+            "file": "spikeTeam/unableToComply-1.mp3",
+            "durationMs": 1515
+          },
+          {
+            "text": "No tank in the open.",
+            "file": "spikeTeam/unableToComply-2.mp3",
+            "durationMs": 1493
+          },
+          {
+            "text": "Cannot take that shot.",
+            "file": "spikeTeam/unableToComply-3.mp3",
+            "durationMs": 1460
+          }
+        ]
+      }
+    },
+    "khordadSam": {
+      "name": "3rd Khordad TEL",
+      "role": "Air defence",
+      "voice": "am_michael",
+      "lang": "en-us",
+      "speed": 1.0,
+      "lines": {
+        "select": [
+          {
+            "text": "Khordad launcher, missiles armed.",
+            "file": "khordadSam/select-1.mp3",
+            "durationMs": 2075
+          },
+          {
+            "text": "Air defence up, tracking.",
+            "file": "khordadSam/select-2.mp3",
+            "durationMs": 1535
+          },
+          {
+            "text": "TEL reporting, ready to engage.",
+            "file": "khordadSam/select-3.mp3",
+            "durationMs": 2560
+          }
+        ],
+        "move": [
+          {
+            "text": "TEL rolling out of the site.",
+            "file": "khordadSam/move-1.mp3",
+            "durationMs": 1860
+          },
+          {
+            "text": "Khordad moving to a new site.",
+            "file": "khordadSam/move-2.mp3",
+            "durationMs": 1705
+          },
+          {
+            "text": "Relocating, radar stowed.",
+            "file": "khordadSam/move-3.mp3",
+            "durationMs": 1945
+          }
+        ],
+        "attack": [
+          {
+            "text": "Missile away, air target.",
+            "file": "khordadSam/attack-1.mp3",
+            "durationMs": 1645
+          },
+          {
+            "text": "Khordad firing.",
+            "file": "khordadSam/attack-2.mp3",
+            "durationMs": 1145
+          },
+          {
+            "text": "Round out, tracking the aircraft.",
+            "file": "khordadSam/attack-3.mp3",
+            "durationMs": 1905
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "No air target in reach.",
+            "file": "khordadSam/unableToComply-1.mp3",
+            "durationMs": 1645
+          },
+          {
+            "text": "Rounds still going up.",
+            "file": "khordadSam/unableToComply-2.mp3",
+            "durationMs": 1415
+          },
+          {
+            "text": "Cannot engage that, over.",
+            "file": "khordadSam/unableToComply-3.mp3",
+            "durationMs": 1635
+          }
+        ]
+      }
+    },
+    "mohajer6": {
+      "name": "Mohajer-6 Armed UAV",
+      "role": "Armed reconnaissance",
+      "voice": "af_nova",
+      "lang": "en-us",
+      "speed": 1.1,
+      "lines": {
+        "select": [
+          {
+            "text": "Mohajer on station, optics live.",
+            "file": "mohajer6/select-1.mp3",
+            "durationMs": 2365
+          },
+          {
+            "text": "Drone up, bombs on the rail.",
+            "file": "mohajer6/select-2.mp3",
+            "durationMs": 1780
+          },
+          {
+            "text": "Eyes in the sky, go ahead.",
+            "file": "mohajer6/select-3.mp3",
+            "durationMs": 1800
+          }
+        ],
+        "move": [
+          {
+            "text": "Mohajer sliding to a new orbit.",
+            "file": "mohajer6/move-1.mp3",
+            "durationMs": 2130
+          },
+          {
+            "text": "Mohajer moving to the next sector.",
+            "file": "mohajer6/move-2.mp3",
+            "durationMs": 2010
+          },
+          {
+            "text": "Climbing to the new tasking.",
+            "file": "mohajer6/move-3.mp3",
+            "durationMs": 1710
+          }
+        ],
+        "attack": [
+          {
+            "text": "Bomb released.",
+            "file": "mohajer6/attack-1.mp3",
+            "durationMs": 1150
+          },
+          {
+            "text": "Drone in, ordnance away.",
+            "file": "mohajer6/attack-2.mp3",
+            "durationMs": 1780
+          },
+          {
+            "text": "Strike on the position.",
+            "file": "mohajer6/attack-3.mp3",
+            "durationMs": 1460
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Out of ordnance, returning.",
+            "file": "mohajer6/unableToComply-1.mp3",
+            "durationMs": 1720
+          },
+          {
+            "text": "No target in the optics.",
+            "file": "mohajer6/unableToComply-2.mp3",
+            "durationMs": 1850
+          },
+          {
+            "text": "Drone cannot reach that.",
+            "file": "mohajer6/unableToComply-3.mp3",
+            "durationMs": 1630
+          }
+        ]
+      }
+    },
+    "koksan": {
+      "name": "Koksan 170mm SPG",
+      "role": "Indirect fire",
+      "voice": "am_santa",
+      "lang": "en-us",
+      "speed": 0.92,
+      "lines": {
+        "select": [
+          {
+            "text": "Koksan gun, loaded.",
+            "file": "koksan/select-1.mp3",
+            "durationMs": 1685
+          },
+          {
+            "text": "Long gun reporting.",
+            "file": "koksan/select-2.mp3",
+            "durationMs": 1510
+          },
+          {
+            "text": "Seventeen centimetre, ready.",
+            "file": "koksan/select-3.mp3",
+            "durationMs": 2260
+          }
+        ],
+        "move": [
+          {
+            "text": "Gun crawling to the next site.",
+            "file": "koksan/move-1.mp3",
+            "durationMs": 2140
+          },
+          {
+            "text": "Koksan moving, slow but sure.",
+            "file": "koksan/move-2.mp3",
+            "durationMs": 2453
+          },
+          {
+            "text": "Koksan crawling into the treeline.",
+            "file": "koksan/move-3.mp3",
+            "durationMs": 2240
+          }
+        ],
+        "attack": [
+          {
+            "text": "Long shot, out.",
+            "file": "koksan/attack-1.mp3",
+            "durationMs": 1301
+          },
+          {
+            "text": "Koksan firing.",
+            "file": "koksan/attack-2.mp3",
+            "durationMs": 1370
+          },
+          {
+            "text": "One shell, far target.",
+            "file": "koksan/attack-3.mp3",
+            "durationMs": 1920
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Gun cannot bear that way.",
+            "file": "koksan/unableToComply-1.mp3",
+            "durationMs": 1900
+          },
+          {
+            "text": "Out of range, over.",
+            "file": "koksan/unableToComply-2.mp3",
+            "durationMs": 1490
+          },
+          {
+            "text": "Still reloading the tube.",
+            "file": "koksan/unableToComply-3.mp3",
+            "durationMs": 1707
+          }
+        ]
+      }
+    },
+    "bulsae4": {
+      "name": "Bulsae-4 ATGM Vehicle",
+      "role": "Anti-armour",
+      "voice": "am_liam",
+      "lang": "en-us",
+      "speed": 0.96,
+      "lines": {
+        "select": [
+          {
+            "text": "Bulsae launcher, rack armed.",
+            "file": "bulsae4/select-1.mp3",
+            "durationMs": 1920
+          },
+          {
+            "text": "Missile vehicle, standing by.",
+            "file": "bulsae4/select-2.mp3",
+            "durationMs": 1970
+          },
+          {
+            "text": "Anti-tank carrier on the net.",
+            "file": "bulsae4/select-3.mp3",
+            "durationMs": 2040
+          }
+        ],
+        "move": [
+          {
+            "text": "Launcher moving.",
+            "file": "bulsae4/move-1.mp3",
+            "durationMs": 1340
+          },
+          {
+            "text": "Bulsae shifting position.",
+            "file": "bulsae4/move-2.mp3",
+            "durationMs": 1820
+          },
+          {
+            "text": "Vehicle rolling to cover.",
+            "file": "bulsae4/move-3.mp3",
+            "durationMs": 1690
+          }
+        ],
+        "attack": [
+          {
+            "text": "Rack open, missile gone.",
+            "file": "bulsae4/attack-1.mp3",
+            "durationMs": 1770
+          },
+          {
+            "text": "Bulsae firing.",
+            "file": "bulsae4/attack-2.mp3",
+            "durationMs": 1380
+          },
+          {
+            "text": "Long shot on the armour.",
+            "file": "bulsae4/attack-3.mp3",
+            "durationMs": 1680
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "No armour in reach.",
+            "file": "bulsae4/unableToComply-1.mp3",
+            "durationMs": 1540
+          },
+          {
+            "text": "Launcher reloading.",
+            "file": "bulsae4/unableToComply-2.mp3",
+            "durationMs": 1420
+          },
+          {
+            "text": "Cannot engage infantry.",
+            "file": "bulsae4/unableToComply-3.mp3",
+            "durationMs": 1765
+          }
+        ]
+      }
+    },
+    "visby": {
+      "name": "Visby-class Corvette",
+      "role": "Littoral strike",
+      "voice": "bm_daniel",
+      "lang": "en-gb",
+      "speed": 1.02,
+      "lines": {
+        "select": [
+          {
+            "text": "Visby, hull in the water, sensors up.",
+            "file": "visby/select-1.mp3",
+            "durationMs": 2410
+          },
+          {
+            "text": "Corvette Visby on station, reading you.",
+            "file": "visby/select-2.mp3",
+            "durationMs": 2320
+          },
+          {
+            "text": "Littoral group, Visby answering.",
+            "file": "visby/select-3.mp3",
+            "durationMs": 2050
+          }
+        ],
+        "move": [
+          {
+            "text": "Course laid in, making speed.",
+            "file": "visby/move-1.mp3",
+            "durationMs": 1870
+          },
+          {
+            "text": "Visby moving, ahead full.",
+            "file": "visby/move-2.mp3",
+            "durationMs": 1920
+          },
+          {
+            "text": "Bringing the hull about.",
+            "file": "visby/move-3.mp3",
+            "durationMs": 1560
+          }
+        ],
+        "attack": [
+          {
+            "text": "Missiles away, target straddled.",
+            "file": "visby/attack-1.mp3",
+            "durationMs": 2105
+          },
+          {
+            "text": "Firing solution set, engaging.",
+            "file": "visby/attack-2.mp3",
+            "durationMs": 2295
+          },
+          {
+            "text": "Salvo off the rails.",
+            "file": "visby/attack-3.mp3",
+            "durationMs": 1630
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Cannot make that bearing.",
+            "file": "visby/unableToComply-1.mp3",
+            "durationMs": 1660
+          },
+          {
+            "text": "Negative, sea room is too tight.",
+            "file": "visby/unableToComply-2.mp3",
+            "durationMs": 2145
+          },
+          {
+            "text": "She will not answer that helm.",
+            "file": "visby/unableToComply-3.mp3",
+            "durationMs": 1910
+          }
+        ]
+      }
+    },
+    "ghadir": {
+      "name": "Ghadir Midget Submarine",
+      "role": "Coastal ambusher",
+      "voice": "am_onyx",
+      "lang": "en-us",
+      "speed": 1.0,
+      "lines": {
+        "select": [
+          {
+            "text": "Ghadir, trimmed down and listening.",
+            "file": "ghadir/select-1.mp3",
+            "durationMs": 2425
+          },
+          {
+            "text": "Midget boat, batteries charged.",
+            "file": "ghadir/select-2.mp3",
+            "durationMs": 2420
+          },
+          {
+            "text": "Ghadir on the net, quiet.",
+            "file": "ghadir/select-3.mp3",
+            "durationMs": 2064
+          }
+        ],
+        "move": [
+          {
+            "text": "Running shallow, engine astern.",
+            "file": "ghadir/move-1.mp3",
+            "durationMs": 2585
+          },
+          {
+            "text": "Ghadir shifting, periscope depth.",
+            "file": "ghadir/move-2.mp3",
+            "durationMs": 2520
+          },
+          {
+            "text": "Slipping along the shelf.",
+            "file": "ghadir/move-3.mp3",
+            "durationMs": 1905
+          }
+        ],
+        "attack": [
+          {
+            "text": "Torpedoes in the water.",
+            "file": "ghadir/attack-1.mp3",
+            "durationMs": 2025
+          },
+          {
+            "text": "Two fish away, going deep.",
+            "file": "ghadir/attack-2.mp3",
+            "durationMs": 2258
+          },
+          {
+            "text": "Tubes empty, diving clear.",
+            "file": "ghadir/attack-3.mp3",
+            "durationMs": 2374
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Too far off the shelf for that.",
+            "file": "ghadir/unableToComply-1.mp3",
+            "durationMs": 2345
+          },
+          {
+            "text": "Cannot reach it, batteries low.",
+            "file": "ghadir/unableToComply-2.mp3",
+            "durationMs": 2405
+          },
+          {
+            "text": "Negative, no water for that.",
+            "file": "ghadir/unableToComply-3.mp3",
+            "durationMs": 2386
+          }
+        ]
       }
     }
   }

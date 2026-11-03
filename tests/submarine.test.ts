@@ -5,7 +5,7 @@ import { TILE_SIZE } from '../src/sim/constants';
 import { UNITS } from '../src/data/units';
 import { WEAPONS } from '../src/data/weapons';
 import { canWeaponTarget } from '../src/sim/combat';
-import { islandWith } from './helpers';
+import { completeResearch, islandWith } from './helpers';
 
 function fleetGame(
   units: Array<{ defId: string; owner: number; x: number; z: number }>,
@@ -16,7 +16,11 @@ function fleetGame(
     units,
   });
   scenario.settings.fog = fog;
-  return new Game(scenario, { enableAI: false });
+  const game = new Game(scenario, { enableAI: false });
+  // Hull behaviour is the subject; the naval tree is granted so the yard can
+  // offer the submarine and its escort.
+  completeResearch(game, 0);
+  return game;
 }
 
 function unit(game: Game, defId: string, owner = 0) {
@@ -39,6 +43,7 @@ describe('attack submarine', () => {
       'corvette',
       'submarine',
       'frigate',
+      'navalSupport',
     ]);
     game.player(0)!.mats = 6000;
     game.player(0)!.req = 1000;

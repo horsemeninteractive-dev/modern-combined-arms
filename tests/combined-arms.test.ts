@@ -5,9 +5,9 @@ import { hasLineOfSight } from '../src/sim/combat';
 import { Terrain } from '../src/sim/terrain';
 import { createIslandAssault } from '../src/data/scenarios';
 import { BUILDINGS, BUILDING_LIST, BUILDABLE_BY_PLAYER } from '../src/data/buildings';
-import { UNITS, UNIT_LIST } from '../src/data/units';
+import { UNITS, UNIT_LIST, unitFamily } from '../src/data/units';
 import { WEAPONS } from '../src/data/weapons';
-import { islandWith } from './helpers';
+import { completeResearch, islandWith } from './helpers';
 import type { Entity } from '../src/sim/types';
 
 function lastUnit(game: Game, owner: number, defId: string): Entity {
@@ -65,6 +65,8 @@ describe('combined-arms baseline content', () => {
     );
     game.player(0)!.mats = 6000;
     game.player(0)!.req = 500;
+    // The facility list, not the research gate, is what this test measures.
+    completeResearch(game, 0);
     const factory = lastBuilding(game, 0, 'factory');
     const airfield = lastBuilding(game, 0, 'airfield');
     for (const defId of ['spg', 'recovery']) {
@@ -262,13 +264,18 @@ describe('AI use of the completed baseline', () => {
     game.player(1)!.mats = 10000;
     game.player(1)!.req = 3000;
     game.advance(20 * 90);
-    const units = game.entitiesOf(1, 'unit').map((e) => e.defId);
+    // The AI writes demand in canonical slots, so it fields whichever platform
+    // its alliance brings to that slot.
+    const units = game.entitiesOf(1, 'unit').map((e) => unitFamily(e.defId));
     expect(units).toContain('interceptor');
     expect(units).toContain('uav');
   });
 
   it('fields artillery and recovery support against a fortified contact', () => {
     const scenario = createIslandAssault();
+    // This test measures support-arm employment, so the artillery branch is
+    // granted the way an authored scenario grants it rather than researched.
+    scenario.players[1].technologies = ['fires1'];
     scenario.structures.push(
       { defId: 'factory', owner: 1, x: 68, z: 30 },
       { defId: 'barracks', owner: 1, x: 78, z: 34 },
@@ -280,10 +287,10 @@ describe('AI use of the completed baseline', () => {
     const game = new Game(scenario, { enableAI: true, aiSeed: 12 });
     game.player(1)!.mats = 10000;
     game.player(1)!.req = 2000;
-    const tank = game.entitiesOf(1, 'unit').find((e) => e.defId === 'tank')!;
+    const tank = game.entitiesOf(1, 'unit').find((e) => unitFamily(e.defId) === 'tank')!;
     tank.hp = tank.maxHp * 0.6;
     game.advance(20 * 90);
-    const units = game.entitiesOf(1, 'unit').map((e) => e.defId);
+    const units = game.entitiesOf(1, 'unit').map((e) => unitFamily(e.defId));
     expect(units).toContain('spg');
     expect(units).toContain('recovery');
   });

@@ -5,72 +5,139 @@ listening and recognition tests have **not** been performed. The audition page i
 ready for that review.
 
 - Engine: Kokoro-82M ONNX (`kokoro-onnx` 0.4.7), fully local.
-- Coverage: 22 unit types, 4 cues each, 88 clips.
-- Cast: 22 distinct voices — 8 British, 14 American.
+- Coverage: **62 unit definitions**, 4 cues each, **3 takes per cue**, **744 clips**.
+- Cast: 62 recorded casts drawing on the 28 English Kokoro voices.
+- Text: every unit's 12 lines are unique, and no line is shared between units.
 - Format: 24 kHz mono MP3, 64 kbps, field-radio processing.
 - Location: `public/audio/unit-voice/`.
-- Contract: `public/audio/unit-voice/manifest.json`.
-- Total size: 1.1 MiB.
+- Contract: `public/audio/unit-voice/manifest.json` (version 3).
 
-The existing strategic announcer in `public/audio/battlesys/` is untouched.
+The 62 definitions are the 22 canonical slots, the 18 Eastern alliance platforms,
+the 10 national replacements, the 10 national exclusives and the 2 national naval
+hulls (`visby`, `ghadir`) — the launch six plus Finland, Sweden, Iran and North
+Korea. The existing strategic announcer in `public/audio/battlesys/` is untouched.
 
 ## 1. Cue set
 
-| Cue | File | Meaning |
+| Cue | Files | Meaning |
 |---|---|---|
-| `select` | `select.mp3` | The unit answers selection. |
-| `move` | `move.mp3` | The unit acknowledges a movement order. |
-| `attack` | `attack.mp3` | The unit acknowledges an attack order, or reports that it is unarmed. |
-| `unableToComply` | `unableToComply.mp3` | The unit cannot carry out the order. |
+| `select` | `select-1.mp3` … `select-3.mp3` | The unit answers selection. |
+| `move` | `move-1.mp3` … `move-3.mp3` | The unit acknowledges a movement order. |
+| `attack` | `attack-1.mp3` … `attack-3.mp3` | The unit acknowledges an attack order, or reports that it is unarmed. |
+| `unableToComply` | `unableToComply-1.mp3` … `-3.mp3` | The unit cannot carry out the order. |
 
-Unarmed units use “Unarmed, cannot engage.” for `attack` and a separate refusal
-for `unableToComply`, so the two states remain distinguishable.
+Unarmed units use an `attack` line that states they carry no weapon, and a
+separate `unableToComply` refusal for a rejected order, so the two states remain
+distinguishable. The three takes are different sentences, not three readings of
+one sentence: the bark channel picks one at random, so repeated orders do not
+sound like a stuck loop.
 
-## 2. Voice cast and lines
+## 2. Voice cast
 
-| Unit | Voice | Select | Move | Attack | Unable |
-|---|---|---|---|---|---|
-| Combat Engineer | bm_george | Engineer, standing by. | Moving out. | Unarmed, cannot engage. | Cannot comply. |
-| Rifleman | am_echo | Rifle squad, ready. | On the way. | Target acquired. | Negative, unable. |
-| ATGM Gunner | am_michael | Missile team, ready. | Missile team moving. | Tank in sight. | No shot. |
-| Field Medic | bf_emma | Medic, ready. | Medic moving up. | Unarmed, cannot engage. | Cannot comply. |
-| Main Battle Tank | am_onyx | Main battle tank, ready. | Rolling out. | Target acquired. | Negative. |
-| Self-Propelled Howitzer | am_eric | Gun battery, ready. | Gun battery moving. | Fire mission. | Cannot fire. |
-| Recon Vehicle | am_liam | Scout vehicle, ready. | Scout vehicle moving out. | Target acquired. | Negative. |
-| AA Vehicle | bf_alice | Air defence, ready. | Air defence moving. | Target acquired. | No target. |
-| Field Recovery Vehicle | bm_fable | Recovery, standing by. | Recovery moving. | Unarmed, cannot engage. | Cannot comply. |
-| Harvester | am_puck | Harvester, ready. | Harvester moving. | Unarmed, cannot engage. | Negative. |
-| Strike Fighter | bf_lily | Strike flight, ready. | Course set. | Missiles armed. | Unable. |
-| Interceptor | af_nova | Air cover, ready. | Course set. | Target locked. | Unable. |
-| Recon UAV | af_sky | Drone, on station. | Climbing to station. | Unarmed, cannot engage. | Unable. |
-| Missile Corvette | bm_lewis | Warship, standing by. | Under way. | Target acquired. | Unable. |
-| Missile Boat | af_river | Fast attack, ready. | Boat moving. | Missiles away. | Cannot comply. |
-| Attack Submarine | am_santa | Submarine, standing by. | Under way. | Torpedoes away. | Cannot comply. |
-| Escort Frigate | af_nicole | Escort on station. | Escort moving. | Engaging. | Unable. |
-| Pathfinder Recon Team | bf_isabella | Scout team, ready. | Scout team moving. | Unarmed, cannot engage. | Negative. |
-| Spearhead MBT | am_fenrir | Main battle tank, ready. | Tank rolling. | Target acquired. | Negative. |
-| Rocket Battery | bm_daniel | Rocket battery, standing by. | Rocket battery moving. | Fire mission. | Cannot fire. |
-| Heavy Howitzer | am_adam | Heavy guns, ready. | Heavy battery moving. | Fire mission. | Cannot fire. |
-| Deep Recon UAV | af_sarah | Recon drone, on station. | Drone moving to station. | Unarmed, cannot engage. | Unable. |
+`src/ui/unitVoice.ts` resolves a definition to its own cast. There is no
+borrowed-crew fallback: a unit without recorded lines would be silent, and
+`tests/unit-voice.test.ts` fails instead.
 
-### Delivery speeds
+### Defender coalition — canonical slots
 
-| Unit | Speed | Unit | Speed |
-|---|---:|---|---:|
-| Combat Engineer | 1.00 | Strike Fighter | 1.12 |
-| Rifleman | 1.08 | Interceptor | 1.12 |
-| ATGM Gunner | 1.04 | Recon UAV | 1.10 |
-| Field Medic | 1.10 | Missile Corvette | 1.00 |
-| Main Battle Tank | 0.98 | Pathfinder Recon Team | 1.06 |
-| Self-Propelled Howitzer | 0.95 | Spearhead MBT | 0.98 |
-| Recon Vehicle | 1.06 | Rocket Battery | 0.96 |
-| AA Vehicle | 1.00 | Heavy Howitzer | 0.94 |
-| Field Recovery Vehicle | 0.98 | Deep Recon UAV | 1.08 |
-| Missile Boat | 1.04 | Escort Frigate | 0.98 |
-| Attack Submarine | 1.00 | | |
-| Harvester | 0.96 | | |
+| Unit | Id | Voice | Speed |
+|---|---|---|---:|
+| Combat Engineer | `engineer` | `bm_george` | 1.00 |
+| Rifleman | `rifle` | `am_echo` | 1.08 |
+| ATGM Gunner | `atgm` | `am_michael` | 1.04 |
+| Field Medic | `medic` | `bf_emma` | 1.10 |
+| Main Battle Tank | `tank` | `am_onyx` | 0.98 |
+| Self-Propelled Howitzer | `spg` | `am_eric` | 0.95 |
+| Recon Vehicle | `recon` | `am_liam` | 1.06 |
+| AA Vehicle | `aa` | `bf_alice` | 1.00 |
+| Field Recovery Vehicle | `recovery` | `bm_fable` | 0.98 |
+| Harvester | `harvester` | `am_puck` | 0.96 |
+| Strike Fighter | `fighter` | `bf_lily` | 1.12 |
+| Interceptor | `interceptor` | `af_nova` | 1.12 |
+| Recon UAV | `uav` | `af_sky` | 1.10 |
+| Missile Boat | `missileBoat` | `af_river` | 1.04 |
+| Missile Corvette | `corvette` | `bm_lewis` | 1.00 |
+| Attack Submarine | `submarine` | `am_santa` | 1.00 |
+| Escort Frigate | `frigate` | `af_nicole` | 0.98 |
+| Infantry Fighting Vehicle | `ifv` | `am_liam` | 1.02 |
+| Tank Destroyer | `td` | `am_michael` | 1.00 |
+| Multiple Rocket Launcher | `rocketArtillery` | `am_eric` | 1.00 |
+| Attack Helicopter | `attackHelo` | `bf_lily` | 1.06 |
+| Fire Support Ship | `navalSupport` | `af_nicole` | 0.96 |
 
-## 3. Processing chain
+### National replacements and exclusives
+
+| Unit | Id | Nation | Voice | Speed |
+|---|---|---|---|---:|
+| Pathfinder Recon Team | `pathfinder` | Lithuania | `bf_isabella` | 1.06 |
+| Spearhead MBT | `spearhead` | Poland | `am_fenrir` | 0.98 |
+| Rocket Battery | `mlrs` | United Kingdom | `bm_daniel` | 0.96 |
+| Heavy Howitzer | `heavyHowitzer` | Russia | `am_adam` | 0.94 |
+| Deep Recon UAV | `deepReconUAV` | Belarus | `af_sarah` | 1.08 |
+| Hedgehog AT Team | `hedgehogTeam` | Hungary | `am_michael` | 0.98 |
+| Kestrel Air Team | `kestrelTeam` | Lithuania | `bf_alice` | 1.08 |
+| Wilk Heavy IFV | `wilk` | Poland | `am_onyx` | 1.02 |
+| Storm Shadow Battery | `stormShadow` | United Kingdom | `bm_daniel` | 0.94 |
+| TOSP Thermobaric Launcher | `tosp` | Russia | `am_eric` | 0.92 |
+| Sprut Recon Buggy | `sprut` | Belarus | `af_sky` | 1.06 |
+| Taszar Mortar Team | `taszar` | Hungary | `am_echo` | 1.02 |
+
+### Eastern coalition platforms
+
+| Unit | Id | Voice | Speed |
+|---|---|---|---:|
+| Motor Rifleman | `rifleEC` | `am_adam` | 1.06 |
+| Heavy Missile Team | `atgmEC` | `am_fenrir` | 1.02 |
+| Recon BRM | `reconEC` | `af_alloy` | 1.04 |
+| Amphibious IFV | `ifvEC` | `am_liam` | 1.00 |
+| Main Battle Tank | `tankEC` | `am_onyx` | 0.96 |
+| Assault Gun | `tdEC` | `am_santa` | 0.98 |
+| Self-Propelled Howitzer | `spgEC` | `af_kore` | 0.96 |
+| Heavy Rocket Battery | `rocketArtilleryEC` | `af_heart` | 1.02 |
+| SAM Vehicle | `aaEC` | `af_aoede` | 1.02 |
+| Recon UAV | `uavEC` | `af_jessica` | 1.10 |
+| Interceptor | `interceptorEC` | `af_kore` | 1.14 |
+| Strike Fighter | `fighterEC` | `am_puck` | 1.10 |
+| Attack Helicopter | `attackHeloEC` | `am_fenrir` | 1.04 |
+| Missile Boat | `missileBoatEC` | `af_bella` | 1.06 |
+| Missile Corvette | `corvetteEC` | `af_heart` | 0.98 |
+| Escort Frigate | `frigateEC` | `af_alloy` | 0.98 |
+| Attack Submarine | `submarineEC` | `af_aoede` | 0.98 |
+| Fire Support Ship | `navalSupportEC` | `af_bella` | 1.00 |
+
+The full script — all 744 sentences — is in `tools/unit-voice/lines.json`, and the
+generated manifest records the text that was actually synthesized.
+
+## 3. Uniqueness policy
+
+- Each unit has three distinct lines for each of the four cues, twelve in total.
+- No line is used by another unit, including the generic-sounding ones
+  ("Negative", "Cannot fire"). A shared hull class still speaks in its own voice.
+- The automated test enforces both rules against the manifest, so adding a unit
+  with copied lines fails the suite rather than shipping a duplicate bark.
+
+## 4. National accents
+
+Kokoro-82M ships 28 English voices (20 American, 8 British) plus Japanese,
+Mandarin, Spanish, French, Hindi, Italian and Portuguese. It has **no
+Lithuanian, Polish, Russian, Belarusian, Finnish, Swedish, Persian or Korean
+voices**. National units therefore use English voices chosen for coalition fit:
+Lithuanian, British, Finnish and Swedish units are British; Russian, Belarusian,
+Polish, Hungarian, Iranian and North Korean units are American.
+
+The alternative was tested with Edge TTS native voices. They do not articulate
+English clearly enough for a radio bark; local dictation returned, for example:
+
+- `lt-LT-LeonasNeural`, “Scout team, in position.” → “The Scots down enforcer John” (13%).
+- `pl-PL-MarekNeural`, “Main battle tank, ready.” → “The main battle tank their the” (22%).
+- `ru-RU-DmitryNeural`, “Heavy guns, ready.” → “Hayley dance at” (14%).
+- `ru-RU-SvetlanaNeural`, “Recon drone, on station.” → “Finally ended on once the sun” (16%).
+
+Those native clips were not shipped. True national accents need a multilingual
+voice service with accent control; that is a separate provider decision, not a
+Kokoro voice choice.
+
+## 5. Processing chain
 
 Each Kokoro line is trimmed to speech, then:
 
@@ -88,34 +155,7 @@ intelligible. An earlier, more aggressive chain (3.2 kHz low-pass, 3.4:1
 compression, drive 1.45, −44 dB noise) was rejected because it smeared short
 lines.
 
-## 4. National accents
-
-Kokoro-82M ships 28 English voices (20 American, 8 British) plus Japanese,
-Mandarin, Spanish, French, Hindi, Italian and Portuguese. It has **no
-Lithuanian, Polish, Russian or Belarusian voices**. The five national variants
-therefore use distinct English voices:
-
-| Variant | Nation | Voice | Accent |
-|---|---|---|---|
-| Pathfinder Recon Team | Lithuania | `bf_isabella` | British (European approximation) |
-| Spearhead MBT | Poland | `am_fenrir` | American |
-| Rocket Battery | United Kingdom | `bm_daniel` | British (accurate) |
-| Heavy Howitzer | Russia | `am_adam` | American |
-| Deep Recon UAV | Belarus | `af_sarah` | American |
-
-The alternative was tested with Edge TTS native voices. They do not articulate
-English clearly enough for a radio bark; local dictation returned, for example:
-
-- `lt-LT-LeonasNeural`, “Scout team, in position.” → “The Scots down enforcer John” (13%).
-- `pl-PL-MarekNeural`, “Main battle tank, ready.” → “The main battle tank their the” (22%).
-- `ru-RU-DmitryNeural`, “Heavy guns, ready.” → “Hayley dance at” (14%).
-- `ru-RU-SvetlanaNeural`, “Recon drone, on station.” → “Finally ended on once the sun” (16%).
-
-Those native clips were not shipped. True national accents need a multilingual
-voice service with accent control; that is a separate provider decision, not a
-Kokoro voice choice.
-
-## 5. Reproduction
+## 6. Reproduction
 
 Kokoro runs locally; no network call is made after the model is downloaded.
 
@@ -137,21 +177,24 @@ generated clips are checked in, so playing the game does not need the model or
 Python. Kokoro-82M is Apache 2.0; `kokoro-onnx` is MIT.
 
 `tools/unit-voice/lines.json` is the single source of truth for text, voice and
-speed. `tools/unit-voice/generate.py` caches raw Kokoro WAVs in
-`tmp/unit-voice-raw-kokoro/`; pass `--refresh` after changing text or voice.
+speed. Raw Kokoro WAVs are cached in `tmp/unit-voice-raw-kokoro/`; pass
+`--refresh` after changing text or voice. `--only <unit>` regenerates one cast and
+preserves the other manifest entries.
 
-## 6. Manifest
+## 7. Manifest
 
-`public/audio/unit-voice/manifest.json` is version 2:
+`public/audio/unit-voice/manifest.json` is version 3. Each cue maps to an array of
+three takes:
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "engine": "kokoro-82m-onnx",
   "preset": "field",
   "sampleRate": 24000,
   "bitrateKbps": 64,
   "cues": ["select", "move", "attack", "unableToComply"],
+  "takesPerCue": 3,
   "units": {
     "engineer": {
       "name": "Combat Engineer",
@@ -160,21 +203,23 @@ speed. `tools/unit-voice/generate.py` caches raw Kokoro WAVs in
       "lang": "en-gb",
       "speed": 1.0,
       "lines": {
-        "select": {
-          "text": "Engineer, standing by.",
-          "file": "engineer/select.mp3",
-          "durationMs": 1650
-        }
+        "select": [
+          {
+            "text": "Engineer section, standing by.",
+            "file": "engineer/select-1.mp3",
+            "durationMs": 1650
+          }
+        ]
       }
     }
   }
 }
 ```
 
-The runtime layer resolves the same `defId/cue` path through
-`src/ui/unitVoice.ts`; it does not parse the manifest on every bark.
+The runtime layer resolves `defId/<cue>-<take>.mp3` through `src/ui/unitVoice.ts`;
+it does not parse the manifest on every bark.
 
-## 7. Audition
+## 8. Audition
 
 Serve the repository root and open the audition page:
 
@@ -184,42 +229,41 @@ python -m http.server 8788 --bind 127.0.0.1
 
 `http://127.0.0.1:8788/docs/unit-voice-audition.html`
 
-The page supports search, role filtering, per-line playback and “Play all four”.
-It reports 22 units, 88 clips and 22 distinct voices directly from the manifest.
+The page supports search, role filtering, per-take playback and “Play all
+twelve”. It reports the unit, clip and distinct-voice counts directly from the
+manifest.
 
-## 8. Verification
+## 9. Verification
 
 | Check | Result |
 |---|---|
-| Clip count | 88 (22 units × 4 cues) |
-| Distinct voices | 22 |
-| Voice split | 8 British, 14 American |
+| Unit definitions covered | 62 |
+| Clip count | 744 (62 units × 4 cues × 3 takes) |
+| Distinct sentences | 744 |
+| Shared sentences | 0 |
+| Distinct voices used | 28 |
 | Missing/zero-byte files | none |
-| Shortest/longest clip | 0.72 s / 2.39 s |
-| Peak range | −2.7 to −2.1 dBFS |
-| RMS range | −22.0 to −15.8 dBFS |
-| Total size | 1.1 MiB |
-| Manifest engine/version | `kokoro-82m-onnx` / 2 |
-| Automated completeness test | `tests/unit-voice.test.ts` — 14 tests pass |
+| Shortest/longest clip | 0.76 s / 2.90 s |
+| Total size | 9.2 MB |
+| Manifest engine/version | `kokoro-82m-onnx` / 3 |
+| Automated completeness test | `tests/unit-voice.test.ts` — 18 tests pass |
 
-`tests/unit-voice.test.ts` checks that every registered `UNITS` entry — including
-national variants — has all four files, that paths are unique, that files are
-non-empty, that the manifest metadata matches the unit definitions, and that no
-two units share a voice. It also covers the event-to-cue mapping, local-team
-gating, cooldowns, priority interruption and the stuck-line watchdog.
+`tests/unit-voice.test.ts` checks that every registered `UNITS` entry — canonical,
+alliance platform, national replacement and exclusive — has its own cast and all
+twelve files, that paths are unique, that files are non-empty, that manifest
+metadata matches the unit definitions, that each cue has three distinct takes and
+that no sentence is shared between units. It also covers the event-to-cue
+mapping, local-team gating, take selection, cooldowns, priority interruption and
+the stuck-line watchdog.
 
 ### What was not verified
 
 - **No human listening test.** The audition page exists but has not been used by
   reviewers. Perceived clarity, accent fit and fatigue are unmeasured.
-- A local Windows SpeechRecognition dictation pass was used only as a smoke test.
-  It recognized “Engineer, standing by”, “Recovery, standing by”, “Rocket battery,
-  standing by” and “Heavy guns, ready”, and returned noisy transcripts for
-  several short lines. It is not a quality score and is not treated as one.
 - Kokoro synthesis can vary slightly with ONNX runtime/model versions; the
   checked-in MP3s are the authoritative audio.
 
-## 9. Integration status
+## 10. Integration status
 
 The clips are wired into gameplay. `src/ui/unitVoice.ts` owns the policy and
 `src/ui/audio.ts` owns the single shared media channel.
@@ -234,41 +278,32 @@ The clips are wired into gameplay. `src/ui/unitVoice.ts` owns the policy and
 - **Refusal.** Local `orderFailed` events without an announcer code map to
   `unableToComply`. Production failures such as `queueFull` keep their existing
   announcer line and do not double-fire a bark.
+- **Take choice.** Each bark picks one of the three takes at random, so the same
+  order repeated after its cooldown can sound different. `speak()` accepts an
+  explicit take for deterministic tests.
 - **Gating.** Only local-team events are considered, so hidden enemy orders
   cannot produce audio. The bark channel also never starts while the strategic
   announcer is speaking; an announcer line pre-empts a bark.
 - **Throttling.** One bark channel, priority selection < move < attack < refusal,
   2.6 s / 1.4 s / 1.6 s / 1.6 s per-cue cooldowns, a 160 ms global gap and a
   6 s watchdog. Box-selecting 20 units cannot fire 20 lines.
-- **Volume and mute.** The new `unitVoice` setting (default 0.7) is independent
-  of the strategic `voice` setting. Master mute, master volume, battle teardown
-  and a new battle all clear the bark channel.
+- **Volume and mute.** The `unitVoice` setting (default 0.7) is independent of the
+  strategic `voice` setting. Master mute, master volume, battle teardown and a
+  new battle all clear the bark channel.
 - **Simulation boundary.** The barks are presentation-only. No combat, damage,
-  visibility, save or objective rule reads them; the new event fields are
-  optional annotations on existing order events.
+  visibility, save or objective rule reads them; the event fields are optional
+  annotations on existing order events.
 
-### Live verification performed
+## 11. Known limitations
 
-In the running game (dev server 5175), selecting a Pathfinder Recon Team caused
-`/audio/unit-voice/pathfinder/select.mp3` to be fetched and played. A move order
-produced `pathfinder/move.mp3`, an unarmed attack order produced
-`pathfinder/unableToComply.mp3`, and a Main Battle Tank attack order produced
-`tank/attack.mp3`. All requests returned HTTP 206 and the bark channel reported
-the expected cue and `defId` at each step.
-
-Human listening remains unverified: no reviewer has judged clarity, accent fit
-or fatigue, and the browser probe cannot prove perceived loudness.
-
-## 10. Known limitations
-
-- No genuine Lithuanian, Polish, Russian or Belarusian accent is available in
-  Kokoro; see section 4.
+- No genuine Lithuanian, Polish, Russian, Belarusian, Hungarian, Finnish,
+  Swedish, Persian or Korean accent is available in Kokoro; see section 4.
+- 62 casts share 28 English voices. Different delivery speeds and completely
+  different writing keep platforms distinguishable, but two units can share a
+  speaker.
 - Some selection lines deliberately use role names rather than model names
-  (“Warship” for the Missile Corvette, “Missile team” for the ATGM Gunner,
-  “Air cover” for the Interceptor) because the model names were less
-  intelligible over the radio filter.
-- The set uses one voice per unit type, not per nation. Shared baseline units
-  therefore sound the same for both alliances. Faction-specific casts would need
-  a second voice map and another 76 clips.
+  (“Warship” for the Missile Corvette, “Missile team” for the ATGM Gunner, “Air
+  cover” for the Interceptor) because the model names were less intelligible over
+  the radio filter.
 - Human acceptance is pending; the current result is an implementation-complete
   asset set, not a validated sound design.

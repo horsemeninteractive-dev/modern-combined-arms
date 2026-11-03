@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Game } from '../src/sim/game';
 import { createIslandAssault } from '../src/data/scenarios';
+import { unitFamily } from '../src/data/units';
 import { aiProfile, defenceTargets, nextDefenceBuild, scoutedForceMix } from '../src/sim/ai';
 import { Terrain } from '../src/sim/terrain';
 import type { AIDifficulty } from '../src/sim/types';
@@ -264,9 +265,12 @@ describe('skirmish AI', () => {
 
     for (let i = 0; i < 20 * 180; i++) {
       game.tick();
-      if (game.entitiesOf(1, 'unit').some((e) => e.defId === 'fighter')) break;
+      if (game.entitiesOf(1, 'unit').some((e) => unitFamily(e.defId) === 'fighter')) break;
     }
-    const fighter = game.entitiesOf(1, 'unit').find((e) => e.defId === 'fighter');
+    // The commander buys the aircraft its alliance fields for the slot.
+    const fighter = game
+      .entitiesOf(1, 'unit')
+      .find((e) => unitFamily(e.defId) === 'fighter');
     expect(fighter).toBeDefined();
 
     // Clear the fog so the established fighter has a ground target to sortie
@@ -297,15 +301,19 @@ describe('skirmish AI', () => {
     // still covers the queue, build time and the AI's slower economy cadence.
     for (let i = 0; i < 20 * 420; i++) {
       game.tick();
-      if (game.entitiesOf(1, 'unit').some((e) => e.defId === 'corvette')) break;
+      if (game.entitiesOf(1, 'unit').some((e) => unitFamily(e.defId) === 'corvette')) break;
     }
-    const corvette = game.entitiesOf(1, 'unit').find((e) => e.defId === 'corvette');
+    const corvette = game
+      .entitiesOf(1, 'unit')
+      .find((e) => unitFamily(e.defId) === 'corvette');
     expect(corvette).toBeDefined();
 
     corvette!.hp = 0;
     game.player(1)!.mats = 6000;
     for (let i = 0; i < 20 * 180; i++) game.tick();
-    expect(game.entitiesOf(1, 'unit').some((e) => e.defId === 'corvette')).toBe(true);
+    expect(game.entitiesOf(1, 'unit').some((e) => unitFamily(e.defId) === 'corvette')).toBe(
+      true,
+    );
   });
 
   it('does not stall land construction when the map has no coast', () => {
@@ -341,12 +349,16 @@ describe('skirmish AI', () => {
     // so hold the landing Command Post together: the horizon we measure here is
     // the AI's build order at its normal income, not the player's survival.
     //
-    // The horizon is ten minutes rather than six because the commander now
-    // executes the waves it announces instead of leaving them at base: same
-    // income, but the bank it used to idle in now pays for units and static
-    // defence. Shipyard at 5:00, airfield at 7:00, both on the same income.
+    // The horizon has been extended three times, each time because the commander
+    // spends rather than idles: executing its waves put the bank into units and
+    // static defence, the tighter grid (a Turbine Plant is 60, so a full base
+    // buys two) adds further plants to the same build order, and the air and
+    // naval branches are no longer free — the AI now buys a Research Centre and
+    // Air Operations before it can lay an airfield at all. That purchase is a
+    // genuine detour at this map's income: the shipyard lands around 16:00 and
+    // the airfield around 20:00, so the horizon covers the research detour.
     const commandPost = game.entitiesOf(0, 'building').find((e) => e.defId === 'commandPost')!;
-    for (let i = 0; i < 20 * 600 && game.state.victory === 'playing'; i++) {
+    for (let i = 0; i < 20 * 1300 && game.state.victory === 'playing'; i++) {
       commandPost.hp = commandPost.maxHp;
       game.tick();
     }

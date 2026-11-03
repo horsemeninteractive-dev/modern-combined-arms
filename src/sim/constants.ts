@@ -12,7 +12,7 @@ export const SAVE_FORMAT = 'iron-tide-save';
  * Bumped whenever the saved shape changes. Older versions migrate forward in
  * src/sim/saveMigrations.ts; a newer version is refused with a clear message.
  */
-export const SAVE_FORMAT_VERSION = 2;
+export const SAVE_FORMAT_VERSION = 3;
 
 /**
  * A structure hit within this many ticks cannot be repaired: the crew can patch

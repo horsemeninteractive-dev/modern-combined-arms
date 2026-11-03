@@ -11,7 +11,7 @@ import {
 } from '../src/data/factions';
 import { mergeRoster, resolveRoster, validateRosterRegistry } from '../src/data/roster';
 import { BUILDINGS, BUILDING_LIST } from '../src/data/buildings';
-import { UNITS, UNIT_LIST } from '../src/data/units';
+import { UNITS, UNIT_LIST, unitFamily } from '../src/data/units';
 import { createIslandAssault } from '../src/data/scenarios';
 import { parseScenario, type Scenario } from '../src/sim/scenario';
 import { Game } from '../src/sim/game';
@@ -21,9 +21,13 @@ const EXPECTED_NATIONS = [
   ['lithuania', 'defender'],
   ['poland', 'defender'],
   ['uk', 'defender'],
+  ['finland', 'defender'],
+  ['sweden', 'defender'],
   ['russia', 'eastern'],
   ['belarus', 'eastern'],
   ['hungary', 'eastern'],
+  ['iran', 'eastern'],
+  ['northKorea', 'eastern'],
 ] as const;
 
 function nationScenario(): Scenario {
@@ -34,7 +38,7 @@ function nationScenario(): Scenario {
 }
 
 describe('faction content registry', () => {
-  it('defines the six launch nations from the GDD with one alliance each', () => {
+  it('defines the ten playable nations with one alliance each', () => {
     expect(NATION_LIST.map((nation) => nation.id)).toEqual(
       EXPECTED_NATIONS.map(([id]) => id),
     );
@@ -45,13 +49,36 @@ describe('faction content registry', () => {
     }
   });
 
-  it('defines the two launch alliances with a shared, complete baseline', () => {
+  it('defines two launch alliances over the same slots with distinct equipment', () => {
     expect(ALLIANCE_LIST.map((alliance) => alliance.id)).toEqual(['defender', 'eastern']);
-    const expectedUnits = UNIT_LIST.map((unit) => unit.id);
     const expectedBuildings = BUILDING_LIST.map((building) => building.id);
+    // The coalition fields the canonical lineage, so its baseline is the
+    // canonical unit list itself.
+    expect([...ALLIANCES.defender.baseline.units]).toEqual(UNIT_LIST.map((unit) => unit.id));
+    // The eastern baseline covers the same slots in the same order.
+    expect(ALLIANCES.eastern.baseline.units.length).toBe(ALLIANCES.defender.baseline.units.length);
     for (const alliance of ALLIANCE_LIST) {
-      expect([...alliance.baseline.units]).toEqual(expectedUnits);
       expect([...alliance.baseline.buildings]).toEqual(expectedBuildings);
+    }
+    const shared = ALLIANCES.defender.baseline.units.filter(
+      (id, index) => id === ALLIANCES.eastern.baseline.units[index],
+    );
+    const distinct = ALLIANCES.defender.baseline.units.filter(
+      (id, index) => id !== ALLIANCES.eastern.baseline.units[index],
+    );
+    // The four utility roles are common equipment; every combat slot differs.
+    expect(shared.sort()).toEqual(['engineer', 'harvester', 'medic', 'recovery']);
+    expect(distinct.length).toBe(18);
+    // Neither alliance may borrow the other's platform, and both resolve each
+    // slot on the same canonical root.
+    for (let index = 0; index < ALLIANCES.defender.baseline.units.length; index += 1) {
+      const defender = ALLIANCES.defender.baseline.units[index];
+      const eastern = ALLIANCES.eastern.baseline.units[index];
+      expect(unitFamily(defender)).toBe(unitFamily(eastern));
+      if (defender !== eastern) {
+        expect(ALLIANCES.eastern.baseline.units).not.toContain(defender);
+        expect(ALLIANCES.defender.baseline.units).not.toContain(eastern);
+      }
     }
   });
 
@@ -87,10 +114,10 @@ describe('faction content registry', () => {
 });
 
 describe('roster resolution', () => {
-  it('resolves every nation to the shared baseline plus its declared specialisation', () => {
-    const baseUnits = ALLIANCES.defender.baseline.units;
-    const baseBuildings = ALLIANCES.defender.baseline.buildings;
+  it('resolves every nation to its alliance baseline plus its declared specialisation', () => {
     for (const nation of NATION_LIST) {
+      const baseUnits = ALLIANCES[nation.allianceId].baseline.units;
+      const baseBuildings = ALLIANCES[nation.allianceId].baseline.buildings;
       const roster = resolveRoster(nation.id);
       const replacedUnits = nation.roster?.replaceUnits ?? {};
       const replacedBuildings = nation.roster?.replaceBuildings ?? {};
@@ -110,9 +137,17 @@ describe('roster resolution', () => {
 
       expect(new Set(roster.units).size).toBe(roster.units.length);
       expect(new Set(roster.buildings).size).toBe(roster.buildings.length);
+      // A roster entry is either baseline content, a variant of a canonical
+      // slot, or a national exclusive. An exclusive deliberately declares no
+      // variantOf: it is an extra option rather than a second definition in a
+      // slot, so it must never displace the platform a production list names.
       expect(
         roster.units.every(
-          (id) => id in UNITS && (UNIT_LIST.some((unit) => unit.id === id) || !!UNITS[id].variantOf),
+          (id) =>
+            id in UNITS &&
+            (UNIT_LIST.some((unit) => unit.id === id) ||
+              !!UNITS[id].variantOf ||
+              UNITS[id].national === true),
         ),
       ).toBe(true);
       expect(

@@ -5,20 +5,41 @@ import { TILE_SIZE } from '../src/sim/constants';
 import { BUILDINGS, BUILDING_LIST } from '../src/data/buildings';
 import { UNIT_LIST, UNITS } from '../src/data/units';
 import { WEAPONS } from '../src/data/weapons';
-import { FACTIONS, NATION_LIST, defaultOpponentNation } from '../src/data/factions';
+import { FACTIONS, NATIONS, NATION_LIST, defaultOpponentNation } from '../src/data/factions';
 import { resolveRoster } from '../src/data/roster';
 import { computeDamage } from '../src/sim/combat';
 import { AIController, initialAIState } from '../src/sim/ai';
+import { completeResearch } from './helpers';
 import type { Scenario } from '../src/sim/scenario';
 
-/** Identity of every shipped national substitution, in registry order. */
+/**
+ * Identity of every shipped national substitution, in registry order: one unit
+ * replacement and one structure variant per nation. Russia, Belarus and Hungary
+ * replace an alliance platform, so those substitutions name the platform rather
+ * than the canonical slot and the chain is
+ * slot → alliance platform → national replacement.
+ */
 const SUBSTITUTIONS = [
   { nation: 'lithuania', kind: 'unit' as const, slot: 'recon', variant: 'pathfinder', facility: 'factory' },
   { nation: 'poland', kind: 'unit' as const, slot: 'tank', variant: 'spearhead', facility: 'factory' },
   { nation: 'uk', kind: 'unit' as const, slot: 'spg', variant: 'mlrs', facility: 'factory' },
-  { nation: 'russia', kind: 'unit' as const, slot: 'spg', variant: 'heavyHowitzer', facility: 'factory' },
-  { nation: 'belarus', kind: 'unit' as const, slot: 'uav', variant: 'deepReconUAV', facility: 'airfield' },
+  { nation: 'russia', kind: 'unit' as const, slot: 'spgEC', variant: 'heavyHowitzer', facility: 'factory' },
+  { nation: 'belarus', kind: 'unit' as const, slot: 'uavEC', variant: 'deepReconUAV', facility: 'airfield' },
+  { nation: 'hungary', kind: 'unit' as const, slot: 'atgmEC', variant: 'hedgehogTeam', facility: 'barracks' },
+  { nation: 'finland', kind: 'unit' as const, slot: 'spg', variant: 'k9Thunder', facility: 'factory' },
+  { nation: 'sweden', kind: 'unit' as const, slot: 'ifv', variant: 'cv90', facility: 'factory' },
+  { nation: 'iran', kind: 'unit' as const, slot: 'aaEC', variant: 'khordadSam', facility: 'factory' },
+  { nation: 'northKorea', kind: 'unit' as const, slot: 'tdEC', variant: 'bulsae4', facility: 'factory' },
+  { nation: 'lithuania', kind: 'building' as const, slot: 'radar', variant: 'forwardPost', facility: '' },
+  { nation: 'poland', kind: 'building' as const, slot: 'factory', variant: 'armourWorks', facility: '' },
+  { nation: 'uk', kind: 'building' as const, slot: 'airfield', variant: 'expeditionaryAirfield', facility: '' },
+  { nation: 'russia', kind: 'building' as const, slot: 'samBattery', variant: 'longRangeSam', facility: '' },
+  { nation: 'belarus', kind: 'building' as const, slot: 'researchCentre', variant: 'signalsBureau', facility: '' },
   { nation: 'hungary', kind: 'building' as const, slot: 'mgNest', variant: 'bunker', facility: '' },
+  { nation: 'finland', kind: 'building' as const, slot: 'barracks', variant: 'garrisonBarracks', facility: '' },
+  { nation: 'sweden', kind: 'building' as const, slot: 'shipyard', variant: 'kockumsYard', facility: '' },
+  { nation: 'iran', kind: 'building' as const, slot: 'coastalBattery', variant: 'noorBattery', facility: '' },
+  { nation: 'northKorea', kind: 'building' as const, slot: 'atTurret', variant: 'entrenchedAtGun', facility: '' },
 ] as const;
 
 /**
@@ -54,19 +75,28 @@ function unit(game: Game, defId: string, owner = 0) {
   )!;
 }
 
-/** A player with one complete factory and one complete airfield. */
+/** A player with one complete factory, barracks and airfield. */
 function facilityGame(nation: string): Game {
   const scenario = arena(nation);
   scenario.structures.push(
     { defId: 'factory', owner: 0, x: 14, z: 6 },
+    { defId: 'barracks', owner: 0, x: 20, z: 6 },
     { defId: 'airfield', owner: 0, x: 14, z: 14 },
   );
-  return new Game(scenario, { enableAI: false });
+  const game = new Game(scenario, { enableAI: false });
+  // Facility and substitution resolution, not the research gate.
+  completeResearch(game, 0);
+  return game;
 }
 
 describe('national roster substitutions', () => {
-  it('gives each nation exactly one substitution and leaves every other nation on the baseline', () => {
-    expect(SUBSTITUTIONS).toHaveLength(NATION_LIST.length);
+  it('gives each nation one unit replacement and one structure variant, and leaves every other nation on the baseline', () => {
+    expect(SUBSTITUTIONS).toHaveLength(NATION_LIST.length * 2);
+    for (const nation of NATION_LIST) {
+      const entries = SUBSTITUTIONS.filter((entry) => entry.nation === nation.id);
+      expect(entries.filter((entry) => entry.kind === 'unit'), nation.id).toHaveLength(1);
+      expect(entries.filter((entry) => entry.kind === 'building'), nation.id).toHaveLength(1);
+    }
     for (const entry of SUBSTITUTIONS) {
       const roster = resolveRoster(entry.nation);
       const list = entry.kind === 'unit' ? roster.units : roster.buildings;
@@ -86,14 +116,14 @@ describe('national roster substitutions', () => {
     }
   });
 
-  it('keeps the shared baseline and the legacy presets free of national variants', () => {
-    for (const preset of Object.values(FACTIONS)) {
+  it('keeps each alliance baseline and its legacy preset free of national variants', () => {
+    for (const entry of SUBSTITUTIONS) {
+      const allianceId = NATIONS[entry.nation].allianceId;
+      const preset = Object.values(FACTIONS).find((f) => f.allianceId === allianceId)!;
       const roster = resolveRoster(preset.id);
-      for (const entry of SUBSTITUTIONS) {
-        const list = entry.kind === 'unit' ? roster.units : roster.buildings;
-        expect(list).not.toContain(entry.variant);
-        expect(list).toContain(entry.slot);
-      }
+      const list = entry.kind === 'unit' ? roster.units : roster.buildings;
+      expect(list).not.toContain(entry.variant);
+      expect(list).toContain(entry.slot);
     }
   });
 
@@ -151,6 +181,80 @@ describe('national roster substitutions', () => {
     expect(computeDamage(6, WEAPONS.heavyMg.multipliers, 'infantry')).toBeGreaterThan(
       computeDamage(6, WEAPONS.heavyMg.multipliers, 'heavy') * 10,
     );
+
+    // Finland: more reach and a heavier shell, for more money and a bigger hull.
+    expect(WEAPONS.k9Shell.range).toBeGreaterThan(WEAPONS.howitzer.range);
+    expect(WEAPONS.k9Shell.damage).toBeGreaterThan(WEAPONS.howitzer.damage);
+    expect(UNITS.k9Thunder.cost.mats).toBeGreaterThan(UNITS.spg.cost.mats);
+    expect(UNITS.k9Thunder.hp).toBeGreaterThan(UNITS.spg.hp);
+
+    // Sweden: faster and better sighted, still a light hull a tank deletes.
+    expect(UNITS.cv90.speed).toBeGreaterThan(UNITS.ifv.speed);
+    expect(UNITS.cv90.vision).toBeGreaterThan(UNITS.ifv.vision);
+    expect(UNITS.cv90.cost.mats).toBeGreaterThan(UNITS.ifv.cost.mats);
+    expect(UNITS.cv90.armour).toBe('light');
+
+    // Iran: more reach and optics, a slower reload and no gun.
+    expect(WEAPONS.khordadMissile.range).toBeGreaterThan(WEAPONS.samVehicle.range);
+    expect(WEAPONS.khordadMissile.cooldown).toBeGreaterThan(WEAPONS.samVehicle.cooldown);
+    expect(UNITS.khordadSam.vision).toBeGreaterThan(UNITS.aaEC.vision);
+    expect(WEAPONS.khordadMissile.targets).toEqual(['air']);
+
+    // North Korea: the national anti-armour slot trades the assault gun's
+    // single hard punch for stand-off reach and a rack of slower missiles.
+    expect(WEAPONS.bulsaeMissile.range).toBeGreaterThan(WEAPONS.assaultGun.range);
+    expect(WEAPONS.bulsaeMissile.cooldown).toBeGreaterThan(WEAPONS.assaultGun.cooldown);
+    expect(WEAPONS.bulsaeMissile.multipliers.infantry).toBeLessThan(0.4);
+    expect(UNITS.bulsae4.armour).toBe('light');
+  });
+
+  it('keeps every expansion exclusive counterable by an existing answer', () => {
+    // The Finnish team out-ranges the shared missile but cannot touch infantry
+    // and reloads slower, so a scout or a rifle section removes it.
+    expect(WEAPONS.spikeEr.range).toBeGreaterThan(WEAPONS.atgm.range);
+    expect(WEAPONS.spikeEr.multipliers.infantry).toBeLessThan(0.4);
+    expect(WEAPONS.spikeEr.cooldown).toBeGreaterThan(WEAPONS.atgm.cooldown);
+    expect(UNITS.spikeTeam.armour).toBe('infantry');
+
+    // The Gripen carries two weapons but no more ammunition than a strike
+    // fighter; air defence is still the answer and it cannot out-turn an
+    // interceptor.
+    expect(UNITS.gripen.weapons).toContain('airMissile');
+    expect(UNITS.gripen.ammo!).toBeLessThanOrEqual(UNITS.interceptor.ammo!);
+    expect(UNITS.gripen.speed).toBeLessThan(UNITS.interceptor.speed);
+
+    // The Mohajer is slower than the recon drone's jet-era peers and unarmoured:
+    // a single SAM round ends it before the second bomb.
+    expect(UNITS.mohajer6.hp).toBeLessThan(UNITS.gripen.hp);
+    expect(WEAPONS.sadidBomb.multipliers.heavy).toBeLessThan(0.6);
+
+    // The Koksan is an extra siege battery beside the shared howitzer, not a
+    // replacement for it: the longest tube and the slowest reload in the game,
+    // on a hull that crawls, so it is answered by anything that closes.
+    expect(WEAPONS.koksanShell.range).toBeGreaterThan(WEAPONS.heavyShell.range);
+    expect(WEAPONS.koksanShell.cooldown).toBeGreaterThan(WEAPONS.heavyShell.cooldown);
+    expect(UNITS.koksan.speed).toBeLessThan(UNITS.spgEC.speed);
+    expect(UNITS.koksan.hp).toBeLessThan(UNITS.spgEC.hp);
+  });
+
+  it('gives every expansion structure variant a real trade', () => {
+    // Cheaper and weaker.
+    expect(BUILDINGS.garrisonBarracks.cost.mats).toBeLessThan(BUILDINGS.barracks.cost.mats);
+    expect(BUILDINGS.garrisonBarracks.hp).toBeLessThan(BUILDINGS.barracks.hp);
+    expect(BUILDINGS.garrisonBarracks.productionList).toEqual(BUILDINGS.barracks.productionList);
+    expect(BUILDINGS.noorBattery.cost.mats).toBeLessThan(BUILDINGS.coastalBattery.cost.mats);
+    expect(BUILDINGS.noorBattery.hp).toBeLessThan(BUILDINGS.coastalBattery.hp);
+    expect(WEAPONS.noorMissile.range).toBeLessThan(WEAPONS.coastalMissile.range);
+    // Tougher and dearer, with the same job.
+    expect(BUILDINGS.kockumsYard.hp).toBeGreaterThan(BUILDINGS.shipyard.hp);
+    expect(BUILDINGS.kockumsYard.cost.mats).toBeGreaterThan(BUILDINGS.shipyard.cost.mats);
+    expect(BUILDINGS.kockumsYard.productionList).toEqual(BUILDINGS.shipyard.productionList);
+    expect(BUILDINGS.entrenchedAtGun.hp).toBeGreaterThan(BUILDINGS.atTurret.hp);
+    expect(BUILDINGS.entrenchedAtGun.weapons).toEqual(BUILDINGS.atTurret.weapons);
+    expect(BUILDINGS.entrenchedAtGun.buildTime).toBeGreaterThan(BUILDINGS.atTurret.buildTime);
+    // Naval yards keep their placement rule.
+    expect(BUILDINGS.kockumsYard.requiresWater).toBe(true);
+    expect(BUILDINGS.noorBattery.requiresWater).toBe(true);
   });
 });
 
@@ -312,6 +416,10 @@ describe('national rosters for the AI', () => {
     scenario.players[1].isAI = true;
     scenario.players[1].startX = 40;
     scenario.players[1].startZ = 24;
+    // These tests are about which platform a nation substitutes into a slot,
+    // not about the research that opens it, so the branch tiers are granted the
+    // way an authored scenario grants them. The AI still buys the unit.
+    scenario.players[1].technologies = ['manoeuvre1', 'manoeuvre2', 'fires1', 'fires2'];
     scenario.structures.push(
       { defId: 'factory', owner: 1, x: 36, z: 20 },
       { defId: 'barracks', owner: 1, x: 36, z: 26 },
@@ -339,7 +447,13 @@ describe('national rosters for the AI', () => {
     const ai = new AIController();
     const state = initialAIState(7, 'elite');
     const seen = new Set<string>();
+    // A threat test needs the threat to still be there when the perimeter is
+    // chosen. With the research centre in the build order the decision comes
+    // later, by which time the single scout had been shot; the sentry is kept
+    // standing so the scouting report keeps reading as infantry.
+    const threat = game.entitiesOf(0, 'unit').find((e) => e.defId === 'rifle');
     for (let i = 0; i < 20 * seconds && game.state.victory === 'playing'; i++) {
+      if (threat && threat.hp > 0) threat.hp = threat.maxHp;
       game.tick();
       ai.update(game, 1, state);
       for (const building of game.entitiesOf(1, 'building')) {
@@ -416,10 +530,16 @@ describe('national identity and determinism', () => {
       return game.stateHash();
     };
     expect(make()).toBe(make());
-    // Both rosters resolve from the same shared baseline and remain valid.
+    // Each roster is its alliance baseline with every replacement swapped in
+    // place plus that nation's one exclusive unit, so the unit count is the
+    // baseline plus one and the structure count is unchanged. Sweden and Iran
+    // also add a national naval hull, declared in their `addUnits`.
     for (const nation of NATION_LIST) {
       const roster = resolveRoster(nation.id);
-      expect(roster.units.length).toBe(UNIT_LIST.length);
+      const hulls = (NATIONS[nation.id].roster?.addUnits ?? []).filter(
+        (id) => UNITS[id]?.domain === 'naval',
+      ).length;
+      expect(roster.units.length).toBe(UNIT_LIST.length + 1 + hulls);
       expect(roster.buildings.length).toBe(BUILDING_LIST.length);
       expect(defaultOpponentNation(nation.id).allianceId).not.toBe(nation.allianceId);
     }

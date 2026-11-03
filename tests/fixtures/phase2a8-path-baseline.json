@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-01T15:21:05.734Z",
-  "method": "Re-baselined from the current source tree after the day/night, bridge deck, reachable-stand and unit-veterancy phases. Veterancy added an experience field to every entity's state hash, so the recorded fingerprints were re-captured; the structural path and summary assertions are unchanged. The original pre-optimisation capture is preserved in git history.",
+  "generatedAt": "2026-11-02T23:22:03.550Z",
+  "method": "Re-baselined from the current source tree after authoritative ability state joined the deterministic state hash: a hull carries its own ability reload clock and the battlefield carries live smoke clouds, so every fingerprint changed while the workload, paths and summaries did not (this script asserts that). Earlier captures remain in git history.",
   "paths": [
     {
       "name": "open-terrain",
@@ -135,35 +135,35 @@
     "ticks": [
       {
         "tick": 0,
-        "checksum": "dae9d509a4fe6587"
+        "checksum": "b52e483d514948ca"
       },
       {
         "tick": 1,
-        "checksum": "2b9a929f42e072e4"
+        "checksum": "2e6080094ae40ea5"
       },
       {
         "tick": 2,
-        "checksum": "7b35f967cf9a6028"
+        "checksum": "3478d8f7af996509"
       },
       {
         "tick": 3,
-        "checksum": "7ee517444e36ead3"
+        "checksum": "17881119cd15572e"
       },
       {
         "tick": 10,
-        "checksum": "c0f7b31283b732c7"
+        "checksum": "34b0ce48904e9ac2"
       },
       {
         "tick": 30,
-        "checksum": "6449b2bb3d9a1d73"
+        "checksum": "48d4d2e5c6cede73"
       },
       {
         "tick": 60,
-        "checksum": "570de395e26c6a13"
+        "checksum": "a52fdb437628417e"
       },
       {
         "tick": 100,
-        "checksum": "56186c0a0a91805b"
+        "checksum": "113d567b1f0a4240"
       }
     ],
     "firstTickPaths": [
@@ -3296,27 +3296,27 @@
     "ticks": [
       {
         "tick": 0,
-        "checksum": "0c69bfe7363aaabc"
+        "checksum": "a91e1716c883d591"
       },
       {
         "tick": 1,
-        "checksum": "62d1c37ce973d6df"
+        "checksum": "18978707cf367486"
       },
       {
         "tick": 2,
-        "checksum": "dccfcb156843f262"
+        "checksum": "5328f3c64f379abb"
       },
       {
         "tick": 10,
-        "checksum": "5ff27862093f2dcd"
+        "checksum": "f981e93066e0a100"
       },
       {
         "tick": 30,
-        "checksum": "38fcb4f3a5343eab"
+        "checksum": "9204ab6423d585ca"
       },
       {
         "tick": 100,
-        "checksum": "6aa56bbc78478ec3"
+        "checksum": "9a4faa522109a71e"
       }
     ]
   },
@@ -3324,7 +3324,7 @@
     {
       "count": 9,
       "ordered": 9,
-      "checksum": "fe52851b30bf25f3",
+      "checksum": "991d43fa8335772c",
       "summary": {
         "units": 80,
         "buildings": 7,
@@ -3557,7 +3557,7 @@
     {
       "count": 18,
       "ordered": 18,
-      "checksum": "20935c2b82f9ba09",
+      "checksum": "f0bfe3ff68d13182",
       "summary": {
         "units": 80,
         "buildings": 7,
@@ -3959,7 +3959,7 @@
     {
       "count": 27,
       "ordered": 27,
-      "checksum": "ee615f9e81556c3d",
+      "checksum": "2fa9401b1f6fa454",
       "summary": {
         "units": 80,
         "buildings": 7,
@@ -4518,7 +4518,7 @@
     {
       "count": 36,
       "ordered": 36,
-      "checksum": "2787486b33cefc19",
+      "checksum": "a3815e0398b3889c",
       "summary": {
         "units": 80,
         "buildings": 7,

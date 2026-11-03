@@ -11,6 +11,13 @@ import baseline from './fixtures/phase2a8-path-baseline.json';
  * and also reproduces every Phase 2A.6 deployed checksum. These checks compare
  * the complete 80-unit stress run, the 16-unit baseline and the 9/18/27/36
  * path-scaling probe against that old capture.
+ *
+ * The recorded fingerprints have since been re-anchored whenever the state hash
+ * gained authoritative content (veterancy, research, and now each hull's ability
+ * reload plus the live smoke list). Only the checksums move: the fixture's paths,
+ * unit and event summaries are re-asserted unchanged, which is what this test is
+ * really about — the optimised pathfinder still produces the pre-optimisation
+ * battle.
  */
 
 function checksum(text: string): string {

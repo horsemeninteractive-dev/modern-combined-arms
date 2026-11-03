@@ -25,6 +25,7 @@ import {
   type ScoutedForceMix,
 } from '../src/sim/ai';
 import { tileIndex } from '../src/sim/terrain';
+import { RESEARCH } from '../src/data/research';
 
 interface Fixture {
   infantry?: number;
@@ -69,6 +70,10 @@ function scenarioFor(f: Fixture) {
   for (let i = 0; i < (f.mgNest ?? 1); i++) {
     scenario.structures.push({ defId: 'mgNest', owner: 1, x: 46 + i, z: 39 });
   }
+  // The tree is already finished, so the commander has nothing left to study and
+  // no reason to site a research centre. That keeps the measured choice on the
+  // perimeter and the economy, which is what these fixtures are about.
+  scenario.players[1].technologies = RESEARCH.techs.map((tech) => tech.id);
   scenario.units.push({ defId: 'engineer', owner: 1, x: 44, z: 39 });
   for (let i = 0; i < (f.harvesters ?? 2); i++) {
     scenario.units.push({ defId: 'harvester', owner: 1, x: 47 + i, z: 34 });

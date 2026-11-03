@@ -1,0 +1,327 @@
+import type { CommandMode } from '../app';
+
+/**
+ * The battle cursor set.
+ *
+ * Pointers are drawn on the overlay canvas rather than set as CSS cursor
+ * images: browsers snapshot cursor images once, so an animated SVG or GIF
+ * freezes, and a canvas reticle can rotate, pulse and react to placement
+ * validity without shipping a sprite per state. The OS pointer is hidden over
+ * the battlefield only while these are on; HUD panels keep their own cursor.
+ *
+ * The glyphs follow the same 24×24 vocabulary as the HUD icons, drawn with a
+ * dark halo so the pointer stays legible over snow, sand and dark water.
+ */
+export type BattleCursor =
+  | 'select'
+  | 'move'
+  | 'attack'
+  | 'attackMove'
+  | 'capture'
+  | 'repair'
+  | 'garrison'
+  | 'place'
+  | 'placeBlocked'
+  | 'box'
+  | 'pan';
+
+export interface CursorContext {
+  /** Placement validity under the pointer; null/undefined while unknown. */
+  placementOk?: boolean | null;
+  /** Right- or middle-button camera drag is under way. */
+  panning?: boolean;
+  /** A box-selection rectangle is being dragged. */
+  draggingBox?: boolean;
+}
+
+export const CURSOR_INK = '#e8eeea';
+export const CURSOR_AMBER = '#e0a34a';
+export const CURSOR_RED = '#ef6a4a';
+export const CURSOR_GREEN = '#7fbf6a';
+export const CURSOR_TEAL = '#4fc9b8';
+const HALO = '#05090b';
+
+/** The plain arrow, filled rather than stroked: the resting pointer. */
+const ARROW = 'M4 2v16l4.2-4.2 2.9 6.8 3.4-1.5-2.9-6.6H18z';
+const ARROW_TIP = { x: 4, y: 2 };
+const PLACE_BRACKETS = 'M2 7V2h5M17 2h5v5M22 17v5h-5M7 22H2v-5';
+const BLOCKED_SLASH = 'M3 3l18 18';
+
+/**
+ * Cursor glyphs are raw path data, not the HUD's SVG markup: Path2D accepts a
+ * path string only, and the HUD icons mix in `<circle>`/`<rect>` elements that
+ * would silently drop out of a stroke. Circles are drawn as arc pairs so every
+ * glyph rasterises through the same path. Coordinates match the 24×24 grid.
+ */
+const GLYPHS = {
+  move: 'M12 2v20M12 2l-3 3M12 2l3 3M12 22l-3-3M12 22l3-3M2 12h20M2 12l3-3M2 12l3 3M22 12l-3 3M22 12l-3-3',
+  attack:
+    'M12 5a7 7 0 1 0 0 14a7 7 0 1 0 0-14M12 10a2 2 0 1 0 0 4a2 2 0 1 0 0-4M12 2v4M12 18v4M2 12h4M18 12h4',
+  attackMove:
+    'M4 18L18 4M18 4h-6M18 4v6M8 13a3 3 0 1 0 0 6a3 3 0 1 0 0-6M8 13v6M5 16h6',
+  capture: 'M6 21V3M6 4h12l-3 4 3 4H6M3 21h6',
+  repair: 'M14.5 4.5a4 4 0 0 0-5.3 5.3L4 15v4h4l5.2-5.2a4 4 0 0 0 5.3-5.3l-2.8 2.8-2.2-2.2zM4 19l3-3',
+  garrison: 'M4 21V9l8-6 8 6v12M9 21v-6h6v6M12 8.6a1.4 1.4 0 1 0 0 2.8a1.4 1.4 0 1 0 0-2.8M9 13h6',
+  build: 'M3 21h18M5 21V10l7-5 7 5v11M9 21v-6h6v6M9 10h6',
+  box: 'M3 8V3h5M16 3h5v5M21 16v5h-5M8 21H3v-5',
+} as const;
+
+interface CursorStyle {
+  /** Centred glyph path, or null for the filled arrow. */
+  glyph: string | null;
+  color: string;
+  /** Radians per second; 0 keeps the glyph upright. */
+  spin: number;
+  /** Extra path that pulses (blocked slash) or orbits (placement brackets). */
+  accent?: string;
+  accentSpin?: number;
+}
+
+const STYLES: Record<BattleCursor, CursorStyle> = {
+  select: { glyph: null, color: CURSOR_INK, spin: 0 },
+  move: { glyph: GLYPHS.move, color: CURSOR_INK, spin: 0 },
+  attack: { glyph: GLYPHS.attack, color: CURSOR_RED, spin: 0.9 },
+  attackMove: { glyph: GLYPHS.attackMove, color: CURSOR_AMBER, spin: -0.7 },
+  capture: { glyph: GLYPHS.capture, color: CURSOR_AMBER, spin: 0 },
+  repair: { glyph: GLYPHS.repair, color: CURSOR_TEAL, spin: 0 },
+  garrison: { glyph: GLYPHS.garrison, color: CURSOR_GREEN, spin: 0 },
+  place: { glyph: GLYPHS.build, color: CURSOR_GREEN, spin: 0, accent: PLACE_BRACKETS, accentSpin: 0.4 },
+  placeBlocked: { glyph: GLYPHS.build, color: CURSOR_RED, spin: 0, accent: BLOCKED_SLASH },
+  box: { glyph: GLYPHS.box, color: CURSOR_INK, spin: 0 },
+  pan: { glyph: GLYPHS.move, color: CURSOR_AMBER, spin: 0 },
+};
+
+/** Native equivalents, used when the player turns custom cursors off. */
+export const NATIVE_CURSORS: Record<BattleCursor, string> = {
+  select: 'default',
+  move: 'crosshair',
+  attack: 'crosshair',
+  attackMove: 'crosshair',
+  capture: 'crosshair',
+  repair: 'crosshair',
+  garrison: 'crosshair',
+  place: 'copy',
+  placeBlocked: 'not-allowed',
+  box: 'crosshair',
+  pan: 'grabbing',
+};
+
+/**
+ * The pointer an app mode should show. A camera drag outranks the mode (the
+ * view is what is being moved), and a box drag outranks the armed order so the
+ * live selection rectangle always reads as the thing being driven.
+ */
+export function battleCursor(mode: CommandMode, ctx: CursorContext = {}): BattleCursor {
+  if (ctx.panning) return 'pan';
+  if (ctx.draggingBox) return 'box';
+  switch (mode) {
+    case 'place':
+      return ctx.placementOk === false ? 'placeBlocked' : 'place';
+    case 'move':
+      return 'move';
+    case 'attack':
+      return 'attack';
+    case 'attackMove':
+      return 'attackMove';
+    case 'capture':
+      return 'capture';
+    case 'repair':
+      return 'repair';
+    case 'garrison':
+      return 'garrison';
+    case 'box':
+      return 'box';
+    default:
+      return 'select';
+  }
+}
+
+/**
+ * CSS `cursor` for a state. Custom cursors hide the OS pointer (`none`) because
+ * the overlay paints the reticle; turning them off returns the platform's own
+ * pointer with the closest native meaning.
+ */
+export function cursorProperty(cursor: BattleCursor, custom: boolean): string {
+  return custom ? 'none' : NATIVE_CURSORS[cursor];
+}
+
+const TAU = Math.PI * 2;
+const pathCache = new Map<string, Path2D>();
+
+/** Path2D is created lazily: tests import this module without a canvas. */
+function pathFor(data: string): Path2D {
+  let path = pathCache.get(data);
+  if (!path) {
+    path = new Path2D(data);
+    pathCache.set(data, path);
+  }
+  return path;
+}
+
+function strokeGlyph(
+  ctx: CanvasRenderingContext2D,
+  data: string,
+  color: string,
+  alpha: number,
+  offsetX = 0,
+  offsetY = 0,
+  scale = 1,
+): void {
+  const path = pathFor(data);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(offsetX, offsetY);
+  ctx.scale(scale, scale);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  // Halo first, then the coloured line: the halo is what survives bright ground.
+  ctx.strokeStyle = HALO;
+  ctx.lineWidth = 3.8;
+  ctx.stroke(path);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.6;
+  ctx.stroke(path);
+  ctx.restore();
+}
+
+function drawArrow(ctx: CanvasRenderingContext2D, x: number, y: number, time: number): void {
+  const path = pathFor(ARROW);
+  ctx.save();
+  ctx.translate(x - ARROW_TIP.x, y - ARROW_TIP.y);
+  ctx.lineJoin = 'round';
+  ctx.fillStyle = HALO;
+  ctx.strokeStyle = HALO;
+  ctx.lineWidth = 3;
+  ctx.fill(path);
+  ctx.stroke(path);
+  ctx.fillStyle = CURSOR_INK;
+  ctx.strokeStyle = HALO;
+  ctx.lineWidth = 1.1;
+  ctx.fill(path);
+  ctx.stroke(path);
+  ctx.restore();
+  // A slow amber blink at the tip keeps the resting pointer alive without
+  // moving the tip away from the pixel the player is pointing at.
+  const pulse = 0.5 + 0.5 * Math.sin(time * 3.2);
+  ctx.save();
+  ctx.globalAlpha = 0.1 + 0.16 * pulse;
+  ctx.fillStyle = CURSOR_AMBER;
+  ctx.beginPath();
+  ctx.arc(x, y, 2 + pulse * 2.4, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawPulseRing(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  color: string,
+  time: number,
+  speed = 3.2,
+  alpha = 0.28,
+): void {
+  const pulse = 0.5 + 0.5 * Math.sin(time * speed);
+  ctx.save();
+  ctx.globalAlpha = alpha + pulse * 0.16;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(x, y, 12.5 + pulse * 2, 0, TAU);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Paint one cursor at a client-space point. `timeMs` drives every animation; it
+ * is presentation only and never reaches the simulation.
+ */
+export function drawBattleCursor(
+  ctx: CanvasRenderingContext2D,
+  cursor: BattleCursor,
+  x: number,
+  y: number,
+  timeMs: number,
+): void {
+  if (cursor === 'select') {
+    drawArrow(ctx, x, y, timeMs / 1000);
+    return;
+  }
+  const style = STYLES[cursor];
+  const t = timeMs / 1000;
+  const blocked = cursor === 'placeBlocked';
+
+  // A soft disc under the glyph separates it from busy terrain.
+  ctx.save();
+  ctx.globalAlpha = blocked ? 0.26 + 0.1 * Math.sin(t * 7) : 0.2;
+  ctx.fillStyle = HALO;
+  ctx.beginPath();
+  ctx.arc(x, y, 11, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+
+  drawPulseRing(ctx, x, y, style.color, t, blocked ? 7 : 3.2, blocked ? 0.4 : 0.28);
+
+  if (cursor === 'box') {
+    // Marching dashes so the box cursor reads as selectable, not as a target.
+    const path = pathFor(GLYPHS.box);
+    ctx.save();
+    ctx.translate(x - 12, y - 12);
+    ctx.setLineDash([3, 3]);
+    ctx.lineDashOffset = -t * 14;
+    ctx.strokeStyle = HALO;
+    ctx.lineWidth = 3.4;
+    ctx.stroke(path);
+    ctx.strokeStyle = CURSOR_INK;
+    ctx.lineWidth = 1.4;
+    ctx.stroke(path);
+    ctx.restore();
+  } else if (style.glyph) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(t * style.spin);
+    ctx.translate(-12, -12);
+    strokeGlyph(ctx, style.glyph, style.color, 1);
+    ctx.restore();
+  }
+
+  if (style.accent) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(t * (style.accentSpin ?? 0));
+    ctx.translate(-12, -12);
+    strokeGlyph(ctx, style.accent, style.color, blocked ? 0.9 : 0.75);
+    ctx.restore();
+  }
+
+  if (cursor === 'pan') {
+    // Pressed centre: the arrow arms already say "camera", the dot says "held".
+    ctx.save();
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = CURSOR_AMBER;
+    ctx.beginPath();
+    ctx.arc(x, y, 2.2, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+/** A fading order impression: the cursor glyph, scaled and drifting upward. */
+export function drawOrderGhostGlyph(
+  ctx: CanvasRenderingContext2D,
+  kind: 'move' | 'attack',
+  x: number,
+  y: number,
+  scale: number,
+  alpha: number,
+  rise: number,
+): void {
+  const glyph = kind === 'attack' ? GLYPHS.attack : GLYPHS.move;
+  const color = kind === 'attack' ? CURSOR_RED : CURSOR_AMBER;
+  ctx.save();
+  ctx.translate(x, y - rise);
+  ctx.scale(scale, scale);
+  ctx.translate(-12, -12);
+  strokeGlyph(ctx, glyph, color, alpha);
+  ctx.restore();
+}

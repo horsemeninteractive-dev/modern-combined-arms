@@ -21,7 +21,8 @@ import type { MoveClass } from './types';
 import { BUILDINGS } from '../data/buildings';
 import { dist2 } from '../core/math';
 import { UNITS } from '../data/units';
-import { identityLabel, isKnownFactionId } from '../data/factions';
+import { TECHS } from '../data/research';
+import { identityLabel, isKnownFactionId, tryIdentityDef } from '../data/factions';
 import {
   DEFAULT_DAY_LENGTH_MINUTES,
   PHASE_START_HOURS,
@@ -54,6 +55,12 @@ export interface ScenarioPlayer {
   /** Player start tile (used for deployment validation and editor markers). */
   startX: number;
   startZ: number;
+  /**
+   * Technologies granted at match start. Scenario authoring uses this instead
+   * of a separate unlock path; the same effect resolution runs as research.
+   * Pre-placed structures and units also grant the technology they imply.
+   */
+  technologies?: string[];
   /**
    * Optional team tint chosen in skirmish setup (`#rrggbb`). Absent on authored
    * maps and legacy saves, where the faction identity supplies the colour. It
@@ -298,6 +305,16 @@ export function parseScenario(raw: unknown): Scenario {
         : /^#[0-9a-f]{6}$/i.test(asString(pr.color, `players[${i}].color`))
           ? (pr.color as string)
           : fail(`players[${i}].color`, 'hex colour');
+    const technologies: string[] | undefined =
+      pr.technologies === undefined
+        ? undefined
+        : Array.isArray(pr.technologies)
+          ? pr.technologies.map((id, index) => {
+              const techId = asString(id, `players[${i}].technologies[${index}]`);
+              if (!TECHS[techId]) fail(`players[${i}].technologies[${index}]`, 'known technology');
+              return techId;
+            })
+          : fail(`players[${i}].technologies`, 'array');
     return {
       id: asNumber(pr.id, `players[${i}].id`, 0, 7),
       name: asString(pr.name, `players[${i}].name`),
@@ -307,6 +324,7 @@ export function parseScenario(raw: unknown): Scenario {
       startX: asNumber(pr.startX, `players[${i}].startX`, 0, width - 1),
       startZ: asNumber(pr.startZ, `players[${i}].startZ`, 0, height - 1),
       ...(color ? { color } : {}),
+      ...(technologies && technologies.length > 0 ? { technologies } : {}),
     };
   });
   const structures: ScenarioStructure[] = (Array.isArray(r.structures) ? r.structures : []).map(
@@ -658,6 +676,38 @@ export function validateScenario(scenario: Scenario): ValidationIssue[] {
     }
     if (!scenario.units.some((u) => u.owner === p.id)) {
       add('warning', 'force-empty', `${p.name} has no starting units.`, p.startX, p.startZ);
+    }
+    const identity = tryIdentityDef(p.factionId);
+    for (const techId of p.technologies ?? []) {
+      const tech = TECHS[techId];
+      if (!tech) {
+        add(
+          'error',
+          'unknown-technology',
+          `${p.name} is granted unknown technology "${techId}".`,
+          p.startX,
+          p.startZ,
+        );
+        continue;
+      }
+      if (tech.alliances && (!identity || !tech.alliances.includes(identity.allianceId))) {
+        add(
+          'error',
+          'technology-alliance',
+          `${tech.name} is not available to ${p.name}'s alliance.`,
+          p.startX,
+          p.startZ,
+        );
+      }
+      if (tech.nations && !tech.nations.includes(p.factionId)) {
+        add(
+          'error',
+          'technology-nation',
+          `${tech.name} is not available to ${p.name}'s nation.`,
+          p.startX,
+          p.startZ,
+        );
+      }
     }
   }
 

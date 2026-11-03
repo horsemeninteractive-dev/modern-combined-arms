@@ -8,6 +8,54 @@ The release version and stage come from `package.json`; the build number shown
 in the menu is the repository commit count at build time. The same file is
 rendered in game from **Changelog** in the main-menu footer.
 
+## [0.4.0 BETA] — 2026-11-03
+
+A research and roster release. The four-branch technology tree is now playable
+from the production sidebar, it gates what a nation can build rather than only
+what it can read, the first unit ability and the first building module are live
+end to end, and the roster grows from six playable nations to ten.
+
+### Research
+
+- **Four branches, two tiers, eight technologies** — Manoeuvre, Fires, Air and Naval. Tier 2 requires its own tier 1 and nothing else, so no branch is a gate on another and the tree stays a set of choices rather than a ladder.
+- Nodes cost 300–700 materials and 40–110 requisition and take 45–90 seconds at a standard centre. A nation's own Applied Research Centre runs one project at a time; cancelling refunds the full cost, and a centre that is unfinished, destroyed or blacked out pauses progress with the reason shown rather than silently stalling.
+- **The research panel lives in the production tab strip**, not in a separate screen: four branches side by side, each node showing its name, tier, effect description, cost, duration, prerequisites and current status. A progress bar on the tab keeps the active project visible while the player is building.
+- **Every technology reports why it cannot start** — available, researching, completed, locked by prerequisites, barred to the faction, another project active, unaffordable, or no operational Research Centre — instead of looking permanently researched or permanently locked.
+- Technologies granted by a scenario or a saved battle display as completed and close their own prerequisites, and completing one immediately opens the production and construction cards it unlocks.
+- **AI commanders research for real.** Each seat weighs its strategy, its known enemy composition, its bank and the state of the match, picks a branch priority, pauses when a low bank would starve production, and never receives a free technology or a full-tree grant.
+
+### Abilities and modules
+
+- **Recon Smokescreen** is the first playable unit ability. Research fits the discharger to every owned recon hull; each crew then fires its own five-tile cloud from the selection card for 60 materials and 10 requisition, with an eight-second cloud and a 45-second reload. Smoke hides what is inside it and breaks direct fire through it, while indirect fire still arcs over — so it buys a scout an escape, not immunity.
+- **Advanced Turbine** is the first playable building module. Research makes it available on every power plant and the player buys it per structure for 450 materials and 25 requisition, adding 30 power to that plant's actual grid contribution. One turbine per plant, counted once, removed with the building, and never charged again on load.
+- Both are bought through authoritative commands, not UI-only shortcuts: an unaffordable, unowned, un-researched, already-fitted or capacity-full request is refused without spending anything.
+
+### Ten nations
+
+- **Finland, Sweden, Iran and North Korea join the roster**, five nations per coalition. Each new nation brings one replacement in an existing slot, one exclusive unit and one structure variant: Finland's K9 Thunder, Spike ER team and Garrison Barracks; Sweden's CV90 and Gripen; Iran's 3rd Khordad TEL and Mohajer-6; North Korea's Bulsae-4, Koksan and entrenched AT gun.
+- **Sweden and Iran also field a ship of their own**, so their fleet identity is a hull and not only a yard variant. The Visby-class corvette is the fastest and best-sighted surface combatant afloat with four anti-ship missiles and a thin composite hull; the Ghadir midget submarine is a cheap two-torpedo coastal ambusher with a short battery and a long exposure after firing. Both have bespoke procedural silhouettes — the Visby's tumblehome topside and flat radar plate, the Ghadir's oversized sail and flank torpedo bulges — rather than a rescaled shared hull.
+- National equipment resolves through the existing canonical families, so a replacement still occupies its slot, an exclusive never leaks to another nation, and research gates apply to all of it. The AI fields, researches and counter-builds against the new nations through the same code path.
+- Flags for all ten nations, national colours in the picker, and **62 recorded voice banks** covering every definition, including the two new hulls (744 clips).
+
+### Interface
+
+- The research tab carries live progress in the production strip, and hovering a card no longer rebuilds its tooltip on every refresh.
+- **Locked equipment cards stay visible** and name the technology that unlocks them, while affordability and facility requirements are shown separately, so a player can read progression instead of guessing why a card is dark.
+- A power report breaks down generation, draw, brownout and module contributions; the frame-rate badge moved to the bottom-right of the battlefield; the HUD hide control sits at the foot of the left rail beside the army summary and objective button.
+- A construction site left without a builder pauses at its current progress and **resumes when an engineer is sent back to it**, instead of the site being stranded at one percent.
+
+### Simulation, multiplayer and saves
+
+- Research, module installation and abilities are simulation commands: ownership, facility, prerequisites, cost, capacity and cooldown are checked on the authoritative side, and a client that bypasses the UI is refused rather than trusted.
+- Each seat's research, installed modules and per-unit cooldowns are its own: opponents see the completed unlocks they can observe, never another player's active project, and reconnecting restores the project, its progress and the resulting production options.
+- Saves carry research projects, completed technologies, installed modules and ability cooldowns, with migration for battles written before any of it existed. Older saves load unchanged.
+
+### Verification
+
+- `npx tsc --noEmit` clean and `npm run build` clean. `npm run release -- --dry-run` confirms that `package.json`, this file and the menu footer all agree on `v0.4.0 BETA` and stamps the built bundle with it.
+- Full `vitest` run for this release: 128 files, 1,684 tests, 1,683 passed. The one failure is the tracked difficulty-ladder baseline in `tests/ai-matchups.test.ts` (`recruitVsVeteran.margin` −16,547 against its < −30,000 bar); thresholds, arena and AI behaviour were not changed to make the suite green.
+- New coverage for the research tree and its statuses, unlock gating in production and construction, national replacements and exclusives, both national hulls, authoritative refusals, multiplayer isolation and reconnects, save migration, Recon Smokescreen and the Advanced Turbine.
+
 ## [0.3.0 BETA] — 2026-11-01
 
 A terrain, battlefield and atmosphere release. The map pool grows from eight

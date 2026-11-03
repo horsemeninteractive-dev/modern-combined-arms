@@ -9,9 +9,24 @@ import {
   isIndestructibleStructure,
 } from '../data/buildings';
 import { UNITS } from '../data/units';
+import {
+  BRANCH_NAMES,
+  BUILDING_MODULES,
+  TECHS,
+  installedModuleEffects,
+  UNIT_UPGRADES,
+  type TechDef,
+} from '../data/research';
+import { abilityActions } from './abilityView';
+import { moduleActions } from './moduleView';
+import {
+  activeResearchView,
+  researchBranchGroups,
+  researchNames,
+  researchNodeState,
+  researchTechName,
+} from './researchView';
 import { ALLIANCES, tryIdentityDef } from '../data/factions';
-import { CAMPAIGNS } from '../data/campaign';
-import { TUTORIAL_SCENARIO_ID } from '../data/tutorial';
 import { TERRAIN, Terrain, tileIndex, type TerrainId } from '../sim/terrain';
 import { REPAIR_SUPPRESSION_TICKS, TILE_SIZE } from '../sim/constants';
 import { sensorFor } from '../sim/sensors';
@@ -39,10 +54,12 @@ import {
   type SelectionChipView,
   type ThumbnailArtState,
 } from './hudLayout';
+import { gridReport, powerBreakdownLines, type GridReport } from './powerReport';
 import { ThumbnailRenderer } from '../render/thumbnails';
 import { flagNationForFaction, flagTextureUrl } from '../render/flags';
 import type { ThumbnailKind, ThumbnailRequest, ThumbnailShape } from '../render/thumbnailFrame';
 import { objectiveMeterState } from './relayMeter';
+import { campaignMissionObjectives, objectiveProgress } from './objectiveBrief';
 import { structureBenefit } from '../sim/infrastructure';
 import { contactAlpha, contactIsHollow, contactStateOf } from '../sim/contacts';
 import { BUILD_COMMIT, VERSION_LINE } from '../version';
@@ -88,6 +105,17 @@ function costChips(mats: number, req: number, time: number): string {
     ${req > 0 ? `<span class="cost-chip req"><b>${req}</b>R</span>` : ''}
     <span class="cost-chip time"><b>${time}</b>s</span>
   </span>`;
+}
+
+/**
+ * The structure's own grid figure, read at a glance beside its cost.
+ * Positive is generation and negative is draw; a zero-power structure gets no
+ * chip rather than a meaningless "0 PWR".
+ */
+function powerChip(power: number): string {
+  if (power === 0) return '';
+  const value = power > 0 ? `+${power}` : `${power}`;
+  return `<span class="cost-chip power${power > 0 ? ' supply' : ''}"><b>${value}</b>PWR</span>`;
 }
 
 function clamp01(v: number): number {
@@ -149,6 +177,21 @@ export class HUD {
   private lastUpdate = 0;
   private lastMinimap = 0;
   private lastProductionKey = '';
+  /**
+   * Which rebuildable panel the pointer is currently inside.
+   *
+   * Both the production/research column and the selection card are rebuilt from
+   * scratch, and the HUD refreshes them several times a second. A rebuild throws
+   * away the hovered node, so a native tooltip never gets to open and a tooltip
+   * already open flickers. While the pointer is inside a panel its rebuild is
+   * deferred; the values resume the moment the pointer leaves.
+   */
+  private hoverPanel: 'prod' | 'selection' | null = null;
+  /** Whether tooltip protection is currently armed for the hovered panel. */
+  private hoverArmed = true;
+  private hoverNode: Element | null = null;
+  private pendingProductionKey = '';
+  private pendingSelection = false;
   private logs: Array<{ text: string; level: string; tick: number }> = [];
   private endShown = false;
   private minimapDragging = false;
@@ -166,7 +209,12 @@ export class HUD {
   private modeCache = '';
   private layout: HudLayout = 'desktop';
   private panel: HudPanel = 'none';
+  /** The sidebar currently shows the research tree rather than production. */
+  private researchOpen = false;
+  private selectedResearchTech: string | null = null;
   private hudEl: HTMLElement | null = null;
+  /** HUD chrome hidden for a clean battlefield capture; the toggle stays. */
+  private hudHidden = false;
   private thumbnails: ThumbnailRenderer | null | undefined;
   /** Roster chip chosen for the detail card; cleared when it leaves the selection. */
   private inspectedId = 0;
@@ -185,11 +233,19 @@ export class HUD {
     this.tab = 'base';
     this.inspectedId = 0;
     this.panel = 'none';
+    this.researchOpen = false;
+    this.selectedResearchTech = null;
     this.app.additiveSelection = false;
     this.lastProductionKey = '';
+    this.hoverPanel = null;
+    this.hoverArmed = true;
+    this.hoverNode = null;
+    this.pendingProductionKey = '';
+    this.pendingSelection = false;
     this.suppressQueueClickUntil = 0;
     this.pausedCache = null;
     this.modeCache = '';
+    this.hudHidden = false;
     const root = document.getElementById('hud-root');
     if (!root) return;
     this.root = root;
@@ -213,6 +269,12 @@ export class HUD {
     if (next === this.layout && this.root) return false;
     this.layout = next;
     this.panel = 'none';
+    this.researchOpen = false;
+    this.hoverPanel = null;
+    this.hoverArmed = true;
+    this.hoverNode = null;
+    this.pendingProductionKey = '';
+    this.pendingSelection = false;
     this.app.additiveSelection = false;
     if (this.root && this.game) this.renderShell();
     return true;
@@ -232,8 +294,11 @@ export class HUD {
     root.innerHTML = this.markup(game);
     this.hudEl = root.querySelector<HTMLElement>('.hud');
     this.bind();
+    // A layout refresh rebuilds the shell; keep the player's capture state.
+    this.applyHudVisibility();
     this.syncPanelState();
     this.renderResources();
+    this.updateResearchRail();
     this.renderSelection(true);
     this.renderProduction(true);
     this.renderObjective();
@@ -283,15 +348,24 @@ export class HUD {
         <div class="rail-stats">
           <div class="rail-stat"><span class="rail-label"><i class="resource-swatch"></i>MATS</span><b id="res-mats">0</b><span class="rail-rate" id="res-mats-rate">+0/m</span></div>
           <div class="rail-stat req"><span class="rail-label"><i class="resource-swatch blue"></i>REQ</span><b id="res-req">0</b><span class="rail-rate" id="res-req-rate">+0.0/s</span></div>
-          <div class="rail-stat power" id="rail-power" title="Grid power — structures draw on the grid; a deficit browns out production"><span class="rail-label">PWR</span><b id="res-power">0 / 0</b><span class="rail-rate" id="res-power-sub">BALANCED</span></div>
-          <div class="rail-stat"><span class="rail-label">ARMY</span><b id="res-force">0</b><span class="rail-rate" id="res-force-sub">0 STRUCTURES</span></div>
         </div>
-        <button class="rail-objective" data-act="objective" title="Primary objective — open the briefing">
-          <span class="rail-label">OBJECTIVE</span>
-          <b data-objective-primary>${escapeHtml(primaryObjective(game))}</b>
-          <span class="objective-sub" data-objective-sub></span>
-        </button>
+        <div class="rail-grid" id="rail-power" data-power-meter role="meter" aria-label="Power grid load" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" title="Grid power — structures draw on the grid; a deficit browns out production">
+          <span class="rail-label">POWER</span>
+          <div class="power-bar"><i data-power-fill></i></div>
+          <span class="rail-rate" data-power-state>NO LOAD</span>
+        </div>
         <div class="rail-bottom">
+          <!-- Force size and the briefing button sit at the foot of the rail,
+               directly above the control-group strip. The strip itself is the
+               anchor: the block is bottom-aligned, so adding these two moved
+               the strip not at all. -->
+          <div class="rail-tail">
+            <div class="rail-stat rail-stat-army"><span class="rail-label">ARMY</span><b id="res-force">0</b><span class="rail-rate" id="res-force-sub">0 STRUCTURES</span></div>
+            <button class="rail-objective" id="rail-objective-btn" data-act="objective" title="Primary objective — open the briefing" aria-haspopup="dialog">
+              <span class="rail-label">OBJECTIVE</span>
+              <b>BRIEFING</b>
+            </button>
+          </div>
           <div class="rail-groups" aria-label="Control groups">${this.groupStripMarkup()}</div>
           <div class="rail-clock" title="Battlefield time of day — darkness shortens detection and engagement range"><span>MISSION</span><b id="clock">0:00</b><span class="clock-phase" id="clock-phase">DUSK</span></div>
           <div class="rail-actions">
@@ -313,13 +387,15 @@ export class HUD {
         <div class="mobile-stats">
           <div class="mobile-stat"><span>MATS</span><b id="res-mats">0</b></div>
           <div class="mobile-stat req"><span>REQ</span><b id="res-req">0</b></div>
-          <div class="mobile-stat power"><span>PWR</span><b id="res-power-mobile">0/0</b></div>
           <div class="mobile-stat"><span>ARMY</span><b id="res-force">0</b></div>
         </div>
-        <button class="mobile-objective" data-act="objective" title="Primary objective">
-          <span class="label">PRIMARY</span>
-          <b data-objective-primary>${escapeHtml(primaryObjective(game))}</b>
-          <span class="objective-sub" data-objective-sub></span>
+        <div class="mobile-grid" id="mobile-power" data-power-meter role="meter" aria-label="Power grid load" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" title="Grid power">
+          <span>POWER</span>
+          <div class="power-bar"><i data-power-fill></i></div>
+        </div>
+        <button class="mobile-objective" data-act="objective" title="Primary objective — open the briefing" aria-haspopup="dialog">
+          <span class="label">OBJECTIVE</span>
+          <b>BRIEFING</b>
         </button>
         <div class="mobile-actions">
           <button class="mobile-action" data-act="save" title="Save battle" aria-label="Save battle">${icon('save')}</button>
@@ -330,28 +406,92 @@ export class HUD {
       </header>`;
   }
 
+  /**
+   * Every order the strip can offer. `data-cmd` is what
+   * `renderCommands()` toggles; a button exists here only if some selection
+   * could legitimately use it. The separator after the combat orders is a
+   * `data-cmd` so it disappears with them instead of leaving a stray rule.
+   */
   private commandButtons(mobile: boolean): string {
     return `
       <div class="command-bar" role="toolbar" aria-label="Commands">
-        <button class="cmd-btn" data-act="move" title="${mobile ? 'Move selected units — tap a destination' : 'Move selected units — click a destination'}">${icon('move')}<span class="lbl">MOVE</span></button>
-        <button class="cmd-btn" data-act="attack" title="Attack target (then tap/click)">${icon('attack')}<span class="lbl">ATTACK</span></button>
-        <button class="cmd-btn" data-act="attackMove" title="Attack-move (A)">${icon('attackMove')}<span class="lbl">A-MOVE</span><kbd class="cmd-key" aria-hidden="true">A</kbd></button>
-        <div class="cmd-sep"></div>
-        <button class="cmd-btn" data-act="stop" title="Stop (S)">${icon('stop')}<span class="lbl">STOP</span><kbd class="cmd-key" aria-hidden="true">S</kbd></button>
-        <button class="cmd-btn" data-act="hold" title="Hold position (H)">${icon('hold')}<span class="lbl">HOLD POS</span><kbd class="cmd-key" aria-hidden="true">H</kbd></button>
-        <button class="cmd-btn" data-act="capture" title="Capture a strategic objective (C)">${icon('capture')}<span class="lbl">CAPTURE</span><kbd class="cmd-key" aria-hidden="true">C</kbd></button>
-        <button class="cmd-btn" data-act="repair" title="Repair a damaged structure (then tap/click it)">${icon('repair')}<span class="lbl">REPAIR</span></button>
-        <button class="cmd-btn" data-act="garrison" title="Garrison a building (G)">${icon('garrison')}<span class="lbl">GARRISON</span><kbd class="cmd-key" aria-hidden="true">G</kbd></button>
-        <button class="cmd-btn" data-act="ungarrison" title="Order infantry out of a building">${icon('ungarrison')}<span class="lbl">EXIT</span></button>
-        <button class="cmd-btn" data-act="return" title="Return aircraft / ship to base (R)">${icon('return')}<span class="lbl">RETURN</span><kbd class="cmd-key" aria-hidden="true">R</kbd></button>
-        <button class="cmd-btn" data-act="dive" title="Dive or surface selected submarines (D)">${icon('submarine')}<span class="lbl">DIVE</span><kbd class="cmd-key" aria-hidden="true">D</kbd></button>
-        <div class="cmd-sep"></div>
-        <button class="cmd-btn accent" data-act="build" title="Construction (B)">${icon('build')}<span class="lbl">BUILD</span><kbd class="cmd-key" aria-hidden="true">B</kbd></button>
-        <button class="cmd-btn" data-act="box" title="Box selection">${icon('box')}<span class="lbl">BOX</span></button>
-        ${mobile ? `<button class="cmd-btn" data-act="groups" title="Control groups">${icon('squad')}<span class="lbl">GROUPS</span></button>
-        <button class="cmd-btn" data-act="map" title="Tactical map">${icon('scope')}<span class="lbl">MAP</span></button>` : ''}
-        <button class="cmd-btn" data-act="debug" title="Debug overlay (F3)">${icon('log')}<span class="lbl">DIAG</span></button>
+        <button class="cmd-btn" data-cmd="move" data-act="move" title="${mobile ? 'Move selected units — tap a destination' : 'Move selected units — click a destination'}">${icon('move')}<span class="lbl">MOVE</span></button>
+        <button class="cmd-btn" data-cmd="attack" data-act="attack" title="Attack target (then tap/click)">${icon('attack')}<span class="lbl">ATTACK</span></button>
+        <button class="cmd-btn" data-cmd="attackMove" data-act="attackMove" title="Attack-move (A)">${icon('attackMove')}<span class="lbl">A-MOVE</span><kbd class="cmd-key" aria-hidden="true">A</kbd></button>
+        <div class="cmd-sep" data-cmd="combatSep"></div>
+        <button class="cmd-btn" data-cmd="stop" data-act="stop" title="Stop (S)">${icon('stop')}<span class="lbl">STOP</span><kbd class="cmd-key" aria-hidden="true">S</kbd></button>
+        <button class="cmd-btn" data-cmd="hold" data-act="hold" title="Hold position (H)">${icon('hold')}<span class="lbl">HOLD POS</span><kbd class="cmd-key" aria-hidden="true">H</kbd></button>
+        <button class="cmd-btn" data-cmd="capture" data-act="capture" title="Capture a strategic objective (C)">${icon('capture')}<span class="lbl">CAPTURE</span><kbd class="cmd-key" aria-hidden="true">C</kbd></button>
+        <button class="cmd-btn" data-cmd="repair" data-act="repair" title="Repair a damaged structure, or resume your own construction site (then tap/click it)">${icon('repair')}<span class="lbl">REPAIR</span></button>
+        <button class="cmd-btn" data-cmd="garrison" data-act="garrison" title="Garrison a building (G)">${icon('garrison')}<span class="lbl">GARRISON</span><kbd class="cmd-key" aria-hidden="true">G</kbd></button>
+        <button class="cmd-btn" data-cmd="ungarrison" data-act="ungarrison" title="Order infantry out of a building">${icon('ungarrison')}<span class="lbl">EXIT</span></button>
+        <button class="cmd-btn" data-cmd="return" data-act="return" title="Return aircraft / ship to base (R)">${icon('return')}<span class="lbl">RETURN</span><kbd class="cmd-key" aria-hidden="true">R</kbd></button>
+        <button class="cmd-btn" data-cmd="dive" data-act="dive" title="Dive or surface selected submarines (D)">${icon('submarine')}<span class="lbl">DIVE</span><kbd class="cmd-key" aria-hidden="true">D</kbd></button>
+        <div class="cmd-sep" data-cmd="supportSep"></div>
+        <button class="cmd-btn accent" data-cmd="build" data-act="build" title="Construction (B)">${icon('build')}<span class="lbl">BUILD</span><kbd class="cmd-key" aria-hidden="true">B</kbd></button>
+        <button class="cmd-btn" data-cmd="research" data-act="research" title="Research tree — unlock units and structures">${icon('research')}<span class="lbl">RESEARCH</span></button>
+        <button class="cmd-btn" data-cmd="box" data-act="box" title="Box selection">${icon('box')}<span class="lbl">BOX</span></button>
+        ${mobile ? `<button class="cmd-btn" data-cmd="groups" data-act="groups" title="Control groups">${icon('squad')}<span class="lbl">GROUPS</span></button>
+        <button class="cmd-btn" data-cmd="map" data-act="map" title="Tactical map">${icon('scope')}<span class="lbl">MAP</span></button>` : ''}
+        <button class="cmd-btn" data-cmd="debug" data-act="debug" title="Debug overlay (F3)">${icon('log')}<span class="lbl">DIAG</span></button>
       </div>`;
+  }
+
+  /**
+   * Show only the orders the current selection can actually issue. A tank has
+   * no garrison, repair or capture order, so those buttons disappear; a mixed
+   * group keeps every capability at least one member has, because the command
+   * is dispatched to that subset only.
+   */
+  private renderCommands(): void {
+    const root = this.root;
+    const game = this.game;
+    if (!root || !game) return;
+    const own = this.app.ownSelected();
+    const units = own.filter((e) => e.kind === 'unit');
+    const has = (predicate: (e: (typeof units)[number]) => boolean): boolean =>
+      units.some(predicate);
+    const armed = has((e) => (UNITS[e.defId]?.weapons?.length ?? 0) > 0);
+    const show: Record<string, boolean> = {
+      move: own.length > 0,
+      attack: armed,
+      attackMove: armed,
+      combatSep: armed,
+      stop:
+        units.length > 0 ||
+        own.some(
+          (e) => e.kind === 'building' && (BUILDINGS[e.defId]?.weapons?.length ?? 0) > 0,
+        ),
+      hold: units.length > 0,
+      capture: has((e) => !!UNITS[e.defId]?.canCapture && !e.garrisonId),
+      repair: has((e) => !!UNITS[e.defId]?.canBuild),
+      garrison: has((e) => !!UNITS[e.defId]?.canGarrison && !e.garrisonId),
+      ungarrison:
+        units.some((e) => !!e.garrisonId) ||
+        own.some(
+          (e) =>
+            e.kind === 'building' &&
+            game
+              .garrisonOccupants(e.id)
+              .some((occupant) => occupant.owner === this.app.localPlayerId),
+        ),
+      return: has((e) => {
+        const domain = UNITS[e.defId]?.domain;
+        return domain === 'air' || domain === 'naval';
+      }),
+      dive: has((e) => !!UNITS[e.defId]?.submarine),
+      supportSep: true,
+      build: true,
+      research: true,
+      box: true,
+      groups: true,
+      map: true,
+      debug: true,
+    };
+    root.querySelectorAll<HTMLElement>('[data-cmd]').forEach((button) => {
+      const key = button.dataset.cmd ?? '';
+      button.hidden = !(show[key] ?? true);
+    });
   }
 
   private selectionPanelMarkup(): string {
@@ -372,9 +512,14 @@ export class HUD {
     const tabs = PRODUCTION_TABS.map(({ id, label, icon: iconName }) =>
       `<button class="prod-tab ${this.tab === id ? 'active' : ''}" data-tab="${id}" aria-label="${label}" title="${label}">${icon(iconName, 'tab-icon')}<span class="rail-label">${label}</span></button>`,
     ).join('');
+    // Research is the last entry in the production rail rather than a separate
+    // control elsewhere: it belongs to the same panel it opens, and its bar
+    // keeps an active project visible while the tree is closed.
+    const researchTab = `<button class="prod-tab research-tab" id="rail-research" data-act="research" aria-label="Research" aria-haspopup="dialog" aria-expanded="false" title="Research tree">${icon('research', 'tab-icon')}<span class="rail-label">RESEARCH</span><span class="tab-research-bar"><i data-research-rail-fill></i></span></button>`;
     return `<aside class="production-sidebar" aria-label="Production">
       <nav class="prod-tabs" id="prod-tabs" aria-label="Production categories">
         ${tabs}
+        ${researchTab}
       </nav>
       <div class="sidebar-content">
         <div class="sidebar-head"><button class="sheet-close" data-act="close-sheets" aria-label="Close production">×</button></div>
@@ -391,8 +536,17 @@ export class HUD {
     </aside>`;
   }
 
+  /**
+   * The one control that survives hiding the HUD, so a screenshot can be taken
+   * of the battlefield alone and the interface brought back without a menu trip.
+   */
+  private hudToggleMarkup(): string {
+    return `<button class="hud-toggle" data-act="hud-toggle" aria-pressed="false" title="Hide HUD (U) — clean battlefield for screenshots" aria-label="Hide HUD">${icon('eyeOff')}<span>HUD</span></button>`;
+  }
+
   private desktopMarkup(game: Game): string {
     return `<div class="hud layout-desktop">
+      ${this.hudToggleMarkup()}
       ${this.railMarkup(game)}
       <div class="mode-banner hidden" id="mode-banner">
         <span id="mode-text"></span>
@@ -414,6 +568,7 @@ export class HUD {
 
   private mobileMarkup(game: Game): string {
     return `<div class="hud layout-mobile">
+      ${this.hudToggleMarkup()}
       ${this.mobileTopbarMarkup(game)}
       <div class="mode-banner hidden" id="mode-banner">
         <span id="mode-text"></span>
@@ -453,38 +608,88 @@ export class HUD {
   private bind(): void {
     const root = this.root;
     if (!root) return;
+    // Hover tracking for the two panels that are rebuilt wholesale. Assigned on
+    // the containers, which outlive the inner HTML they hold, so one listener
+    // each survives every re-render.
+    const prodBody = root.querySelector<HTMLElement>('#prod-body');
+    if (prodBody) {
+      prodBody.addEventListener('pointerenter', () => {
+        this.hoverPanel = 'prod';
+        this.hoverArmed = true;
+        this.hoverNode = null;
+      });
+      prodBody.addEventListener('pointermove', (event: PointerEvent) => this.rearmHover(event));
+      prodBody.addEventListener('pointerleave', () => this.releaseHover('prod'));
+    }
+    const selectionBody = root.querySelector<HTMLElement>('#selection-body');
+    if (selectionBody) {
+      selectionBody.addEventListener('pointerenter', () => {
+        this.hoverPanel = 'selection';
+        this.hoverArmed = true;
+        this.hoverNode = null;
+      });
+      selectionBody.addEventListener('pointermove', (event: PointerEvent) => this.rearmHover(event));
+      selectionBody.addEventListener('pointerleave', () => this.releaseHover('selection'));
+    }
     // Delegated and assigned (not added), so a repeated mount or bind can never
     // install a second handler and make a click toggle twice.
     root.onclick = (event: MouseEvent) => {
-      const target = event.target as Element | null;
-      const actEl = target?.closest<HTMLElement>('[data-act]');
-      if (actEl && root.contains(actEl)) {
-        event.stopPropagation();
-        this.action(actEl.dataset.act ?? '');
-        return;
-      }
-      const chip = target?.closest<HTMLElement>('[data-inspect]');
-      if (chip && root.contains(chip)) {
-        this.inspect(Number(chip.dataset.inspect));
-        return;
-      }
-      // A collapsed type card narrows the selection to that type instead of
-      // opening a single hull; the count is preserved in the panel header.
-      const typeCard = target?.closest<HTMLElement>('[data-select-type]');
-      if (typeCard && root.contains(typeCard)) {
-        this.app.narrowSelectionToType(typeCard.dataset.selectType ?? '');
-        return;
-      }
-      const tabEl = target?.closest<HTMLElement>('[data-tab]');
-      if (tabEl && root.contains(tabEl)) {
-        const next = (tabEl.dataset.tab as typeof this.tab) ?? 'base';
-        const close = this.layout === 'mobile' && this.panel === 'production' && this.tab === next;
-        this.tab = next;
-        root.querySelectorAll('.prod-tab').forEach((b) => b.classList.toggle('active', b === tabEl));
-        this.renderProduction(true);
-        if (this.layout === 'mobile') this.setPanel(close ? 'none' : 'production');
+      this.handleHudClick(event);
+      // A click is a deliberate change and takes priority over tooltip
+      // protection: without this the panel a player just clicked (start
+      // research, queue a unit) sat frozen until the pointer left it, so the
+      // command appeared to do nothing. Protection re-arms on the next move.
+      if (this.hoverPanel) {
+        this.hoverArmed = false;
+        this.flushHover(this.hoverPanel);
       }
     };
+    this.bindMinimap();
+  }
+
+  private handleHudClick(event: MouseEvent): void {
+    const root = this.root;
+    if (!root) return;
+    const target = event.target as Element | null;
+    const actEl = target?.closest<HTMLElement>('[data-act]');
+    if (actEl && root.contains(actEl)) {
+      event.stopPropagation();
+      this.action(actEl.dataset.act ?? '');
+      return;
+    }
+    const chip = target?.closest<HTMLElement>('[data-inspect]');
+    if (chip && root.contains(chip)) {
+      this.inspect(Number(chip.dataset.inspect));
+      return;
+    }
+    // A collapsed type card narrows the selection to that type instead of
+    // opening a single hull; the count is preserved in the panel header.
+    const typeCard = target?.closest<HTMLElement>('[data-select-type]');
+    if (typeCard && root.contains(typeCard)) {
+      this.app.narrowSelectionToType(typeCard.dataset.selectType ?? '');
+      return;
+    }
+    const tabEl = target?.closest<HTMLElement>('[data-tab]');
+    if (tabEl && root.contains(tabEl)) {
+      const next = (tabEl.dataset.tab as typeof this.tab) ?? 'base';
+      const close =
+        this.layout === 'mobile' &&
+        this.panel === 'production' &&
+        this.tab === next &&
+        !this.researchOpen;
+      this.researchOpen = false;
+      this.tab = next;
+      root.querySelector('.hud')?.classList.remove('research-open');
+      root.querySelectorAll('.prod-tab').forEach((b) => b.classList.toggle('active', b === tabEl));
+      this.renderProduction(true);
+      this.updateResearchRail();
+      if (this.layout === 'mobile') this.setPanel(close ? 'none' : 'production');
+    }
+  }
+
+  private bindMinimap(): void {
+    const root = this.root;
+    if (!root) return;
     const minimap = root.querySelector<HTMLCanvasElement>('#minimap');
     if (minimap) {
       const jump = (event: PointerEvent) => {
@@ -519,10 +724,40 @@ export class HUD {
     }
   }
 
+  /**
+   * Hide the chrome for a clean battlefield capture. The toggle is the only
+   * element left, and it flips its own icon so the way back is obvious.
+   */
+  private setHudHidden(hidden: boolean): void {
+    this.hudHidden = hidden;
+    this.applyHudVisibility();
+  }
+
+  /** U — the same toggle the pill offers, for a keyboard capture. */
+  toggleVisibility(): void {
+    this.setHudHidden(!this.hudHidden);
+  }
+
+  private applyHudVisibility(): void {
+    const hud = this.hudEl;
+    if (!hud) return;
+    hud.classList.toggle('hud-hidden', this.hudHidden);
+    const button = hud.querySelector<HTMLButtonElement>('.hud-toggle');
+    if (!button) return;
+    button.setAttribute('aria-pressed', String(this.hudHidden));
+    button.classList.toggle('is-off', this.hudHidden);
+    button.title = this.hudHidden ? 'Show HUD (U)' : 'Hide HUD (U) — clean battlefield for screenshots';
+    button.setAttribute('aria-label', this.hudHidden ? 'Show HUD' : 'Hide HUD');
+    button.innerHTML = `${icon(this.hudHidden ? 'eye' : 'eyeOff')}<span>HUD</span>`;
+  }
+
   private action(act: string): void {
     switch (act) {
       case 'pause':
         this.app.togglePause();
+        break;
+      case 'hud-toggle':
+        this.setHudHidden(!this.hudHidden);
         break;
       case 'copy-diagnostics':
         void this.app.copyDiagnostics();
@@ -570,14 +805,28 @@ export class HUD {
         this.app.commandDive();
         break;
       case 'grid-fix':
+        this.setResearchOpen(false);
         this.selectTab('base');
         this.app.beginPlacement('powerPlant');
         if (this.layout === 'mobile') this.setPanel('none');
         break;
       case 'build':
+        this.setResearchOpen(false);
         this.selectTab('base');
         this.renderSelection(true);
         if (this.layout === 'mobile') this.setPanel('production');
+        break;
+      case 'research':
+        this.toggleResearch();
+        break;
+      case 'research-close':
+        this.setResearchOpen(false);
+        break;
+      case 'research-start':
+        this.startSelectedResearch();
+        break;
+      case 'research-cancel':
+        this.app.cancelResearch();
         break;
       case 'objective':
         // Desktop has no sheet: the objective lives in the rail and opens the
@@ -595,6 +844,7 @@ export class HUD {
         this.setPanel('map');
         break;
       case 'close-sheets':
+        this.setResearchOpen(false);
         this.setPanel('none');
         break;
       case 'add-select':
@@ -638,7 +888,11 @@ export class HUD {
     if (now - this.lastUpdate > 110) {
       this.lastUpdate = now;
       this.renderResources();
-      this.renderSelection();
+      this.updateResearchRail();
+      // A hovered panel keeps its DOM: rebuilding it under the pointer is what
+      // made the research nodes' tooltips flash instead of opening.
+      if (this.hoverPanel === 'selection' && this.hoverArmed) this.pendingSelection = true;
+      else this.renderSelection();
       this.renderGroups();
       this.renderAddMode();
       this.decorateThumbnails();
@@ -653,10 +907,16 @@ export class HUD {
         phase.classList.toggle('is-night', dn.night > 0.6);
         phase.classList.toggle('is-transition', dn.night > 0.15 && dn.night < 0.85);
       }
-      const key = `${signature}|${this.tab}|${this.selectedKey()}|${Math.floor((this.app.localPlayer?.mats ?? 0) / 40)}|${Math.floor((this.app.localPlayer?.req ?? 0) / 20)}`;
+      const project = game.researchState(this.app.localPlayerId)?.project;
+      const researchKey = `${this.researchOpen ? 1 : 0}|${this.selectedResearchTech ?? ''}|${game.completedTechnologies(this.app.localPlayerId).join(',')}|${project?.techId ?? ''}|${game.hasResearchCentre(this.app.localPlayerId) ? 1 : 0}`;
+      const key = `${signature}|${this.tab}|${this.selectedKey()}|${Math.floor((this.app.localPlayer?.mats ?? 0) / 40)}|${Math.floor((this.app.localPlayer?.req ?? 0) / 20)}|${researchKey}`;
       if (key !== this.lastProductionKey) {
-        this.lastProductionKey = key;
-        this.renderProduction();
+        if (this.hoverPanel === 'prod' && this.hoverArmed) {
+          this.pendingProductionKey = key;
+        } else {
+          this.lastProductionKey = key;
+          this.renderProduction();
+        }
       }
       if (this.app.debug) this.renderDebug();
       this.renderPerfReadout();
@@ -665,6 +925,7 @@ export class HUD {
     // frame, not the throttled HUD refresh: sampling it at 110 ms made the
     // radial wipe visibly step instead of sweep.
     this.refreshProductionProgress();
+    this.refreshResearchProgress();
     if (now - this.lastMinimap > 50) {
       this.lastMinimap = now;
       this.drawMinimap();
@@ -683,11 +944,53 @@ export class HUD {
     el.textContent = `${perf.fps} FPS · ${perf.frameMs.toFixed(1)} ms · SIM ${perf.simMs.toFixed(2)} ms · ${perf.entities} ENT`;
   }
 
+  /**
+   * Leaving a panel flushes whatever its hover deferred, so a card never stays
+   * stale only because the pointer happened to be resting on it.
+   */
+  private releaseHover(name: 'prod' | 'selection'): void {
+    if (this.hoverPanel !== name) return;
+    this.hoverPanel = null;
+    this.hoverArmed = true;
+    this.hoverNode = null;
+    this.flushHover(name);
+  }
+
+  /**
+   * Tooltip protection is only for a pointer that is *resting* on something.
+   * Moving onto a different node — a different card, or the rebuilt version of
+   * the one under the cursor — re-arms it.
+   */
+  private rearmHover(event: PointerEvent): void {
+    const node = event.target as Element | null;
+    if (node === this.hoverNode) return;
+    this.hoverNode = node;
+    this.hoverArmed = true;
+  }
+
+  /** Apply whatever a panel's hover (or a click in it) deferred. */
+  private flushHover(name: 'prod' | 'selection'): void {
+    if (name === 'selection' && this.pendingSelection) {
+      this.pendingSelection = false;
+      this.renderSelection(true);
+    }
+    if (
+      name === 'prod' &&
+      this.pendingProductionKey &&
+      this.pendingProductionKey !== this.lastProductionKey
+    ) {
+      this.lastProductionKey = this.pendingProductionKey;
+      this.pendingProductionKey = '';
+      this.renderProduction();
+    }
+  }
+
   private selectedKey(): string {
     return this.app.selected.join(',');
   }
 
   showBuildTab(): void {
+    this.setResearchOpen(false);
     this.selectTab('base');
     this.renderSelection(true);
     if (this.layout === 'mobile') this.setPanel('production');
@@ -697,6 +1000,61 @@ export class HUD {
     const tabs = PRODUCTION_TABS.map((t) => t.id);
     const index = tabs.indexOf(this.tab);
     this.selectTab(tabs[(index + 1) % tabs.length]);
+  }
+
+  /** Open or close the research tree without leaving the battlefield. */
+  private toggleResearch(): void {
+    this.setResearchOpen(!this.researchOpen);
+  }
+
+  private setResearchOpen(open: boolean): void {
+    const wasOpen = this.researchOpen;
+    this.researchOpen = open;
+    if (open) {
+      const game = this.game;
+      const projectTech = game?.researchState(this.app.localPlayerId)?.project?.techId;
+      if (!this.selectedResearchTech || !TECHS[this.selectedResearchTech] || !wasOpen) {
+        const techs = game?.research.techs ?? [];
+        const done = new Set(game?.completedTechnologies(this.app.localPlayerId) ?? []);
+        this.selectedResearchTech =
+          (projectTech && TECHS[projectTech] ? projectTech : null) ??
+          techs.find((tech) => !done.has(tech.id))?.id ??
+          techs[0]?.id ??
+          null;
+      }
+    }
+    if (this.layout === 'mobile') {
+      if (open) this.panel = 'production';
+      else if (this.panel === 'production') this.panel = 'none';
+      this.syncPanelState();
+    }
+    // The tree is the one sidebar view that needs more than a card column: two
+    // tier nodes side by side plus a detail block do not fit the production
+    // width, so the shell widens only while it is open.
+    this.root?.querySelector('.hud')?.classList.toggle('research-open', open);
+    this.root?.querySelectorAll<HTMLElement>('.prod-tab').forEach((tab) => {
+      tab.classList.toggle('active', !this.researchOpen && tab.dataset.tab === this.tab);
+    });
+    this.lastProductionKey = '';
+    this.renderProduction(true);
+    this.updateResearchRail();
+  }
+
+  private selectResearchTech(techId: string): void {
+    if (!TECHS[techId]) return;
+    this.selectedResearchTech = techId;
+    this.lastProductionKey = '';
+    this.renderProduction(true);
+  }
+
+  /** Queue the selected node; the authoritative tick owns the project state. */
+  private startSelectedResearch(): void {
+    const techId = this.selectedResearchTech;
+    if (!techId || !TECHS[techId]) return;
+    this.app.startResearch(techId);
+    // Never mark the node active here. The next authoritative update changes
+    // the project and the normal keyed render picks it up.
+    this.lastProductionKey = '';
   }
 
   private selectTab(tab: ProductionTab): void {
@@ -730,6 +1088,7 @@ export class HUD {
   /** Mobile panel state is presentation-only; the simulation never reads it. */
   private setPanel(requested: HudPanel): void {
     if (this.layout !== 'mobile') return;
+    if (requested !== 'production') this.researchOpen = false;
     if (requested === 'none') this.panel = 'none';
     else this.panel = toggleHudPanel(this.panel, requested as Exclude<HudPanel, 'none'>);
     this.syncPanelState();
@@ -770,19 +1129,47 @@ export class HUD {
     const force_ = this.root.querySelector('#res-force');
     const forceSub = this.root.querySelector('#res-force-sub');
     const power = game.powerStatus(p.id);
-    const powerEl = this.root.querySelector('#res-power');
-    const powerSub = this.root.querySelector('#res-power-sub');
-    const powerMobile = this.root.querySelector('#res-power-mobile');
-    if (powerEl) powerEl.textContent = `${power.supply} / ${power.demand}`;
-    if (powerSub) {
-      powerSub.textContent = power.brownout
-        ? `BROWNOUT · ${Math.round(power.ratio * 100)}%`
-        : power.demand === 0
-          ? 'NO DRAW'
-          : `RESERVE ${power.supply - power.demand}`;
-      powerSub.classList.toggle('low', power.brownout);
-    }
-    if (powerMobile) powerMobile.textContent = `${power.supply}/${power.demand}`;
+    // The rail shows load, not two numbers: the bar is demand against supply,
+    // full and red on a deficit. Exact figures stay in the tooltip and the
+    // screen-reader value so the grid reads at a glance like a meter.
+    const load =
+      power.demand === 0
+        ? 0
+        : power.supply <= 0
+          ? 1
+          : Math.min(1, power.demand / power.supply);
+    const loadState = power.brownout
+      ? 'BROWNOUT'
+      : power.demand === 0
+        ? 'NO LOAD'
+        : power.demand / power.supply >= 0.85
+          ? 'STRAINED'
+          : 'STABLE';
+    // Hovering the meter explains the whole grid, not just the totals: the
+    // same grouped snapshot the structure cards carry, so a deficit can be
+    // traced to the structures causing it without opening a panel.
+    const grid = this.currentGridReport();
+    const gridTitle = grid
+      ? powerBreakdownLines(grid).join('\n')
+      : power.brownout
+        ? `Grid deficit: ${power.supply} supply for ${power.demand} demand — production and construction at ${Math.round(power.ratio * 100)}%`
+        : `Grid: ${power.supply} supply, ${power.demand} demand`;
+    this.root.querySelectorAll<HTMLElement>('[data-power-meter]').forEach((meter) => {
+      meter.classList.toggle('brownout', power.brownout);
+      meter.classList.toggle('strained', !power.brownout && loadState === 'STRAINED');
+      meter.setAttribute('aria-valuenow', String(Math.round(load * 100)));
+      meter.setAttribute(
+        'aria-valuetext',
+        `${loadState.toLowerCase()} — ${power.supply} supply for ${power.demand} demand`,
+      );
+      if (meter.title !== gridTitle) meter.setAttribute('title', gridTitle);
+    });
+    this.root.querySelectorAll<HTMLElement>('[data-power-fill]').forEach((fill) => {
+      fill.style.width = `${Math.round(load * 100)}%`;
+    });
+    this.root
+      .querySelectorAll<HTMLElement>('[data-power-state]')
+      .forEach((label) => (label.textContent = loadState));
     const alert = this.root.querySelector<HTMLElement>('#grid-alert');
     const alertCopy = this.root.querySelector('#grid-alert-copy');
     if (alert) {
@@ -793,22 +1180,17 @@ export class HUD {
     this.root
       .querySelectorAll<HTMLElement>('[data-build="powerPlant"]')
       .forEach((card) => card.classList.toggle('suggested', power.brownout));
+    // On a deficit every draw chip turns red, so the cards themselves show
+    // where the demand is coming from while the meter shows how far short it is.
+    this.root
+      .querySelectorAll<HTMLElement>('.build-card .cost-chip.power:not(.supply)')
+      .forEach((chip) => chip.classList.toggle('deficit', power.brownout));
     // The radar card is the answer to the collapsed tactical map: keep it
     // flagged in BASE whenever the local player has no operational radar.
     const radarOnline = this.minimapIsOnline();
     this.root
       .querySelectorAll<HTMLElement>('[data-build="radar"]')
       .forEach((card) => card.classList.toggle('suggested', !radarOnline));
-    const railPower = this.root.querySelector('#rail-power');
-    if (railPower) {
-      railPower.classList.toggle('brownout', power.brownout);
-      railPower.setAttribute(
-        'title',
-        power.brownout
-          ? `Grid deficit: ${power.supply} supply for ${power.demand} demand — production and construction at ${Math.round(power.ratio * 100)}%`
-          : `Grid: ${power.supply} supply, ${power.demand} demand`,
-      );
-    }
     if (mats) mats.textContent = Math.floor(p.mats).toLocaleString();
     if (req) req.textContent = Math.floor(p.req).toLocaleString();
     if (matsRate) {
@@ -836,33 +1218,21 @@ export class HUD {
   private renderObjective(): void {
     if (!this.game || !this.root) return;
     const game = this.game;
-    const live = game.state.entities.filter((e) => e.hp > 0);
-    const objectives = live.filter((e) => e.kind === 'building' && !!BUILDINGS[e.defId]?.capturable);
-    const relays = objectives.filter((e) => e.defId === 'relay');
-    const depots = objectives.filter((e) => !!BUILDINGS[e.defId]?.matsPerSec);
-    const stations = objectives.filter((e) => !!BUILDINGS[e.defId]?.scanRadius);
-    const owned = (list: Entity[]): number => list.filter((e) => e.owner === this.app.localPlayerId).length;
-    const hq = game.state.entities.find(
-      (e) => e.owner === this.app.localPlayerId && e.defId === 'commandPost' && e.hp > 0,
-    );
-    const enemyHq = game.state.entities.find(
-      (e) => e.owner !== this.app.localPlayerId && e.defId === 'commandPost' && e.hp > 0,
-    );
-    const parts = [`Relays ${owned(relays)}/${relays.length}`];
-    if (depots.length > 0) parts.push(`Depots ${owned(depots)}/${depots.length}`);
-    if (stations.length > 0) parts.push(`Radar ${owned(stations)}/${stations.length}`);
-    const passive = game.passiveMatsRate(this.app.localPlayerId);
-    if (passive > 0) parts.push(`+${passive.toFixed(2)} M/s`);
-    if (!hq) parts.push('Command Post lost');
-    else if (!enemyHq) parts.push('Enemy HQ destroyed');
-    const subText = parts.join(' · ');
+    const progress = objectiveProgress(game);
     this.root.querySelectorAll<HTMLElement>('[data-objective-sub]').forEach((sub) => {
-      sub.textContent = subText;
-      sub.classList.toggle('bad', !hq);
+      sub.textContent = progress.summary;
+      sub.classList.toggle('bad', progress.commandPostLost);
     });
     this.root.querySelectorAll<HTMLElement>('[data-objective-primary]').forEach((primary) => {
-      primary.textContent = primaryObjective(game);
+      primary.textContent = progress.primary;
     });
+    // The rail is only a button now: the hint carries the objective copy on
+    // hover, and a lost command post flags the button itself.
+    const railObjective = this.root.querySelector<HTMLElement>('#rail-objective-btn');
+    if (railObjective) {
+      railObjective.classList.toggle('bad', progress.commandPostLost);
+      railObjective.setAttribute('title', `${progress.primary} — open the briefing`);
+    }
     // The touch sheet has room for the supporting objectives; the desktop rail
     // shows the primary alone and opens the fuller briefing on click. Resolve
     // the operation from campaign content so a save written before objective
@@ -1004,6 +1374,7 @@ export class HUD {
   private renderSelection(force = false): void {
     if (!this.game || !this.root) return;
     const game = this.game;
+    this.renderCommands();
     const entities = this.app.selectedEntities();
     const countText = entities.length === 0 ? 'NONE' : `${entities.length} SELECTED`;
     this.root.querySelectorAll<HTMLElement>('#sel-count').forEach((count) => {
@@ -1152,6 +1523,13 @@ export class HUD {
             .replace('-tile scan', ' tile scan')
         : '';
       const power = BUILDINGS[e.defId]?.power ?? 0;
+      // A retrofit is part of the structure's supply, so the card reports the
+      // grid contribution the simulation actually counts, not the bare hull.
+      const modulePower = installedModuleEffects(e.modules ?? []).power;
+      const gridPower = power + modulePower;
+      const powerTitle = modulePower
+        ? `Structure ${power > 0 ? `+${power}` : power} · modules ${modulePower > 0 ? `+${modulePower}` : modulePower}`
+        : '';
       const compactState = e.construction
         ? `BUILDING ${Math.round(e.buildProgress * 100)}%`
         : objective
@@ -1167,7 +1545,7 @@ export class HUD {
           <div class="stat"><span>${benefit ? 'BENEFIT' : 'QUEUE'}</span><b>${benefit ? escapeHtml(benefit) : `${e.queue.length}${q ? ` · ${UNITS[q.defId]?.shortName ?? q.defId}` : ''}`}</b></div>
           <div class="stat"><span>VISION</span><b>${def.vision} tiles</b></div>
           <div class="stat"><span>SENSORS</span><b>${escapeHtml(sensorFor(e).label)}</b></div>
-          <div class="stat"><span>POWER</span><b>${power > 0 ? `+${power}` : `${power}`}</b></div>
+          <div class="stat"><span>POWER</span><b${powerTitle ? ` title="${escapeHtml(powerTitle)}"` : ''}>${gridPower > 0 ? `+${gridPower}` : `${gridPower}`}</b></div>
         </div>`;
     }
     // Status lines are single fixed-height rows in the right-hand column, which
@@ -1225,10 +1603,14 @@ export class HUD {
         ${hint ? `<div class="sel-hint">${hint}</div>` : ''}
       </div>
       <div class="sel-actions">
+        ${isOwn ? this.abilityButtons([e]) : ''}
+        ${isOwn ? this.moduleButtons([e]) : ''}
         ${isOwn ? this.stanceButtons([e]) : ''}
         ${this.garrisonOrderButtons([e])}
         ${isOwn ? this.groupChips([e]) : ''}
       </div>`;
+    this.bindAbilityButtons();
+    this.bindModuleButtons();
     this.bindStanceButtons();
     this.bindGarrisonButtons();
     this.decorateThumbnails();
@@ -1304,6 +1686,97 @@ export class HUD {
         <span class="chip-hp"><i class="${hpClass(frac)}" style="width:${frac * 100}%"></i></span>
       </span>
     </button>`;
+  }
+
+  /**
+   * Researched abilities this hull can use.
+   *
+   * The row is built from the simulation's own availability, so a hull with no
+   * researched ability shows nothing at all — a tank's selection box is exactly
+   * what it was before. Each button acts on this one hull: the reload belongs to
+   * the crew that fired, not to the type. A button on reload stays visible and
+   * reports its remaining time instead of vanishing, because the player needs to
+   * know the capability exists and when it returns.
+   */
+  private abilityButtons(entities: Entity[]): string {
+    const game = this.game;
+    if (!game) return '';
+    const unit = entities.find(
+      (e) => e.kind === 'unit' && e.owner === this.app.localPlayerId && e.hp > 0,
+    );
+    if (!unit) return '';
+    const actions = abilityActions(game, this.app.localPlayerId, unit.id);
+    if (actions.length === 0) return '';
+    return `<div class="ability-row">
+      ${actions
+        .map(
+          (action) => `<button class="ability-btn ${action.ready ? 'ready' : 'reloading'}" data-ability="${escapeHtml(action.upgradeId)}" data-ability-unit="${unit.id}" title="${escapeHtml(`${action.name} — ${action.detail}`)}" aria-label="${escapeHtml(`${action.name}, ${action.detail}`)}" aria-disabled="${action.ready ? 'false' : 'true'}">
+            ${icon(action.icon, 'ability-icon')}
+            <span class="ability-copy"><b>${escapeHtml(action.name.toUpperCase())}</b><span>${escapeHtml(action.detail)}</span></span>
+            <kbd class="ability-key" aria-hidden="true">${escapeHtml(action.label)}</kbd>
+          </button>`,
+        )
+        .join('')}
+    </div>`;
+  }
+
+  private bindAbilityButtons(): void {
+    this.root?.querySelectorAll<HTMLElement>('[data-ability]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const abilityId = btn.dataset.ability ?? '';
+        const unitId = Number(btn.dataset.abilityUnit);
+        if (!abilityId || !Number.isFinite(unitId)) return;
+        this.app.useAbility(unitId, abilityId);
+        this.renderSelection(true);
+      });
+    });
+  }
+
+  /**
+   * Researched modules this structure can buy, and the ones it already holds.
+   *
+   * Built from the simulation's own availability, so a structure with nothing
+   * researched shows no row at all — a barracks card is exactly what it was.
+   * Each button buys the retrofit for this one structure, which is the point of
+   * a per-building module: two plants are two purchases. An installed module
+   * stays on the row reporting what it adds rather than disappearing.
+   */
+  private moduleButtons(entities: Entity[]): string {
+    const game = this.game;
+    if (!game) return '';
+    const building = entities.find(
+      (e) =>
+        e.kind === 'building' &&
+        e.owner === this.app.localPlayerId &&
+        e.hp > 0 &&
+        !e.construction,
+    );
+    if (!building) return '';
+    const actions = moduleActions(game, this.app.localPlayerId, building.id);
+    if (actions.length === 0) return '';
+    return `<div class="ability-row module-row">
+      ${actions
+        .map(
+          (action) => `<button class="ability-btn module-btn ${action.ready ? 'ready' : action.installed ? 'installed' : 'reloading'}" data-module="${escapeHtml(action.moduleId)}" data-module-building="${building.id}" title="${escapeHtml(`${action.name} — ${action.detail}`)}" aria-label="${escapeHtml(`${action.name}, ${action.detail}`)}" aria-disabled="${action.ready ? 'false' : 'true'}">
+            ${icon(action.icon, 'ability-icon')}
+            <span class="ability-copy"><b>${escapeHtml(action.name.toUpperCase())}</b><span>${escapeHtml(action.detail)}</span></span>
+            <kbd class="ability-key" aria-hidden="true">${escapeHtml(action.label)}</kbd>
+          </button>`,
+        )
+        .join('')}
+    </div>`;
+  }
+
+  private bindModuleButtons(): void {
+    this.root?.querySelectorAll<HTMLElement>('[data-module]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const moduleId = btn.dataset.module ?? '';
+        const buildingId = Number(btn.dataset.moduleBuilding);
+        if (!moduleId || !Number.isFinite(buildingId)) return;
+        this.app.installModule(buildingId, moduleId);
+        this.renderSelection(true);
+      });
+    });
   }
 
   /** Stance is the only order control in the panel; orders live in the command bar. */
@@ -1423,6 +1896,12 @@ export class HUD {
     const game = this.game;
     const body = this.root.querySelector('#prod-body');
     if (!body) return;
+    if (this.researchOpen) {
+      body.innerHTML = this.researchMarkup();
+      this.bindResearch();
+      this.decorateThumbnails();
+      return;
+    }
     const structurePanel = this.tab === 'base' || this.tab === 'defence';
     if (structurePanel) {
       body.innerHTML = this.buildMarkup(this.tab === 'defence' ? 'defence' : 'base');
@@ -1444,6 +1923,7 @@ export class HUD {
       body.innerHTML = `<div class="prod-empty">No ${DOMAIN_LABEL[this.tab] ?? this.tab.toUpperCase()} production facility. Build one from the BASE panel.</div>`;
       return;
     }
+    const allianceId = this.app.localPlayer ? tryIdentityDef(this.app.localPlayer.factionId)?.allianceId : undefined;
     const html = facilities.map((f) => {
       const def = BUILDINGS[f.defId];
       // The panel shows exactly what the simulation will accept for this
@@ -1452,15 +1932,28 @@ export class HUD {
       const cards = list.map((id) => {
         const udef = UNITS[id];
         if (!udef) return '';
-        const national = udef.variantOf ? '<span class="u-national">NATIONAL</span>' : '';
+        // Every alliance platform is also a variant, so the badge keys on the
+        // national marker instead: only a nation-specific definition earns it.
+        const national = udef.national ? '<span class="u-national">NATIONAL</span>' : '';
         const status = game.productionStatus(this.app.localPlayerId, f.id, id);
         const queued = productionCardState(f.queue, id);
         const reorderable = queued.queued > 0 && f.queue.some((item) => item.defId !== id);
         const dragHint = reorderable ? ' Drag to set production priority.' : '';
-        const title = status.ok ? `${udef.description}${dragHint}` : `${status.reason}${dragHint}`;
-        const block = status.ok ? null : productionBlockReason(status.reason);
+        const researchMissing = game.missingResearchForUnit(this.app.localPlayerId, id);
+        const researchLocked = researchMissing.length > 0;
+        const researchRequired = researchNames(researchMissing, allianceId);
+        const title = researchLocked
+          ? `${udef.description} — requires ${researchRequired} research.${dragHint}`
+          : status.ok
+            ? `${udef.description}${dragHint}`
+            : `${status.reason}${dragHint}`;
+        const block = researchLocked
+          ? { text: `RESEARCH ${researchRequired.toUpperCase()}`, tone: 'research' as const }
+          : status.ok
+            ? null
+            : productionBlockReason(status.reason);
         const disabled = !status.ok && !reorderable ? 'disabled' : '';
-        const unlocked = (game.missingTech(this.app.localPlayerId, id) ?? []).length === 0;
+        const unlocked = !researchLocked;
         const commander = this.app.localPlayer;
         const payable =
           !!commander && commander.mats >= udef.cost.mats && commander.req >= udef.cost.req;
@@ -1469,6 +1962,7 @@ export class HUD {
           'unit-card',
           queued.active ? 'training' : '',
           status.ok ? '' : 'unavailable',
+          researchLocked ? 'locked' : '',
           block ? `blocked-${block.tone}` : '',
           reorderable ? 'reorderable' : '',
         ].filter(Boolean).join(' ');
@@ -1753,20 +2247,29 @@ export class HUD {
   /** One structure panel per category: BASE sites infrastructure, DEFENCE sites guns. */
   private buildMarkup(tab: 'base' | 'defence'): string {
     const p = this.app.localPlayer;
+    // One grid snapshot for the whole panel: every card's hover copy answers
+    // "why am I browning out?" with the same numbers the meter is showing.
+    const grid = this.currentGridReport();
     const engineer = this.game?.entitiesOf(this.app.localPlayerId, 'unit').find((e) => UNITS[e.defId]?.canBuild);
     const roster = this.game?.rosterFor(this.app.localPlayerId);
+    const allianceId = p ? tryIdentityDef(p.factionId)?.allianceId : undefined;
     const cards = BUILDABLE_BY_PLAYER
       .filter((def) => structureTab(!!def.weapons?.length) === tab)
       .filter((def) => !roster || roster.buildings.includes(def.id))
       .map((def) => {
         const affordable = p ? p.mats >= def.cost.mats && p.req >= def.cost.req : false;
         // The structure tree is visible even when locked, so the sidebar reads
-        // as a progression rather than hiding half the roster. A locked card
-        // carries the structure that opens it; affordability still dims the
-        // cost line, exactly as it does on a unit card.
+        // as a progression rather than hiding half the roster. Research is a
+        // separate gate from a missing prerequisite structure; a card carries
+        // whichever applies, and the tooltip keeps both visible.
+        const researchMissing =
+          this.game?.missingResearchForBuilding(this.app.localPlayerId, def.id) ?? [];
+        const researchRequired = researchNames(researchMissing, allianceId);
+        const researchLocked = researchMissing.length > 0;
         const missing = this.game?.missingTech(this.app.localPlayerId, def.id) ?? [];
         const required = missing.map((m) => m.name).join(' and ');
-        const locked = missing.length > 0;
+        const structureLocked = missing.length > 0;
+        const locked = researchLocked || structureLocked;
         // The reverse of the gate: what this structure opens for the roster the
         // player actually fields. The tree is visible on the locked cards; this
         // makes the other half of it legible from the structure that opens it.
@@ -1785,29 +2288,59 @@ export class HUD {
             ? 'not enough materials'
             : 'not enough requisition';
         const unlockNote = unlocks.length > 0 ? ` Unlocks ${unlocks.join(', ')}.` : '';
-        const title = `${locked
-          ? `${def.description} — requires ${required}`
-          : engineer
-            ? affordable
-              ? def.description
-              : `${def.description} — ${shortfall}`
-            : `${def.description} — requires a combat engineer`}${unlockNote}`;
-        const block = locked
-          ? `NEEDS ${required.toUpperCase()}`
-          : !engineer
-            ? 'NEEDS ENGINEER'
-            : affordable ? '' : shortfall.toUpperCase();
+        const power = def.power ?? 0;
+        const gridNote = grid
+          ? powerBreakdownLines(grid, { id: def.id, name: def.name, power }).join('\n')
+          : '';
+        const gateNotes = [
+          researchLocked ? `requires ${researchRequired} research` : '',
+          structureLocked ? `requires ${required}` : '',
+        ].filter(Boolean);
+        const title = `${def.description}${
+          gateNotes.length > 0
+            ? ` — ${gateNotes.join('; ')}`
+            : !engineer
+              ? ' — requires a combat engineer'
+              : affordable
+                ? ''
+                : ` — ${shortfall}`
+        }${unlockNote}${gridNote ? `\n\n${gridNote}` : ''}`;
+        const block = researchLocked
+          ? `RESEARCH ${researchRequired.toUpperCase()}`
+          : structureLocked
+            ? `NEEDS ${required.toUpperCase()}`
+            : !engineer
+              ? 'NEEDS ENGINEER'
+              : affordable ? '' : shortfall.toUpperCase();
         return `<button class="build-card${affordable ? '' : ' unavailable'}${locked ? ' locked' : ''}" data-build="${def.id}" ${engineer && !locked ? '' : 'disabled'} title="${escapeHtml(title)}">
           ${def.id === 'powerPlant' ? '<span class="b-flag">GRID FIX</span>' : def.id === 'radar' ? '<span class="b-flag">RADAR</span>' : ''}
           ${this.thumbMarkup('building', def.id, this.teamColor(), 'card', def.icon, 'b-thumb', 0, cardArtState(!locked, affordable))}
           <span class="b-copy">
-            <span class="b-name">${escapeHtml(def.name)}${def.variantOf ? '<span class="u-national">NATIONAL</span>' : ''}</span>
-            ${block ? `<span class="b-req${locked ? '' : ' short'}">${escapeHtml(block)}</span>` : ''}
+            <span class="b-name">${escapeHtml(def.name)}${def.national ? '<span class="u-national">NATIONAL</span>' : ''}</span>
+            ${block ? `<span class="b-req${researchLocked ? ' research' : locked ? '' : ' short'}">${escapeHtml(block)}</span>` : ''}
             ${costChips(def.cost.mats, def.cost.req, def.buildTime)}
+            ${powerChip(power)}
           </span>
         </button>`;
       }).join('');
     return `<div class="build-grid">${cards}</div>`;
+  }
+
+  /**
+   * Group the local player's operational structures the way the grid counts
+   * them: under-construction and destroyed buildings contribute nothing.
+   */
+  private currentGridReport(): GridReport | null {
+    const game = this.game;
+    if (!game) return null;
+    return gridReport(
+      game.entitiesOf(this.app.localPlayerId, 'building').map((e) => ({
+        defId: e.defId,
+        construction: e.construction,
+        hp: e.hp,
+        modules: e.modules,
+      })),
+    );
   }
 
   private bindBuildCards(): void {
@@ -1818,6 +2351,183 @@ export class HUD {
         if (this.layout === 'mobile') this.setPanel('none');
       });
     });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Research                                                           */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * The complete tree in the production sidebar: four branch rows, two tier
+   * nodes each, an active-project strip and one detail block for the selected
+   * node. The branches stay visible so progression is readable at a glance;
+   * costs and duration sit on every node, while the longer description and the
+   * exact unlock names live in the detail block instead of eight repeated
+   * paragraphs.
+   */
+  private researchMarkup(): string {
+    const game = this.game;
+    const p = this.app.localPlayer;
+    if (!game || !p) return '<div class="prod-empty">Research is unavailable.</div>';
+    const owner = this.app.localPlayerId;
+    const identity = tryIdentityDef(p.factionId);
+    const allianceId = identity?.allianceId;
+    const completed = game.completedTechnologies(owner);
+    const completedSet = new Set(completed);
+    const project = game.researchState(owner)?.project ?? null;
+    const hasCentre = game.hasResearchCentre(owner);
+    const active = activeResearchView(project, allianceId, game.research);
+    const groups = researchBranchGroups(game.research);
+    const input = {
+      completed,
+      project,
+      mats: p.mats,
+      req: p.req,
+      hasCentre,
+      allianceId,
+      factionId: p.factionId,
+    };
+    const selectedTech = this.selectedResearchTech ? TECHS[this.selectedResearchTech] : undefined;
+    const selectedView = selectedTech ? researchNodeState(selectedTech, input, game.research) : null;
+    const rate = game.researchRate(owner);
+    const pauseReason = game.researchPauseReason(owner);
+
+    const activeMarkup = active
+      ? `<section class="research-active ${pauseReason ? 'paused' : ''}" aria-label="Active research">
+          <div class="research-active-head"><span>ACTIVE PROJECT</span><span data-research-rate>${Math.round(rate * 100)}% SPEED</span></div>
+          <div class="research-active-title"><b>${escapeHtml(active.name)}</b><span data-research-remaining>${Math.ceil(active.remaining)}s</span></div>
+          <div class="research-progress" role="progressbar" aria-label="Research progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${active.percent}"><i data-research-fill style="width:${active.percent}%"></i></div>
+          <div class="research-active-meta">${costChips(active.tech.cost.mats, active.tech.cost.req, active.total)}<span class="research-committed">COMMITTED</span></div>
+          <div class="research-active-note" data-research-note>${escapeHtml(pauseReason ?? 'Operational · advancing on the simulation clock.')}</div>
+          <button class="research-cancel" data-act="research-cancel" ${hasCentre ? '' : 'disabled'} title="${hasCentre ? 'Cancel the project and refund its cost' : 'An operational Research Centre is required to cancel'}">CANCEL & REFUND</button>
+        </section>`
+      : `<section class="research-idle" aria-label="Research idle">
+          <div><span class="eyebrow">NO ACTIVE PROJECT</span><b>${hasCentre ? 'RESEARCH CENTRE ONLINE' : 'RESEARCH CENTRE OFFLINE'}</b></div>
+          <p>${hasCentre ? 'Select a technology below and start research.' : 'Build an operational Research Centre from the BASE panel to begin.'}</p>
+        </section>`;
+
+    const branches = groups.map((group) => {
+      const done = group.nodes.filter((tech) => completedSet.has(tech.id)).length;
+      const nodes = group.nodes.map((tech) => {
+        const view = researchNodeState(tech, input, game.research);
+        const selected = tech.id === selectedTech?.id;
+        return `<button class="research-node state-${view.status}${selected ? ' selected' : ''}" data-act="research-select" data-tech="${escapeHtml(tech.id)}" aria-pressed="${selected}" aria-label="${escapeHtml(view.name)} — ${escapeHtml(view.label)}. ${escapeHtml(view.reason)}" title="${escapeHtml(`${view.name} — ${view.reason}`)}">
+          <span class="research-node-top"><span class="research-node-icon">${icon(tech.icon)}</span><span class="research-node-state">${escapeHtml(view.label)}</span></span>
+          <b class="research-node-name">${escapeHtml(view.name)}</b>
+          <span class="research-node-cost">${tech.cost.mats}M · ${tech.cost.req}R · ${tech.seconds}s</span>
+        </button>`;
+      }).join('');
+      return `<section class="research-branch" data-branch="${group.branch}">
+        <div class="research-branch-head"><span>${escapeHtml(group.label.toUpperCase())}</span><span>${done}/${group.nodes.length}</span></div>
+        <div class="research-tier-row">${nodes}</div>
+      </section>`;
+    }).join('');
+
+    const detail = selectedTech && selectedView
+      ? `<section class="research-detail" aria-live="polite">
+          <div class="research-detail-head"><span>${BRANCH_NAMES[selectedTech.branch].toUpperCase()} · TIER ${selectedTech.tier}</span><h4>${escapeHtml(selectedView.name)}</h4></div>
+          <p>${escapeHtml(selectedTech.description)}</p>
+          <div class="research-effects"><span>UNLOCKS</span><p>${escapeHtml(this.researchEffectLabels(selectedTech))}</p></div>
+          <div class="research-detail-costs">${costChips(selectedTech.cost.mats, selectedTech.cost.req, selectedTech.seconds)}</div>
+          <div class="research-requirement"><span>PREREQUISITES</span><b>${escapeHtml(this.researchPrerequisiteNames(selectedTech, allianceId))}</b></div>
+          <p class="research-reason state-${selectedView.status}">${escapeHtml(selectedView.reason)}</p>
+          <button class="research-start" data-act="research-start" ${selectedView.canStart ? '' : 'disabled'} title="${escapeHtml(selectedView.reason)}">${selectedView.canStart ? 'START RESEARCH' : selectedView.label}</button>
+        </section>`
+      : '<div class="research-detail empty">Select a technology to inspect it.</div>';
+
+    return `<div class="research-panel">
+      <header class="research-head"><div><span class="eyebrow">RESEARCH</span><h3>${completed.length}/${game.research.techs.length} TECHNOLOGIES</h3></div><button class="research-close" data-act="research-close" aria-label="Close research">×</button></header>
+      ${activeMarkup}
+      <div class="research-branches">${branches}</div>
+      ${detail}
+    </div>`;
+  }
+
+  /** Concrete names this player's roster gains from one technology. */
+  private researchEffectLabels(tech: TechDef): string {
+    const game = this.game;
+    if (!game) return 'Doctrine effects';
+    const owner = this.app.localPlayerId;
+    const labels: string[] = [];
+    for (const effect of tech.effects) {
+      if (effect.kind === 'unlockUnit') {
+        const actual = game.unitIdFor(owner, effect.slot) ?? effect.slot;
+        labels.push(UNITS[actual]?.name ?? effect.slot);
+      } else if (effect.kind === 'unlockBuilding') {
+        const actual = game.buildingIdFor(owner, effect.slot) ?? effect.slot;
+        labels.push(BUILDINGS[actual]?.name ?? effect.slot);
+      } else if (effect.kind === 'grantUnitUpgrade') {
+        labels.push(UNIT_UPGRADES[effect.upgrade]?.name ?? effect.upgrade);
+      } else if (effect.kind === 'grantBuildingModule') {
+        labels.push(BUILDING_MODULES[effect.module]?.name ?? effect.module);
+      }
+    }
+    return labels.length > 0 ? labels.join(' · ') : 'Doctrine effects';
+  }
+
+  private researchPrerequisiteNames(tech: TechDef, allianceId?: string): string {
+    if (tech.requires.length === 0) return 'None — root technology';
+    const names = tech.requires.map((id) => {
+      const required = TECHS[id];
+      return required ? researchTechName(required, allianceId) : id;
+    });
+    return names.join(' · ');
+  }
+
+  private bindResearch(): void {
+    this.root?.querySelectorAll<HTMLButtonElement>('[data-act="research-select"]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const techId = btn.dataset.tech;
+        if (techId) this.selectResearchTech(techId);
+      });
+    });
+  }
+
+  /** Keep the active strip and rail readout moving between keyed re-renders. */
+  private refreshResearchProgress(): void {
+    const game = this.game;
+    if (!game || !this.researchOpen) return;
+    const project = game.researchState(this.app.localPlayerId)?.project ?? null;
+    const identity = this.app.localPlayer ? tryIdentityDef(this.app.localPlayer.factionId) : undefined;
+    const active = activeResearchView(project, identity?.allianceId, game.research);
+    if (!active) return;
+    const fill = this.root?.querySelector<HTMLElement>('[data-research-fill]');
+    if (fill) fill.style.width = `${active.progress * 100}%`;
+    const bar = fill?.parentElement;
+    if (bar) bar.setAttribute('aria-valuenow', String(active.percent));
+    const remaining = this.root?.querySelector<HTMLElement>('[data-research-remaining]');
+    if (remaining) remaining.textContent = `${Math.ceil(active.remaining)}s`;
+    const rate = this.root?.querySelector<HTMLElement>('[data-research-rate]');
+    if (rate) rate.textContent = `${Math.round(game.researchRate(this.app.localPlayerId) * 100)}% SPEED`;
+    const note = this.root?.querySelector<HTMLElement>('[data-research-note]');
+    if (note) {
+      note.textContent = game.researchPauseReason(this.app.localPlayerId) ?? 'Operational · advancing on the simulation clock.';
+    }
+  }
+
+  /** Compact rail readout: name, percentage and bar while the tree is closed. */
+  private updateResearchRail(): void {
+    const rail = this.root?.querySelector<HTMLElement>('#rail-research');
+    const game = this.game;
+    if (!rail || !game) return;
+    const p = this.app.localPlayer;
+    const project = game.researchState(this.app.localPlayerId)?.project ?? null;
+    const identity = p ? tryIdentityDef(p.factionId) : undefined;
+    const active = activeResearchView(project, identity?.allianceId, game.research);
+    const fill = rail.querySelector<HTMLElement>('[data-research-rail-fill]');
+    rail.classList.toggle('active', this.researchOpen);
+    rail.classList.toggle('researching', !!active);
+    rail.setAttribute('aria-expanded', String(this.researchOpen));
+    if (fill) fill.style.width = `${active?.progress ? active.progress * 100 : 0}%`;
+    // The tooltip is written only when its text really moves, and the text holds
+    // no ticking countdown: reassigning a hovered element's title restarts the
+    // browser's tooltip, which is what made this button appear to refresh.
+    const paused = game?.researchPauseReason(this.app.localPlayerId);
+    const tick = active ? Math.round(active.percent / 10) * 10 : 0;
+    const title = active
+      ? `${active.name} — ${tick}% complete${paused ? ` · ${paused}` : ''}`
+      : 'Research tree — no active project';
+    if (rail.title !== title) rail.title = title;
   }
 
   /* ------------------------------------------------------------------ */
@@ -1844,7 +2554,7 @@ export class HUD {
       attack: 'ATTACK — select a target',
       attackMove: 'ATTACK-MOVE — select a destination',
       capture: 'CAPTURE — select a strategic objective',
-      repair: 'REPAIR — select a damaged friendly structure',
+      repair: 'REPAIR — select a damaged structure or your own building site',
       garrison: 'GARRISON — select a building',
       box: 'BOX SELECT — drag across units',
       place: this.app.placeDefId ? `PLACE ${BUILDINGS[this.app.placeDefId]?.name.toUpperCase() ?? 'STRUCTURE'}` : 'PLACEMENT',
@@ -2209,6 +2919,9 @@ export class HUD {
   showEnd(result: VictoryState): void {
     if (!this.game || !this.root || this.endShown) return;
     this.endShown = true;
+    // The result card lives inside the HUD; a hidden interface must not swallow
+    // the verdict.
+    this.setHudHidden(false);
     const p = this.app.localPlayer;
     const stats = p?.stats;
     const game = this.game;
@@ -2308,28 +3021,3 @@ export class HUD {
   }
 }
 
-function campaignMissionObjectives(game: Game): readonly string[] {
-  const ref = game.state.scenario.meta.campaign;
-  if (!ref) return [];
-  const campaign = CAMPAIGNS.find((entry) => entry.id === ref.campaignId);
-  return campaign?.missions.find((mission) => mission.id === ref.missionId)?.objectives ?? [];
-}
-
-function primaryObjective(game: Game): string {
-  if (game.state.scenario.meta.id === TUTORIAL_SCENARIO_ID) return 'Complete the training lanes.';
-  // Campaign operations bring an authored first objective. Skirmish keeps the
-  // dynamic command-post line below; only a campaign marker opts into the
-  // operation brief, so an editor map's objective text is not commandeered.
-  const campaignPrimary = campaignMissionObjectives(game)[0]?.trim();
-  if (campaignPrimary) return campaignPrimary;
-  const enemyHq = game.state.entities.find(
-    (e) => e.owner !== game.localPlayerId && e.defId === 'commandPost' && e.hp > 0,
-  );
-  if (!enemyHq) return 'Enemy command destroyed — victory is yours.';
-  if (game.state.scenario.settings.victory === 'annihilation') return 'Destroy all enemy forces.';
-  // Name the actual opposing identity: a nation battle must not inherit the
-  // map's legacy callsign in the objective line.
-  const enemy = game.player(enemyHq.owner);
-  const label = enemy ? tryIdentityDef(enemy.factionId)?.name ?? 'enemy' : 'enemy';
-  return `Destroy the ${label} Command Post.`;
-}

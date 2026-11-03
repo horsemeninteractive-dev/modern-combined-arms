@@ -251,57 +251,65 @@
               </div>
             </div>
 
-            <div class="menu-nav-level menu-nav-options" data-menu-level="skirmish" hidden>
+            <div class="menu-nav-level menu-nav-options skirmish-options" data-menu-level="skirmish" hidden>
               <button type="button" class="menu-crumb" data-menu-back="singleplayer">
                 <span aria-hidden="true">‹</span> Singleplayer
               </button>
-              <p class="menu-nav-head" aria-hidden="true">DEPLOYMENT</p>
-              <div class="side-field">
+              <div class="skirmish-rail-head">
+                <p class="menu-nav-head" aria-hidden="true">DEPLOYMENT</p>
+                <span class="rail-tag">SKIRMISH</span>
+              </div>
+
+              <div class="side-card">
+                <div class="side-card-head"><span>YOUR COMMAND</span><span class="side-card-mark blue" aria-hidden="true"></span></div>
                 <div class="nation-field">
-                  <span class="menu-difficulty-label" id="nation-label">YOUR NATION</span>
-                  <div id="nation-select" class="nation-picker" role="group" aria-labelledby="nation-label" aria-describedby="nation-note"></div>
+                  <span class="sr-only" id="nation-label">YOUR NATION</span>
+                  <div id="nation-select" class="nation-picker" role="group" aria-labelledby="nation-label"></div>
                 </div>
-                <p class="nation-note" id="nation-note">Lithuania · Defender Coalition — front-line defender in the opening Baltic crisis.</p>
+                <label class="rail-row">
+                  <span class="rail-row-label">COLOUR</span>
+                  <span class="select-wrap">
+                    <i class="select-swatch" id="team-color-dot" aria-hidden="true"></i>
+                    <select id="team-color" class="menu-select" aria-label="Your team colour"></select>
+                  </span>
+                </label>
+              </div>
+
+              <div class="side-card">
+                <div class="side-card-head"><span>OPPOSING AI</span><span class="side-card-mark red" aria-hidden="true"></span></div>
                 <div class="nation-field">
-                  <span class="menu-difficulty-label" id="opponent-label">OPPOSING NATION</span>
-                  <div id="opponent-select" class="nation-picker" role="group" aria-labelledby="opponent-label" aria-describedby="opponent-note"></div>
+                  <span class="sr-only" id="opponent-label">OPPOSING NATION</span>
+                  <div id="opponent-select" class="nation-picker" role="group" aria-labelledby="opponent-label"></div>
                 </div>
-                <p class="nation-note" id="opponent-note">Russia · Eastern Coalition — siege artillery.</p>
-                <div class="team-colors">
-                  <div class="team-color-row">
-                    <span class="menu-difficulty-label">YOUR COLOUR</span>
-                    <div class="team-swatches" id="team-colors" role="radiogroup" aria-label="Your team colour"></div>
+                <label class="rail-row">
+                  <span class="rail-row-label">COLOUR</span>
+                  <span class="select-wrap">
+                    <i class="select-swatch" id="opponent-color-dot" aria-hidden="true"></i>
+                    <select id="opponent-color" class="menu-select" aria-label="Opponent team colour"></select>
+                  </span>
+                </label>
+                <label class="rail-row">
+                  <span class="rail-row-label" id="difficulty-label">AI</span>
+                  <select id="difficulty" class="menu-select" aria-labelledby="difficulty-label"></select>
+                </label>
+              </div>
+
+              <div class="side-settings">
+                <div class="rail-row">
+                  <span class="rail-row-label" id="time-label">START</span>
+                  <div class="difficulty-options" role="group" aria-labelledby="time-label">
+                    <button type="button" class="difficulty-btn" data-start-time="06" aria-pressed="false">DAWN</button>
+                    <button type="button" class="difficulty-btn" data-start-time="12" aria-pressed="false">DAY</button>
+                    <button type="button" class="difficulty-btn" data-start-time="18" aria-pressed="true">DUSK</button>
+                    <button type="button" class="difficulty-btn" data-start-time="22" aria-pressed="false">NIGHT</button>
                   </div>
-                  <div class="team-color-row">
-                    <span class="menu-difficulty-label">OPPONENT COLOUR</span>
-                    <div class="team-swatches" id="opponent-colors" role="radiogroup" aria-label="Opponent team colour"></div>
-                  </div>
+                </div>
+                <div class="rail-block">
+                  <span class="rail-row-label" id="weather-label">WEATHER</span>
+                  <div class="weather-grid" id="weather-options" role="group" aria-labelledby="weather-label"></div>
                 </div>
               </div>
-              <div class="side-field menu-difficulty">
-                <span class="menu-difficulty-label" id="difficulty-label">OPPOSING COMMANDER</span>
-                <div class="difficulty-options" role="group" aria-labelledby="difficulty-label">
-                  <button type="button" class="difficulty-btn" data-difficulty="recruit" aria-pressed="false">RECRUIT</button>
-                  <button type="button" class="difficulty-btn" data-difficulty="veteran" aria-pressed="true">VETERAN</button>
-                  <button type="button" class="difficulty-btn" data-difficulty="elite" aria-pressed="false">ELITE</button>
-                </div>
-                <p class="difficulty-note" id="difficulty-note">Veteran — balanced expansion, production and attack timing.</p>
-              </div>
-              <div class="side-field menu-difficulty">
-                <span class="menu-difficulty-label" id="time-label">TIME OF DAY</span>
-                <div class="difficulty-options" role="group" aria-labelledby="time-label">
-                  <button type="button" class="difficulty-btn" data-start-time="06" aria-pressed="false">DAWN</button>
-                  <button type="button" class="difficulty-btn" data-start-time="12" aria-pressed="false">DAY</button>
-                  <button type="button" class="difficulty-btn" data-start-time="18" aria-pressed="true">DUSK</button>
-                  <button type="button" class="difficulty-btn" data-start-time="22" aria-pressed="false">NIGHT</button>
-                </div>
-                <p class="difficulty-note" id="time-note">Dusk — light falls through the first half of the battle. The full cycle is one hour.</p>
-              </div>
-              <div class="side-field menu-difficulty">
-                <span class="menu-difficulty-label" id="weather-label">WEATHER</span>
-                <div class="difficulty-options" id="weather-options" role="group" aria-labelledby="weather-label"></div>
-                <p class="difficulty-note" id="weather-note">Clear — full visibility, full engagement range, dry ground.</p>
-              </div>
+
               <div class="menu-actions">
                 <button id="btn-deploy" class="btn btn-primary btn-large">
                   <span class="btn-kicker">DEPLOY</span>
@@ -318,29 +326,44 @@
               <div id="multiplayer-panel" class="mp-host"></div>
             </section>
 
-            <section class="menu-view" data-menu-panel="skirmish" aria-label="Skirmish">
-              <div class="menu-view-head">
-                <p class="eyebrow" id="skirmish-eyebrow">SKIRMISH · COMBINED</p>
-                <h2 id="skirmish-title">Open Front</h2>
-                <p class="lede" id="skirmish-lede">
-                  Open rolling ground with scattered treelines and two low ridges. The reference competitive map.
-                </p>
-              </div>
-              <div class="menu-columns skirmish-columns">
-                <div class="menu-column">
-                  <div class="map-select">
-                    <span class="menu-difficulty-label" id="map-select-label">THEATRE</span>
+            <section class="menu-view skirmish-view" data-menu-panel="skirmish" aria-label="Skirmish">
+              <div class="skirmish-board">
+                <span class="board-corner tl" aria-hidden="true"></span>
+                <span class="board-corner tr" aria-hidden="true"></span>
+                <span class="board-corner bl" aria-hidden="true"></span>
+                <span class="board-corner br" aria-hidden="true"></span>
+                <div class="board-grid">
+                  <div class="board-col board-list">
+                    <div class="board-head">
+                      <span class="board-title" id="map-select-label">BATTLEFIELDS</span>
+                      <span class="mono" id="brief-code">COMBINED / 01</span>
+                    </div>
                     <div class="map-cards" id="map-cards" role="radiogroup" aria-labelledby="map-select-label"></div>
                   </div>
-                </div>
-                <aside class="menu-brief">
-                  <div class="brief-head">
-                    <span>MISSION BRIEF</span><span class="mono" id="brief-code">COMBINED / 01</span>
+                  <div class="board-col board-preview">
+                    <div class="board-head">
+                      <span class="board-title">BATTLEFIELD</span>
+                      <span class="mono" id="brief-size">84 × 84 tiles</span>
+                    </div>
+                    <div class="brief-map" id="brief-map">
+                      <canvas id="brief-map-canvas" aria-label="Theatre terrain map"></canvas>
+                      <span class="map-city blue" id="brief-label-friend">BEACHHEAD</span>
+                      <span class="map-city red" id="brief-label-enemy">11TH CORPS</span>
+                    </div>
+                    <div class="map-legend">
+                      <span><i class="legend-dot blue" aria-hidden="true"></i>YOU</span>
+                      <span><i class="legend-dot red" aria-hidden="true"></i>OPPOSITION</span>
+                      <span class="mono" id="brief-players">2 or 4 commanders</span>
+                    </div>
                   </div>
-                  <div class="brief-map" id="brief-map">
-                    <canvas id="brief-map-canvas" aria-label="Theatre terrain map"></canvas>
-                    <span class="map-city blue" id="brief-label-friend">BEACHHEAD</span>
-                    <span class="map-city red" id="brief-label-enemy">11TH CORPS</span>
+                </div>
+                <div class="board-foot">
+                  <div class="board-copy">
+                    <p class="eyebrow" id="skirmish-eyebrow">SKIRMISH · COMBINED</p>
+                    <h2 id="skirmish-title">Open Front</h2>
+                    <p class="lede" id="skirmish-lede">
+                      Open rolling ground with scattered treelines and two low ridges. The reference competitive map.
+                    </p>
                   </div>
                   <div class="brief-rows">
                     <div><span>COMMAND</span><b id="brief-command">Lithuania</b></div>
@@ -348,13 +371,11 @@
                     <div><span>DOCTRINE</span><b id="brief-doctrine">Reconnaissance screen</b></div>
                     <div><span>OPPOSITION</span><b id="brief-opposition">Russia</b></div>
                     <div><span>ALLIANCE</span><b id="brief-alliance">Defender Coalition</b></div>
-                    <div><span>THEATRE</span><b id="brief-size">84 × 84 tiles</b></div>
                     <div><span>DOMAINS</span><b id="brief-domains">Ground · Air</b></div>
                     <div><span>STRATEGIC</span><b id="brief-tags">balanced · open · objectives</b></div>
-                    <div><span>PLAYERS</span><b id="brief-players">2 or 4</b></div>
                     <div><span>WEATHER</span><b id="brief-weather">Clear</b></div>
                   </div>
-                </aside>
+                </div>
               </div>
             </section>
 
@@ -444,7 +465,7 @@
 
         <footer class="menu-footer">
           <span>© 2026 MCA PROJECT · HORSEMEN INTERACTIVE</span>
-          <span class="menu-footer-mid" id="menu-build">v0.3.0 BETA · BUILD 0 · IRONTIDE ENGINE</span>
+          <span class="menu-footer-mid" id="menu-build">v0.4.0 BETA · BUILD 0 · IRONTIDE ENGINE</span>
           <div class="menu-footer-links">
             <button id="btn-changelog" class="menu-footer-link" type="button">Changelog</button>
             <button id="btn-briefing" class="menu-footer-link" type="button">Briefing &amp; Controls</button>

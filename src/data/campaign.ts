@@ -47,7 +47,7 @@ export const CAMPAIGNS: readonly CampaignDef[] = [
     allianceId: 'defender',
     accent: '#37b6e0',
     lede:
-      'Three opening operations holding the Baltic approach: a beachhead on Kestrel Bay, the armour passes of Rust Valley, and the sea lane through the Kestrel Straits.',
+      'Three opening operations holding the Baltic approach: a beachhead on Kestrel Bay, the armour passes of Rust Valley, and the sea lane through the Kestrel Straits. Finland and Sweden entered when the corridor reached the Gulf of Finland, opening a northern front the coalition now holds with Baltic and Scandinavian formations alike.',
     note: 'Fixed commands · blue versus red. Each operation is a standalone battle.',
     missions: [
       {
@@ -113,7 +113,7 @@ export const CAMPAIGNS: readonly CampaignDef[] = [
     allianceId: 'eastern',
     accent: '#ef6a4a',
     lede:
-      'Three opening operations driving the corridor to the coast: the Kestrel beachhead, the foundry city, and the strait blockade.',
+      'Three opening operations driving the corridor to the coast: the Kestrel beachhead, the foundry city, and the strait blockade. Iran and North Korea joined once the corridor became a long war, supplying the drones and siege artillery the corps now spends in place of its own dwindling stocks.',
     note: 'Fixed commands · red versus blue. Each operation is a standalone battle.',
     missions: [
       {

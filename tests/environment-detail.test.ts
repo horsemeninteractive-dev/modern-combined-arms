@@ -98,7 +98,7 @@ describe('sea state', () => {
     expect(rendererSource).toContain('segmentsX');
     expect(rendererSource).toContain('this.waterCount');
     // Deep water only: the shelf stays flat so the surf line holds the beach.
-    expect(WATER_VS).toContain('texture(uShoreTex, uv).r');
+    expect(WATER_VS).toContain('shore.r');
   });
 
   it('breaks whitecaps in a heavy sea', () => {

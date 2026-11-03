@@ -5,24 +5,23 @@ import type { Entity } from '../sim/types';
 export type ContextOrder = 'capture' | 'repair' | 'garrison' | 'attack' | 'move';
 
 /**
- * A completed structure an engineer may repair: the team's own, or a neutral
+ * A structure an engineer may be sent to work on: the team's own, or a neutral
  * garrisonable shelter. A neutral shelter held by hostile infantry is refused;
- * `occupants` lets the caller supply the live garrison list.
+ * `occupants` lets the caller supply the live garrison list. A paused
+ * construction site of the player's own is included: resuming it is the same
+ * order, and the alternative was a site that could never be restarted.
  */
 export function isRepairTarget(
   target: Entity | null | undefined,
   localPlayerId: number,
   occupants: readonly Entity[] = [],
 ): target is Entity {
-  if (
-    !target ||
-    target.kind !== 'building' ||
-    target.hp <= 0 ||
-    target.hp >= target.maxHp ||
-    target.construction
-  ) {
-    return false;
-  }
+  if (!target || target.kind !== 'building' || target.hp <= 0) return false;
+  // A paused construction site of your own is the same order: it needs an
+  // engineer, not a medic. Without this, right-clicking a site whose builder
+  // had been called away fell through to a plain move and nothing ever happened.
+  if (target.construction) return target.owner === localPlayerId && target.buildProgress < 1;
+  if (target.hp >= target.maxHp) return false;
   if (target.owner === localPlayerId) return true;
   if (target.owner !== -1 || !BUILDINGS[target.defId]?.garrison) return false;
   return !occupants.some((unit) => unit.owner !== localPlayerId);

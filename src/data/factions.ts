@@ -3,14 +3,59 @@ import { BUILDING_LIST } from './buildings';
 import { UNIT_LIST } from './units';
 
 /**
- * The shared launch baseline. Both alliances field this roster; a nation's
- * differences are declared as substitutions in NATION_DATA rather than by
- * editing the baseline. The arrays are frozen so a caller cannot accidentally
- * edit the canonical content.
+ * Canonical unit slot → Eastern Coalition platform.
+ *
+ * A slot absent from this map is a utility role both alliances field the same
+ * way (engineer, harvester, recovery, medic). Keeping the selection here means
+ * an alliance baseline is a choice over the canonical slots rather than a
+ * second roster: no definition is cloned, and the variant chain still resolves
+ * the slot for production, AI demand and saves.
  */
-const SHARED_BASELINE: RosterDef = Object.freeze({
+const EASTERN_PLATFORMS: Readonly<Record<string, string>> = Object.freeze({
+  rifle: 'rifleEC',
+  atgm: 'atgmEC',
+  recon: 'reconEC',
+  ifv: 'ifvEC',
+  tank: 'tankEC',
+  td: 'tdEC',
+  spg: 'spgEC',
+  rocketArtillery: 'rocketArtilleryEC',
+  aa: 'aaEC',
+  uav: 'uavEC',
+  interceptor: 'interceptorEC',
+  fighter: 'fighterEC',
+  attackHelo: 'attackHeloEC',
+  missileBoat: 'missileBoatEC',
+  corvette: 'corvetteEC',
+  frigate: 'frigateEC',
+  submarine: 'submarineEC',
+  navalSupport: 'navalSupportEC',
+});
+
+/** Structures are shared: only equipment defines an alliance. */
+const BUILDING_BASELINE: readonly string[] = Object.freeze(
+  BUILDING_LIST.map((building) => building.id),
+);
+
+/**
+ * The Defender Coalition baseline. Its canonical ids double as its platforms,
+ * so the coalition fields the original lineage plus the five platforms added
+ * for the slots the old shared baseline did not have. The arrays are frozen so
+ * a caller cannot edit the canonical content.
+ */
+const DEFENDER_BASELINE: RosterDef = Object.freeze({
   units: Object.freeze(UNIT_LIST.map((unit) => unit.id)),
-  buildings: Object.freeze(BUILDING_LIST.map((building) => building.id)),
+  buildings: BUILDING_BASELINE,
+});
+
+/**
+ * The Eastern Coalition baseline: the same canonical slots, fielded as this
+ * alliance's own equipment. A nation's differences are still declared as
+ * substitutions in NATION_DATA rather than by editing the baseline.
+ */
+const EASTERN_BASELINE: RosterDef = Object.freeze({
+  units: Object.freeze(UNIT_LIST.map((unit) => EASTERN_PLATFORMS[unit.id] ?? unit.id)),
+  buildings: BUILDING_BASELINE,
 });
 
 /**
@@ -25,8 +70,8 @@ const DEFENDER_ALLIANCE: AllianceDef = Object.freeze({
   color: '#37b6e0',
   accent: '#a8ecff',
   blurb:
-    'The defender-aligned nations holding the Baltic approach. Lithuania, Poland and the United Kingdom share a launch baseline and differ through national specialisations.',
-  baseline: SHARED_BASELINE,
+    'The defender-aligned nations holding the Baltic and Scandinavian approach. Lithuania, Poland, the United Kingdom, Finland and Sweden field the coalition baseline — accurate guns, thermal optics and survivable hulls — and differ from each other through national specialisations.',
+  baseline: DEFENDER_BASELINE,
 });
 
 const EASTERN_ALLIANCE: AllianceDef = Object.freeze({
@@ -36,8 +81,8 @@ const EASTERN_ALLIANCE: AllianceDef = Object.freeze({
   color: '#ef6a4a',
   accent: '#ffc19e',
   blurb:
-    'The Russia-aligned nations pressing the eastern campaign. Russia, Belarus and Hungary share a launch baseline and differ through national specialisations.',
-  baseline: SHARED_BASELINE,
+    'The Russia-aligned nations pressing the eastern campaign. Russia, Belarus, Hungary, Iran and North Korea field the coalition baseline — cheaper hulls, heavier salvoes and longer reach — and differ from each other through national specialisations.',
+  baseline: EASTERN_BASELINE,
 });
 
 export const ALLIANCE_LIST: readonly AllianceDef[] = Object.freeze([
@@ -50,11 +95,18 @@ export const ALLIANCES: Readonly<Record<string, AllianceDef>> = Object.freeze(
 );
 
 /**
- * The six playable launch nations from GDD §5.1. Each nation inherits its
- * alliance baseline and replaces one slot with a registered national variant;
- * additions, exclusions and further substitutions are supported by the same
- * data contract. Colours are provisional presentation values, not national
- * canon.
+ * The ten playable nations: five per coalition. Each nation inherits its
+ * alliance baseline and then carries three differences: one replacement of an
+ * existing slot, one exclusive unit and one building variant. The data contract
+ * supports additions, exclusions and further substitutions, but the approved
+ * design keeps one of each so a national identity stays legible. Sweden and Iran
+ * additionally field a national naval hull (see §24 of the roster and technology
+ * specification): their fleet identity needed a ship, not only a yard variant.
+ * Colours are provisional presentation values, not national canon.
+ *
+ * This is an alternate-history conflict. Coalition membership here is fiction
+ * and is not a statement about real-world alliances; see §23 of the roster and
+ * technology specification for the escalation that brings each nation in.
  */
 const NATION_DATA: readonly NationDef[] = [
   {
@@ -66,8 +118,12 @@ const NATION_DATA: readonly NationDef[] = [
     accent: '#a8ecff',
     doctrine: 'Reconnaissance screen',
     blurb:
-      'Front-line defender in the opening Baltic crisis. Fields the unarmed Pathfinder scout: far better optics for less money, but its recon must be escorted.',
-    roster: { replaceUnits: { recon: 'pathfinder' } },
+      'Front-line defender in the opening Baltic crisis. Fields the unarmed Pathfinder scout for cheap long-range optics, the Kestrel air team for air denial that can hide in a building, and a cheaper Forward Observation Post in place of the shared radar array.',
+    roster: {
+      replaceUnits: { recon: 'pathfinder' },
+      addUnits: ['kestrelTeam'],
+      replaceBuildings: { radar: 'forwardPost' },
+    },
   },
   {
     id: 'poland',
@@ -78,8 +134,12 @@ const NATION_DATA: readonly NationDef[] = [
     accent: '#b9dcff',
     doctrine: 'Armoured spearhead',
     blurb:
-      'Major regional military actor and the coalition\'s armoured weight. Fields the Spearhead MBT: a harder-hitting, tougher tank with slower hull and turret.',
-    roster: { replaceUnits: { tank: 'spearhead' } },
+      'Major regional military actor and the coalition\'s armoured weight. Fields the harder-hitting Spearhead MBT, the Wilk heavy IFV that can fight tanks, and an Armoured Workshop that keeps its vehicle line alive under fire.',
+    roster: {
+      replaceUnits: { tank: 'spearhead' },
+      addUnits: ['wilk'],
+      replaceBuildings: { factory: 'armourWorks' },
+    },
   },
   {
     id: 'uk',
@@ -90,8 +150,44 @@ const NATION_DATA: readonly NationDef[] = [
     accent: '#c7d8ff',
     doctrine: 'Saturation fires',
     blurb:
-      'Expeditionary specialist contribution. Fields the Rocket Battery: the longest reach in the coalition, paid for with inaccurate rockets and a fragile hull.',
-    roster: { replaceUnits: { spg: 'mlrs' } },
+      'Expeditionary specialist contribution. Fields the long-reach Rocket Battery, the Storm Shadow deep-strike launcher that breaks a position from beyond sight, and a cheap Expeditionary Airfield that is easier to lose.',
+    roster: {
+      replaceUnits: { spg: 'mlrs' },
+      addUnits: ['stormShadow'],
+      replaceBuildings: { airfield: 'expeditionaryAirfield' },
+    },
+  },
+  {
+    id: 'finland',
+    name: 'Finland',
+    shortName: 'FINLAND',
+    allianceId: 'defender',
+    color: '#4a86b8',
+    accent: '#cfe6ff',
+    doctrine: 'Territorial defence',
+    blurb:
+      'Northern anchor of the coalition line. Fields the long-reaching K9 Thunder howitzer, the Spike ER team that kills armour from behind a ridge, and a cheap Garrison Barracks so every sector can raise its own infantry.',
+    roster: {
+      replaceUnits: { spg: 'k9Thunder' },
+      addUnits: ['spikeTeam'],
+      replaceBuildings: { barracks: 'garrisonBarracks' },
+    },
+  },
+  {
+    id: 'sweden',
+    name: 'Sweden',
+    shortName: 'SWEDEN',
+    allianceId: 'defender',
+    color: '#3b6ea8',
+    accent: '#ffd76a',
+    doctrine: 'Mobile combined arms',
+    blurb:
+      'Technologically advanced northern contributor. Fields the fast, long-sighted CV90, the Gripen multirole fighter that carries both an air-to-air and a strike missile, the Visby-class corvette that outruns anything else afloat, and a hardened Kockums Shipyard on the coast.',
+    roster: {
+      replaceUnits: { ifv: 'cv90' },
+      addUnits: ['gripen', 'visby'],
+      replaceBuildings: { shipyard: 'kockumsYard' },
+    },
   },
   {
     id: 'russia',
@@ -102,8 +198,12 @@ const NATION_DATA: readonly NationDef[] = [
     accent: '#ffc19e',
     doctrine: 'Siege artillery',
     blurb:
-      'Principal aggressor in the opening crisis; broad conventional capabilities. Fields the Heavy Howitzer: fewer, devastating shells from a slow, expensive hull.',
-    roster: { replaceUnits: { spg: 'heavyHowitzer' } },
+      'Principal aggressor in the opening crisis; broad conventional capabilities. Fields the devastating Heavy Howitzer, the short-range TOSP thermobaric launcher for clearing positions, and a Long-Range SAM site that reaches further than the shared battery.',
+    roster: {
+      replaceUnits: { spgEC: 'heavyHowitzer' },
+      addUnits: ['tosp'],
+      replaceBuildings: { samBattery: 'longRangeSam' },
+    },
   },
   {
     id: 'belarus',
@@ -114,8 +214,12 @@ const NATION_DATA: readonly NationDef[] = [
     accent: '#ffd0ad',
     doctrine: 'Deep surveillance',
     blurb:
-      'Closely integrated with Russia in this timeline. Fields the Deep Recon UAV: thirty-tile optics and long endurance, but no weapon and a higher price.',
-    roster: { replaceUnits: { uav: 'deepReconUAV' } },
+      'Closely integrated with Russia in this timeline. Fields the thirty-tile Deep Recon UAV, cheap Sprint recon buggies to saturate the map with eyes, and a Signals Bureau that runs national research a fifth faster than the shared centre at the cost of survivability.',
+    roster: {
+      replaceUnits: { uavEC: 'deepReconUAV' },
+      addUnits: ['sprut'],
+      replaceBuildings: { researchCentre: 'signalsBureau' },
+    },
   },
   {
     id: 'hungary',
@@ -126,8 +230,44 @@ const NATION_DATA: readonly NationDef[] = [
     accent: '#f2d6b3',
     doctrine: 'Fortified defence',
     blurb:
-      'Limited specialist involvement; politically significant, but not an equal mass conventional force. Fields the Reinforced Bunker: fewer, tougher anti-infantry positions.',
-    roster: { replaceBuildings: { mgNest: 'bunker' } },
+      'Limited specialist involvement; politically significant, but not an equal mass conventional force. Fields the fast-reloading Hedgehog AT team, the Taszar mortar team — indirect fire that fits in a building — and the Reinforced Bunker.',
+    roster: {
+      replaceUnits: { atgmEC: 'hedgehogTeam' },
+      addUnits: ['taszar'],
+      replaceBuildings: { mgNest: 'bunker' },
+    },
+  },
+  {
+    id: 'iran',
+    name: 'Iran',
+    shortName: 'IRAN',
+    allianceId: 'eastern',
+    color: '#4f8c5a',
+    accent: '#e2f2d8',
+    doctrine: 'Unmanned strike',
+    blurb:
+      'Unmanned-systems specialist of the eastern coalition. Fields the long-reaching 3rd Khordad SAM vehicle, the Mohajer-6 armed drone that finds a position and then bombs it, the Ghadir midget submarine that ambushes from shallow water, and cheap dispersed Noor coast launchers.',
+    roster: {
+      replaceUnits: { aaEC: 'khordadSam' },
+      addUnits: ['mohajer6', 'ghadir'],
+      replaceBuildings: { coastalBattery: 'noorBattery' },
+    },
+  },
+  {
+    id: 'northKorea',
+    name: 'North Korea',
+    shortName: 'N. KOREA',
+    allianceId: 'eastern',
+    color: '#b8433c',
+    accent: '#ffd3c9',
+    doctrine: 'Siege fires',
+    blurb:
+      'Siege-fire specialist pressing the eastern front. Replaces its assault gun with the Bulsae-4 missile carrier that stands off fourteen tiles, adds the 170mm Koksan that out-ranges every tube in the game beside the shared howitzer, and builds an Entrenched AT Gun meant to be assaulted.',
+    roster: {
+      replaceUnits: { tdEC: 'bulsae4' },
+      addUnits: ['koksan'],
+      replaceBuildings: { atTurret: 'entrenchedAtGun' },
+    },
   },
 ];
 
@@ -154,8 +294,8 @@ export const FACTIONS: Readonly<Record<string, FactionDef>> = Object.freeze({
     blurb:
       'A Lithuanian-led multinational battlegroup holding the western beachhead. Balanced armour, strong infantry anti-tank teams and coalition air support.',
     allianceId: 'defender',
-    units: SHARED_BASELINE.units,
-    buildings: SHARED_BASELINE.buildings,
+    units: DEFENDER_BASELINE.units,
+    buildings: DEFENDER_BASELINE.buildings,
   }),
   expeditionary: Object.freeze({
     id: 'expeditionary',
@@ -166,8 +306,8 @@ export const FACTIONS: Readonly<Record<string, FactionDef>> = Object.freeze({
     blurb:
       'A reinforced Russian corps group dug in across the island. Heavy armour, layered air defence and a coastal missile corvette.',
     allianceId: 'eastern',
-    units: SHARED_BASELINE.units,
-    buildings: SHARED_BASELINE.buildings,
+    units: EASTERN_BASELINE.units,
+    buildings: EASTERN_BASELINE.buildings,
   }),
 });
 
@@ -178,12 +318,12 @@ export function factionDef(id: string): FactionDef {
 
 /**
  * Display identity for any id a scenario or player slot can hold: one of the
- * six nations, or one of the two legacy presets. The simulation and every UI
+ * ten nations, or one of the two legacy presets. The simulation and every UI
  * surface read identity through this shape so a nation is never a fallback.
  */
 export interface IdentityDef extends FactionIdentity {
   readonly allianceId: string;
-  /** True for the six playable launch nations. */
+  /** True for the ten playable nations. */
   readonly playable: boolean;
   /** True for the legacy `baltic` / `expeditionary` alliance presets. */
   readonly legacy: boolean;
@@ -300,7 +440,7 @@ export function resolveOpponentNation(nationOrPresetId: string, chosenId?: strin
 }
 
 /**
- * Ids a scenario may name today: the six nations plus the two legacy presets.
+ * Ids a scenario may name today: the ten nations plus the two legacy presets.
  * Alliances are content buckets, not player identities, so they are excluded.
  * `Object.hasOwn` keeps prototype keys such as `toString` out of the registry.
  */

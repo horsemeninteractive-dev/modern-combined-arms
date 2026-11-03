@@ -22,20 +22,24 @@ import {
 
 const CLOTH_VERTICES = 12 * 6 * 4;
 
-/** Official width-to-height ratios: 5:3, 8:5, 2:1, 3:2, 2:1, 2:1. */
+/** Official width-to-height ratios of every playable nation's flag. */
 const OFFICIAL_RATIO = {
   lithuania: 5 / 3,
   poland: 8 / 5,
   uk: 2,
+  finland: 18 / 11,
+  sweden: 8 / 5,
   russia: 3 / 2,
   belarus: 2,
   hungary: 2,
+  iran: 7 / 4,
+  northKorea: 2,
 } as const;
 
 describe('flag identity', () => {
   it('maps every playable nation to itself and legacy presets to an alliance nation', () => {
-    expect(FLAG_NATIONS).toHaveLength(6);
-    expect(new Set(FLAG_NATIONS).size).toBe(6);
+    expect(FLAG_NATIONS).toHaveLength(10);
+    expect(new Set(FLAG_NATIONS).size).toBe(10);
     for (const nation of NATION_LIST) {
       expect(flagNationForFaction(nation.id)).toBe(nation.id);
     }
@@ -49,10 +53,10 @@ describe('flag identity', () => {
     const red = allianceFlagColor('russia');
     expect(blue[2]).toBeGreaterThan(blue[0]);
     expect(red[0]).toBeGreaterThan(red[2]);
-    for (const nation of ['lithuania', 'poland', 'uk']) {
+    for (const nation of ['lithuania', 'poland', 'uk', 'finland', 'sweden']) {
       expect(allianceFlagColor(nation)).toEqual(blue);
     }
-    for (const nation of ['russia', 'belarus', 'hungary']) {
+    for (const nation of ['russia', 'belarus', 'hungary', 'iran', 'northKorea']) {
       expect(allianceFlagColor(nation)).toEqual(red);
     }
     expect(allianceFlagColor('baltic')).toEqual(blue);
@@ -70,7 +74,7 @@ describe('flag identity', () => {
 });
 
 describe('real flag assets', () => {
-  it('ships a real PNG at the official proportions for every launch nation', () => {
+  it('ships a real PNG at the official proportions for every playable nation', () => {
     for (const nation of FLAG_NATIONS) {
       expect(flagTextureUrl(nation)).toBe(`/flags/${nation}.png`);
       const png = readFileSync(new URL(`../public/flags/${nation}.png`, import.meta.url));
@@ -88,7 +92,7 @@ describe('real flag assets', () => {
     }
   });
 
-  it('keeps legacy presets on the same six real flag textures', () => {
+  it('keeps legacy presets on the same real flag textures', () => {
     for (const preset of Object.values(FACTIONS)) {
       const nation = flagNationForFaction(preset.id)!;
       expect(FLAG_NATIONS).toContain(nation);
@@ -131,6 +135,12 @@ describe('flag rig', () => {
     expect(width('poland')).toBeGreaterThan(width('russia'));
     expect(width('uk')).toBeCloseTo(width('belarus'), 5);
     expect(width('uk')).toBeCloseTo(width('hungary'), 5);
+    // Expansion nations: Iran is the widest (7:4), North Korea is 1:2 like the
+    // other square flags, and the two Nordic crosses sit between them.
+    expect(width('iran')).toBeGreaterThan(width('finland'));
+    expect(width('finland')).toBeGreaterThan(width('sweden'));
+    expect(width('sweden')).toBeGreaterThan(width('russia'));
+    expect(width('northKorea')).toBeCloseTo(width('uk'), 5);
   });
 
   it('turns the cloth toward the fixed tactical camera', () => {
@@ -160,16 +170,21 @@ describe('flag rig', () => {
       expect(Math.abs(mount.z), def.id).toBeLessThan(def.footprint.h * 2);
       expect(mount.y, def.id).toBeGreaterThanOrEqual(0);
     }
-    expect(FLAG_NATIONS.length).toBe(6);
+    expect(FLAG_NATIONS.length).toBe(10);
   });
 
-  it('puts solid structures on a roof and keeps only the two open yards on an apron', () => {
+  it('puts solid structures on a roof and keeps only the open yards on an apron', () => {
     for (const [id, anchor] of Object.entries(BUILDING_FLAG_ANCHORS)) {
-      if (anchor.apron) expect(['airfield', 'shipyard'], id).toContain(id);
-      else expect(anchor.apron, id).toBeUndefined();
+      // The open yards and the national airfields are apron sites: their
+      // operations read from ground level, not a roof.
+      if (anchor.apron) {
+        expect(['airfield', 'expeditionaryAirfield', 'shipyard', 'kockumsYard'], id).toContain(id);
+      } else expect(anchor.apron, id).toBeUndefined();
     }
     expect(BUILDING_FLAG_ANCHORS.airfield.apron).toBe(true);
     expect(BUILDING_FLAG_ANCHORS.shipyard.apron).toBe(true);
+    expect(BUILDING_FLAG_ANCHORS.kockumsYard.apron).toBe(true);
+    expect(BUILDING_FLAG_ANCHORS.garrisonBarracks.apron).toBeUndefined();
     // Tall structures must not inherit the old plinth-level flag.
     expect(BUILDING_FLAG_ANCHORS.commandPost.y).toBeGreaterThan(6);
     expect(BUILDING_FLAG_ANCHORS.officeBlock.y).toBeGreaterThan(12);

@@ -23,6 +23,7 @@ import {
   visionFactor,
 } from '../src/sim/sensors';
 import { illuminationAt } from '../src/sim/illumination';
+import { dist } from '../src/core/math';
 import { TILE_SIZE } from '../src/sim/constants';
 import {
   ORE_LIGHT_LIMIT,
@@ -176,6 +177,12 @@ describe('night sensor model', () => {
 describe('night combat in the simulation', () => {
   function duel(startHour: number) {
     const scenario = arena(startHour);
+    // A match with no headquarters is decided on the first tick, and the
+    // simulation stops before anything can move. The duel needs a real match.
+    scenario.structures.push(
+      { defId: 'commandPost', owner: 0, x: 6, z: 40 },
+      { defId: 'commandPost', owner: 1, x: 40, z: 6 },
+    );
     scenario.units.push(
       { defId: 'rifle', owner: 0, x: 20, z: 24 },
       { defId: 'rifle', owner: 1, x: 25.5, z: 24 },
@@ -183,20 +190,32 @@ describe('night combat in the simulation', () => {
     const game = new Game(scenario, { enableAI: false });
     const attacker = game.state.entities.find((e) => e.defId === 'rifle' && e.owner === 0)!;
     const target = game.state.entities.find((e) => e.defId === 'rifle' && e.owner === 1)!;
-    // A window short enough that a night-blind rifle cannot walk into its
-    // reduced range: what it shows is who opened fire from the standing start.
+    const standoff = dist(attacker.x, attacker.z, target.x, target.z);
     game.enqueueCommand({ type: 'attack', team: 0, ids: [attacker.id], targetId: target.id });
-    game.advance(20 * 300);
-    return { fired: attacker.cooldown > 0, target };
+    let firstShot = -1;
+    let closest = Infinity;
+    for (let i = 0; i < 20 * 40 && firstShot < 0; i++) {
+      game.tick();
+      if (attacker.cooldown > 0) firstShot = game.state.tick;
+      closest = Math.min(closest, dist(attacker.x, attacker.z, target.x, target.z));
+    }
+    return { firstShot, closed: closest < standoff - 0.5, game };
   }
 
-  it('keeps a five-tile rifle duel inside daytime range but not at night', () => {
-    // Five tiles is inside the rifle's six-tile range and outside what an
-    // optical crew can identify in the dark.
-    expect(duel(12).fired).toBe(true);
-    // The night shot is never taken: five and a half tiles is outside the
-    // reduced engagement range at a standing start.
-    expect(duel(22).fired).toBe(false);
+  it('opens fire from the standing start by day and closes the gap at night', () => {
+    // Five and a half tiles is inside the rifle's six-tile range, so daylight
+    // needs no approach at all.
+    const day = duel(12);
+    expect(day.firstShot).toBe(1);
+    expect(day.closed).toBe(false);
+
+    // Darkness shrinks what the crew can identify to about four tiles. The order
+    // is not refused and the crew does not sit at the edge of its barrel range:
+    // it drives into the range it can actually engage at and then fires.
+    const night = duel(22);
+    expect(night.firstShot).toBeGreaterThan(day.firstShot);
+    expect(night.closed).toBe(true);
+    expect(night.game.state.smoke).toHaveLength(0);
   });
 
   it('hides a unit at night that daylight reveals', () => {

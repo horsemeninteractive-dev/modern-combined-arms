@@ -9,6 +9,8 @@
  * weapon or a sensor that the unit does not already represent.
  */
 
+import { unitFamily } from './units';
+
 export type SensorKind = 'optical' | 'nightVision' | 'thermal' | 'radar' | 'avionics';
 
 export type IlluminatorKind = 'none' | 'headlights' | 'searchlight' | 'floodlight' | 'windows' | 'beacon';
@@ -143,6 +145,16 @@ export const UNIT_SENSORS: Record<string, SensorProfile> = {
   interceptor: AVIONICS,
   uav: RECON_AVIONICS,
   deepReconUAV: RECON_AVIONICS,
+  // National exclusives author their own optics: an exclusive has no canonical
+  // slot to inherit from, so without an entry it would fall back to a
+  // rifleman's eye whatever it actually is.
+  kestrelTeam: { ...NIGHT_OPTICS, label: 'MANPADS sight, night optics' },
+  hedgehogTeam: { ...NIGHT_OPTICS, label: 'Night-vision missile sight' },
+  taszar: OPTICAL,
+  wilk: { ...VEHICLE, label: 'Thermal imaging, headlights' },
+  stormShadow: { ...NIGHT_OPTICS, illuminator: 'headlights', label: 'Mission planning optics, headlights' },
+  tosp: { ...NIGHT_OPTICS, illuminator: 'headlights', label: 'Thermobaric sight, headlights' },
+  sprut: { ...NIGHT_OPTICS, illuminator: 'headlights', label: 'Open scout optics, headlights' },
   missileBoat: NAVAL_RADAR,
   frigate: NAVAL_RADAR,
   corvette: NAVAL_RADAR,
@@ -203,10 +215,22 @@ export const BUILDING_SENSORS: Record<string, SensorProfile> = {
   watchtower: { ...STRUCTURE_OPTICAL, nightVision: 0.6, illuminator: 'beacon', label: 'Lookout lamp' },
   ruin: { ...STRUCTURE_OPTICAL, illuminator: 'none', label: 'No lighting' },
   bunker: { ...STRUCTURE_OPTICAL, nightVision: 0.7, label: 'Emplacement optics' },
+  forwardPost: { ...STRUCTURE_RADAR, nightVision: 0.8, label: 'Forward observation optics' },
+  researchCentre: { ...STRUCTURE_FLOODLIT, nightVision: 0.9, label: 'Laboratory lighting' },
+  signalsBureau: { ...STRUCTURE_FLOODLIT, nightVision: 0.88, label: 'Bureau lighting' },
+  armourWorks: { ...STRUCTURE_FLOODLIT, label: 'Workshop floodlights' },
+  expeditionaryAirfield: { ...STRUCTURE_FLOODLIT, nightVision: 0.86, label: 'Expeditionary strip lighting' },
+  longRangeSam: { ...STRUCTURE_OPTICAL, nightVision: 0.74, kind: 'radar', label: 'Long-range fire-control radar' },
 };
 
+/**
+ * A unit with no authored profile inherits its canonical slot's optics, so an
+ * alliance platform sees the night the way its role does instead of falling
+ * back to an infantryman's eye. */
 export function unitSensorProfile(defId: string): SensorProfile {
-  return UNIT_SENSORS[defId] ?? OPTICAL;
+  if (UNIT_SENSORS[defId]) return UNIT_SENSORS[defId];
+  const slot = unitFamily(defId);
+  return (slot !== defId ? UNIT_SENSORS[slot] : undefined) ?? OPTICAL;
 }
 
 export function buildingSensorProfile(defId: string): SensorProfile {

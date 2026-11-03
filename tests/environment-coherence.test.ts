@@ -9,7 +9,7 @@ import {
   buildShoreTexture,
 } from '../src/render/terrainMesh';
 import { buildingMesh, buildingStyle, buildingTopHeight } from '../src/render/buildingMeshes';
-import { TERRAIN_FS, WATER_FS } from '../src/render/shaders';
+import { TERRAIN_FS, WATER_FS, WATER_VS } from '../src/render/shaders';
 import { MATERIAL } from '../src/render/materials';
 
 const scenario = createIslandAssault();
@@ -35,7 +35,26 @@ describe('coastal field', () => {
     expect(field).toHaveLength(scenario.width * scenario.height * 4);
     const repeat = buildShoreTexture(scenario);
     expect(Array.from(field)).toEqual(Array.from(repeat));
-    for (let i = 3; i < field.length; i += 4) expect(field[i]).toBe(255);
+  });
+
+  it('keeps the swell off land and off the shore', () => {
+    const field = buildShoreTexture(scenario);
+    let offshore = 0;
+    for (let z = 0; z < scenario.height; z++) {
+      for (let x = 0; x < scenario.width; x++) {
+        const [, , b, a] = readField(field, scenario.width, x, z);
+        if (!isWaterAt(x, z)) {
+          // A displaced water plane over land is exactly the crest that used to
+          // rise through the beach in a heavy sea state.
+          expect(a, `${x},${z}`).toBe(0);
+          continue;
+        }
+        // The first water tile off the coast carries the surf, not a swell.
+        if (b >= 250) expect(a, `${x},${z}`).toBe(0);
+        if (a > 0) offshore++;
+      }
+    }
+    expect(offshore).toBeGreaterThan(0);
   });
 
   it('separates land coast distance from water shore distance', () => {
@@ -79,6 +98,13 @@ describe('coastal field', () => {
     expect(WATER_FS).toContain('vec3 shoreField = texture(uShoreTex, vUv).rgb;');
     expect(WATER_FS).toContain('float coast = shoreField.b;');
     expect(WATER_FS).toContain('float depth = smoothstep(0.12, 0.96, shallowness);');
+    // The vertex stage gates its displacement on the alpha weight, not on the
+    // shallowness channel: land reads as R=0, which the old test treated as open
+    // sea and displaced.
+    expect(WATER_VS).toContain('vec4 shore = texture(uShoreTex, uv);');
+    expect(WATER_VS).toContain(
+      'float openSea = shore.a * (1.0 - smoothstep(0.3, 0.86, shore.r));',
+    );
   });
 });
 

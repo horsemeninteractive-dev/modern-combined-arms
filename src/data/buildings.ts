@@ -1,4 +1,5 @@
 import type { BuildingDef } from '../sim/types';
+import { resolveVariantChain } from './variant';
 
 const ROSTER: BuildingDef[] = [
   {
@@ -24,8 +25,10 @@ const ROSTER: BuildingDef[] = [
     // factory is operational (see Game.productionStatus).
     produces: 'land',
     productionList: ['engineer'],
-    // The headquarters runs its own generator; every other structure draws on it.
-    power: 80,
+    // The headquarters runs its own generator, but only enough for the opening:
+    // barracks, factory, refinery and radar sit just inside 50, so the first
+    // expansion is what makes a Turbine Plant necessary rather than optional.
+    power: 50,
     description:
       'The battlegroup command element. Loss of the Command Post ends the operation. Provides limited requisition income and, while no working drop-off remains, a small material trickle so a stripped base can recover; it can also train a replacement Combat Engineer when no Vehicle Factory is operational.',
     icon: 'command',
@@ -88,6 +91,25 @@ const ROSTER: BuildingDef[] = [
     hotkey: 'F',
   },
   {
+    id: 'researchCentre',
+    name: 'Applied Research Centre',
+    shortName: 'RESEARCH',
+    role: 'Research',
+    footprint: { w: 4, h: 3 },
+    hp: 1400,
+    armour: 'structure',
+    cost: { mats: 700, req: 40 },
+    buildTime: 60,
+    vision: 8,
+    power: -30,
+    requires: ['factory'],
+    researchSpeed: 1,
+    description:
+      'The applied research centre. Runs one branch project at a time, paid in materials and requisition. Research unlocks platforms, unit upgrades and structure modules; the centre itself builds nothing, and a destroyed or unfinished centre pauses the project instead of cancelling it.',
+    icon: 'research',
+    hotkey: 'R',
+  },
+  {
     id: 'airfield',
     name: 'Forward Airfield',
     shortName: 'AIRFIELD',
@@ -139,10 +161,15 @@ const ROSTER: BuildingDef[] = [
     footprint: { w: 3, h: 3 },
     hp: 1170,
     armour: 'structure',
-    cost: { mats: 480, req: 0 },
-    buildTime: 16,
+    // A smaller, cheaper turbine because a mature base needs two or three of
+    // them: a pair costs about what the old single plant did, so the extra
+    // plants add a decision rather than a tax.
+    cost: { mats: 400, req: 0 },
+    buildTime: 12,
     vision: 6,
-    power: 100,
+    // Deliberately smaller than one HQ plus a full base: a mature base of air,
+    // naval, radar and perimeter structures needs two or three plants.
+    power: 60,
     description:
       'Generates grid power for the battlegroup. Every structure draws on the grid; a deficit slows construction and production until supply catches up.',
     icon: 'power',
@@ -560,10 +587,212 @@ const NATIONAL_BUILDINGS: BuildingDef[] = [
     weapons: ['heavyMg'],
     turretRate: 3.0,
     variantOf: 'mgNest',
+    national: true,
     description:
       'Hungarian reinforced machine-gun bunker. Nearly twice the survivability of the shared nest and a little more reach, paid for with a higher price and 14 seconds of construction: fewer positions, held longer.',
     icon: 'mg',
     hotkey: 'G',
+  },
+  {
+    id: 'forwardPost',
+    name: 'Forward Observation Post',
+    shortName: 'FWD POST',
+    role: 'Detection / tactical map',
+    footprint: { w: 2, h: 2 },
+    hp: 600,
+    armour: 'structure',
+    cost: { mats: 300, req: 0 },
+    buildTime: 9,
+    vision: 12,
+    power: -8,
+    requires: ['barracks'],
+    radar: true,
+    variantOf: 'radar',
+    national: true,
+    description:
+      'Lithuanian forward observation post. A third cheaper and quicker to raise than the shared array, with a smaller dish and a shorter reach: more of the map can be watched, but each post is easy to knock down and does less per site.',
+    icon: 'scope',
+    hotkey: '',
+  },
+  {
+    id: 'armourWorks',
+    name: 'Armoured Workshop',
+    shortName: 'ARMOUR WORKS',
+    role: 'Vehicle production',
+    footprint: { w: 4, h: 3 },
+    hp: 2520,
+    armour: 'structure',
+    cost: { mats: 966, req: 0 },
+    buildTime: 23,
+    vision: 7,
+    power: -15,
+    produces: 'land',
+    productionList: ['engineer', 'harvester', 'recon', 'aa', 'tank', 'spg', 'recovery'],
+    variantOf: 'factory',
+    national: true,
+    description:
+      'Polish hardened vehicle works. Thicker bay walls and a bermed apron give forty per cent more survivability than the shared factory for fifteen per cent more material and three extra seconds of construction. It builds exactly the same vehicles.',
+    icon: 'factory',
+    hotkey: 'V',
+  },
+  {
+    id: 'expeditionaryAirfield',
+    name: 'Expeditionary Airfield',
+    shortName: 'EXPED AIRFIELD',
+    role: 'Air production / recovery',
+    footprint: { w: 6, h: 5 },
+    hp: 1690,
+    armour: 'structure',
+    cost: { mats: 875, req: 120 },
+    buildTime: 17,
+    vision: 9,
+    power: -25,
+    requires: ['factory'],
+    produces: 'air',
+    productionList: ['fighter', 'interceptor', 'uav'],
+    airfield: true,
+    variantOf: 'airfield',
+    national: true,
+    description:
+      'British expeditionary strip: a shorter runway and tented servicing line. Thirty per cent cheaper and a third faster to stand up than the shared airfield, for a quarter less structure. The same airframes are produced and recovered, so losing it costs the whole flight line.',
+    icon: 'airfield',
+    hotkey: 'J',
+  },
+  {
+    id: 'longRangeSam',
+    name: 'Long-Range SAM Site',
+    shortName: 'LONG SAM',
+    role: 'Static air defence',
+    footprint: { w: 2, h: 2 },
+    hp: 1120,
+    armour: 'structure',
+    cost: { mats: 590, req: 55 },
+    buildTime: 14,
+    vision: 12,
+    power: -26,
+    requires: ['factory'],
+    weapons: ['longRangeSamMissile'],
+    variantOf: 'samBattery',
+    national: true,
+    description:
+      'Russian long-range surface-to-air site. A taller mast and bigger rounds reach a third further than the shared battery, at forty per cent more material and a slower reload. It still cannot touch ground forces, so anything that walks into the site is unanswered.',
+    icon: 'sam',
+    hotkey: 'K',
+  },
+  {
+    id: 'signalsBureau',
+    name: 'Signals Bureau',
+    shortName: 'SIGNALS',
+    role: 'Research (national)',
+    footprint: { w: 2, h: 2 },
+    hp: 900,
+    armour: 'structure',
+    cost: { mats: 600, req: 30 },
+    buildTime: 52,
+    vision: 14,
+    power: -30,
+    requires: ['factory'],
+    researchSpeed: 1.25,
+    variantOf: 'researchCentre',
+    national: true,
+    description:
+      'Belarusian signals bureau doubling as the national research centre. A compact listening station rather than a laboratory campus: it finishes each project a fifth faster and sees farther than the shared centre, but carries far less structure. Belarus-only, and it occupies the Research Centre slot.',
+    icon: 'research',
+    hotkey: 'R',
+  },
+  /*
+   * Expansion-nation structure variants. Each substitutes a canonical slot, so
+   * the family keeps its placement rules, footprint class, power draw and
+   * production list; only the trade on survivability, cost or reach changes.
+   */
+  {
+    id: 'garrisonBarracks',
+    name: 'Garrison Barracks',
+    shortName: 'GARRISON',
+    role: 'Infantry production',
+    footprint: { w: 3, h: 3 },
+    hp: 1150,
+    armour: 'structure',
+    cost: { mats: 450, req: 0 },
+    buildTime: 12,
+    vision: 7,
+    power: -8,
+    produces: 'land',
+    productionList: ['rifle', 'atgm', 'medic'],
+    variantOf: 'barracks',
+    national: true,
+    description:
+      'Finnish garrison barracks: a mobilisation hall rather than a field depot. Cheaper and three seconds quicker to raise than the shared barracks, with a fifth less structure — the point is to have one standing in every sector, not to keep any one of them.',
+    icon: 'barracks',
+    hotkey: 'B',
+  },
+  {
+    id: 'kockumsYard',
+    name: 'Kockums Shipyard',
+    shortName: 'KOCKUMS',
+    role: 'Naval production / repair',
+    footprint: { w: 5, h: 5 },
+    hp: 2900,
+    armour: 'structure',
+    cost: { mats: 1200, req: 165 },
+    buildTime: 30,
+    vision: 10,
+    power: -20,
+    requires: ['factory'],
+    produces: 'naval',
+    productionList: ['missileBoat', 'corvette', 'submarine', 'frigate'],
+    shipyard: true,
+    requiresWater: true,
+    variantOf: 'shipyard',
+    national: true,
+    description:
+      'Swedish hardened naval yard: blast-resistant halls and a covered fitting-out basin. A fifth more structure and two extra seconds to build than the shared shipyard, and it sees a little further over the approaches. It builds and services the same hulls.',
+    icon: 'shipyard',
+    hotkey: 'N',
+  },
+  {
+    id: 'noorBattery',
+    name: 'Noor Coast Launcher',
+    shortName: 'NOOR',
+    role: 'Static anti-ship defence',
+    footprint: { w: 2, h: 2 },
+    hp: 820,
+    armour: 'structure',
+    cost: { mats: 380, req: 35 },
+    buildTime: 11,
+    vision: 11,
+    power: -12,
+    requires: ['factory'],
+    weapons: ['noorMissile'],
+    turretRate: 1.6,
+    requiresWater: true,
+    variantOf: 'coastalBattery',
+    national: true,
+    description:
+      'Iranian dispersed shore-launch site: a truck-borne launcher and a revetment instead of a hardened battery. Cheaper, quicker and much more fragile than the shared battery, with three tiles less reach — the doctrine is many sites, not one strongpoint.',
+    icon: 'coastal',
+    hotkey: 'L',
+  },
+  {
+    id: 'entrenchedAtGun',
+    name: 'Entrenched AT Gun',
+    shortName: 'AT STRONGPOINT',
+    role: 'Static anti-armour',
+    footprint: { w: 2, h: 2 },
+    hp: 1450,
+    armour: 'structure',
+    cost: { mats: 480, req: 35 },
+    buildTime: 15,
+    vision: 10,
+    power: -10,
+    weapons: ['atTurretGun'],
+    turretRate: 2.0,
+    variantOf: 'atTurret',
+    national: true,
+    description:
+      'North Korean anti-tank strongpoint: the shared 76mm gun under a timber-and-concrete casemate. Nearly a third more structure for a little more material and two extra seconds, and a slower mount — a position built to be assaulted rather than to redeploy.',
+    icon: 'atgun',
+    hotkey: 'T',
   },
 ];
 
@@ -575,21 +804,27 @@ export const BUILDING_LIST = ROSTER;
 /** Registered national variants; deliberately excluded from the shared baseline. */
 export const NATIONAL_BUILDING_LIST = NATIONAL_BUILDINGS;
 
-/** Baseline family id for a national variant, or the id itself. */
+/**
+ * Canonical baseline slot for a structure, walking the whole `variantOf` chain
+ * so a national variant of an alliance platform still reports the slot it
+ * occupies. A broken chain reports the queried id rather than an unrelated
+ * ancestor.
+ */
 export function buildingFamily(id: string): string {
-  return BUILDINGS[id]?.variantOf ?? id;
+  return resolveVariantChain(BUILDINGS, id).root;
 }
 
 /**
  * Structure families that must already stand completed before `id` can be
- * laid. A national variant inherits its baseline's requirements unless it
+ * laid. A national variant inherits its canonical slot's requirements unless it
  * declares its own, so a substituted structure never escapes its family's gate.
  */
 export function buildingRequirements(id: string): string[] {
   const def = BUILDINGS[id];
   if (!def) return [];
   if (def.requires) return def.requires;
-  return def.variantOf ? BUILDINGS[def.variantOf]?.requires ?? [] : [];
+  const root = buildingFamily(id);
+  return root === id ? [] : BUILDINGS[root]?.requires ?? [];
 }
 
 export function buildingDef(id: string): BuildingDef {

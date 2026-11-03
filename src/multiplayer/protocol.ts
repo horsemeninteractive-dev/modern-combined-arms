@@ -7,7 +7,7 @@ import type {
   ProjectedProjectile,
   TeamSnapshot,
 } from './projection';
-import type { ContactRecord, SimEvent } from '../sim/types';
+import type { ContactRecord, SimEvent, SmokeCloud } from '../sim/types';
 
 /**
  * Phase 2A wire protocol.
@@ -345,6 +345,8 @@ export interface DeltaChanges {
   fog?: FogDelta;
   contacts?: ContactRecord[];
   charted?: number[];
+  /** The recipient's whole drawable smoke list, replaced when it changes. */
+  smoke?: SmokeCloud[];
   players?: { upsert: ProjectedPlayer[] };
   entities?: { upsert: ProjectedEntity[]; remove: number[] };
   projectiles?: { upsert: ProjectedProjectile[]; remove: number[] };

@@ -7,6 +7,7 @@ import type {
   Projectile,
   QueueItem,
   SimEvent,
+  SmokeCloud,
 } from '../sim/types';
 import { evaluateMatchResult, type NeutralMatchResult } from './matchResult';
 
@@ -45,6 +46,11 @@ export interface ProjectedPlayer {
   stats: PlayerState['stats'];
   defeated: boolean;
   relayCount: number;
+  /**
+   * The seat's own research only. An opponent's completed technologies would
+   * reveal its entire build plan, so the team projection never carries them.
+   */
+  research?: PlayerState['research'];
 }
 
 export interface ProjectedEntity {
@@ -77,6 +83,15 @@ export interface ProjectedEntity {
   rallyZ?: number;
   targetId?: number;
   garrisonId?: number;
+  /** Own entities only: upgrades this hull has taken. */
+  upgrades?: string[];
+  /** Own entities only: modules installed on this structure. */
+  modules?: string[];
+  /**
+   * Own entities only: per-ability reload clocks. An opponent's remaining
+   * cooldown is combat information the projection does not hand over.
+   */
+  cooldowns?: Record<string, number>;
 }
 
 export interface ProjectedTeamResult {
@@ -137,6 +152,12 @@ export interface ProjectedTeamState {
   charted: number[];
   players: ProjectedPlayer[];
   entities: ProjectedEntity[];
+  /**
+   * Authoritative smoke the recipient may draw. Its own clouds always; a
+   * hostile cloud only where the team's fog can actually see the ground it sits
+   * on, so a screen does not broadcast a hidden hull's position.
+   */
+  smoke: SmokeCloud[];
   projectiles: ProjectedProjectile[];
   events: SimEvent[];
   result: ProjectedMatchResult;
@@ -162,6 +183,10 @@ function projectPlayer(player: PlayerState): ProjectedPlayer {
     stats: { ...player.stats },
     defeated: player.defeated,
     relayCount: player.relayCount,
+    research: {
+      completed: [...player.research.completed],
+      project: player.research.project ? { ...player.research.project } : null,
+    },
   };
 }
 
@@ -195,6 +220,11 @@ function liveEntity(game: Game, entity: Entity, team: number, own: boolean): Pro
     entity.targetId && game.isVisibleTo(team, entity.targetId) ? entity.targetId : 0;
   projected.garrisonId =
     entity.garrisonId && game.isKnownTo(team, entity.garrisonId) ? entity.garrisonId : 0;
+  if (entity.upgrades && entity.upgrades.length > 0) projected.upgrades = [...entity.upgrades];
+  if (entity.modules && entity.modules.length > 0) projected.modules = [...entity.modules];
+  if (entity.cooldowns && Object.keys(entity.cooldowns).length > 0) {
+    projected.cooldowns = { ...entity.cooldowns };
+  }
   return projected;
 }
 
@@ -349,6 +379,15 @@ export function createTeamState(
     if (projected) events.push(projected);
   }
 
+  const smoke: SmokeCloud[] = [];
+  for (const cloud of game.state.smoke) {
+    const own = game.teamOf(cloud.owner) === team;
+    if (!own && game.fogAt(team, Math.floor(cloud.x / TILE_SIZE), Math.floor(cloud.z / TILE_SIZE)) !== 2) {
+      continue;
+    }
+    smoke.push({ ...cloud });
+  }
+
   const map = game.state.map;
   const fog = game.state.fog[team] ?? new Uint8Array(map.width * map.height);
   return {
@@ -365,6 +404,7 @@ export function createTeamState(
       .filter((player) => player.team === team)
       .map(projectPlayer),
     entities,
+    smoke,
     projectiles,
     events,
     result: projectResult(result ?? evaluateMatchResult(game), team),

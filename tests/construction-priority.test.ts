@@ -24,6 +24,7 @@ import { Game } from '../src/sim/game';
 import { createEmptyScenario } from '../src/data/scenarios';
 import { AIController, initialAIState } from '../src/sim/ai';
 import { Terrain, tileIndex } from '../src/sim/terrain';
+import { RESEARCH } from '../src/data/research';
 
 interface Fixture {
   /** Extra complete refineries beyond the one in the core. */
@@ -71,6 +72,10 @@ function scenarioFor(f: Fixture) {
     { defId: 'powerPlant', owner: 1, x: 36, z: 37 },
     { defId: 'refinery', owner: 1, x: 48, z: 31 },
   );
+  // The tree is already finished, so the commander has nothing left to study and
+  // no reason to site a research centre. That keeps the measured choice on the
+  // economy and perimeter, which is what these fixtures are about.
+  scenario.players[1].technologies = RESEARCH.techs.map((tech) => tech.id);
   for (let i = 0; i < (f.refineries ?? 0); i++) {
     scenario.structures.push({ defId: 'refinery', owner: 1, x: 52 + i * 4, z: 31 });
   }

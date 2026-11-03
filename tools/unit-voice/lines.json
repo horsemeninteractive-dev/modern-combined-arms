@@ -5,12 +5,28 @@
       "name": "Combat Engineer",
       "role": "Construction / capture",
       "voice": "bm_george",
-      "speed": 1.0,
+      "speed": 1,
       "cues": {
-        "select": "Engineer, standing by.",
-        "move": "Moving out.",
-        "attack": "Unarmed, cannot engage.",
-        "unableToComply": "Cannot comply."
+        "select": [
+          "Engineer section, standing by.",
+          "Combat engineers, ready to build.",
+          "Sappers on the net, go ahead."
+        ],
+        "move": [
+          "Engineer team moving out.",
+          "On the way, sirs.",
+          "Wheels up, engineer detail."
+        ],
+        "attack": [
+          "Unarmed, cannot engage.",
+          "No weapons on this rig.",
+          "We build it, we don't shoot it."
+        ],
+        "unableToComply": [
+          "Cannot comply with that.",
+          "Negative, engineers can't do it.",
+          "That's outside my remit."
+        ]
       }
     },
     "rifle": {
@@ -19,10 +35,26 @@
       "voice": "am_echo",
       "speed": 1.08,
       "cues": {
-        "select": "Rifle squad, ready.",
-        "move": "On the way.",
-        "attack": "Target acquired.",
-        "unableToComply": "Negative, unable."
+        "select": [
+          "Rifle squad, ready.",
+          "First squad, up and waiting.",
+          "Riflemen on the net."
+        ],
+        "move": [
+          "On the way.",
+          "Squad moving, watch our lane.",
+          "Boots moving now."
+        ],
+        "attack": [
+          "Target acquired.",
+          "Rifles up, engaging.",
+          "Contact, laying fire."
+        ],
+        "unableToComply": [
+          "Negative, unable.",
+          "Can't reach that, over.",
+          "No line on it."
+        ]
       }
     },
     "atgm": {
@@ -31,10 +63,26 @@
       "voice": "am_michael",
       "speed": 1.04,
       "cues": {
-        "select": "Missile team, ready.",
-        "move": "Missile team moving.",
-        "attack": "Tank in sight.",
-        "unableToComply": "No shot."
+        "select": [
+          "Missile team, ready.",
+          "ATGM up, tubes cold.",
+          "Gunner here, missile armed."
+        ],
+        "move": [
+          "Missile team moving.",
+          "Relocating the launcher.",
+          "Tubes up, moving."
+        ],
+        "attack": [
+          "Tank in sight.",
+          "Armour identified, locking.",
+          "Missile away on the hull."
+        ],
+        "unableToComply": [
+          "No shot.",
+          "Blocked, no line of sight.",
+          "Can't get a lock."
+        ]
       }
     },
     "medic": {
@@ -43,10 +91,26 @@
       "voice": "bf_emma",
       "speed": 1.1,
       "cues": {
-        "select": "Medic, ready.",
-        "move": "Medic moving up.",
-        "attack": "Unarmed, cannot engage.",
-        "unableToComply": "Cannot comply."
+        "select": [
+          "Medic, ready.",
+          "Field hospital on the move.",
+          "Corpsman here, who's hurt?"
+        ],
+        "move": [
+          "Medic moving up.",
+          "Stretchers loaded, going.",
+          "Casualty team en route."
+        ],
+        "attack": [
+          "No rifle, only a medkit.",
+          "I carry bandages, not bullets.",
+          "No weapon here, sorry."
+        ],
+        "unableToComply": [
+          "Cannot comply.",
+          "Not my job, over.",
+          "Can't do that, sorry."
+        ]
       }
     },
     "tank": {
@@ -55,10 +119,26 @@
       "voice": "am_onyx",
       "speed": 0.98,
       "cues": {
-        "select": "Main battle tank, ready.",
-        "move": "Rolling out.",
-        "attack": "Target acquired.",
-        "unableToComply": "Negative."
+        "select": [
+          "Main battle tank, ready.",
+          "Tank crew up, sabots loaded.",
+          "Armour on the net."
+        ],
+        "move": [
+          "Rolling out.",
+          "Tracks turning, moving.",
+          "Hull moving, keep clear."
+        ],
+        "attack": [
+          "Gunner, sabot up.",
+          "Gunner, sabot, fire.",
+          "Engaging armour now."
+        ],
+        "unableToComply": [
+          "No shot from this hull.",
+          "Can't get the gun on it.",
+          "No shot from here."
+        ]
       }
     },
     "spg": {
@@ -67,10 +147,26 @@
       "voice": "am_eric",
       "speed": 0.95,
       "cues": {
-        "select": "Gun battery, ready.",
-        "move": "Gun battery moving.",
-        "attack": "Fire mission.",
-        "unableToComply": "Cannot fire."
+        "select": [
+          "Gun battery, ready.",
+          "Howitzer up, charges laid.",
+          "Indirect fire, standing by."
+        ],
+        "move": [
+          "Gun battery moving.",
+          "Relocating the gun.",
+          "Prime mover rolling."
+        ],
+        "attack": [
+          "Fire mission.",
+          "Shot out, adjusting.",
+          "Rounds away, on the way."
+        ],
+        "unableToComply": [
+          "Cannot fire.",
+          "Out of range, no mission.",
+          "Tube's not laid for that."
+        ]
       }
     },
     "recon": {
@@ -79,22 +175,54 @@
       "voice": "am_liam",
       "speed": 1.06,
       "cues": {
-        "select": "Scout vehicle, ready.",
-        "move": "Scout vehicle moving out.",
-        "attack": "Target acquired.",
-        "unableToComply": "Negative."
+        "select": [
+          "Scout vehicle, ready.",
+          "Recon up, optics clean.",
+          "Eyes forward, go ahead."
+        ],
+        "move": [
+          "Scout vehicle moving out.",
+          "Screening ahead now.",
+          "Rolling quiet, moving."
+        ],
+        "attack": [
+          "Scout has eyes on it.",
+          "Contact, engaging light.",
+          "Scout engaging."
+        ],
+        "unableToComply": [
+          "Scout says negative.",
+          "Too far to see it.",
+          "Can't reach that far."
+        ]
       }
     },
     "aa": {
       "name": "AA Vehicle",
       "role": "Air defence",
       "voice": "bf_alice",
-      "speed": 1.0,
+      "speed": 1,
       "cues": {
-        "select": "Air defence, ready.",
-        "move": "Air defence moving.",
-        "attack": "Target acquired.",
-        "unableToComply": "No target."
+        "select": [
+          "Air defence, ready.",
+          "AA up, radar sweeping.",
+          "Sky watch, standing by."
+        ],
+        "move": [
+          "Air defence moving.",
+          "Radar displacing.",
+          "AA rolling to new ground."
+        ],
+        "attack": [
+          "Aircraft in the net.",
+          "Air target, guns up.",
+          "Engaging aircraft."
+        ],
+        "unableToComply": [
+          "No target.",
+          "Nothing in the sky.",
+          "Can't track that."
+        ]
       }
     },
     "recovery": {
@@ -103,10 +231,26 @@
       "voice": "bm_fable",
       "speed": 0.98,
       "cues": {
-        "select": "Recovery, standing by.",
-        "move": "Recovery moving.",
-        "attack": "Unarmed, cannot engage.",
-        "unableToComply": "Cannot comply."
+        "select": [
+          "Recovery, standing by.",
+          "Wrecker up, hook ready.",
+          "Recovery crew on the net."
+        ],
+        "move": [
+          "Recovery moving.",
+          "Wrecker rolling out.",
+          "On the way to the break."
+        ],
+        "attack": [
+          "Wrecker has no main gun.",
+          "I tow tanks, I don't fight them.",
+          "No gun on the wrecker."
+        ],
+        "unableToComply": [
+          "Wrecker can't do that.",
+          "Can't pull that, over.",
+          "Negative on that task."
+        ]
       }
     },
     "harvester": {
@@ -115,10 +259,26 @@
       "voice": "am_puck",
       "speed": 0.96,
       "cues": {
-        "select": "Harvester, ready.",
-        "move": "Harvester moving.",
-        "attack": "Unarmed, cannot engage.",
-        "unableToComply": "Negative."
+        "select": [
+          "Harvester, ready.",
+          "Ore rig up, hopper empty.",
+          "Miner here, go ahead."
+        ],
+        "move": [
+          "Harvester moving.",
+          "Heading for the seam.",
+          "Rig rolling, moving."
+        ],
+        "attack": [
+          "Mining rig, no armament.",
+          "This rig has no guns.",
+          "Just a mining bucket here."
+        ],
+        "unableToComply": [
+          "Rig says no.",
+          "Can't do that, over.",
+          "No, not with this rig."
+        ]
       }
     },
     "fighter": {
@@ -127,10 +287,26 @@
       "voice": "bf_lily",
       "speed": 1.12,
       "cues": {
-        "select": "Strike flight, ready.",
-        "move": "Course set.",
-        "attack": "Missiles armed.",
-        "unableToComply": "Unable."
+        "select": [
+          "Strike flight, ready.",
+          "Bomber up, wings clean.",
+          "Strike package on the net."
+        ],
+        "move": [
+          "Course set.",
+          "Turning to new heading.",
+          "Flight rerouted."
+        ],
+        "attack": [
+          "Missiles armed.",
+          "Bombs released.",
+          "Rolling in on the target."
+        ],
+        "unableToComply": [
+          "Unable.",
+          "Can't make that pass.",
+          "Negative, no run-in."
+        ]
       }
     },
     "interceptor": {
@@ -139,10 +315,26 @@
       "voice": "af_nova",
       "speed": 1.12,
       "cues": {
-        "select": "Air cover, ready.",
-        "move": "Course set.",
-        "attack": "Target locked.",
-        "unableToComply": "Unable."
+        "select": [
+          "Air cover, ready.",
+          "Interceptor up, clean jet.",
+          "Fighter cover on station."
+        ],
+        "move": [
+          "Vector set, climbing.",
+          "Climbing to the new vector.",
+          "Repositioning for cover."
+        ],
+        "attack": [
+          "Target locked.",
+          "Splash one, engaging.",
+          "Missile away, tracking."
+        ],
+        "unableToComply": [
+          "Negative, no joy.",
+          "No lock, can't take it.",
+          "No joy, bandit is gone."
+        ]
       }
     },
     "uav": {
@@ -151,34 +343,26 @@
       "voice": "af_sky",
       "speed": 1.1,
       "cues": {
-        "select": "Drone, on station.",
-        "move": "Climbing to station.",
-        "attack": "Unarmed, cannot engage.",
-        "unableToComply": "Unable."
-      }
-    },
-    "corvette": {
-      "name": "Missile Corvette",
-      "role": "Naval combatant",
-      "voice": "bm_lewis",
-      "speed": 1.0,
-      "cues": {
-        "select": "Warship, standing by.",
-        "move": "Under way.",
-        "attack": "Target acquired.",
-        "unableToComply": "Unable."
-      }
-    },
-    "submarine": {
-      "name": "Attack Submarine",
-      "role": "Subsurface raider",
-      "voice": "am_santa",
-      "speed": 1.0,
-      "cues": {
-        "select": "Submarine, standing by.",
-        "move": "Under way.",
-        "attack": "Torpedoes away.",
-        "unableToComply": "Cannot comply."
+        "select": [
+          "Drone, on station.",
+          "Eyes in the sky, ready.",
+          "Recon drone, link good."
+        ],
+        "move": [
+          "Climbing to station.",
+          "Drone shifting orbit.",
+          "New grid, drone moving."
+        ],
+        "attack": [
+          "Drone carries cameras only.",
+          "Drone carries no weapons.",
+          "Just a camera up here."
+        ],
+        "unableToComply": [
+          "Drone can't, over.",
+          "Can't do that from altitude.",
+          "Negative, no payload."
+        ]
       }
     },
     "missileBoat": {
@@ -187,10 +371,82 @@
       "voice": "af_river",
       "speed": 1.04,
       "cues": {
-        "select": "Fast attack, ready.",
-        "move": "Boat moving.",
-        "attack": "Missiles away.",
-        "unableToComply": "Cannot comply."
+        "select": [
+          "Fast attack, ready.",
+          "Missile boat, engines hot.",
+          "Boat crew on the net."
+        ],
+        "move": [
+          "Boat moving.",
+          "Coming to new heading.",
+          "Throttles up, under way."
+        ],
+        "attack": [
+          "Missiles away.",
+          "Salvo launched.",
+          "Anti-ship missiles out."
+        ],
+        "unableToComply": [
+          "Boat can't do that.",
+          "No firing solution on that.",
+          "Can't make that run."
+        ]
+      }
+    },
+    "corvette": {
+      "name": "Missile Corvette",
+      "role": "Naval combatant",
+      "voice": "bm_lewis",
+      "speed": 1,
+      "cues": {
+        "select": [
+          "Warship, standing by.",
+          "Corvette on the net.",
+          "Deck ready, captain here."
+        ],
+        "move": [
+          "Boat under way, silent.",
+          "Ship turning to course.",
+          "Helm answered, moving."
+        ],
+        "attack": [
+          "Bearing set, locked on.",
+          "Corvette missiles away.",
+          "Main battery engaging."
+        ],
+        "unableToComply": [
+          "Ship cannot comply.",
+          "Negative, out of arc here.",
+          "Negative, out of arc."
+        ]
+      }
+    },
+    "submarine": {
+      "name": "Attack Submarine",
+      "role": "Subsurface raider",
+      "voice": "am_santa",
+      "speed": 1,
+      "cues": {
+        "select": [
+          "Submarine, standing by.",
+          "Boat rigged for quiet.",
+          "Sonar here, go ahead."
+        ],
+        "move": [
+          "Boat under way, quiet.",
+          "Diving to new depth.",
+          "Coming to periscope depth."
+        ],
+        "attack": [
+          "Torpedoes away.",
+          "Tubes one and two fired.",
+          "Solution set, firing."
+        ],
+        "unableToComply": [
+          "Sub can't comply.",
+          "No solution on that hull.",
+          "Too shallow to run."
+        ]
       }
     },
     "frigate": {
@@ -199,10 +455,166 @@
       "voice": "af_nicole",
       "speed": 0.98,
       "cues": {
-        "select": "Escort on station.",
-        "move": "Escort moving.",
-        "attack": "Engaging.",
-        "unableToComply": "Unable."
+        "select": [
+          "Escort on station.",
+          "Frigate ready, screen set.",
+          "Escort duty, go ahead."
+        ],
+        "move": [
+          "Escort moving.",
+          "Screen shifting with you.",
+          "Taking station, under way."
+        ],
+        "attack": [
+          "Engaging.",
+          "Guns and missiles out.",
+          "Firing on the contact."
+        ],
+        "unableToComply": [
+          "Escort can't, over.",
+          "Negative, escort holds station.",
+          "Negative, holding station."
+        ]
+      }
+    },
+    "ifv": {
+      "name": "Infantry Fighting Vehicle",
+      "role": "Mechanised fire support",
+      "voice": "am_liam",
+      "speed": 1.02,
+      "cues": {
+        "select": [
+          "Fighting vehicle, ready.",
+          "IFV up, autocannon loaded.",
+          "Mechanised section, go ahead."
+        ],
+        "move": [
+          "IFV rolling.",
+          "Moving with the infantry.",
+          "Tracked carrier under way."
+        ],
+        "attack": [
+          "Autocannon up.",
+          "Engaging with the chain gun.",
+          "Contact, suppressing."
+        ],
+        "unableToComply": [
+          "IFV can't, over.",
+          "Can't elevate that high.",
+          "No shot for the cannon."
+        ]
+      }
+    },
+    "td": {
+      "name": "Tank Destroyer",
+      "role": "Anti-armour",
+      "voice": "am_michael",
+      "speed": 1,
+      "cues": {
+        "select": [
+          "Tank destroyer, ready.",
+          "Hunting armour, gun laid.",
+          "Destroyer crew up."
+        ],
+        "move": [
+          "Destroyer moving.",
+          "Hunting ground shifting.",
+          "Rolling to the next hide."
+        ],
+        "attack": [
+          "Tank destroyer sees the hull.",
+          "Firing on the hull.",
+          "Kill shot away."
+        ],
+        "unableToComply": [
+          "No firing solution.",
+          "He's behind cover.",
+          "Can't punch through that."
+        ]
+      }
+    },
+    "rocketArtillery": {
+      "name": "Multiple Rocket Launcher",
+      "role": "Rocket artillery",
+      "voice": "am_eric",
+      "speed": 1,
+      "cues": {
+        "select": [
+          "Rocket battery, ready.",
+          "Launcher up, pods full.",
+          "Rockets on the rail."
+        ],
+        "move": [
+          "Rocket battery moving.",
+          "Launcher displacing.",
+          "Pods up, rolling out."
+        ],
+        "attack": [
+          "Full salvo, rocket battery.",
+          "Full salvo, fire.",
+          "Saturation fire, on the way."
+        ],
+        "unableToComply": [
+          "Rockets can't fire.",
+          "Too close for rockets.",
+          "No safe release."
+        ]
+      }
+    },
+    "attackHelo": {
+      "name": "Attack Helicopter",
+      "role": "Rotary attack",
+      "voice": "bf_lily",
+      "speed": 1.06,
+      "cues": {
+        "select": [
+          "Gunship, ready.",
+          "Rotor up, weapons hot.",
+          "Attack helicopter on the net."
+        ],
+        "move": [
+          "Gunship moving.",
+          "Pulling pitch, en route.",
+          "Rotors turning to new grid."
+        ],
+        "attack": [
+          "Helo rockets away.",
+          "Hellfire out.",
+          "Rolling in, guns hot."
+        ],
+        "unableToComply": [
+          "Gunship can't.",
+          "Can't get a bead on it.",
+          "Negative, too low."
+        ]
+      }
+    },
+    "navalSupport": {
+      "name": "Fire Support Ship",
+      "role": "Naval support",
+      "voice": "af_nicole",
+      "speed": 0.96,
+      "cues": {
+        "select": [
+          "Fire support, ready.",
+          "Gun ship on the net.",
+          "Support battery standing by."
+        ],
+        "move": [
+          "Support ship moving.",
+          "Shifting bombardment station.",
+          "Under way to new water."
+        ],
+        "attack": [
+          "Shore bombardment, fire.",
+          "Main guns, shot out.",
+          "Bombardment commencing."
+        ],
+        "unableToComply": [
+          "Guns can't range it.",
+          "Out of range of the shore.",
+          "No mission, no guns."
+        ]
       }
     },
     "pathfinder": {
@@ -211,10 +623,26 @@
       "voice": "bf_isabella",
       "speed": 1.06,
       "cues": {
-        "select": "Scout team, ready.",
-        "move": "Scout team moving.",
-        "attack": "Unarmed, cannot engage.",
-        "unableToComply": "Negative."
+        "select": [
+          "Scout team, ready.",
+          "Pathfinders, eyes open.",
+          "Recon team on the net."
+        ],
+        "move": [
+          "Scout team moving.",
+          "Slipping forward quietly.",
+          "Pathfinders moving out."
+        ],
+        "attack": [
+          "Scouts travel light, no guns.",
+          "We carry optics, not rifles.",
+          "No weapons on this team."
+        ],
+        "unableToComply": [
+          "Pathfinders can't.",
+          "Can't hold that ground.",
+          "Not with this team."
+        ]
       }
     },
     "spearhead": {
@@ -223,10 +651,26 @@
       "voice": "am_fenrir",
       "speed": 0.98,
       "cues": {
-        "select": "Main battle tank, ready.",
-        "move": "Tank rolling.",
-        "attack": "Target acquired.",
-        "unableToComply": "Negative."
+        "select": [
+          "Spearhead, ready.",
+          "Polish armour up.",
+          "Spearhead crew on the net."
+        ],
+        "move": [
+          "Tank rolling.",
+          "Spearhead moving out.",
+          "Hull forward, on the way."
+        ],
+        "attack": [
+          "Spearhead has the target.",
+          "Smoothbore, fire.",
+          "Spearhead engaging."
+        ],
+        "unableToComply": [
+          "Spearhead says no.",
+          "Gun can't bear.",
+          "No shot, over."
+        ]
       }
     },
     "mlrs": {
@@ -235,10 +679,26 @@
       "voice": "bm_daniel",
       "speed": 0.96,
       "cues": {
-        "select": "Rocket battery, standing by.",
-        "move": "Rocket battery moving.",
-        "attack": "Fire mission.",
-        "unableToComply": "Cannot fire."
+        "select": [
+          "Rocket battery, standing by.",
+          "British rockets up.",
+          "Battery ready, pods loaded."
+        ],
+        "move": [
+          "British battery on the road.",
+          "Launcher on the road.",
+          "Displacing to the next grid."
+        ],
+        "attack": [
+          "Battery, fire mission.",
+          "Salvo away.",
+          "Rockets out, good effect."
+        ],
+        "unableToComply": [
+          "Rockets can't release.",
+          "Inside the dead zone.",
+          "Too close to release."
+        ]
       }
     },
     "heavyHowitzer": {
@@ -247,10 +707,54 @@
       "voice": "am_adam",
       "speed": 0.94,
       "cues": {
-        "select": "Heavy guns, ready.",
-        "move": "Heavy battery moving.",
-        "attack": "Fire mission.",
-        "unableToComply": "Cannot fire."
+        "select": [
+          "Heavy guns, ready.",
+          "Big tube up.",
+          "Heavy battery on the net."
+        ],
+        "move": [
+          "Heavy battery moving.",
+          "Towing the big gun out.",
+          "Heavy section displacing."
+        ],
+        "attack": [
+          "Heavy battery, fire.",
+          "Heavy round away.",
+          "Two-oh-three, shot out."
+        ],
+        "unableToComply": [
+          "Heavy gun cannot fire.",
+          "Too far for the tube.",
+          "No mission for that grid."
+        ]
+      }
+    },
+    "hedgehogTeam": {
+      "name": "Hedgehog AT Team",
+      "role": "Anti-armour",
+      "voice": "am_michael",
+      "speed": 0.98,
+      "cues": {
+        "select": [
+          "Hedgehog team, ready.",
+          "Anti-tank team, loaded.",
+          "Hedgehog on the net."
+        ],
+        "move": [
+          "Hedgehog moving.",
+          "Team shifting to cover.",
+          "AT team relocating."
+        ],
+        "attack": [
+          "Hedgehog sees the hull.",
+          "Hedgehog firing.",
+          "Missile on the hull."
+        ],
+        "unableToComply": [
+          "Hedgehog can't take it.",
+          "Nothing in the reticle.",
+          "Can't reach that one."
+        ]
       }
     },
     "deepReconUAV": {
@@ -259,10 +763,978 @@
       "voice": "af_sarah",
       "speed": 1.08,
       "cues": {
-        "select": "Recon drone, on station.",
-        "move": "Drone moving to station.",
-        "attack": "Unarmed, cannot engage.",
-        "unableToComply": "Unable."
+        "select": [
+          "Recon drone, on station.",
+          "Deep eye ready.",
+          "Long-range drone, link good."
+        ],
+        "move": [
+          "Drone moving to station.",
+          "Pushing the orbit deeper.",
+          "New grid, climbing."
+        ],
+        "attack": [
+          "Deep eye is unarmed.",
+          "This drone only watches.",
+          "No stores on the wing."
+        ],
+        "unableToComply": [
+          "Deep eye can't.",
+          "Too far from the link.",
+          "Negative, no weapons."
+        ]
+      }
+    },
+    "kestrelTeam": {
+      "name": "Kestrel Air Team",
+      "role": "Air defence",
+      "voice": "bf_alice",
+      "speed": 1.08,
+      "cues": {
+        "select": [
+          "Kestrel team, ready.",
+          "Kestrel launcher up.",
+          "Air team on the net."
+        ],
+        "move": [
+          "Kestrel moving.",
+          "Launcher team relocating.",
+          "Setting up new sky watch."
+        ],
+        "attack": [
+          "Kestrel, missile away.",
+          "Air target engaged.",
+          "Splash, bird down."
+        ],
+        "unableToComply": [
+          "No track.",
+          "Sky is clear.",
+          "Can't lock that vector."
+        ]
+      }
+    },
+    "wilk": {
+      "name": "Wilk Heavy IFV",
+      "role": "Infantry fighting vehicle",
+      "voice": "am_onyx",
+      "speed": 1.02,
+      "cues": {
+        "select": [
+          "Wilk up, ready.",
+          "Heavy fighting vehicle, loaded.",
+          "Wilk crew on the net."
+        ],
+        "move": [
+          "Wilk rolling.",
+          "Heavy track moving.",
+          "Wilk advancing with the infantry."
+        ],
+        "attack": [
+          "Wilk engaging.",
+          "Autocannon on the contact.",
+          "Heavy fire, suppressing."
+        ],
+        "unableToComply": [
+          "Wilk can't do it.",
+          "Can't get the gun up.",
+          "No line for the cannon."
+        ]
+      }
+    },
+    "stormShadow": {
+      "name": "Storm Shadow Battery",
+      "role": "Deep strike",
+      "voice": "bm_daniel",
+      "speed": 0.94,
+      "cues": {
+        "select": [
+          "Storm Shadow, ready.",
+          "Deep strike battery up.",
+          "Cruise missiles on the rail."
+        ],
+        "move": [
+          "Deep strike moving.",
+          "Launcher displacing quietly.",
+          "Battery on the road."
+        ],
+        "attack": [
+          "Missile away.",
+          "Storm Shadow launched.",
+          "Deep strike inbound."
+        ],
+        "unableToComply": [
+          "Storm Shadow can't launch.",
+          "Too close to the launcher.",
+          "No viable target."
+        ]
+      }
+    },
+    "tosp": {
+      "name": "TOSP Thermobaric Launcher",
+      "role": "Area denial",
+      "voice": "am_eric",
+      "speed": 0.92,
+      "cues": {
+        "select": [
+          "Thermobaric, ready.",
+          "TOSP launcher up.",
+          "Fuel-air battery on the net."
+        ],
+        "move": [
+          "TOSP moving.",
+          "Launcher shifting position.",
+          "Heavy rocket on the road."
+        ],
+        "attack": [
+          "Thermobaric away.",
+          "Fuel-air launched.",
+          "Burning the grid down."
+        ],
+        "unableToComply": [
+          "Thermobaric can't fire.",
+          "Too close to burn us.",
+          "No safe shot."
+        ]
+      }
+    },
+    "sprut": {
+      "name": "Sprut Recon Buggy",
+      "role": "Reconnaissance",
+      "voice": "af_sky",
+      "speed": 1.06,
+      "cues": {
+        "select": [
+          "Sprut, ready.",
+          "Buggy up, optics live.",
+          "Recon buggy on the net."
+        ],
+        "move": [
+          "Sprut moving.",
+          "Buggy running the route.",
+          "Fast recon rolling."
+        ],
+        "attack": [
+          "Sprut engaging.",
+          "Light gun on target.",
+          "Buggy firing."
+        ],
+        "unableToComply": [
+          "Sprut says negative.",
+          "Buggy can't get there.",
+          "Too thin to fight that."
+        ]
+      }
+    },
+    "taszar": {
+      "name": "Taszar Mortar Team",
+      "role": "Infantry support",
+      "voice": "am_echo",
+      "speed": 1.02,
+      "cues": {
+        "select": [
+          "Taszar mortar team, ready.",
+          "Mortar up, base plate down.",
+          "Tubes ready on the net."
+        ],
+        "move": [
+          "Mortar team moving.",
+          "Packing the tube out.",
+          "Base plate up, moving."
+        ],
+        "attack": [
+          "Rounds away.",
+          "Mortar firing.",
+          "High angle, shot out."
+        ],
+        "unableToComply": [
+          "Mortar can't fire.",
+          "Too close for the tube.",
+          "Out of range."
+        ]
+      }
+    },
+    "rifleEC": {
+      "name": "Motor Rifleman",
+      "role": "Infantry",
+      "voice": "am_adam",
+      "speed": 1.06,
+      "cues": {
+        "select": [
+          "Motor rifles, ready.",
+          "Eastern rifles up.",
+          "Motor section on the net."
+        ],
+        "move": [
+          "Motor rifles moving.",
+          "Section advancing.",
+          "Rifles moving up the road."
+        ],
+        "attack": [
+          "Engaging infantry.",
+          "Rifles laying fire.",
+          "Motor rifles suppressing."
+        ],
+        "unableToComply": [
+          "Motor rifles can't.",
+          "Can't advance there.",
+          "No cover on that line."
+        ]
+      }
+    },
+    "atgmEC": {
+      "name": "Heavy Missile Team",
+      "role": "Anti-armour",
+      "voice": "am_fenrir",
+      "speed": 1.02,
+      "cues": {
+        "select": [
+          "Heavy missile team, ready.",
+          "Big tube up, tracker live.",
+          "Missile section on the net."
+        ],
+        "move": [
+          "Missile section moving.",
+          "Relocating the heavy tube.",
+          "Heavy tubes up, rolling."
+        ],
+        "attack": [
+          "Heavy missile away.",
+          "Armour engaged.",
+          "Kill shot, tracking."
+        ],
+        "unableToComply": [
+          "Heavy tube has no shot.",
+          "Can't track through that.",
+          "Negative, blocked."
+        ]
+      }
+    },
+    "reconEC": {
+      "name": "Recon BRM",
+      "role": "Reconnaissance",
+      "voice": "af_alloy",
+      "speed": 1.04,
+      "cues": {
+        "select": [
+          "BRM, ready.",
+          "Recon vehicle up.",
+          "Eyes out, go ahead."
+        ],
+        "move": [
+          "BRM moving.",
+          "Running the scout route.",
+          "Recon rolling forward."
+        ],
+        "attack": [
+          "Contact, engaging.",
+          "BRM firing.",
+          "Light target, on it."
+        ],
+        "unableToComply": [
+          "BRM can't, over.",
+          "BRM can't hold ground.",
+          "Out of my reach."
+        ]
+      }
+    },
+    "ifvEC": {
+      "name": "Amphibious IFV",
+      "role": "Mechanised fire support",
+      "voice": "am_liam",
+      "speed": 1,
+      "cues": {
+        "select": [
+          "Amphibious IFV, ready.",
+          "Boat hull up, cannon loaded.",
+          "IFV section on the net."
+        ],
+        "move": [
+          "IFV swimming.",
+          "Entering the water.",
+          "Amphibious move under way."
+        ],
+        "attack": [
+          "Cannon engaging.",
+          "Firing on the bank.",
+          "Suppressing the treeline."
+        ],
+        "unableToComply": [
+          "Amphibious can't.",
+          "Too deep to cross.",
+          "Can't climb that bank."
+        ]
+      }
+    },
+    "tankEC": {
+      "name": "Main Battle Tank",
+      "role": "Armour",
+      "voice": "am_onyx",
+      "speed": 0.96,
+      "cues": {
+        "select": [
+          "Eastern tank, ready.",
+          "Armour up, gun loaded.",
+          "Tank crew on the net."
+        ],
+        "move": [
+          "Eastern tank rolling.",
+          "Armour moving out.",
+          "Hull forward, under way."
+        ],
+        "attack": [
+          "Target in sight.",
+          "Gun, fire.",
+          "Engaging the hull."
+        ],
+        "unableToComply": [
+          "Eastern tank can't.",
+          "Can't traverse that far.",
+          "Eastern hull, no shot."
+        ]
+      }
+    },
+    "tdEC": {
+      "name": "Assault Gun",
+      "role": "Anti-armour",
+      "voice": "am_santa",
+      "speed": 0.98,
+      "cues": {
+        "select": [
+          "Assault gun, ready.",
+          "Casemate up, loaded.",
+          "Gun crew on the net."
+        ],
+        "move": [
+          "Assault gun moving.",
+          "Casemate rolling forward.",
+          "Hull shifting position."
+        ],
+        "attack": [
+          "Assault gun on the hull.",
+          "Assault gun, shot out.",
+          "Assault gun engaged armour."
+        ],
+        "unableToComply": [
+          "Casemate cannot bear.",
+          "Gun can't turn that far.",
+          "Assault gun blocked."
+        ]
+      }
+    },
+    "spgEC": {
+      "name": "Self-Propelled Howitzer",
+      "role": "Indirect fire",
+      "voice": "af_kore",
+      "speed": 0.96,
+      "cues": {
+        "select": [
+          "Eastern howitzer, ready.",
+          "Gun up, charges set.",
+          "Battery on the net."
+        ],
+        "move": [
+          "Howitzer moving.",
+          "Gun displacing.",
+          "Battery rolling to new ground."
+        ],
+        "attack": [
+          "Eastern battery, fire.",
+          "Shot out.",
+          "Rounds on the way."
+        ],
+        "unableToComply": [
+          "Eastern gun can't fire.",
+          "Eastern gun out of range.",
+          "Eastern gun, no mission."
+        ]
+      }
+    },
+    "rocketArtilleryEC": {
+      "name": "Heavy Rocket Battery",
+      "role": "Rocket artillery",
+      "voice": "af_heart",
+      "speed": 1.02,
+      "cues": {
+        "select": [
+          "Heavy rockets, ready.",
+          "Big salvo up.",
+          "Rocket regiment on the net."
+        ],
+        "move": [
+          "Heavy rockets moving.",
+          "Regiment displacing.",
+          "Pods up, on the road."
+        ],
+        "attack": [
+          "Full salvo away.",
+          "Heavy rockets out.",
+          "Saturation, fire."
+        ],
+        "unableToComply": [
+          "Heavy salvo can't fire.",
+          "Too close for the salvo.",
+          "No release, negative."
+        ]
+      }
+    },
+    "aaEC": {
+      "name": "SAM Vehicle",
+      "role": "Air defence",
+      "voice": "af_aoede",
+      "speed": 1.02,
+      "cues": {
+        "select": [
+          "SAM vehicle, ready.",
+          "Missile rack up.",
+          "Air defence on the net."
+        ],
+        "move": [
+          "SAM moving.",
+          "Rack displacing.",
+          "Radar shifting ground."
+        ],
+        "attack": [
+          "SAM missile away.",
+          "SAM engaging aircraft.",
+          "Track locked, firing."
+        ],
+        "unableToComply": [
+          "SAM has no track.",
+          "Nothing to shoot at.",
+          "Can't lock that."
+        ]
+      }
+    },
+    "uavEC": {
+      "name": "Recon UAV",
+      "role": "Reconnaissance aviation",
+      "voice": "af_jessica",
+      "speed": 1.1,
+      "cues": {
+        "select": [
+          "Eastern drone, ready.",
+          "Recon link up.",
+          "Eyes aloft, go ahead."
+        ],
+        "move": [
+          "Drone climbing.",
+          "Orbit shifting.",
+          "Eastern drone to new grid."
+        ],
+        "attack": [
+          "Eastern drone has no stores.",
+          "No stores on this drone.",
+          "Camera only, no guns."
+        ],
+        "unableToComply": [
+          "Eastern drone can't.",
+          "Link's too weak there.",
+          "Eastern drone, unarmed."
+        ]
+      }
+    },
+    "interceptorEC": {
+      "name": "Interceptor",
+      "role": "Air superiority",
+      "voice": "af_kore",
+      "speed": 1.14,
+      "cues": {
+        "select": [
+          "Eastern fighter, ready.",
+          "Interceptor up, clean.",
+          "Air cover on the net."
+        ],
+        "move": [
+          "Eastern vector set.",
+          "Turning to intercept.",
+          "New vector, climbing."
+        ],
+        "attack": [
+          "Bandit locked up.",
+          "Eastern missile away.",
+          "Splash, bandit down."
+        ],
+        "unableToComply": [
+          "Eastern fighter can't.",
+          "Bandit's too far out.",
+          "Negative, out of fuel for it."
+        ]
+      }
+    },
+    "fighterEC": {
+      "name": "Strike Fighter",
+      "role": "Strike aircraft",
+      "voice": "am_puck",
+      "speed": 1.1,
+      "cues": {
+        "select": [
+          "Eastern strike, ready.",
+          "Bomber up, loaded.",
+          "Strike flight on the net."
+        ],
+        "move": [
+          "Strike course set.",
+          "Turning in on the run.",
+          "Eastern flight rerouted."
+        ],
+        "attack": [
+          "Bombs away.",
+          "Strike package releasing.",
+          "Rolling in, ordnance out."
+        ],
+        "unableToComply": [
+          "Eastern strike can't.",
+          "No run-in on that.",
+          "Can't make the pass."
+        ]
+      }
+    },
+    "attackHeloEC": {
+      "name": "Attack Helicopter",
+      "role": "Rotary attack",
+      "voice": "am_fenrir",
+      "speed": 1.04,
+      "cues": {
+        "select": [
+          "Eastern gunship, ready.",
+          "Rotor up, rockets loaded.",
+          "Helo attack on the net."
+        ],
+        "move": [
+          "Eastern gunship moving.",
+          "Pulling pitch to the grid.",
+          "Rotors shifting position."
+        ],
+        "attack": [
+          "Eastern helo rockets out.",
+          "Gunship rolling in.",
+          "Engaging with rockets."
+        ],
+        "unableToComply": [
+          "Eastern gunship can't.",
+          "Too low for a shot.",
+          "Can't get the nose on it."
+        ]
+      }
+    },
+    "missileBoatEC": {
+      "name": "Missile Boat",
+      "role": "Fast attack",
+      "voice": "af_bella",
+      "speed": 1.06,
+      "cues": {
+        "select": [
+          "Eastern boat, ready.",
+          "Fast attack up.",
+          "Missile crew on the net."
+        ],
+        "move": [
+          "Boat under way.",
+          "Throttles open.",
+          "Eastern boat to new heading."
+        ],
+        "attack": [
+          "Eastern missiles away.",
+          "Salvo out.",
+          "Anti-ship, firing."
+        ],
+        "unableToComply": [
+          "Eastern boat can't.",
+          "No solution on that.",
+          "Can't run that close."
+        ]
+      }
+    },
+    "corvetteEC": {
+      "name": "Missile Corvette",
+      "role": "Naval combatant",
+      "voice": "af_heart",
+      "speed": 0.98,
+      "cues": {
+        "select": [
+          "Eastern corvette, ready.",
+          "Warship on the net.",
+          "Eastern deck ready."
+        ],
+        "move": [
+          "Corvette under way.",
+          "Helm answered.",
+          "Eastern ship turning."
+        ],
+        "attack": [
+          "Eastern corvette, missiles away.",
+          "Main battery firing.",
+          "Contact engaged."
+        ],
+        "unableToComply": [
+          "Eastern ship can't.",
+          "Out of arc.",
+          "Eastern ship, out of arc."
+        ]
+      }
+    },
+    "frigateEC": {
+      "name": "Escort Frigate",
+      "role": "Fleet escort",
+      "voice": "af_alloy",
+      "speed": 0.98,
+      "cues": {
+        "select": [
+          "Eastern escort, ready.",
+          "Frigate on the net.",
+          "Screen set, go ahead."
+        ],
+        "move": [
+          "Eastern escort moving.",
+          "Screen shifting.",
+          "Taking station."
+        ],
+        "attack": [
+          "Engaging contact.",
+          "Guns out.",
+          "Firing on the bearing."
+        ],
+        "unableToComply": [
+          "Eastern escort can't.",
+          "Eastern escort holds.",
+          "Negative, holding."
+        ]
+      }
+    },
+    "submarineEC": {
+      "name": "Attack Submarine",
+      "role": "Subsurface raider",
+      "voice": "af_aoede",
+      "speed": 0.98,
+      "cues": {
+        "select": [
+          "Eastern sub, ready.",
+          "Submarine rigged quiet.",
+          "Sonar here."
+        ],
+        "move": [
+          "Diving now.",
+          "Eastern boat under way.",
+          "Coming to new depth."
+        ],
+        "attack": [
+          "Eastern torpedoes away.",
+          "Tubes fired.",
+          "Firing solution set."
+        ],
+        "unableToComply": [
+          "Eastern sub can't comply.",
+          "No solution.",
+          "Too shallow here."
+        ]
+      }
+    },
+    "navalSupportEC": {
+      "name": "Fire Support Ship",
+      "role": "Naval support",
+      "voice": "af_bella",
+      "speed": 1,
+      "cues": {
+        "select": [
+          "Support ship, ready.",
+          "Eastern guns on the net.",
+          "Bombardment ready."
+        ],
+        "move": [
+          "Eastern support moving.",
+          "Shifting station.",
+          "Eastern ship to new water."
+        ],
+        "attack": [
+          "Eastern guns, fire mission.",
+          "Eastern main guns, shot out.",
+          "Bombarding the shore."
+        ],
+        "unableToComply": [
+          "Eastern guns can't fire.",
+          "Eastern guns out of range.",
+          "Eastern guns, no mission."
+        ]
+      }
+    },
+    "k9Thunder": {
+      "name": "K9 Thunder",
+      "role": "Indirect fire",
+      "voice": "bf_lily",
+      "speed": 1,
+      "cues": {
+        "select": [
+          "Thunder battery, laid and ready.",
+          "K9 gun up, rounds in the rack.",
+          "Long gun reporting, go ahead."
+        ],
+        "move": [
+          "Gun moving, hull down as we go.",
+          "K9 shifting position.",
+          "Rolling to the next fire point."
+        ],
+        "attack": [
+          "Shot out, sixteen thousand.",
+          "Thunder firing.",
+          "One round, on the way."
+        ],
+        "unableToComply": [
+          "Cannot lay that, too close.",
+          "Gun can't reach it.",
+          "No fire mission from here."
+        ]
+      }
+    },
+    "spikeTeam": {
+      "name": "Spike ER Team",
+      "role": "Anti-armour",
+      "voice": "bf_emma",
+      "speed": 1.04,
+      "cues": {
+        "select": [
+          "Spike team, missile up.",
+          "Long-range team, set and waiting.",
+          "Anti-tank pair on the net."
+        ],
+        "move": [
+          "Team moving, launcher on the shoulder.",
+          "Shifting the firing point.",
+          "Spike team, on the way."
+        ],
+        "attack": [
+          "Spike off the rail, tracking.",
+          "Spike out, target armour.",
+          "Long shot, missile gone."
+        ],
+        "unableToComply": [
+          "Missile still reloading.",
+          "No tank in the open.",
+          "Cannot take that shot."
+        ]
+      }
+    },
+    "cv90": {
+      "name": "CV90 Fighting Vehicle",
+      "role": "Mechanised fire support",
+      "voice": "bm_lewis",
+      "speed": 1.02,
+      "cues": {
+        "select": [
+          "CV90 up, gun ready.",
+          "Fighting vehicle, crew mounted.",
+          "Swedish track on the net."
+        ],
+        "move": [
+          "CV90 rolling.",
+          "Track moving, gun forward.",
+          "Vehicle moving to the next bound."
+        ],
+        "attack": [
+          "Forty millimetre, engaging.",
+          "Gun up, firing.",
+          "Missile away, target armour."
+        ],
+        "unableToComply": [
+          "No line on that target.",
+          "Gun out of range.",
+          "Cannot engage, over."
+        ]
+      }
+    },
+    "gripen": {
+      "name": "Gripen Multirole Fighter",
+      "role": "Multirole aircraft",
+      "voice": "bm_fable",
+      "speed": 1.08,
+      "cues": {
+        "select": [
+          "Gripen flight, armed and ready.",
+          "Jaktviggen on station, go ahead.",
+          "Multirole up, weapons free on tasking."
+        ],
+        "move": [
+          "Gripen turning in.",
+          "On the new heading.",
+          "Flight rolling to the next tasking."
+        ],
+        "attack": [
+          "Fox one, missile away.",
+          "Strike missile gone.",
+          "Gripen in, weapons released."
+        ],
+        "unableToComply": [
+          "Winchester, returning to base.",
+          "Bingo fuel, cannot engage.",
+          "No weapons left, over."
+        ]
+      }
+    },
+    "khordadSam": {
+      "name": "3rd Khordad TEL",
+      "role": "Air defence",
+      "voice": "am_michael",
+      "speed": 1,
+      "cues": {
+        "select": [
+          "Khordad launcher, missiles armed.",
+          "Air defence up, tracking.",
+          "TEL reporting, ready to engage."
+        ],
+        "move": [
+          "TEL rolling out of the site.",
+          "Khordad moving to a new site.",
+          "Relocating, radar stowed."
+        ],
+        "attack": [
+          "Missile away, air target.",
+          "Khordad firing.",
+          "Round out, tracking the aircraft."
+        ],
+        "unableToComply": [
+          "No air target in reach.",
+          "Rounds still going up.",
+          "Cannot engage that, over."
+        ]
+      }
+    },
+    "mohajer6": {
+      "name": "Mohajer-6 Armed UAV",
+      "role": "Armed reconnaissance",
+      "voice": "af_nova",
+      "speed": 1.1,
+      "cues": {
+        "select": [
+          "Mohajer on station, optics live.",
+          "Drone up, bombs on the rail.",
+          "Eyes in the sky, go ahead."
+        ],
+        "move": [
+          "Mohajer sliding to a new orbit.",
+          "Mohajer moving to the next sector.",
+          "Climbing to the new tasking."
+        ],
+        "attack": [
+          "Bomb released.",
+          "Drone in, ordnance away.",
+          "Strike on the position."
+        ],
+        "unableToComply": [
+          "Out of ordnance, returning.",
+          "No target in the optics.",
+          "Drone cannot reach that."
+        ]
+      }
+    },
+    "koksan": {
+      "name": "Koksan 170mm SPG",
+      "role": "Indirect fire",
+      "voice": "am_santa",
+      "speed": 0.92,
+      "cues": {
+        "select": [
+          "Koksan gun, loaded.",
+          "Long gun reporting.",
+          "Seventeen centimetre, ready."
+        ],
+        "move": [
+          "Gun crawling to the next site.",
+          "Koksan moving, slow but sure.",
+          "Koksan crawling into the treeline."
+        ],
+        "attack": [
+          "Long shot, out.",
+          "Koksan firing.",
+          "One shell, far target."
+        ],
+        "unableToComply": [
+          "Gun cannot bear that way.",
+          "Out of range, over.",
+          "Still reloading the tube."
+        ]
+      }
+    },
+    "bulsae4": {
+      "name": "Bulsae-4 ATGM Vehicle",
+      "role": "Anti-armour",
+      "voice": "am_liam",
+      "speed": 0.96,
+      "cues": {
+        "select": [
+          "Bulsae launcher, rack armed.",
+          "Missile vehicle, standing by.",
+          "Anti-tank carrier on the net."
+        ],
+        "move": [
+          "Launcher moving.",
+          "Bulsae shifting position.",
+          "Vehicle rolling to cover."
+        ],
+        "attack": [
+          "Rack open, missile gone.",
+          "Bulsae firing.",
+          "Long shot on the armour."
+        ],
+        "unableToComply": [
+          "No armour in reach.",
+          "Launcher reloading.",
+          "Cannot engage infantry."
+        ]
+      }
+    },
+    "visby": {
+      "name": "Visby-class Corvette",
+      "role": "Littoral strike",
+      "voice": "bm_daniel",
+      "speed": 1.02,
+      "cues": {
+        "select": [
+          "Visby, hull in the water, sensors up.",
+          "Corvette Visby on station, reading you.",
+          "Littoral group, Visby answering."
+        ],
+        "move": [
+          "Course laid in, making speed.",
+          "Visby moving, ahead full.",
+          "Bringing the hull about."
+        ],
+        "attack": [
+          "Missiles away, target straddled.",
+          "Firing solution set, engaging.",
+          "Salvo off the rails."
+        ],
+        "unableToComply": [
+          "Cannot make that bearing.",
+          "Negative, sea room is too tight.",
+          "She will not answer that helm."
+        ]
+      }
+    },
+    "ghadir": {
+      "name": "Ghadir Midget Submarine",
+      "role": "Coastal ambusher",
+      "voice": "am_onyx",
+      "speed": 1,
+      "cues": {
+        "select": [
+          "Ghadir, trimmed down and listening.",
+          "Midget boat, batteries charged.",
+          "Ghadir on the net, quiet."
+        ],
+        "move": [
+          "Running shallow, engine astern.",
+          "Ghadir shifting, periscope depth.",
+          "Slipping along the shelf."
+        ],
+        "attack": [
+          "Torpedoes in the water.",
+          "Two fish away, going deep.",
+          "Tubes empty, diving clear."
+        ],
+        "unableToComply": [
+          "Too far off the shelf for that.",
+          "Cannot reach it, batteries low.",
+          "Negative, no water for that."
+        ]
       }
     }
   }

@@ -17,8 +17,29 @@ import {
   buildingRequirements,
   isIndestructibleStructure,
 } from '../data/buildings';
-import { UNITS } from '../data/units';
+import { UNITS, unitFamily } from '../data/units';
 import { WEAPONS } from '../data/weapons';
+import {
+  RESEARCH,
+  TIER_ZERO_BUILDINGS,
+  TIER_ZERO_UNITS,
+  buildingModuleDef,
+  exclusiveUnitTech,
+  installedModuleEffects,
+  resolveResearchUnlocks,
+  requiredTechnologiesForBuilding,
+  requiredTechnologiesForUnit,
+  techDef,
+  unitDefinitionAvailable,
+  unitUpgradeDef,
+  upgradesForSlot,
+  modulesForSlot,
+  type BuildingModuleDef,
+  type ResearchCatalog,
+  type ResearchUnlocks,
+  type TechDef,
+  type UnitUpgradeDef,
+} from '../data/research';
 import {
   TERRAIN,
   Terrain,
@@ -97,6 +118,7 @@ import {
   unitSlotId,
 } from '../data/roster';
 import { tryIdentityDef } from '../data/factions';
+import { abilityForUpgrade } from '../data/abilities';
 import { AIController, initialAIState } from './ai';
 import { structureBenefit } from './infrastructure';
 import {
@@ -126,6 +148,7 @@ import type {
   ContactBand,
   ContactState,
   PathPoint,
+  SmokeCloud,
   VisionState,
 } from './types';
 
@@ -152,6 +175,12 @@ export interface GameOptions {
    * save file.
    */
   repairSuppression?: boolean;
+  /**
+   * Research data for this match. Production always uses the shipped catalog;
+   * tests and, later, a modding path can supply a fixture without mutating the
+   * default. The catalog is static data and is never serialised.
+   */
+  research?: ResearchCatalog;
 }
 
 export class SaveFormatError extends Error {
@@ -249,10 +278,13 @@ export class Game {
   private deckDirty = true;
   /** Whether incoming fire suspends engineer repair (Phase 8 rule; always true in play). */
   private readonly repairSuppression: boolean;
+  /** Static technology, upgrade and module catalogue for this match. */
+  readonly research: ResearchCatalog;
 
   constructor(scenario: Scenario, opts: GameOptions = {}) {
     this.localPlayerId = opts.localPlayerId ?? PLAYER;
     this.repairSuppression = opts.repairSuppression !== false;
+    this.research = opts.research ?? RESEARCH;
     this.state = {
       scenario,
       map: createRuntimeMap(scenario),
@@ -276,6 +308,8 @@ export class Game {
       contacts: [],
       charted: [],
       commandCount: 0,
+      smoke: [],
+      nextSmokeId: 1,
       ready: false,
     };
     this.rng = new Rng(this.state.seed);
@@ -350,6 +384,7 @@ export class Game {
         incomeHistory: new Array(60).fill(0),
         defeated: false,
         relayCount: 0,
+        research: { completed: [], project: null },
       };
       this.state.players.push(player);
     }
@@ -362,6 +397,7 @@ export class Game {
       const z = (u.z + 0.5) * TILE_SIZE;
       this.spawnUnit(u.owner, u.defId, x, z, { starting: true });
     }
+    this.grantScenarioResearch();
     this.blocked.fill(0);
     for (const e of this.state.entities) {
       if (e.kind === 'building') {
@@ -673,6 +709,129 @@ export class Game {
     return rosterProductionEntries(this.rosterFor(owner), buildingId);
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Research: read model                                                */
+  /* ------------------------------------------------------------------ */
+
+  researchState(owner: number): PlayerState['research'] | undefined {
+    return this.player(owner)?.research;
+  }
+
+  completedTechnologies(owner: number): string[] {
+    return this.player(owner)?.research.completed ?? [];
+  }
+
+  /**
+   * Everything the player's completed research makes available, resolved from
+   * canonical slots. National replacements inherit their slot's unlock, so the
+   * caller never has to know which platform a nation fields.
+   */
+  researchUnlocks(owner: number): ResearchUnlocks {
+    return resolveResearchUnlocks(this.completedTechnologies(owner), this.research);
+  }
+
+  /** Whether this player's research makes a canonical unit slot available. */
+  unitSlotUnlocked(owner: number, slot: string): boolean {
+    if (!this.player(owner)) return false;
+    return TIER_ZERO_UNITS.includes(slot) || this.researchUnlocks(owner).unitSlots.has(slot);
+  }
+
+  /** Whether this player's research makes a canonical structure slot available. */
+  buildingSlotUnlocked(owner: number, slot: string): boolean {
+    if (!this.player(owner)) return false;
+    return (
+      TIER_ZERO_BUILDINGS.includes(slot) || this.researchUnlocks(owner).buildingSlots.has(slot)
+    );
+  }
+
+  /**
+   * Whether one concrete unit definition is available. A national replacement
+   * inherits its alliance slot's unlock through `unitFamily`; a national
+   * exclusive, which has no canonical slot, carries its own requirement.
+   */
+  unitDefinitionUnlocked(owner: number, defId: string): boolean {
+    if (!this.player(owner)) return false;
+    return unitDefinitionAvailable(this.completedTechnologies(owner), defId, this.research);
+  }
+
+  /** Actual roster unit ids the player may produce with its current research. */
+  availableUnits(owner: number): string[] {
+    return this.rosterFor(owner).units.filter((id) => this.unitDefinitionUnlocked(owner, id));
+  }
+
+  /** Actual roster structure ids the player may construct with its research. */
+  availableBuildings(owner: number): string[] {
+    return this.rosterFor(owner).buildings.filter((id) =>
+      this.buildingSlotUnlocked(owner, buildingFamily(id)),
+    );
+  }
+
+  /**
+   * Technologies whose completion opens one concrete unit, excluding the ones
+   * already complete. Production and the research panel share this answer so a
+   * locked card names exactly the node the player still needs.
+   */
+  missingResearchForUnit(owner: number, defId: string): TechDef[] {
+    const completed = new Set(this.completedTechnologies(owner));
+    return requiredTechnologiesForUnit(defId, this.research).filter(
+      (tech) => !completed.has(tech.id),
+    );
+  }
+
+  /** Technologies still needed before one concrete structure is buildable. */
+  missingResearchForBuilding(owner: number, defId: string): TechDef[] {
+    const completed = new Set(this.completedTechnologies(owner));
+    return requiredTechnologiesForBuilding(defId, this.research).filter(
+      (tech) => !completed.has(tech.id),
+    );
+  }
+
+  /**
+   * Upgrades this unit may take. Research availability is global; the per-unit
+   * exclusion is what the hull has already taken, so a newly produced unit sees
+   * the same list as one that existed before the research completed.
+   */
+  availableUpgrades(owner: number, unitId: number): UnitUpgradeDef[] {
+    const unit = this.getEntity(unitId);
+    if (!unit || unit.kind !== 'unit' || unit.owner !== owner || unit.hp <= 0) return [];
+    const applied = new Set(unit.upgrades ?? []);
+    return upgradesForSlot(
+      this.completedTechnologies(owner),
+      unitFamily(unit.defId),
+      this.research,
+    ).filter((upgrade) => !applied.has(upgrade.id));
+  }
+
+  /** Modules this structure could buy and install right now. */
+  availableModules(owner: number, buildingId: number): BuildingModuleDef[] {
+    const building = this.getEntity(buildingId);
+    if (!building || building.kind !== 'building' || building.owner !== owner || building.hp <= 0) {
+      return [];
+    }
+    if (building.construction) return [];
+    const installed = building.modules ?? [];
+    const p = this.player(owner);
+    if (!p) return [];
+    return modulesForSlot(
+      p.research.completed,
+      buildingFamily(building.defId),
+      this.research,
+    ).filter((module) => {
+      const count = installed.filter((id) => id === module.id).length;
+      return count < (module.capacity ?? 1);
+    });
+  }
+
+  /** Ids of the modules installed on one structure, in purchase order. */
+  installedModules(buildingId: number): string[] {
+    return this.getEntity(buildingId)?.modules ?? [];
+  }
+
+  /** Ids of the upgrades one unit has already taken. */
+  appliedUpgrades(unitId: number): string[] {
+    return this.getEntity(unitId)?.upgrades ?? [];
+  }
+
   entitiesOf(owner: number, kind?: Entity['kind']): Entity[] {
     return this.state.entities.filter(
       (e) => e.owner === owner && e.hp > 0 && (!kind || e.kind === kind),
@@ -770,6 +929,21 @@ export class Game {
           break;
         case 'placeBuilding':
           this.commandPlaceBuilding(cmd.team, cmd.builderId, cmd.defId, cmd.tileX, cmd.tileZ);
+          break;
+        case 'research':
+          this.commandResearch(cmd.team, cmd.buildingId, cmd.techId);
+          break;
+        case 'cancelResearch':
+          this.commandCancelResearch(cmd.team, cmd.buildingId);
+          break;
+        case 'installModule':
+          this.commandInstallModule(cmd.team, cmd.buildingId, cmd.moduleId);
+          break;
+        case 'activateUpgrade':
+          this.commandActivateUpgrade(cmd.team, cmd.unitId, cmd.upgradeId);
+          break;
+        case 'useAbility':
+          this.commandUseAbility(cmd.team, cmd.unitId, cmd.abilityId);
           break;
         case 'setRally': {
           const b = this.getEntity(cmd.buildingId);
@@ -1442,6 +1616,17 @@ export class Game {
    * an engineer can prepare a position before occupying it. A shelter held by
    * hostile infantry is not a repair job; it has to be cleared first.
    */
+  /** The player's own construction site, still standing and still unfinished. */
+  private isOwnSite(owner: number, target: Entity): boolean {
+    return (
+      target.kind === 'building' &&
+      !!target.construction &&
+      target.hp > 0 &&
+      target.owner === owner &&
+      target.buildProgress < 1
+    );
+  }
+
   private isRepairableBy(owner: number, target: Entity): boolean {
     if (target.kind !== 'building' || target.construction || target.hp >= target.maxHp) {
       return false;
@@ -1459,12 +1644,52 @@ export class Game {
 
   private commandRepair(owner: number, ids: number[], targetId: number): void {
     const target = this.getEntity(targetId);
+    // A paused construction site is not damaged, so it is not a repair job —
+    // but it is the same engineer standing at the same place doing the same
+    // work, and the player reaches it with the same order. Calling a builder
+    // away (or a fight leaving one shot off the site) paused the structure at
+    // whatever percentage it had reached and there was no way back: the site
+    // refused repair, and the automatic assignment only offers a site to an
+    // engineer with no order at all. Resume it explicitly instead.
+    if (target && this.isOwnSite(owner, target)) {
+      const builders = this.ownedEntities(owner, ids).filter(
+        (e) => e.kind === 'unit' && unitDef(e.defId).canBuild,
+      );
+      if (builders.length === 0) {
+        this.emit('orderFailed', {
+          team: owner,
+          x: target.x,
+          z: target.z,
+          text: 'Select a Combat Engineer to resume construction.',
+          level: 'warning',
+          sound: 'denied',
+        });
+        return;
+      }
+      for (const e of builders) {
+        e.targetId = 0;
+        e.aimTargetId = 0;
+        e.captureTargetId = 0;
+        e.captureProgress = 0;
+        e.healTargetId = 0;
+        this.assignBuilderToSite(e, target);
+      }
+      this.emit('orderAck', {
+        team: owner,
+        x: target.x,
+        z: target.z,
+        text: `Engineer en route to resume ${buildingDef(target.defId).name.toLowerCase()} construction`,
+        entityId: target.id,
+        level: 'info',
+      });
+      return;
+    }
     if (!target || !this.isRepairableBy(owner, target)) {
       this.emit('orderFailed', {
         team: owner,
         x: target?.x ?? 0,
         z: target?.z ?? 0,
-        text: 'Only a damaged friendly structure or neutral shelter can be repaired.',
+        text: 'Only a damaged friendly structure, a neutral shelter or your own construction site can be worked on.',
         level: 'warning',
         sound: 'denied',
       });
@@ -2105,6 +2330,599 @@ export class Game {
   }
 
   /* ------------------------------------------------------------------ */
+  /* Research: authoritative progression                                 */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Scenario authoring grants technologies explicitly, and a pre-placed
+   * structure or unit grants the technology that unlocks its slot. Without the
+   * implicit grant an authored airfield would open the match with an air arm
+   * the player is not yet allowed to replace, which is exactly the trap the
+   * research gate is meant to avoid on a fresh build.
+   */
+  private grantScenarioResearch(): void {
+    const granted = new Map<number, Set<string>>();
+    for (const p of this.state.players) granted.set(p.id, new Set<string>());
+    for (const entry of this.state.scenario.players) {
+      const set = granted.get(entry.id);
+      if (!set) continue;
+      for (const id of entry.technologies ?? []) {
+        if (techDef(id, this.research)) set.add(id);
+      }
+    }
+    for (const entity of this.state.entities) {
+      const set = granted.get(entity.owner);
+      if (!set) continue;
+      const slot = entity.kind === 'unit' ? unitFamily(entity.defId) : buildingFamily(entity.defId);
+      if (entity.kind === 'unit') {
+        const exclusive = exclusiveUnitTech(entity.defId);
+        if (exclusive) set.add(exclusive);
+      }
+      for (const tech of this.research.techs) {
+        const implies = tech.effects.some(
+          (effect) =>
+            (effect.kind === 'unlockUnit' && effect.slot === slot) ||
+            (effect.kind === 'unlockBuilding' && effect.slot === slot),
+        );
+        if (implies) set.add(tech.id);
+      }
+    }
+    // Nothing else is granted here. An AI seat studies the tree exactly like a
+    // human one, through the Research Centre and the research command; the
+    // Stage 4B.1 convenience grant that filled an AI's tree at match start is
+    // gone so research availability is identical for every seat.
+    for (const p of this.state.players) {
+      const set = granted.get(p.id);
+      if (!set || set.size === 0) continue;
+      // A pre-placed tier-2 exclusive implies its branch's tier 1 as well. Close
+      // the grant over prerequisites until stable, otherwise the saved record
+      // would contain a technology whose prerequisite is absent and the loader
+      // would rightly prune it on reload.
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const tech of this.research.techs) {
+          if (!set.has(tech.id)) continue;
+          for (const required of tech.requires) {
+            if (set.has(required)) continue;
+            set.add(required);
+            changed = true;
+          }
+        }
+      }
+      // Catalogue order, not set insertion order: the completed list is part of
+      // the state hash and must not depend on entity iteration.
+      p.research.completed = this.research.techs
+        .filter((tech) => set.has(tech.id))
+        .map((tech) => tech.id);
+    }
+  }
+
+  /** The fastest operational Research Centre, or null when the project cannot run. */
+  private operationalResearchCentre(owner: number): Entity | null {
+    let best: Entity | null = null;
+    let bestSpeed = Infinity;
+    for (const e of this.state.entities) {
+      if (e.owner !== owner || e.kind !== 'building' || e.hp <= 0 || e.construction) continue;
+      if (buildingFamily(e.defId) !== 'researchCentre') continue;
+      const speed = BUILDINGS[e.defId]?.researchSpeed ?? 1;
+      if (speed < bestSpeed) {
+        best = e;
+        bestSpeed = speed;
+      }
+    }
+    return best;
+  }
+
+  /** Whether this player has an operational centre that can run a project. */
+  hasResearchCentre(owner: number): boolean {
+    return this.operationalResearchCentre(owner) !== null;
+  }
+
+  /** The centre commands must name, or null when no centre can run a project. */
+  researchCentreId(owner: number): number | null {
+    return this.operationalResearchCentre(owner)?.id ?? null;
+  }
+
+  /**
+   * Current effective research multiplier for a player. Zero when no centre is
+   * operational; otherwise the centre's own speed, fitted research modules and
+   * the grid brownout multiplier. The progress clock and the panel both read
+   * this, so the displayed rate cannot drift from the simulation.
+   */
+  researchRate(owner: number): number {
+    const centre = this.operationalResearchCentre(owner);
+    if (!centre) return 0;
+    const moduleSpeed = centre.modules?.length
+      ? installedModuleEffects(centre.modules, this.research).researchSpeed
+      : 1;
+    return (
+      (BUILDINGS[centre.defId]?.researchSpeed ?? 1) * moduleSpeed * this.powerSpeed(owner)
+    );
+  }
+
+  /**
+   * Why an active project is not advancing at full speed, or null when it is.
+   * The project survives a lost centre, so this is a pause explanation rather
+   * than a reason to discard it.
+   */
+  researchPauseReason(owner: number): string | null {
+    const p = this.player(owner);
+    if (!p?.research.project) return null;
+    if (!this.operationalResearchCentre(owner)) {
+      return 'PAUSED — no operational Research Centre';
+    }
+    const power = this.powerStatus(owner);
+    if (power.brownout) {
+      return `SLOWED — grid brownout (${Math.round(this.researchRate(owner) * 100)}% speed)`;
+    }
+    return null;
+  }
+
+  /**
+   * Catalogue eligibility for a technology: alliance and nation restrictions
+   * only, with no reference to a centre, a project or the bank.
+   *
+   * `researchStatus` defers to this, and the AI research planner asks the same
+   * method, so a restricted node cannot be ordered by a client and cannot be
+   * chosen as a target by a commander either.
+   */
+  techEligibility(owner: number, techId: string): { ok: boolean; reason: string } {
+    const p = this.player(owner);
+    if (!p) return { ok: false, reason: 'Unknown player.' };
+    const tech = techDef(techId, this.research);
+    if (!tech) return { ok: false, reason: 'Unknown technology.' };
+    const identity = tryIdentityDef(p.factionId);
+    if (tech.alliances && (!identity || !tech.alliances.includes(identity.allianceId))) {
+      return { ok: false, reason: `${tech.name} is not available to this alliance.` };
+    }
+    if (tech.nations && !tech.nations.includes(p.factionId)) {
+      return { ok: false, reason: `${tech.name} is not available to this nation.` };
+    }
+    return { ok: true, reason: '' };
+  }
+
+  /**
+   * Why a project cannot start. The same answer is used by the command handler,
+   * the command gate and the future research panel, so a locked node never looks
+   * affordable to a client that the simulation would refuse.
+   */
+  researchStatus(
+    owner: number,
+    buildingId: number,
+    techId: string,
+  ): { ok: boolean; reason: string } {
+    const p = this.player(owner);
+    if (!p) return { ok: false, reason: 'Unknown player.' };
+    const centre = this.getEntity(buildingId);
+    if (
+      !centre ||
+      centre.kind !== 'building' ||
+      centre.owner !== owner ||
+      centre.hp <= 0 ||
+      centre.construction ||
+      buildingFamily(centre.defId) !== 'researchCentre'
+    ) {
+      return { ok: false, reason: 'An operational Research Centre is required.' };
+    }
+    const tech = techDef(techId, this.research);
+    if (!tech) return { ok: false, reason: 'Unknown technology.' };
+    if (p.research.project) return { ok: false, reason: 'A research project is already in progress.' };
+    if (p.research.completed.includes(tech.id)) {
+      return { ok: false, reason: `${tech.name} is already researched.` };
+    }
+    const eligibility = this.techEligibility(owner, tech.id);
+    if (!eligibility.ok) return eligibility;
+    const missing = tech.requires.filter((id) => !p.research.completed.includes(id));
+    if (missing.length > 0) {
+      const names = missing.map((id) => techDef(id, this.research)?.name ?? id);
+      return { ok: false, reason: `Requires ${names.join(' and ')}.` };
+    }
+    if (p.mats < tech.cost.mats) return { ok: false, reason: 'Insufficient materials.' };
+    if (p.req < tech.cost.req) return { ok: false, reason: 'Insufficient requisition.' };
+    return { ok: true, reason: '' };
+  }
+
+  /** Why the player cannot cancel right now (the centre must still be usable). */
+  cancelResearchStatus(owner: number, buildingId: number): { ok: boolean; reason: string } {
+    const p = this.player(owner);
+    if (!p) return { ok: false, reason: 'Unknown player.' };
+    if (!p.research.project) return { ok: false, reason: 'No research project is in progress.' };
+    const centre = this.getEntity(buildingId);
+    if (
+      !centre ||
+      centre.kind !== 'building' ||
+      centre.owner !== owner ||
+      centre.hp <= 0 ||
+      centre.construction ||
+      buildingFamily(centre.defId) !== 'researchCentre'
+    ) {
+      return { ok: false, reason: 'An operational Research Centre is required.' };
+    }
+    return { ok: true, reason: '' };
+  }
+
+  private commandResearch(owner: number, buildingId: number, techId: string): void {
+    const status = this.researchStatus(owner, buildingId, techId);
+    const centre = this.getEntity(buildingId);
+    if (!status.ok) {
+      this.emit('orderFailed', {
+        team: owner,
+        x: centre?.x ?? 0,
+        z: centre?.z ?? 0,
+        text: status.reason,
+        level: 'warning',
+        sound: 'denied',
+      });
+      return;
+    }
+    const p = this.player(owner)!;
+    const tech = techDef(techId, this.research)!;
+    p.mats -= tech.cost.mats;
+    p.req -= tech.cost.req;
+    p.research.project = { techId: tech.id, remaining: tech.seconds, total: tech.seconds };
+    this.emit('orderAck', {
+      team: owner,
+      x: centre!.x,
+      z: centre!.z,
+      text: `${tech.name} research started`,
+      entityId: centre!.id,
+      level: 'info',
+      sound: 'queue',
+      code: 'researchStarted',
+    });
+  }
+
+  private commandCancelResearch(owner: number, buildingId: number): void {
+    const status = this.cancelResearchStatus(owner, buildingId);
+    if (!status.ok) return;
+    const p = this.player(owner)!;
+    const project = p.research.project!;
+    const tech = techDef(project.techId, this.research);
+    if (tech) {
+      p.mats += tech.cost.mats;
+      p.req += tech.cost.req;
+    }
+    p.research.project = null;
+    const centre = this.getEntity(buildingId);
+    this.emit('orderAck', {
+      team: owner,
+      x: centre?.x ?? 0,
+      z: centre?.z ?? 0,
+      text: `${tech?.name ?? project.techId} research cancelled — resources refunded`,
+      entityId: centre?.id,
+      level: 'info',
+      code: 'researchCancelled',
+    });
+  }
+
+  /**
+   * One fixed-tick step of the player's project.
+   *
+   * The project lives on the player, not the centre, so it survives the centre
+   * being destroyed: no operational centre means no progress, not a loss of the
+   * materials already spent. A brownout slows the work exactly as it slows
+   * production. Completion is removed from the project before the event is
+   * emitted, so a project can only complete once.
+   */
+  private updateResearch(dt: number): void {
+    for (const p of this.state.players) {
+      const project = p.research.project;
+      if (!project || p.defeated) continue;
+      const centre = this.operationalResearchCentre(p.id);
+      if (!centre) continue;
+      const tech = techDef(project.techId, this.research);
+      if (!tech) {
+        p.research.project = null;
+        continue;
+      }
+      // One rate resolver for the clock and the panel: the centre's base speed,
+      // fitted modules and the grid multiplier cannot disagree.
+      const speed = this.researchRate(p.id);
+      if (speed <= 0) continue;
+      project.remaining = Math.max(0, project.remaining - dt * speed);
+      // Fixed-tick seconds accumulate float error; a project one epsilon short
+      // of zero has finished and must not sit invisible on the last frame.
+      if (project.remaining > 1e-9) continue;
+      project.remaining = 0;
+      p.research.completed.push(tech.id);
+      p.research.project = null;
+      this.emit('notice', {
+        team: p.id,
+        x: centre.x,
+        z: centre.z,
+        text: `${tech.name} research complete`,
+        entityId: centre.id,
+        level: 'success',
+        sound: 'complete',
+        code: 'researchComplete',
+      });
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Research: individual upgrades and modules                          */
+  /* ------------------------------------------------------------------ */
+
+  moduleStatus(owner: number, buildingId: number, moduleId: string): { ok: boolean; reason: string } {
+    const p = this.player(owner);
+    if (!p) return { ok: false, reason: 'Unknown player.' };
+    const building = this.getEntity(buildingId);
+    if (
+      !building ||
+      building.kind !== 'building' ||
+      building.owner !== owner ||
+      building.hp <= 0 ||
+      building.construction
+    ) {
+      return { ok: false, reason: 'An operational structure is required.' };
+    }
+    const module = buildingModuleDef(moduleId, this.research);
+    if (!module) return { ok: false, reason: 'Unknown module.' };
+    const slot = buildingFamily(building.defId);
+    if (!module.eligibleSlots.includes(slot)) {
+      return { ok: false, reason: `${module.name} cannot be fitted to this structure.` };
+    }
+    const unlocks = resolveResearchUnlocks(p.research.completed, this.research);
+    if (!unlocks.modules.has(module.id)) {
+      return { ok: false, reason: `${module.name} has not been researched.` };
+    }
+    const installed = building.modules ?? [];
+    const count = installed.filter((id) => id === module.id).length;
+    if (count >= (module.capacity ?? 1)) {
+      return { ok: false, reason: `${module.name} is already installed.` };
+    }
+    if (p.mats < module.cost.mats) return { ok: false, reason: 'Insufficient materials.' };
+    if (p.req < module.cost.req) return { ok: false, reason: 'Insufficient requisition.' };
+    return { ok: true, reason: '' };
+  }
+
+  private commandInstallModule(owner: number, buildingId: number, moduleId: string): void {
+    const status = this.moduleStatus(owner, buildingId, moduleId);
+    const building = this.getEntity(buildingId);
+    if (!status.ok) {
+      this.emit('orderFailed', {
+        team: owner,
+        x: building?.x ?? 0,
+        z: building?.z ?? 0,
+        text: status.reason,
+        entityId: building?.id,
+        level: 'warning',
+        sound: 'denied',
+      });
+      return;
+    }
+    const p = this.player(owner)!;
+    const module = buildingModuleDef(moduleId, this.research)!;
+    p.mats -= module.cost.mats;
+    p.req -= module.cost.req;
+    building!.modules = [...(building!.modules ?? []), module.id];
+    this.emit('orderAck', {
+      team: owner,
+      x: building!.x,
+      z: building!.z,
+      text: `${module.name} installed`,
+      entityId: building!.id,
+      level: 'info',
+      sound: 'complete',
+      code: 'moduleInstalled',
+    });
+  }
+
+  upgradeStatus(owner: number, unitId: number, upgradeId: string): { ok: boolean; reason: string } {
+    const p = this.player(owner);
+    if (!p) return { ok: false, reason: 'Unknown player.' };
+    const unit = this.getEntity(unitId);
+    if (!unit || unit.kind !== 'unit' || unit.owner !== owner || unit.hp <= 0) {
+      return { ok: false, reason: 'A living unit is required.' };
+    }
+    const upgrade = unitUpgradeDef(upgradeId, this.research);
+    if (!upgrade) return { ok: false, reason: 'Unknown upgrade.' };
+    const slot = unitFamily(unit.defId);
+    if (!upgrade.eligibleSlots.includes(slot)) {
+      return { ok: false, reason: `${upgrade.name} cannot be fitted to this unit.` };
+    }
+    const unlocks = resolveResearchUnlocks(p.research.completed, this.research);
+    if (!unlocks.upgrades.has(upgrade.id)) {
+      return { ok: false, reason: `${upgrade.name} has not been researched.` };
+    }
+    if ((unit.upgrades ?? []).includes(upgrade.id)) {
+      return { ok: false, reason: `${upgrade.name} is already fitted.` };
+    }
+    if (p.mats < upgrade.cost.mats) return { ok: false, reason: 'Insufficient materials.' };
+    if (p.req < upgrade.cost.req) return { ok: false, reason: 'Insufficient requisition.' };
+    return { ok: true, reason: '' };
+  }
+
+  private commandActivateUpgrade(owner: number, unitId: number, upgradeId: string): void {
+    const status = this.upgradeStatus(owner, unitId, upgradeId);
+    const unit = this.getEntity(unitId);
+    if (!status.ok) {
+      this.emit('orderFailed', {
+        team: owner,
+        x: unit?.x ?? 0,
+        z: unit?.z ?? 0,
+        text: status.reason,
+        entityId: unit?.id,
+        level: 'warning',
+        sound: 'denied',
+      });
+      return;
+    }
+    const p = this.player(owner)!;
+    const upgrade = unitUpgradeDef(upgradeId, this.research)!;
+    p.mats -= upgrade.cost.mats;
+    p.req -= upgrade.cost.req;
+    unit!.upgrades = [...(unit!.upgrades ?? []), upgrade.id];
+    this.emit('orderAck', {
+      team: owner,
+      x: unit!.x,
+      z: unit!.z,
+      text: `${upgrade.name} fitted`,
+      entityId: unit!.id,
+      level: 'info',
+      code: 'upgradeApplied',
+    });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Unit abilities                                                     */
+  /* ------------------------------------------------------------------ */
+
+  /** Active smoke clouds, oldest first. Vision and presentation share this list. */
+  get smokeClouds(): readonly SmokeCloud[] {
+    return this.state.smoke;
+  }
+
+  /**
+   * Whether a cloud sits over `to` but not over `from`.
+   *
+   * This is the whole smoke rule in one predicate. A cloud hides what is inside
+   * it from anyone outside it, and hides nothing from a crew already standing in
+   * the same cloud — which is why a smoked position cannot be shot at from a
+   * distance but can be fought inside. Radar, sonar and other non-visual sensors
+   * never ask this question, so smoke is not a blanket stealth field.
+   */
+  smokeScreens(ax: number, az: number, bx: number, bz: number): boolean {
+    const clouds = this.state.smoke;
+    if (clouds.length === 0) return false;
+    let fromCovered = false;
+    let toCovered = false;
+    for (const cloud of clouds) {
+      const r2 = cloud.radius * cloud.radius;
+      if (dist2(ax, az, cloud.x, cloud.z) <= r2) fromCovered = true;
+      if (dist2(bx, bz, cloud.x, cloud.z) <= r2) toCovered = true;
+    }
+    return toCovered && !fromCovered;
+  }
+
+  /** Whether any live cloud covers a world point. */
+  smokeCoversPoint(x: number, z: number): boolean {
+    for (const cloud of this.state.smoke) {
+      const r2 = cloud.radius * cloud.radius;
+      if (dist2(x, z, cloud.x, cloud.z) <= r2) return true;
+    }
+    return false;
+  }
+
+  /** Seconds before one hull may use an ability again; 0 when ready. */
+  cooldownRemaining(unitId: number, abilityId: string): number {
+    return Math.max(0, this.getEntity(unitId)?.cooldowns?.[abilityId] ?? 0);
+  }
+
+  /**
+   * Distance, in world units, at which this entity can actually engage.
+   *
+   * A weapon keeps its physical reach; what light and weather shrink is how far
+   * the crew can identify and hold a target. Every caller that decides whether
+   * to stand and fight, or how far to close, has to use this same number: units
+   * that stopped at the bare weapon range used to park just outside what they
+   * could engage at in fog or at night, fire nothing, and never close further.
+   */
+  private engagementReach(e: Entity, weapon: WeaponDef): number {
+    const reach = weapon.indirect
+      ? weapon.range
+      : weapon.range * engagementFactor(sensorFor(e), this.dayNight) * this.weather.acquisition;
+    return reach * TILE_SIZE;
+  }
+
+  /**
+   * Whether one owned unit can use an ability right now, and why not.
+   *
+   * Availability is resolved from the player's completed research on every call
+   * rather than stored on the hull: research finishing must reach units that
+   * already exist, and a scenario grant must resolve through the same path. The
+   * only per-hull state is the reload clock.
+   */
+  abilityStatus(
+    owner: number,
+    unitId: number,
+    abilityId: string,
+  ): { ok: boolean; reason: string; cooldown: number } {
+    const p = this.player(owner);
+    if (!p) return { ok: false, reason: 'Unknown player.', cooldown: 0 };
+    const unit = this.getEntity(unitId);
+    if (!unit || unit.kind !== 'unit' || unit.owner !== owner || unit.hp <= 0) {
+      return { ok: false, reason: 'A living unit is required.', cooldown: 0 };
+    }
+    if (unit.garrisonId) {
+      return { ok: false, reason: 'Garrisoned infantry must leave the building first.', cooldown: 0 };
+    }
+    const upgrade = unitUpgradeDef(abilityId, this.research);
+    const ability = upgrade ? abilityForUpgrade(upgrade.id) : undefined;
+    if (!upgrade || !ability) return { ok: false, reason: 'Unknown ability.', cooldown: 0 };
+    if (!upgrade.eligibleSlots.includes(unitFamily(unit.defId))) {
+      return { ok: false, reason: `${upgrade.name} cannot be fitted to this unit.`, cooldown: 0 };
+    }
+    if (!this.researchUnlocks(owner).upgrades.has(upgrade.id)) {
+      return { ok: false, reason: `${upgrade.name} has not been researched.`, cooldown: 0 };
+    }
+    const cooldown = Math.max(0, unit.cooldowns?.[upgrade.id] ?? 0);
+    if (cooldown > 0) {
+      return {
+        ok: false,
+        reason: `${upgrade.name} reloading — ${Math.ceil(cooldown)}s`,
+        cooldown,
+      };
+    }
+    return { ok: true, reason: '', cooldown: 0 };
+  }
+
+  private commandUseAbility(owner: number, unitId: number, abilityId: string): void {
+    const status = this.abilityStatus(owner, unitId, abilityId);
+    const unit = this.getEntity(unitId);
+    if (!status.ok) {
+      this.emit('orderFailed', {
+        team: owner,
+        x: unit?.x ?? 0,
+        z: unit?.z ?? 0,
+        text: status.reason,
+        entityId: unit?.id,
+        level: 'warning',
+        sound: 'denied',
+      });
+      return;
+    }
+    const ability = abilityForUpgrade(abilityId)!;
+    const tick = this.state.tick;
+    this.state.smoke.push({
+      id: this.state.nextSmokeId++,
+      owner,
+      team: this.teamOf(owner),
+      x: unit!.x,
+      z: unit!.z,
+      radius: ability.radius * TILE_SIZE,
+      startTick: tick,
+      expiresTick: tick + Math.max(1, Math.round(ability.durationSeconds * TICK_RATE)),
+    });
+    // Only the hull that fired reloads. The command never touches the player's
+    // research record or any other unit's clock.
+    unit!.cooldowns = { ...(unit!.cooldowns ?? {}), [ability.upgradeId]: ability.cooldownSeconds };
+    this.emit('orderAck', {
+      team: owner,
+      x: unit!.x,
+      z: unit!.z,
+      text: 'Smoke away',
+      entityId: unit!.id,
+      level: 'info',
+      sound: 'queue',
+      code: 'abilityUsed',
+    });
+  }
+
+  /** Drop expired clouds. Called once per tick, before vision is refreshed. */
+  private updateSmoke(): void {
+    const clouds = this.state.smoke;
+    if (clouds.length === 0) return;
+    const tick = this.state.tick;
+    let write = 0;
+    for (let i = 0; i < clouds.length; i++) {
+      if (clouds[i].expiresTick > tick) clouds[write++] = clouds[i];
+    }
+    clouds.length = write;
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Production                                                         */
   /* ------------------------------------------------------------------ */
 
@@ -2128,6 +2946,15 @@ export class Game {
     if (!this.productionEntries(owner, b.defId).includes(defId)) {
       return { ok: false, reason: `${bdef.name} cannot produce ${def.name}.` };
     }
+    // Research is checked after facility eligibility: a card is capped by what
+    // this building makes before it is capped by what the player has studied.
+    const missingResearch = this.missingResearchForUnit(owner, defId);
+    if (missingResearch.length > 0) {
+      return {
+        ok: false,
+        reason: `${def.name} requires ${missingResearch.map((tech) => tech.name).join(' and ')} research.`,
+      };
+    }
     // Engineers are a factory unit, with the command post as a fallback so a
     // lost factory and engineer do not leave the player permanently unable to
     // build. The HQ hands the role back as soon as a factory is operational.
@@ -2142,7 +2969,7 @@ export class Game {
     if (b.queue.length >= MAX_QUEUE) return { ok: false, reason: 'Production queue is full.' };
     if (p.mats < def.cost.mats) return { ok: false, reason: 'Insufficient materials.' };
     if (p.req < def.cost.req) return { ok: false, reason: 'Insufficient requisition.' };
-    if (def.id === 'fighter') {
+    if (unitFamily(def.id) === 'fighter') {
       const hasAirfield = this.state.entities.some(
         (e) => e.owner === owner && e.defId === 'airfield' && e.hp > 0 && !e.construction,
       );
@@ -2308,11 +3135,31 @@ export class Game {
         reason: `${def.name} is not in ${p.name}'s roster.`,
       };
     }
+    const missingResearch = this.missingResearchForBuilding(owner, defId);
+    if (missingResearch.length > 0) {
+      return {
+        ok: false,
+        code: 'research',
+        reason: `${def.name} requires ${missingResearch.map((tech) => tech.name).join(' and ')} research.`,
+      };
+    }
     if (defId === 'commandPost') {
       const existing = this.state.entities.some(
         (e) => e.owner === owner && e.defId === 'commandPost' && e.hp > 0,
       );
       if (existing) return { ok: false, code: 'hq', reason: 'Only one Command Post per battlegroup.' };
+    }
+    if (buildingFamily(defId) === 'researchCentre') {
+      // One centre, one project: a second building would only duplicate power
+      // draw and a foundation the player cannot use.
+      const existing = this.state.entities.some(
+        (e) =>
+          e.owner === owner &&
+          e.kind === 'building' &&
+          e.hp > 0 &&
+          buildingFamily(e.defId) === 'researchCentre',
+      );
+      if (existing) return { ok: false, code: 'hq', reason: 'Only one Research Centre per battlegroup.' };
     }
     const missing = this.missingTech(owner, defId);
     if (missing.length > 0) {
@@ -2582,9 +3429,18 @@ export class Game {
             builder.destX = builder.x;
             builder.destZ = builder.z;
           }
-        } else if (builder.state === 'building') {
-          // Drifted off the site (separation or terrain): walk back on.
-          this.walkEngineerToSite(builder, site);
+        } else if (builder.state !== 'moving' || builder.path.length === 0) {
+          // Off the site with no route: drifted out (separation, terrain), had
+          // its approach cut by a structure raised across it, or lost its path
+          // to a crowd. Previously only a builder still flagged `building` was
+          // walked back on, so one that ended up idle and out of range kept the
+          // site assigned to itself and never returned — the site sat at its
+          // last percentage forever while every other engineer was passed over.
+          // Retried on a slow clock so a genuinely sealed site costs one search
+          // a second rather than one per tick.
+          if ((this.state.tick + builder.id) % 20 === 0) {
+            this.walkEngineerToSite(builder, site);
+          }
         }
         continue;
       }
@@ -2611,6 +3467,10 @@ export class Game {
     this.processCommands();
     this.updatePassiveIncome(dt);
     this.updateBuildingSystems(dt);
+    this.updateResearch(dt);
+    // Clouds expire on the authoritative clock and must be gone before vision
+    // is refreshed, so an expired cloud cannot hide a unit for one extra beat.
+    this.updateSmoke();
     // The controller schedules itself: its reaction time is a property of the
     // commander level, not of this loop.
     this.ai?.update(this);
@@ -2690,8 +3550,12 @@ export class Game {
     for (const e of this.state.entities) {
       if (e.owner !== playerId || e.kind !== 'building' || e.construction || e.hp <= 0) continue;
       const draw = BUILDINGS[e.defId]?.power ?? 0;
-      if (draw >= 0) supply += draw;
-      else demand -= draw;
+      const modulePower = e.modules?.length
+        ? installedModuleEffects(e.modules, this.research).power
+        : 0;
+      const total = draw + modulePower;
+      if (total >= 0) supply += total;
+      else demand -= total;
     }
     if (demand <= supply) return { supply, demand, ratio: 1, brownout: false };
     return { supply, demand, ratio: supply / demand, brownout: true };
@@ -3122,7 +3986,13 @@ export class Game {
         if (!inBounds(map.width, map.height, tx, tz)) continue;
         const i = tileIndex(map.width, tx, tz);
         if (fog[i] === 2) continue;
-        if (!hasLineOfSight(map, x, z, (tx + 0.5) * TILE_SIZE, (tz + 0.5) * TILE_SIZE)) continue;
+        const txw = (tx + 0.5) * TILE_SIZE;
+        const tzw = (tz + 0.5) * TILE_SIZE;
+        // Smoke cuts the sight line into its own footprint. A crew standing in
+        // the same cloud is exempt, so smoke blinds the observer outside it
+        // rather than blinding everyone.
+        if (this.smokeScreens(x, z, txw, tzw)) continue;
+        if (!hasLineOfSight(map, x, z, txw, tzw)) continue;
         fog[i] = 2;
       }
     }
@@ -3526,6 +4396,7 @@ export class Game {
     projectiles: Projectile[];
     contacts: ContactRecord[];
     charted: ChartedStructure[];
+    smoke: SmokeCloud[];
     fog: Uint8Array;
     tick: number;
     victory: VictoryState;
@@ -3537,6 +4408,9 @@ export class Game {
     this.state.projectiles = view.projectiles;
     this.state.contacts = view.contacts;
     this.state.charted = view.charted;
+    // Clouds are drawn and, on the authoritative side, resolved; a client only
+    // needs the same geometry the server used.
+    this.state.smoke = view.smoke.map((cloud) => ({ ...cloud }));
     this.state.tick = view.tick;
     this.state.victory = view.victory;
     this.state.events = view.events;
@@ -3624,6 +4498,17 @@ export class Game {
       if (e.kind !== 'unit' || e.hp <= 0) continue;
       if (e.garrisonId) continue;
       e.cooldown = Math.max(0, e.cooldown - dt);
+      // Ability reload is the hull's own clock, in simulation seconds. It is
+      // decremented here, in the fixed tick, so a reload is identical on every
+      // peer and survives a reload of a save file.
+      if (e.cooldowns) {
+        for (const id of Object.keys(e.cooldowns)) {
+          const next = e.cooldowns[id] - dt;
+          if (next <= 0) delete e.cooldowns[id];
+          else e.cooldowns[id] = next;
+        }
+        if (Object.keys(e.cooldowns).length === 0) delete e.cooldowns;
+      }
       e.suppression = Math.max(0, e.suppression - dt * 0.12);
       // The counter means "ticks spent under a movement order without getting
       // anywhere". Anything that is not trying to travel resets it, so a quiet
@@ -4130,10 +5015,21 @@ export class Game {
         e.state = 'idle';
         return;
       }
-      const range = weapon.range * TILE_SIZE + 3;
+      // Close to the range the crew can really engage at, not the barrel's
+      // theoretical reach: in fog or at night standing off at the physical
+      // range means never getting a shot away.
+      const range = this.engagementReach(e, weapon) + 3;
       const minimum = (weapon.minRange ?? 0) * TILE_SIZE;
       const d = dist(e.x, e.z, target.x, target.z);
-      const spotted = !weapon.indirect || this.isVisibleTo(this.teamOf(e.owner), target.id);
+      // Smoke between gun and target breaks the lay: the crew closes into the
+      // cloud rather than firing blind through it.
+      const screened = this.smokeScreens(e.x, e.z, target.x, target.z);
+      const spotted =
+        !screened && (!weapon.indirect || this.isVisibleTo(this.teamOf(e.owner), target.id));
+      // Already driving toward the target on a path of its own: leave it alone.
+      // Re-issuing the same path every tick restarts the step it is taking, and
+      // a crew closing a one-tile gap would crawl for the rest of the match.
+      const closing = e.path.length > 0 && e.state === 'moving';
       if (
         d <= range &&
         d >= minimum &&
@@ -4161,7 +5057,15 @@ export class Game {
             e.pathIndex = 0;
             e.state = 'moving';
           }
-        } else if (e.stance !== 'hold' && e.blockedTicks > 4) {
+        } else if (
+          e.stance !== 'hold' &&
+          // Either the crew has been jammed for a few ticks, or it simply cannot
+          // reach the target from here. The second case is the one light and
+          // weather create: an optical crew that cannot identify at the barrel's
+          // physical range must drive into its real engagement range instead of
+          // sitting at the edge of it, firing nothing.
+          (e.blockedTicks > 4 || (spotted && d > range && !closing))
+        ) {
           const path = this.findPathFor(e, target.x, target.z);
           if (path) {
             e.path = path;
@@ -4314,9 +5218,6 @@ export class Game {
     const owner = e.owner;
     if (owner < 0) return null;
     const team = this.teamOf(owner);
-    // Darkness shortens the range at which this crew can actually engage, which
-    // is narrower than the weapon's physical range.
-    const rangeFactor = engagementFactor(sensorFor(e), this.dayNight) * this.weather.acquisition;
     let best: Entity | null = null;
     let bestScore = Infinity;
     for (const target of this.state.entities) {
@@ -4336,10 +5237,10 @@ export class Game {
         if (d < (w.minRange ?? 0) * TILE_SIZE) continue;
         // Indirect fire is aimed at a known location, so its reach is physical;
         // direct fire is limited by what the crew can identify at this light.
-        const reach = (w.indirect ? w.range : w.range * rangeFactor) * TILE_SIZE + 4;
-        if (d > reach) continue;
+        const reach = this.engagementReach(e, w);
+        if (d > reach + 4) continue;
         usable = true;
-        weaponRange = Math.max(weaponRange, w.indirect ? w.range : w.range * rangeFactor);
+        weaponRange = Math.max(weaponRange, reach / TILE_SIZE);
         if (w.indirect) ignoresCover = true;
       }
       if (!usable) continue;
@@ -4423,8 +5324,7 @@ export class Game {
     const best = acquired.target;
     const w = acquired.weapon;
     if (e.kind === 'unit' && (e.order?.type === 'move' || e.order?.type === 'attackMove')) {
-      const range = w.range * TILE_SIZE + 3;
-      if (dist(e.x, e.z, best.x, best.z) > range) return;
+      if (dist(e.x, e.z, best.x, best.z) > this.engagementReach(e, w) + 3) return;
     }
     // Each emplacement's weapon target classes already exclude the domains it
     // cannot engage (SAMs vs ground, ground guns vs air), so a building fires
@@ -4441,9 +5341,7 @@ export class Game {
     // The gun keeps its physical range; what shrinks at night is how far the
     // crew can identify and hold a target. Indirect fire is exempt: it is aimed
     // at a coordinate a spotter already reported.
-    const effectiveRange = weapon.indirect
-      ? weapon.range
-      : weapon.range * engagementFactor(profile, dayNight) * this.weather.acquisition;
+    const effectiveRange = this.engagementReach(e, weapon) / TILE_SIZE;
     if (d > effectiveRange * TILE_SIZE + 4) return;
     if (d < (weapon.minRange ?? 0) * TILE_SIZE) return;
     if (weapon.indirect && e.state === 'moving') return;
@@ -4451,6 +5349,7 @@ export class Game {
     // to know where the target is. Reconnaissance therefore enables artillery
     // instead of being cosmetic.
     if (weapon.indirect && !this.isVisibleTo(this.teamOf(e.owner), target.id)) return;
+    if (!weapon.indirect && this.smokeScreens(e.x, e.z, target.x, target.z)) return;
     if (
       !weapon.indirect &&
       e.kind !== 'building' &&
@@ -4877,7 +5776,14 @@ export class Game {
     const goal = nearestWalkable(nav, goalX, goalZ, 10);
     if (goal === null) return null;
     if (goal === tileIndex(this.state.map.width, startX, startZ)) return [];
-    return findPath(nav, startX, startZ, goalX, goalZ);
+    // Path to the tile that was actually resolved, not to the raw aim. The
+    // search inside findPath widens its own ring to 8, so an aim beside a large
+    // structure — a command post, a research centre — could resolve here at 9
+    // or 10 and then be thrown away there, dropping the unit to the fallback
+    // ring scan. The resolved tile is walkable, so it resolves to itself.
+    const goalTileX = goal % this.state.map.width;
+    const goalTileZ = (goal / this.state.map.width) | 0;
+    return findPath(nav, startX, startZ, goalTileX, goalTileZ);
   }
 
   /**
@@ -6257,6 +7163,10 @@ export class Game {
         contacts: rest.contacts,
         charted: rest.charted,
         commandCount: rest.commandCount,
+        // Smoke is authoritative battlefield state, not a client effect: a save
+        // taken inside a cloud has to restore the same obstruction.
+        smoke: rest.smoke.map((cloud) => ({ ...cloud })),
+        nextSmokeId: rest.nextSmokeId,
       },
       localPlayerId: this.localPlayerId,
     };
@@ -6306,6 +7216,7 @@ export class Game {
     // A v1 file may predate the ore arrays or lose them in serialisation;
     // rebuild the runtime map from the embedded scenario rather than crash.
     const fallbackMap = createRuntimeMap(savedScenario);
+    const loadedSmoke = normalizeSmoke(state.smoke, state.tick);
     game.state = {
       ...state,
       scenario: savedScenario,
@@ -6331,8 +7242,20 @@ export class Game {
         ),
         ...(state.ai ?? {}),
       },
+      // A save written before smoke existed has no field at all; an expired
+      // cloud is dropped rather than resurrected, and a malformed one is
+      // ignored instead of poisoning every vision query.
+      smoke: loadedSmoke,
+      nextSmokeId: Math.max(
+        1,
+        Number.isInteger(state.nextSmokeId) && state.nextSmokeId > 0
+          ? state.nextSmokeId
+          : 1,
+        ...loadedSmoke.map((cloud) => cloud.id + 1),
+      ),
       ready: true,
     };
+    game.normalizeResearchState();
     game.rng = new Rng(game.state.seed);
     game.rng.setState(game.state.rngState);
     game.blocked = new Uint8Array(savedScenario.width * savedScenario.height);
@@ -6387,11 +7310,113 @@ export class Game {
     return game;
   }
 
+  /**
+   * Make a loaded research record safe without granting anything. A save from
+   * before research existed has no field at all, and a hand-edited or older
+   * content id is dropped rather than poisoning every availability query.
+   */
+  private normalizeResearchState(): void {
+    for (const p of this.state.players) {
+      const raw = p.research as Partial<PlayerState['research']> | undefined;
+      const identity = tryIdentityDef(p.factionId);
+      const allowed = (id: string): boolean => {
+        const tech = techDef(id, this.research);
+        if (!tech) return false;
+        if (tech.alliances && (!identity || !tech.alliances.includes(identity.allianceId))) {
+          return false;
+        }
+        if (tech.nations && !tech.nations.includes(p.factionId)) return false;
+        return true;
+      };
+      const known = Array.isArray(raw?.completed)
+        ? [...new Set(raw.completed.filter((id): id is string => typeof id === 'string'))].filter(
+            allowed,
+          )
+        : [];
+      // Drop a hand-edited technology whose prerequisites are absent rather
+      // than letting it unlock equipment the player never researched.
+      const completed = known.filter((id) =>
+        (techDef(id, this.research)?.requires ?? []).every((required) => known.includes(required)),
+      );
+      p.research = { completed, project: null };
+      const project = raw?.project;
+      const tech =
+        project && typeof project.techId === 'string'
+          ? techDef(project.techId, this.research)
+          : undefined;
+      if (
+        project &&
+        tech &&
+        allowed(tech.id) &&
+        tech.requires.every((id) => completed.includes(id)) &&
+        !completed.includes(tech.id) &&
+        Number.isFinite(project.remaining) &&
+        Number.isFinite(project.total)
+      ) {
+        const total = Math.max(1, project.total);
+        p.research.project = {
+          techId: tech.id,
+          remaining: Math.max(0, Math.min(total, project.remaining)),
+          total,
+        };
+      }
+    }
+    for (const e of this.state.entities) {
+      if (e.kind === 'unit' && Array.isArray(e.upgrades)) {
+        const slot = unitFamily(e.defId);
+        const upgrades = [
+          ...new Set(e.upgrades.filter((id): id is string => typeof id === 'string')),
+        ].filter((id) => unitUpgradeDef(id, this.research)?.eligibleSlots.includes(slot));
+        if (upgrades.length > 0) e.upgrades = upgrades;
+        else delete e.upgrades;
+      } else {
+        delete e.upgrades;
+      }
+      if (e.kind === 'building' && Array.isArray(e.modules)) {
+        const slot = buildingFamily(e.defId);
+        const modules: string[] = [];
+        for (const id of e.modules) {
+          if (typeof id !== 'string') continue;
+          const module = buildingModuleDef(id, this.research);
+          if (!module || !module.eligibleSlots.includes(slot)) continue;
+          const count = modules.filter((entry) => entry === id).length;
+          if (count >= (module.capacity ?? 1)) continue;
+          modules.push(id);
+        }
+        if (modules.length > 0) e.modules = modules;
+        else delete e.modules;
+      } else {
+        delete e.modules;
+      }
+      // Reload clocks are per-hull and keyed by a playable upgrade id. A stale
+      // or hand-edited key is dropped; an expired clock is removed so a loaded
+      // save and a live battle hash the same.
+      if (e.kind === 'unit' && e.cooldowns && typeof e.cooldowns === 'object') {
+        const cooldowns: Record<string, number> = {};
+        for (const [id, value] of Object.entries(e.cooldowns)) {
+          if (!abilityForUpgrade(id)) continue;
+          if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) continue;
+          cooldowns[id] = value;
+        }
+        if (Object.keys(cooldowns).length > 0) e.cooldowns = cooldowns;
+        else delete e.cooldowns;
+      } else {
+        delete e.cooldowns;
+      }
+    }
+  }
+
   stateHash(): string {
     const parts: string[] = [];
     parts.push(`t=${this.state.tick}`, `r=${this.state.rngState}`, `v=${this.state.victory}`);
     for (const p of this.state.players) {
-      parts.push(`p${p.id}:${p.mats.toFixed(2)}:${p.req.toFixed(2)}:${p.stats.unitsLost}:${p.stats.kills}`);
+      const project = p.research.project;
+      parts.push(
+        `p${p.id}:${p.mats.toFixed(2)}:${p.req.toFixed(2)}:${p.stats.unitsLost}:${p.stats.kills}` +
+          `:r${p.research.completed.join('+') || '-'}:${
+            project ? `${project.techId}@${project.remaining.toFixed(3)}` : '-'
+          }`,
+      );
     }
     for (const e of [...this.state.entities].sort((a, b) => a.id - b.id)) {
       parts.push(
@@ -6422,6 +7447,16 @@ export class Game {
           // Veterancy is simulation state: two worlds that have fought the same
           // fight have to promote the same crews.
           e.xp ?? 0,
+          // Individual upgrade and module state changes what a unit or structure
+          // can do, so two worlds that took different purchases must differ.
+          (e.upgrades ?? []).join('+') || '-',
+          (e.modules ?? []).join('+') || '-',
+          // A reload clock is simulation state: two worlds whose smoke
+          // dischargers are at different points in their cycle must differ.
+          Object.entries(e.cooldowns ?? {})
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([id, value]) => `${id}@${value.toFixed(2)}`)
+            .join('+') || '-',
           e.submarine
             ? `s${e.submarine.dived ? 1 : 0}:${e.submarine.battery.toFixed(1)}:${e.submarine.revealTimer.toFixed(1)}:${e.submarine.revealed ? 1 : 0}`
             : '-',
@@ -6430,6 +7465,9 @@ export class Game {
     }
     for (const pr of [...this.state.projectiles].sort((a, b) => a.id - b.id)) {
       parts.push(`j${pr.id}:${pr.x.toFixed(1)}:${pr.z.toFixed(1)}:${pr.targetId}`);
+    }
+    for (const cloud of this.state.smoke) {
+      parts.push(`k${cloud.id}:${cloud.x.toFixed(1)}:${cloud.z.toFixed(1)}:${cloud.radius}:${cloud.expiresTick}`);
     }
     return parts.join('|');
   }
@@ -6449,6 +7487,38 @@ const TICKS_PER_SECOND = TICK_RATE;
  */
 function formationRadius(def: UnitDef): number {
   return def.armour === 'infantry' ? def.radius * 0.62 : def.radius;
+}
+
+/**
+ * Keep only well-formed, unexpired smoke clouds from a save file. Expired
+ * clouds are dropped rather than restored, and ids stay unique so a reload
+ * cannot alias two live clouds.
+ */
+function normalizeSmoke(raw: unknown, tick: number): SmokeCloud[] {
+  if (!Array.isArray(raw)) return [];
+  const clouds: SmokeCloud[] = [];
+  const seen = new Set<number>();
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const cloud = entry as Partial<SmokeCloud>;
+    const id = cloud.id;
+    const numbers = [cloud.x, cloud.z, cloud.radius, cloud.expiresTick];
+    if (!Number.isInteger(id) || (id as number) <= 0 || seen.has(id as number)) continue;
+    if (!numbers.every((value) => typeof value === 'number' && Number.isFinite(value))) continue;
+    if ((cloud.radius as number) <= 0 || (cloud.expiresTick as number) <= tick) continue;
+    seen.add(id as number);
+    clouds.push({
+      id: id as number,
+      owner: Number.isInteger(cloud.owner) ? (cloud.owner as number) : -1,
+      team: Number.isInteger(cloud.team) ? (cloud.team as number) : -1,
+      x: cloud.x as number,
+      z: cloud.z as number,
+      radius: cloud.radius as number,
+      startTick: Number.isFinite(cloud.startTick) ? (cloud.startTick as number) : tick,
+      expiresTick: cloud.expiresTick as number,
+    });
+  }
+  return clouds.sort((a, b) => a.id - b.id);
 }
 
 function blockedSnapshot(blocked: Uint8Array): Uint8Array {

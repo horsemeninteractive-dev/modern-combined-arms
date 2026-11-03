@@ -12,6 +12,7 @@ import { TILE_SIZE } from '../src/sim/constants';
 import { rotateLocalOffset } from '../src/core/math';
 import { createIslandAssault } from '../src/data/scenarios';
 import { Game } from '../src/sim/game';
+import { completeResearch } from './helpers';
 import type { Entity } from '../src/sim/types';
 
 function fillWater(x0: number, z0: number, x1: number, z1: number) {
@@ -125,6 +126,8 @@ describe('shipyard in battle', () => {
     // facing, so the vehicle factory is authored rather than built.
     scenario.structures.push({ defId: 'factory', owner: 0, x: 24, z: 32 });
     const game = new Game(scenario, { enableAI: false });
+    // Facing, not the naval research gate, is under test.
+    completeResearch(game, 0);
     let spot: { x: number; z: number } | null = null;
     for (let z = 1; z < scenario.height - 6 && !spot; z++) {
       for (let x = 1; x < scenario.width - 6 && !spot; x++) {

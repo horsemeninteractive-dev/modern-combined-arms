@@ -1,7 +1,19 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import app from '../src/app.ts?raw';
+
+const styles = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
 import {
   DEVICE_PIXEL_RATIO_CAP,
+  EDGE_PAN_SPEED_DEFAULT,
+  EDGE_PAN_SPEED_MAX,
+  EDGE_PAN_SPEED_MIN,
+  EDGE_PAN_WIDTH_DEFAULT,
+  EDGE_PAN_WIDTH_MAX,
+  EDGE_PAN_WIDTH_MIN,
   GRAPHICS_PRESETS,
+  normaliseEdgePanSpeed,
+  normaliseEdgePanWidth,
   RENDER_SCALE_MAX,
   RENDER_SCALE_MIN,
   UI_SCALE_MAX,
@@ -72,6 +84,30 @@ describe('graphics presets', () => {
   });
 });
 
+describe('edge pan tuning', () => {
+  it('clamps the band depth in pixels and falls back to the documented default', () => {
+    expect(normaliseEdgePanWidth(EDGE_PAN_WIDTH_DEFAULT)).toBe(EDGE_PAN_WIDTH_DEFAULT);
+    expect(normaliseEdgePanWidth(EDGE_PAN_WIDTH_MIN)).toBe(EDGE_PAN_WIDTH_MIN);
+    expect(normaliseEdgePanWidth(EDGE_PAN_WIDTH_MAX)).toBe(EDGE_PAN_WIDTH_MAX);
+    expect(normaliseEdgePanWidth(1)).toBe(EDGE_PAN_WIDTH_MIN);
+    expect(normaliseEdgePanWidth(500)).toBe(EDGE_PAN_WIDTH_MAX);
+    for (const value of [undefined, null, 'wide', Number.NaN]) {
+      expect(normaliseEdgePanWidth(value)).toBe(EDGE_PAN_WIDTH_DEFAULT);
+    }
+  });
+
+  it('clamps the speed multiplier and never leaves the camera frozen by junk', () => {
+    expect(normaliseEdgePanSpeed(EDGE_PAN_SPEED_DEFAULT)).toBe(EDGE_PAN_SPEED_DEFAULT);
+    expect(normaliseEdgePanSpeed(EDGE_PAN_SPEED_MIN)).toBe(EDGE_PAN_SPEED_MIN);
+    expect(normaliseEdgePanSpeed(EDGE_PAN_SPEED_MAX)).toBe(EDGE_PAN_SPEED_MAX);
+    expect(normaliseEdgePanSpeed(0.01)).toBe(EDGE_PAN_SPEED_MIN);
+    expect(normaliseEdgePanSpeed(9)).toBe(EDGE_PAN_SPEED_MAX);
+    for (const value of [undefined, null, 'fast', Number.NaN]) {
+      expect(normaliseEdgePanSpeed(value)).toBe(EDGE_PAN_SPEED_DEFAULT);
+    }
+  });
+});
+
 describe('escape behaviour', () => {
   it('keeps the current pause default and only accepts the documented alternative', () => {
     expect(normaliseEscBehavior('pause')).toBe('pause');
@@ -90,6 +126,79 @@ describe('idle unit cycling', () => {
     expect(nextIdleIndex(3, 2)).toBe(0);
     // A remembered unit that became busy is not in the list: start over.
     expect(nextIdleIndex(2, -1)).toBe(0);
+  });
+});
+
+describe('settings tabs', () => {
+  /** The three row groups, sliced out of the shared settings markup builder. */
+  function settingsGroups(): Record<'display' | 'input' | 'audio', string> {
+    const start = app.indexOf('const displayRows');
+    const end = app.indexOf('const tabs:', start);
+    expect(start).toBeGreaterThan(-1);
+    const body = app.slice(start, end);
+    const inputAt = body.indexOf('const inputRows');
+    const audioAt = body.indexOf('const audioRows');
+    return {
+      display: body.slice(0, inputAt),
+      input: body.slice(inputAt, audioAt),
+      audio: body.slice(audioAt),
+    };
+  }
+
+  const keys = (markup: string) =>
+    [...markup.matchAll(/data-(?:set|choice|toggle)="([^"]+)"/g)].map((match) => match[1]).sort();
+
+  it('splits the sheet into display, controls and audio tabs without losing a control', () => {
+    const groups = settingsGroups();
+    expect(groups.display).not.toBe(groups.input);
+    // Tabs and panels are generated from one id list, so the ids are the source of truth.
+    expect(app).toContain(`{ id: 'display', label: 'Display' }`);
+    expect(app).toContain(`{ id: 'input', label: 'Controls' }`);
+    expect(app).toContain(`{ id: 'audio', label: 'Audio' }`);
+    expect(app).toContain('data-settings-tab="${tab.id}"');
+    expect(app).toContain('data-settings-panel="${id}"');
+    // Every settings key sits in exactly one tab, so nothing is hidden or duplicated.
+    const all = keys(app.slice(app.indexOf('const displayRows'), app.indexOf('const tabs:')));
+    expect(new Set(all).size).toBe(all.length);
+    const regrouped = [
+      ...keys(groups.display),
+      ...keys(groups.input),
+      ...keys(groups.audio),
+    ].sort();
+    expect(regrouped).toEqual(all);
+  });
+
+  it('puts presentation in Display, camera and input in Controls, and levels in Audio', () => {
+    const groups = settingsGroups();
+    expect(keys(groups.display)).toEqual(
+      [
+        'effects',
+        'fogVisual',
+        'fpsReadout',
+        'fullscreen',
+        'graphicsQuality',
+        'lightBloom',
+        'nightLights',
+        'renderScale',
+        'shake',
+        'silhouettes',
+        'uiScale',
+      ].sort(),
+    );
+    expect(keys(groups.input)).toEqual(
+      ['customCursors', 'edgePan', 'edgePanSpeed', 'edgePanWidth', 'escBehavior'].sort(),
+    );
+    expect(keys(groups.audio)).toEqual(
+      ['ambient', 'music', 'sfx', 'unitVoice', 'voice'].sort(),
+    );
+  });
+
+  it('switches panels by hiding the inactive ones and marking the active tab', () => {
+    expect(app).toContain('private showSettingsTab(tab: SettingsTab)');
+    expect(app).toContain("panel.hidden = panel.dataset.settingsPanel !== tab");
+    expect(app).toContain("button.classList.toggle('active', active)");
+    // The hidden attribute must beat the panel's own grid display, or all three show.
+    expect(styles).toContain('.settings-panel[hidden] { display: none; }');
   });
 });
 

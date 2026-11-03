@@ -15,6 +15,17 @@ export const UI_SCALE_MIN = 0.8;
 export const UI_SCALE_MAX = 1.5;
 export const UI_SCALE_DEFAULT = 1;
 
+/**
+ * Edge panning. The band depth is in CSS pixels from the visible battlefield
+ * edge; the speed is a multiplier on the authored camera travel.
+ */
+export const EDGE_PAN_WIDTH_MIN = 4;
+export const EDGE_PAN_WIDTH_MAX = 48;
+export const EDGE_PAN_WIDTH_DEFAULT = 18;
+export const EDGE_PAN_SPEED_MIN = 0.4;
+export const EDGE_PAN_SPEED_MAX = 2.5;
+export const EDGE_PAN_SPEED_DEFAULT = 1;
+
 /** Render scale is a fraction of the device pixel ratio, capped below at 2. */
 export const RENDER_SCALE_MIN = 0.5;
 export const RENDER_SCALE_MAX = 1;
@@ -51,6 +62,20 @@ export function normaliseUiScale(value: unknown): number {
   const n = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(n)) return UI_SCALE_DEFAULT;
   return Math.max(UI_SCALE_MIN, Math.min(UI_SCALE_MAX, n));
+}
+
+export function normaliseEdgePanWidth(value: unknown): number {
+  if (value === null || value === undefined || value === '') return EDGE_PAN_WIDTH_DEFAULT;
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return EDGE_PAN_WIDTH_DEFAULT;
+  return Math.max(EDGE_PAN_WIDTH_MIN, Math.min(EDGE_PAN_WIDTH_MAX, n));
+}
+
+export function normaliseEdgePanSpeed(value: unknown): number {
+  if (value === null || value === undefined || value === '') return EDGE_PAN_SPEED_DEFAULT;
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return EDGE_PAN_SPEED_DEFAULT;
+  return Math.max(EDGE_PAN_SPEED_MIN, Math.min(EDGE_PAN_SPEED_MAX, n));
 }
 
 export function normaliseRenderScale(value: unknown): number {

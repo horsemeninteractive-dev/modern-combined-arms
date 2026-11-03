@@ -347,6 +347,8 @@ export class Renderer {
   private readonly wrecks = new WreckStore();
   private trailTimers = new Map<number, number>();
   private projectileTrailTimers = new Map<number, number>();
+  /** Per-cloud emission clocks, so a screen puffs at a fixed rate, not per frame. */
+  private smokeEmitTimers = new Map<number, number>();
   private projectileViews = new Map<number, { previous: ProjectileSample; current: ProjectileSample }>();
   private simulationAlpha = 1;
   private lastEventSeq = 0;
@@ -788,6 +790,7 @@ export class Renderer {
     this.decals.clear();
     this.trailTimers.clear();
     this.projectileTrailTimers.clear();
+    this.smokeEmitTimers.clear();
     this.projectileViews.clear();
     this.particles.clear();
     if (game) {
@@ -1416,6 +1419,7 @@ export class Renderer {
       this.updateProjectileViews(this.game);
       this.emitAmbientEffects(dt, this.game);
       this.updateWreckEffects(dt, this.game);
+      this.updateSmokeClouds(dt, this.game);
       this.updateProjectileTrails(dt, this.game);
       this.refreshOre();
       this.updateFog();
@@ -2669,6 +2673,41 @@ export class Renderer {
       if (wreck.fireTimer <= 0) {
         wreck.fireTimer = 0.38;
         this.particles.wreckFlame(wreck.x, wreck.y + 0.45, wreck.z, 1);
+      }
+    }
+  }
+
+  /**
+   * Screen smoke, drawn from the authoritative cloud list.
+   *
+   * The renderer owns no smoke state: position, radius and expiry all come from
+   * the simulation, so the cloud a player sees is the cloud the vision pass
+   * tested. Emission is throttled per cloud instead of per frame, and the last
+   * third of the cloud's life thins the emission so the fade follows the clock
+   * rather than a client-side timer. Clouds in fog emit nothing, exactly like a
+   * wreck: a screen cannot reveal the hull that laid it.
+   */
+  private updateSmokeClouds(dt: number, game: Game): void {
+    if (this.settings.effects) {
+      const seen = new Set<number>();
+      for (const cloud of game.smokeClouds) {
+        seen.add(cloud.id);
+        const remaining = cloud.expiresTick - game.state.tick;
+        if (remaining <= 0) continue;
+        if (!this.pointVisible(game, cloud.x, cloud.z)) continue;
+        const total = Math.max(1, cloud.expiresTick - cloud.startTick);
+        const density = Math.min(1, remaining / (total * 0.4));
+        const timer = (this.smokeEmitTimers.get(cloud.id) ?? 0) - dt;
+        if (timer > 0) {
+          this.smokeEmitTimers.set(cloud.id, timer);
+          continue;
+        }
+        this.smokeEmitTimers.set(cloud.id, 0.15);
+        const groundY = tileWorldHeight(this.scenario!, cloud.x, cloud.z);
+        this.particles.smokeScreen(cloud.x, groundY + 0.5, cloud.z, cloud.radius, density);
+      }
+      for (const id of [...this.smokeEmitTimers.keys()]) {
+        if (!seen.has(id)) this.smokeEmitTimers.delete(id);
       }
     }
   }

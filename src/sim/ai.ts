@@ -1,6 +1,16 @@
 import type { Game } from './game';
 import { BUILDINGS, buildingFamily } from '../data/buildings';
 import { UNITS, unitFamily } from '../data/units';
+import {
+  RESEARCH_BRANCHES,
+  buildingModuleDef,
+  exclusiveUnitTech,
+  techDef,
+  unitUpgradeDef,
+  type ResearchBranch,
+  type TechDef,
+} from '../data/research';
+import { UNIT_ABILITIES, upgradePlayable } from '../data/abilities';
 import { REPAIR_SUPPRESSION_TICKS, TILE_SIZE } from './constants';
 import { dist } from '../core/math';
 import { Terrain, canStandOn, tileIndex } from './terrain';
@@ -330,6 +340,336 @@ function blendWeights(base: ArmyWeights, response: ArmyWeights, responseWeight =
 }
 
 /* -------------------------------------------------------------------------- */
+/* Research policy                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Everything the research planner is allowed to know.
+ *
+ * Every field is derived from the commander's own state or from contacts it has
+ * actually identified — its own units and structures, its bank, the force it has
+ * scouted and the match clock. There is no opponent bank, no fogged unit and no
+ * opposing research here, so a technology cannot be chosen from information the
+ * AI could not have observed.
+ */
+export interface ResearchSignals {
+  /** Match seed: selects the commander's per-branch bias. */
+  seed: number;
+  tick: number;
+  /** Authored match limit, or null when the match has none. */
+  timeLimitSec: number | null;
+  /** Technologies this commander has already finished. */
+  completed: readonly string[];
+  /** Owned units by canonical family. */
+  unitCounts: ReadonlyMap<string, number>;
+  /** Complete structures by canonical family. */
+  buildingCounts: ReadonlyMap<string, number>;
+  /** Canonical unit families this nation's roster actually fields. */
+  rosterUnits: ReadonlySet<string>;
+  /** Technology ids this nation's national exclusives need, if any. */
+  exclusiveTechs: ReadonlySet<string>;
+  profile: AIProfile;
+  strategy: AIStrategy;
+  /** Hostile force the commander has identified. */
+  mix: ScoutedForceMix;
+  enemyAir: number;
+  enemyNaval: number;
+  /** Known enemy structures that shoot or shelter infantry. */
+  fortified: number;
+  hasWater: boolean;
+  /**
+   * The commander's own grid is short enough that a retrofit would pay off.
+   * Optional so a caller that only cares about units can leave it out; absent
+   * reads as "no strain", which is the conservative answer.
+   */
+  gridStrain?: boolean;
+}
+
+export interface ResearchOption {
+  techId: string;
+  score: number;
+  /** Short human-readable justification, also used for the AI decision line. */
+  reason: string;
+}
+
+/**
+ * A technology is worth queueing above this score. The scale is deliberately
+ * small and readable: a `1.0` node fills one clear battlefield need for a
+ * commander that values the branch, so the floor sits below that and above
+ * noise.
+ */
+export const RESEARCH_MIN_SCORE = 0.55;
+
+/** Doctrine fit per branch: what the commander naturally invests in. */
+const BRANCH_FIT: Record<AIStrategy, Record<ResearchBranch, number>> = {
+  armour: { manoeuvre: 1.25, fires: 1.0, air: 0.8, naval: 0.8 },
+  infantry: { manoeuvre: 0.9, fires: 1.1, air: 0.85, naval: 0.8 },
+  air: { manoeuvre: 0.95, fires: 0.95, air: 1.3, naval: 0.85 },
+  economy: { manoeuvre: 1.05, fires: 1.0, air: 1.0, naval: 1.0 },
+  pressure: { manoeuvre: 1.1, fires: 1.15, air: 0.85, naval: 0.75 },
+};
+
+/** Base demand per canonical unit slot before the battlefield adjusts it. */
+const SLOT_BASE: Readonly<Record<string, number>> = Object.freeze({
+  tank: 1.0,
+  ifv: 0.5,
+  td: 0.55,
+  spg: 0.6,
+  rocketArtillery: 0.5,
+  uav: 0.45,
+  interceptor: 0.35,
+  fighter: 0.4,
+  attackHelo: 0.35,
+  missileBoat: 0.3,
+  corvette: 0.35,
+  frigate: 0.3,
+  submarine: 0.3,
+  navalSupport: 0.25,
+});
+
+/** Slots that only exist once an airfield stands. */
+const AIR_SLOTS: ReadonlySet<string> = new Set(['interceptor', 'fighter', 'attackHelo']);
+
+/** Slots that only make sense on a map with water. */
+const NAVAL_SLOTS: ReadonlySet<string> = new Set([
+  'missileBoat',
+  'corvette',
+  'frigate',
+  'submarine',
+  'navalSupport',
+]);
+
+/** Stable per-commander branch bias, so two seeds do not open identically. */
+function branchAffinity(seed: number, branch: ResearchBranch): number {
+  const index = RESEARCH_BRANCHES.indexOf(branch);
+  return 0.9 + unitHash(seed, 0x7265 + index) * 0.2;
+}
+
+/** How badly the commander wants one unit role, given what it has seen. */
+function slotDemand(slot: string, signals: ResearchSignals): number {
+  if (!signals.rosterUnits.has(slot)) return 0;
+  if (NAVAL_SLOTS.has(slot) && !signals.hasWater) return 0;
+  const base = SLOT_BASE[slot] ?? 0.25;
+  const scouted = signals.mix.armour + signals.mix.infantry;
+  const armourShare = scouted > 0 ? signals.mix.armour / scouted : 0.5;
+  let demand = base;
+  switch (slot) {
+    case 'tank':
+      demand += 0.25 * armourShare;
+      break;
+    case 'td':
+      demand += 0.7 * armourShare;
+      break;
+    case 'attackHelo':
+      demand += 0.45 * armourShare;
+      break;
+    case 'spg':
+      demand += signals.fortified > 0 ? 0.5 : 0.15;
+      break;
+    case 'rocketArtillery':
+      demand += signals.fortified > 0 ? 0.4 : 0;
+      demand += signals.mix.infantry >= 4 ? 0.2 : 0;
+      break;
+    case 'interceptor':
+    case 'fighter':
+      demand += 0.6 * Math.min(1, signals.enemyAir / 2);
+      break;
+    case 'uav':
+      demand += (signals.unitCounts.get('recon') ?? 0) === 0 ? 0.2 : 0;
+      break;
+    case 'missileBoat':
+    case 'corvette':
+    case 'frigate':
+    case 'submarine':
+    case 'navalSupport':
+      demand += 0.6 * Math.min(1, signals.enemyNaval / 2);
+      break;
+    default:
+      break;
+  }
+  // A facility the commander already paid for is a sunk investment: the aircraft
+  // or hull it can launch is worth more than one the commander would have to
+  // build the facility for first. This is what makes an airfield turn into a
+  // strike wing instead of a warehouse with a radar dish on it.
+  if (AIR_SLOTS.has(slot) && (signals.buildingCounts.get('airfield') ?? 0) > 0) {
+    demand *= 1.35;
+  }
+  if (NAVAL_SLOTS.has(slot) && (signals.buildingCounts.get('shipyard') ?? 0) > 0) {
+    demand *= 1.35;
+  }
+  // A role the army already fields in numbers is worth less than an empty one.
+  const owned = signals.unitCounts.get(slot) ?? 0;
+  return demand * Math.max(0.35, 1 - owned / 8);
+}
+
+/** Demand for a structure unlock, which is a facility rather than a unit. */
+function buildingDemand(slot: string, signals: ResearchSignals): number {
+  const owned = signals.buildingCounts.get(slot) ?? 0;
+  if (slot === 'shipyard') {
+    if (!signals.hasWater) return 0;
+    return (0.45 + (signals.enemyNaval > 0 ? 0.3 : 0)) * (owned > 0 ? 0.3 : 1);
+  }
+  if (slot === 'airfield') {
+    return (0.5 + (signals.enemyAir > 0 ? 0.3 : 0)) * (owned > 0 ? 0.3 : 1);
+  }
+  return owned > 0 ? 0 : 0.3;
+}
+
+/**
+ * How much of a project's value survives the match that is left.
+ *
+ * With an authored limit the planner compares the remaining clock to the
+ * research time, so a 90-second project ordered in the last minute is worth
+ * little. Without one it decays gently after ten minutes, when either side is
+ * usually close to a decision.
+ */
+function researchTimeFactor(tech: TechDef, signals: ResearchSignals): number {
+  const elapsed = signals.tick / 20;
+  if (signals.timeLimitSec !== null) {
+    const remaining = signals.timeLimitSec - elapsed;
+    if (remaining <= 0) return 0;
+    return Math.max(0.2, Math.min(1, remaining / Math.max(1, tech.seconds * 1.2)));
+  }
+  if (elapsed <= 600) return 1;
+  return Math.max(0.6, 1 - (elapsed - 600) / 2400);
+}
+
+/**
+ * What a researched *ability* is worth to this commander.
+ *
+ * An upgrade is only worth studying if it has a working gameplay pathway — the
+ * same question the selection box asks — and if the army holds hulls that could
+ * use it. Two of them make it a habit rather than a novelty, and an identified
+ * armoured force is exactly what a smoke screen is for.
+ */
+function upgradeDemand(upgradeId: string, signals: ResearchSignals): number {
+  if (!upgradePlayable(upgradeId)) return 0;
+  const upgrade = unitUpgradeDef(upgradeId);
+  if (!upgrade) return 0;
+  const slots = upgrade.eligibleSlots.filter((slot) => signals.rosterUnits.has(slot));
+  if (slots.length === 0) return 0;
+  let owned = 0;
+  for (const slot of slots) owned += signals.unitCounts.get(slot) ?? 0;
+  let demand = 0.5;
+  if (owned >= 2) demand += 0.25;
+  if (signals.mix.armour > 0) demand += 0.2 * Math.min(1, signals.mix.armour / 4);
+  return demand;
+}
+
+/**
+ * Modules with a working purchase path. A module the player cannot install is
+ * worth nothing to study, for the same reason an unimplemented ability is: the
+ * research would buy a capability nothing can use.
+ */
+const PLAYABLE_MODULES: ReadonlySet<string> = new Set(['advancedTurbine']);
+
+/**
+ * What a researched *module* is worth to this commander.
+ *
+ * A retrofit only pays for itself where the grid is the limiter and the
+ * commander already owns something to fit it to. A healthy grid makes the
+ * technology worthless to study: the same materials buy another hull.
+ */
+function moduleDemand(moduleId: string, signals: ResearchSignals): number {
+  if (!PLAYABLE_MODULES.has(moduleId)) return 0;
+  const module = buildingModuleDef(moduleId);
+  if (!module) return 0;
+  const slots = module.eligibleSlots.filter((slot) => (signals.buildingCounts.get(slot) ?? 0) > 0);
+  if (slots.length === 0) return 0;
+  if (!signals.gridStrain) return 0;
+  return 0.6;
+}
+
+/**
+ * Score one technology for this commander, or return zero with a reason.
+ *
+ * The model is a product of three readable parts:
+ *   demand — what the unlock is worth to the army the commander actually has;
+ *   fit    — how well the branch matches doctrine, this seed and this level;
+ *   time   — whether the project can still pay off, including its duration.
+ *
+ * Affordability, the army reserve and the single-project rule are decisions
+ * about *when* to start, so they live in the controller rather than in the
+ * score. A technology whose only effects are an unimplemented unit upgrade or a
+ * building module still scores zero on purpose: there is nothing the commander
+ * could do with the capability, and `upgradeDemand` refuses the same way.
+ */
+export function researchOptionScore(
+  tech: TechDef,
+  signals: ResearchSignals,
+): ResearchOption {
+  if (signals.completed.includes(tech.id)) {
+    return { techId: tech.id, score: 0, reason: 'already researched' };
+  }
+  if (tech.requires.some((id) => !signals.completed.includes(id))) {
+    return { techId: tech.id, score: 0, reason: 'prerequisite incomplete' };
+  }
+  let demand = 0;
+  let unusable = 0;
+  const reasons: string[] = [];
+  for (const effect of tech.effects) {
+    if (effect.kind === 'unlockUnit') {
+      const value = slotDemand(effect.slot, signals);
+      if (value > 0) {
+        demand += value;
+        reasons.push(effect.slot);
+      }
+    } else if (effect.kind === 'unlockBuilding') {
+      const value = buildingDemand(effect.slot, signals);
+      if (value > 0) {
+        demand += value;
+        reasons.push(effect.slot);
+      }
+    } else if (effect.kind === 'grantUnitUpgrade') {
+      // An upgrade the commander cannot fire is worth nothing, whatever the
+      // catalogue says: Stage 4A published the data, but only an implemented
+      // ability is a reason to spend materials on research.
+      const value = upgradeDemand(effect.upgrade, signals);
+      if (value > 0) {
+        demand += value;
+        reasons.push(unitUpgradeDef(effect.upgrade)?.name ?? effect.upgrade);
+      } else {
+        unusable++;
+      }
+    } else if (effect.kind === 'grantBuildingModule') {
+      // Same test for a retrofit: Stage 4C.3 gave the module a purchase path, so
+      // it is worth studying when the grid is short and a plant stands to fit
+      // it to — and worth nothing in any other situation.
+      const value = moduleDemand(effect.module, signals);
+      if (value > 0) {
+        demand += value;
+        reasons.push(buildingModuleDef(effect.module)?.name ?? effect.module);
+      } else {
+        unusable++;
+      }
+    } else {
+      unusable++;
+    }
+  }
+  if (demand <= 0) {
+    return {
+      techId: tech.id,
+      score: 0,
+      reason: unusable > 0 ? 'no playable effect' : 'no battlefield need',
+    };
+  }
+  // A national exclusive is a capability the shared tree cannot give, so it
+  // raises the branch tier that equips it for this nation only.
+  if (signals.exclusiveTechs.has(tech.id)) demand += 0.3;
+  const fit =
+    BRANCH_FIT[signals.strategy][tech.branch] *
+    branchAffinity(signals.seed, tech.branch) *
+    (0.85 + signals.profile.tech * 0.3);
+  const duration = 1 - Math.min(0.2, tech.seconds / 900);
+  const score = demand * fit * researchTimeFactor(tech, signals) * duration;
+  return {
+    techId: tech.id,
+    score: Math.round(score * 100) / 100,
+    reason: reasons.slice(0, 2).join('+'),
+  };
+}
+
+/* -------------------------------------------------------------------------- */
 /* Controller                                                                 */
 /* -------------------------------------------------------------------------- */
 
@@ -379,6 +719,13 @@ interface BuildOption {
   reason: string;
   /** Essential options may pause unit spending while the AI saves. */
   essential: boolean;
+  /**
+   * A facility the commander has researched towards. Once most of its price is
+   * in hand, unit production leaves the rest of it alone so the unlock it just
+   * paid for turns into something on the ground. It never outranks an essential
+   * structure, and it does nothing at all until 70% of the price is banked.
+   */
+  planned?: boolean;
 }
 
 interface UnitDemand {
@@ -594,14 +941,62 @@ export class AIController {
     this.scout(ctx);
     this.scoutAir(ctx);
     const budget = this.manageConstruction(ctx);
-    this.manageProduction(ctx, budget);
+    const afterResearch = this.manageResearch(ctx, budget);
+    // Retrofits come after study and before the army: a grid that is already
+    // short will throttle the production the budget is about to buy.
+    this.manageModules(ctx);
+    this.manageProduction(ctx, afterResearch);
     this.manageNaval(ctx);
     this.manageAir(ctx);
     this.captureObjective(ctx);
+    // Spent before the assault tasking claims hulls, so a recon troop that is
+    // breaking contact still gets its screen away.
+    this.useAbilities(ctx);
     this.offensive(ctx);
     // Scheduled after the think so the decision sees the same clock state that
     // the old fixed-cadence loop exposed.
     st.nextThinkTick = game.state.tick + profile.reactionTicks;
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Abilities                                                              */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * Situational use of researched unit abilities.
+   *
+   * Smoke exists to break a sight line, so the commander spends it on a recon
+   * troop that is actually in trouble: damaged, with a hostile inside its own
+   * engagement envelope, and not already standing in a cloud. Every other case
+   * keeps the discharger loaded, and the hull's own reload stops it being used
+   * twice. Nothing here reads hidden state — `visible` is the same sighting list
+   * the rest of the planner uses — and the order goes through the ordinary
+   * command queue, so the simulation still decides whether it was legal.
+   */
+  private useAbilities(ctx: AIContext): void {
+    const abilityIds = Object.keys(UNIT_ABILITIES);
+    if (abilityIds.length === 0 || ctx.visible.length === 0) return;
+    for (const unit of ctx.own) {
+      if (unit.kind !== 'unit' || unit.hp <= 0) continue;
+      if (unit.hp > unit.maxHp * 0.55) continue;
+      for (const abilityId of abilityIds) {
+        const status = ctx.game.abilityStatus(ctx.aiId, unit.id, abilityId);
+        if (!status.ok) continue;
+        if (ctx.game.smokeCoversPoint(unit.x, unit.z)) continue;
+        const pressed = ctx.visible.some(
+          (enemy) =>
+            enemy.hp > 0 && dist(enemy.x, enemy.z, unit.x, unit.z) <= 9 * TILE_SIZE,
+        );
+        if (!pressed) continue;
+        ctx.game.enqueueCommand({
+          type: 'useAbility',
+          team: ctx.team,
+          unitId: unit.id,
+          abilityId,
+        });
+        break;
+      }
+    }
   }
 
   /* ---------------------------------------------------------------------- */
@@ -1027,17 +1422,26 @@ export class AIController {
 
   private buildOptions(ctx: AIContext): BuildOption[] {
     const options: BuildOption[] = [];
-    const add = (slotId: string, score: number, reason: string, essential = false): void => {
+    const add = (
+      slotId: string,
+      score: number,
+      reason: string,
+      essential = false,
+      planned = false,
+    ): void => {
       // Build the actual structure this nation fields for the slot. A roster
       // that excludes it returns undefined, so the option simply disappears.
       const defId = ctx.game.buildingIdFor(ctx.aiId, slotId);
       if (!defId) return;
-      // A locked structure is not a build option: leaving it in the list would
-      // let an essential high scorer reserve materials for a foundation the
-      // placement check will refuse. The prerequisite keeps its own option and
-      // therefore earns the bank first.
+      // A structure it cannot legally place is not a build option. Two separate
+      // locks apply: the facility requirements (`missingTech`) and the research
+      // that opens the slot. Leaving either in the list would let a high scorer
+      // reserve materials, and — worse — stall every other option, because the
+      // planner tries the affordable list in order and a site search that can
+      // never succeed consumes the whole think.
       if (ctx.game.missingTech(ctx.aiId, defId).length > 0) return;
-      options.push({ defId, score, reason, essential });
+      if (!ctx.game.buildingSlotUnlocked(ctx.aiId, buildingFamily(defId))) return;
+      options.push({ defId, score, reason, essential, planned });
     };
     const counts = ctx.counts;
     const factory = counts.get('factory') ?? 0;
@@ -1048,6 +1452,10 @@ export class AIController {
     const harvesters = ctx.unitCounts.get('harvester') ?? 0;
     const bank = ctx.player.mats;
     const powerGap = ctx.power.supply - ctx.power.demand;
+    // Look one facility ahead: 24 points is about what the next structure draws,
+    // so the commander buys a plant before the airfield or shipyard browns the
+    // base out rather than after. It is anticipation, not stockpiling.
+    const powerHeadroom = 24;
     const threat = ctx.threats.length > 0;
     const damaged = ctx.complete.some((b) => b.hp < b.maxHp * 0.85);
     const opening = STRATEGY_OPENING[ctx.strategy];
@@ -1057,7 +1465,10 @@ export class AIController {
     // a new facility because every later construction is slowed by it.
     if (ctx.power.brownout) {
       add('powerPlant', 260 + jitter(), 'grid deficit', true);
-    } else if (powerGap < 24 && powerGap >= 0) {
+    } else if (powerGap < powerHeadroom && powerGap >= 0 && harvesters >= 2) {
+      // Headroom is optional infrastructure: buy it once the economy is crewed,
+      // not out of the first two haulers' budget. A brownout still outranks
+      // everything through the branch above, so waiting never strands the base.
       add('powerPlant', 96 + ctx.profile.economy * 24 + jitter(), 'grid headroom');
     }
 
@@ -1119,25 +1530,33 @@ export class AIController {
       const droneId = ctx.game.unitIdFor(ctx.aiId, 'uav');
       const droneReach = droneId ? (UNITS[droneId]?.vision ?? 0) : 0;
       const reconWorth = coreReady && droneReach >= 20 ? 44 + (droneReach - 20) * 2 : 0;
+      // Air Operations is what unlocked this option. A commander that has paid
+      // for the branch follows through: the field is worth more than a second
+      // refinery or a radar, otherwise the study buys nothing it can fly.
+      const branchPaid = ctx.game.buildingSlotUnlocked(ctx.aiId, 'airfield') ? 40 : 0;
       const score =
         (ctx.strategy === 'air' ? 148 : ctx.profile.tech > 0.58 ? 52 + ctx.profile.tech * 50 : 0) +
         opening.air +
         reconWorth +
+        branchPaid +
         (ctx.enemyAir > 0 ? 24 : 0);
       if (score > 0) {
         add(
           'airfield',
           score + jitter(),
           reconWorth > 0 ? 'reconnaissance aviation' : 'air operations',
+          false,
+          true,
         );
       }
     }
     if (!shipyard && ctx.hasWater) {
+      const branchPaid = ctx.game.buildingSlotUnlocked(ctx.aiId, 'shipyard') ? 35 : 0;
       const score =
-        44 + ctx.profile.tech * 34 + opening.naval +
+        44 + ctx.profile.tech * 34 + opening.naval + branchPaid +
         (ctx.known.some((e) => UNITS[e.defId]?.domain === 'naval') ? 36 : 0) +
         (ctx.strategy === 'economy' ? 10 : 0);
-      if (bank > 900) add('shipyard', score + jitter(), 'coastal production');
+      if (bank > 900) add('shipyard', score + jitter(), 'coastal production', false, true);
     }
     if ((counts.get('samBattery') ?? 0) === 0) {
       if (ctx.enemyAir > 0) add('samBattery', 178 + jitter(), 'hostile air contact');
@@ -1154,6 +1573,35 @@ export class AIController {
       // Vision is an economy: a radar keeps contacts fresh so the army is not
       // repeatedly sent at stale coordinates.
       add('radar', 34 + ctx.profile.economy * 22 + jitter(), 'battlefield surveillance');
+    }
+
+    // The Research Centre is a strategic investment, not another utility. It is
+    // considered once the economy, a production line and a barracks stand — and
+    // only when the tree holds something this commander still wants that its
+    // bank can cover afterwards. A centre is skipped entirely while one is
+    // already standing or being built: the match allows exactly one, and the
+    // placement command would refuse a second foundation.
+    const centreUnderConstruction = ctx.buildings.some(
+      (b) => buildingFamily(b.defId) === 'researchCentre',
+    );
+    if ((counts.get('researchCentre') ?? 0) === 0 && !centreUnderConstruction) {
+      const coreReady = factory > 0 && refinery > 0 && barracks > 0;
+      const wanted = this.researchOptions(ctx)[0];
+      if (
+        coreReady &&
+        wanted &&
+        wanted.score >= RESEARCH_MIN_SCORE &&
+        bank >= 700 + 350 &&
+        ctx.player.req >= 40
+      ) {
+        // A thin grid margin does not forbid the centre, it only postpones it:
+        // the brownout power plant above outranks everything while the deficit
+        // lasts. The draw is 30, which is why the margin is read here at all.
+        const powerFactor = powerGap >= 30 ? 1 : powerGap >= 15 ? 0.7 : 0.4;
+        const score =
+          (54 + ctx.profile.tech * 70 + Math.min(40, wanted.score * 22)) * powerFactor;
+        add('researchCentre', score + jitter(), `research capability (${wanted.reason})`);
+      }
     }
 
     return options.sort((a, b) => b.score - a.score || a.defId.localeCompare(b.defId));
@@ -1264,6 +1712,30 @@ export class AIController {
         };
       }
       return { mats: ctx.player.mats, req: ctx.player.req };
+    }
+
+    // A researched facility the commander is saving towards holds the last third
+    // of its price. It is checked after the essential branch so a missing
+    // factory or drop-off always wins the bank, and the reserve is only the
+    // shortfall, so the army keeps spending until the price is nearly in hand.
+    const planned = options.find(
+      (option) =>
+        option.planned && !affordable.some((other) => other.defId === option.defId),
+    );
+    if (planned && !top?.essential) {
+      const def = BUILDINGS[planned.defId];
+      if (
+        def &&
+        ctx.player.mats >= def.cost.mats * 0.7 &&
+        ctx.player.req >= def.cost.req * 0.7
+      ) {
+        const reserve = Math.max(0, def.cost.mats - ctx.player.mats);
+        ctx.st.lastDecision = `saving for ${planned.defId} — ${planned.reason}`;
+        return {
+          mats: Math.max(0, ctx.player.mats - reserve),
+          req: ctx.player.req,
+        };
+      }
     }
 
     // Do not spend the bank on a cheap optional building while an essential
@@ -1584,9 +2056,212 @@ export class AIController {
     need('tank', Math.max(1, Math.round(targetArmy * weights.armour)), 104);
     need('atgm', Math.max(1, Math.round(targetArmy * weights.antiArmour)), 108);
     need('rifle', Math.max(1, Math.round(targetArmy * weights.infantry)), 100);
+    // National exclusives declare no canonical slot, so no `need()` above can
+    // name one. Buy the nation's own extra option once the field army exists
+    // and the base is quiet, at a priority below every core arm: an exclusive
+    // is a capability the commander adds, never the plan it substitutes for.
+    // A nation without one simply has nothing to push, so this cannot produce
+    // another nation's equipment.
+    if (ctx.st.desiredArmy >= 6 && ctx.threats.length === 0) {
+      for (const defId of ctx.game.rosterFor(ctx.aiId).units) {
+        const def = UNITS[defId];
+        if (!def?.national || def.variantOf !== undefined) continue;
+        const buildable = ctx.complete.some(
+          (b) => ctx.game.productionStatus(ctx.aiId, b.id, defId).ok,
+        );
+        if (!buildable) continue;
+        const count = (ctx.unitCounts.get(defId) ?? 0) + (queued.get(defId) ?? 0);
+        if (count >= 1) continue;
+        entries.push({ defId, priority: 94, deficit: 1, saveFor: def.cost.mats });
+      }
+    }
     return entries.sort(
       (a, b) => b.priority - a.priority || b.deficit - a.deficit || a.defId.localeCompare(b.defId),
     );
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Research                                                               */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * Everything the planner may reason about, derived from the commander's own
+   * state and its identified contacts. Nothing here reads the opponent's bank,
+   * its research or anything currently under fog.
+   */
+  private researchSignals(ctx: AIContext): ResearchSignals {
+    const roster = ctx.game.rosterFor(ctx.aiId);
+    const rosterUnits = new Set(roster.units.map((id) => unitFamily(id)));
+    const exclusiveTechs = new Set<string>();
+    for (const defId of roster.units) {
+      const required = exclusiveUnitTech(defId);
+      if (required) exclusiveTechs.add(required);
+    }
+    // A structure the commander has seen and can identify is a reason to want
+    // indirect fire; a remembered silhouette is not, so this counts only what is
+    // currently visible or confirmed.
+    const fortified = ctx.known.filter((e) => {
+      if (e.kind !== 'building' || !e.defId) return false;
+      const def = BUILDINGS[e.defId];
+      return !!def?.garrison || (def?.weapons?.length ?? 0) > 0;
+    }).length;
+    return {
+      seed: ctx.st.aiSeed,
+      tick: ctx.game.state.tick,
+      timeLimitSec: ctx.game.state.scenario.settings.timeLimitSec,
+      completed: ctx.game.completedTechnologies(ctx.aiId),
+      unitCounts: ctx.unitCounts,
+      buildingCounts: ctx.counts,
+      rosterUnits,
+      exclusiveTechs,
+      profile: ctx.profile,
+      strategy: ctx.strategy,
+      mix: ctx.mix,
+      enemyAir: ctx.enemyAir,
+      enemyNaval: ctx.enemyNaval,
+      fortified,
+      hasWater: ctx.hasWater,
+      // The retrofit only pays off where the grid is the limiter, which is the
+      // same condition the installer uses. Read from the commander's own supply
+      // and demand, never from anything it has not built.
+      gridStrain: ctx.power.brownout || ctx.power.demand > ctx.power.supply * 0.8,
+    };
+  }
+
+  /**
+   * Eligible technologies, best first.
+   *
+   * Eligibility is the catalogue's, not a second copy of it: prerequisites are
+   * read from the definition and alliance/nation restrictions come from
+   * `Game.techEligibility`, the same method the command handler uses.
+   */
+  private researchOptions(ctx: AIContext): ResearchOption[] {
+    const signals = this.researchSignals(ctx);
+    const options: ResearchOption[] = [];
+    for (const tech of ctx.game.research.techs) {
+      if (!ctx.game.techEligibility(ctx.aiId, tech.id).ok) continue;
+      const option = researchOptionScore(tech, signals);
+      if (option.score <= 0) continue;
+      options.push(option);
+    }
+    return options.sort((a, b) => b.score - a.score || a.techId.localeCompare(b.techId));
+  }
+
+  /**
+   * What the commander wants left in the bank before it commits to research.
+   *
+   * Research competes with the army, so the reserve rises while the army is
+   * under strength or the base is under threat and falls away once the field
+   * force exists. Requisition is held only when an anti-armour gunner still has
+   * to be paid for, because that is the one routine purchase that needs it.
+   */
+  private researchReserve(ctx: AIContext): { mats: number; req: number } {
+    const want = Math.max(1, ctx.st.desiredArmy);
+    const fill = ctx.combat.length / want;
+    let mats = 200;
+    if (ctx.threats.length > 0) mats += 300;
+    if (fill < 0.75) mats += 350;
+    const atgmDeficit =
+      (ctx.unitCounts.get('atgm') ?? 0) < Math.max(1, Math.round(want * 0.28));
+    return { mats: Math.min(1200, mats), req: atgmDeficit ? 25 : 0 };
+  }
+
+  /**
+   * Start one project when it is worth it, through the authoritative command.
+   *
+   * The planner never cancels: a project survives a lost centre and resumes
+   * when one is rebuilt, and thrashing between nodes would waste the committed
+   * cost for nothing. The returned budget has the price subtracted, because the
+   * queued command does not reach the simulation until the next tick and
+   * production in this same think must not spend materials already promised.
+   */
+  private manageResearch(
+    ctx: AIContext,
+    budget: { mats: number; req: number },
+  ): { mats: number; req: number } {
+    if (ctx.player.research.project) return budget;
+    const centreId = ctx.game.researchCentreId(ctx.aiId);
+    if (centreId === null) return budget;
+    // Study is what a commander does with a field army, not instead of one. A
+    // base missing most of its line answers that first; the technology keeps.
+    const fill = ctx.combat.length / Math.max(1, ctx.st.desiredArmy);
+    if (fill < 0.6) {
+      ctx.st.lastDecision = `research deferred — army ${ctx.combat.length}/${ctx.st.desiredArmy}`;
+      return budget;
+    }
+    const best = this.researchOptions(ctx)[0];
+    if (!best || best.score < RESEARCH_MIN_SCORE) {
+      if (best) ctx.st.lastDecision = `research not worth it — ${best.reason}`;
+      return budget;
+    }
+    const tech = techDef(best.techId, ctx.game.research);
+    if (!tech) return budget;
+    const reserve = this.researchReserve(ctx);
+    if (budget.mats - tech.cost.mats < reserve.mats) {
+      ctx.st.lastDecision = `saving for ${tech.id} — army reserve ${reserve.mats}`;
+      return budget;
+    }
+    if (budget.req - tech.cost.req < reserve.req) {
+      ctx.st.lastDecision = `saving requisition for ${tech.id}`;
+      return budget;
+    }
+    // The same status the command handler will apply, so an order this
+    // controller believes in cannot be refused a tick later.
+    if (!ctx.game.researchStatus(ctx.aiId, centreId, tech.id).ok) return budget;
+    ctx.game.enqueueCommand({
+      type: 'research',
+      team: ctx.aiId,
+      buildingId: centreId,
+      techId: tech.id,
+    });
+    ctx.st.lastDecision = `researching ${tech.id} — ${best.reason}`;
+    return {
+      mats: Math.max(0, budget.mats - tech.cost.mats),
+      req: Math.max(0, budget.req - tech.cost.req),
+    };
+  }
+
+  /**
+   * Buy a researched retrofit for a structure when the grid is the limiter.
+   *
+   * A module competes with the army for the same bank, so the decision is
+   * deliberately narrow: only when the grid is actually short (a brownout, or
+   * demand within a fifth of supply), only with a field army behind it, and only
+   * when the purchase leaves the reserve the research policy already holds
+   * intact. A healthy grid buys hulls instead — an extra turbine is not a status
+   * symbol, it is headroom the commander does not currently need.
+   *
+   * The order is the same `installModule` command a player sends, so the
+   * simulation's own status call decides. Once a structure is at capacity
+   * `availableModules` stops offering it, so a successful purchase is never
+   * re-issued; a refused one cannot happen either, because the same status is
+   * checked first.
+   */
+  private manageModules(ctx: AIContext): void {
+    if (!ctx.power.brownout && ctx.power.demand <= ctx.power.supply * 0.8) return;
+    const want = Math.max(1, ctx.st.desiredArmy);
+    if (ctx.combat.length / want < 0.6) {
+      ctx.st.lastDecision = `retrofit deferred — army ${ctx.combat.length}/${want}`;
+      return;
+    }
+    const reserve = this.researchReserve(ctx);
+    for (const building of ctx.complete) {
+      const available = ctx.game.availableModules(ctx.aiId, building.id);
+      for (const module of available) {
+        if (ctx.player.mats - module.cost.mats < reserve.mats) continue;
+        if (ctx.player.req - module.cost.req < reserve.req) continue;
+        if (!ctx.game.moduleStatus(ctx.aiId, building.id, module.id).ok) continue;
+        ctx.game.enqueueCommand({
+          type: 'installModule',
+          team: ctx.aiId,
+          buildingId: building.id,
+          moduleId: module.id,
+        });
+        ctx.st.lastDecision =
+          `installing ${module.name} — grid ${ctx.power.supply} supply / ${ctx.power.demand} demand`;
+        return;
+      }
+    }
   }
 
   private manageProduction(ctx: AIContext, budget: { mats: number; req: number }): void {
@@ -1610,7 +2285,7 @@ export class AIController {
         .filter(
           (item) =>
             item.defId !== saving.defId &&
-            (item.defId === 'tank' || item.defId === 'atgm' || item.defId === 'rifle'),
+            ['tank', 'atgm', 'rifle'].includes(unitFamily(item.defId)),
         )
         .reduce((n, item) => n + item.deficit, 0);
       const def = UNITS[saving.defId];
@@ -1963,7 +2638,13 @@ export class AIController {
     }
     // Reflect claims made by air, naval, capture and garrison tasking this
     // tick; the snapshot taken at the start of update is already stale.
-    const idle = ctx.combat.filter((e) => this.free(e));
+    // A hull cannot assault an inland objective. Left in the group it makes the
+    // shared approach point unsatisfiable for every unit in it — no tile is
+    // legal for a tank and a corvette at once — and the wave silently never
+    // launches. Naval tasking owns the fleet; the offensive owns the land.
+    const idle = ctx.combat.filter(
+      (e) => this.free(e) && UNITS[e.defId]?.domain !== 'naval',
+    );
     // A commander that keeps a home guard does not lose its base to a
     // counter-attack while its army is across the map. The guard is simply not
     // committed; it still answers a threat through the defence pass. At least

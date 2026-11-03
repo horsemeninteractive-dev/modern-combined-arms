@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { UNITS } from '../src/data/units';
 import type { SimEvent } from '../src/sim/types';
 import {
+  UNIT_VOICE_TAKES,
   UnitVoice,
   unitVoiceForEvent,
   unitVoicePath,
+  unitVoiceSetId,
   type UnitVoiceCue,
   type UnitVoicePlayback,
 } from '../src/ui/unitVoice';
@@ -22,7 +24,7 @@ interface VoiceUnit {
   voice: string;
   lang: string;
   speed: number;
-  lines: Record<string, VoiceLine>;
+  lines: Record<string, VoiceLine[]>;
 }
 
 interface VoiceManifest {
@@ -32,6 +34,7 @@ interface VoiceManifest {
   sampleRate: number;
   bitrateKbps: number;
   cues: string[];
+  takesPerCue: number;
   units: Record<string, VoiceUnit>;
 }
 
@@ -40,17 +43,28 @@ const ROOT = new URL('../public/audio/unit-voice/', import.meta.url);
 const manifest = JSON.parse(readFileSync(new URL('manifest.json', ROOT), 'utf8')) as VoiceManifest;
 
 describe('unit voice set', () => {
-  it('covers every registered unit, including national variants', () => {
+  it('gives every registered unit its own recorded voice bank', () => {
+    // Every unit resolves to its own cast: canonical slots, both alliance
+    // platforms, national replacements and national exclusives. Nothing
+    // borrows another platform's lines.
+    for (const id of Object.keys(UNITS)) {
+      const set = unitVoiceSetId(id);
+      expect(set, `${id} resolves a voice set`).toBe(id);
+      expect(manifest.units[set!], `${id} → ${set}`).toBeDefined();
+    }
+    // The manifest holds recorded casts only. A unit in the manifest that is
+    // not registered would be an orphan asset, so the two lists must match.
     expect(Object.keys(manifest.units).sort()).toEqual(Object.keys(UNITS).sort());
     expect(manifest.cues).toEqual(CUES);
-    expect(manifest.version).toBe(2);
+    expect(manifest.version).toBe(3);
+    expect(manifest.takesPerCue).toBe(UNIT_VOICE_TAKES);
     expect(manifest.engine).toBe('kokoro-82m-onnx');
     expect(manifest.preset).toBe('field');
     expect(manifest.sampleRate).toBe(24_000);
     expect(manifest.bitrateKbps).toBe(64);
   });
 
-  it('gives every unit four distinct clips with a matching manifest entry', () => {
+  it('records three takes for every cue and resolves each take exactly', () => {
     const paths = new Set<string>();
     for (const [unitId, unit] of Object.entries(manifest.units)) {
       expect(unit.name).toBe(UNITS[unitId].name);
@@ -62,28 +76,53 @@ describe('unit voice set', () => {
       expect(Object.keys(unit.lines).sort()).toEqual([...CUES].sort());
 
       for (const cue of CUES) {
-        const line = unit.lines[cue];
-        expect(line.text.length).toBeGreaterThan(0);
-        expect(line.durationMs).toBeGreaterThan(400);
-        expect(line.file.startsWith(`${unitId}/`)).toBe(true);
-        expect(paths.has(line.file)).toBe(false);
-        paths.add(line.file);
+        const takes = unit.lines[cue];
+        expect(takes).toHaveLength(UNIT_VOICE_TAKES);
+        for (const [index, line] of takes.entries()) {
+          const take = index + 1;
+          expect(line.text.length).toBeGreaterThan(0);
+          expect(line.durationMs).toBeGreaterThan(400);
+          expect(line.file).toBe(`${unitId}/${cue}-${take}.mp3`);
+          expect(paths.has(line.file)).toBe(false);
+          paths.add(line.file);
 
-        const file = new URL(line.file, ROOT);
-        expect(existsSync(file)).toBe(true);
-        expect(readFileSync(file).byteLength).toBeGreaterThan(4_000);
-        expect(unitVoicePath(unitId, cue as UnitVoiceCue)).toBe(
-          `/audio/unit-voice/${line.file}`,
-        );
+          const file = new URL(line.file, ROOT);
+          expect(existsSync(file)).toBe(true);
+          expect(readFileSync(file).byteLength).toBeGreaterThan(4_000);
+          expect(unitVoicePath(unitId, cue as UnitVoiceCue, take)).toBe(
+            `/audio/unit-voice/${line.file}`,
+          );
+        }
       }
     }
-    expect(paths.size).toBe(Object.keys(UNITS).length * CUES.length);
+    expect(paths.size).toBe(
+      Object.keys(manifest.units).length * CUES.length * UNIT_VOICE_TAKES,
+    );
   });
 
-  it('uses a different voice for every unit type', () => {
+  it('gives every unit twelve unique lines, none shared with another unit', () => {
+    const seen = new Map<string, string>();
+    for (const [unitId, unit] of Object.entries(manifest.units)) {
+      const own = new Set<string>();
+      for (const cue of CUES) {
+        for (const line of unit.lines[cue]) {
+          expect(own.has(line.text), `${unitId} repeats "${line.text}"`).toBe(false);
+          own.add(line.text);
+          const owner = seen.get(line.text);
+          expect(owner, `"${line.text}" shared with ${owner}`).toBeUndefined();
+          seen.set(line.text, unitId);
+        }
+      }
+      expect(own.size).toBe(CUES.length * UNIT_VOICE_TAKES);
+    }
+  });
+
+  it('reuses the Kokoro cast deliberately rather than one voice per unit', () => {
+    // Kokoro ships 28 English voices for 52 units, so voices repeat across
+    // campaign families; the speech itself is what stays unique.
     const voices = Object.values(manifest.units).map((unit) => unit.voice);
-    expect(voices).toHaveLength(Object.keys(UNITS).length);
-    expect(new Set(voices).size).toBe(voices.length);
+    expect(voices).toHaveLength(Object.keys(manifest.units).length);
+    expect(new Set(voices).size).toBeGreaterThanOrEqual(20);
   });
 });
 
@@ -101,14 +140,37 @@ function event(overrides: Partial<SimEvent>): SimEvent {
 }
 
 describe('unit voice event mapping', () => {
-  it('resolves the four authored files for a known unit', () => {
+  it('resolves the three authored takes for a known unit', () => {
     expect(unitVoicePath('pathfinder', 'select')).toBe(
-      '/audio/unit-voice/pathfinder/select.mp3',
+      '/audio/unit-voice/pathfinder/select-1.mp3',
     );
-    expect(unitVoicePath('pathfinder', 'unableToComply')).toBe(
-      '/audio/unit-voice/pathfinder/unableToComply.mp3',
+    expect(unitVoicePath('pathfinder', 'select', 2)).toBe(
+      '/audio/unit-voice/pathfinder/select-2.mp3',
+    );
+    expect(unitVoicePath('pathfinder', 'unableToComply', 3)).toBe(
+      '/audio/unit-voice/pathfinder/unableToComply-3.mp3',
+    );
+    // Out-of-range takes clamp to a real file instead of a broken URL.
+    expect(unitVoicePath('pathfinder', 'select', 9)).toBe(
+      '/audio/unit-voice/pathfinder/select-3.mp3',
+    );
+    expect(unitVoicePath('pathfinder', 'select', 0)).toBe(
+      '/audio/unit-voice/pathfinder/select-1.mp3',
+    );
+    expect(unitVoicePath('pathfinder', 'select', Number.NaN)).toBe(
+      '/audio/unit-voice/pathfinder/select-1.mp3',
     );
     expect(unitVoicePath('not-a-unit', 'select')).toBeNull();
+  });
+
+  it('gives alliance platforms and national variants their own cast', () => {
+    expect(unitVoicePath('tankEC', 'select')).toBe('/audio/unit-voice/tankEC/select-1.mp3');
+    expect(unitVoicePath('navalSupportEC', 'move')).toBe(
+      '/audio/unit-voice/navalSupportEC/move-1.mp3',
+    );
+    expect(unitVoicePath('spearhead', 'select')).toBe(
+      '/audio/unit-voice/spearhead/select-1.mp3',
+    );
   });
 
   it('maps local move and attack acknowledgements', () => {
@@ -184,12 +246,32 @@ describe('unit voice channel', () => {
   it('plays a selection bark and then releases the channel on completion', () => {
     const h = harness();
     expect(h.voice.speak('pathfinder', 'select')).toBe(true);
-    expect(h.plays.map((p) => p.src)).toEqual([
-      '/audio/unit-voice/pathfinder/select.mp3',
-    ]);
+    expect(h.plays).toHaveLength(1);
+    expect(h.plays[0].src).toMatch(/\/audio\/unit-voice\/pathfinder\/select-[123]\.mp3$/);
     expect(h.voice.currentCue).toBe('select');
     h.plays[0].done();
     expect(h.voice.busy).toBe(false);
+  });
+
+  it('plays a different recorded take when one is requested', () => {
+    const h = harness();
+    expect(h.voice.speak('tank', 'attack', 2)).toBe(true);
+    expect(h.plays[0].src).toBe('/audio/unit-voice/tank/attack-2.mp3');
+    h.plays[0].done();
+    h.at(2000);
+    expect(h.voice.speak('tank', 'attack', 3)).toBe(true);
+    expect(h.plays[1].src).toBe('/audio/unit-voice/tank/attack-3.mp3');
+  });
+
+  it('picks a recorded take when the caller does not choose one', () => {
+    const h = harness();
+    for (let i = 0; i < 12; i++) {
+      h.voice.speak('rifle', 'move');
+      const src = h.plays[h.plays.length - 1].src;
+      expect(src).toMatch(/\/audio\/unit-voice\/rifle\/move-[123]\.mp3$/);
+      h.plays[h.plays.length - 1].done();
+      h.at((i + 1) * 2000);
+    }
   });
 
   it('suppresses a repeated selection inside its cooldown', () => {

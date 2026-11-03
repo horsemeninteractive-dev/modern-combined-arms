@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { Game } from '../src/sim/game';
 import { createIslandAssault } from '../src/data/scenarios';
+import { completeResearch } from './helpers';
 import type { Scenario } from '../src/sim/scenario';
 import { BUILDING_LIST } from '../src/data/buildings';
 import { UNIT_LIST } from '../src/data/units';
 import {
+  ALLIANCES,
   ALLIANCE_LIST,
   FACTIONS,
   NATION_LIST,
@@ -33,9 +35,9 @@ function nationScenario(playerNation: string, opponentNation = defaultOpponentNa
 }
 
 describe('nation identity registry', () => {
-  it('exposes the six playable nations and keeps legacy presets resolvable', () => {
-    expect(PLAYABLE_NATION_IDS).toHaveLength(6);
-    expect(new Set(PLAYABLE_NATION_IDS).size).toBe(6);
+  it('exposes the ten playable nations and keeps legacy presets resolvable', () => {
+    expect(PLAYABLE_NATION_IDS).toHaveLength(10);
+    expect(new Set(PLAYABLE_NATION_IDS).size).toBe(10);
 
     for (const nation of NATION_LIST) {
       const identity = identityDef(nation.id);
@@ -167,6 +169,9 @@ describe('production and construction follow the resolved roster', () => {
     const player = game.player(0)!;
     player.mats = 6000;
     player.req = 1000;
+    // This suite asks where each nation's equipment is built, not whether the
+    // tree is open; the research suites own the gate.
+    completeResearch(game, 0);
     return game;
   }
 
@@ -201,7 +206,10 @@ describe('production and construction follow the resolved roster', () => {
         const id = game.unitIdFor(0, slot)!;
         expect(game.productionStatus(0, airfield.id, id).ok, `${nation} ${id}`).toBe(true);
       }
-      expect(game.canBuild(0, 'coastalBattery')).toBe(true);
+      // Coastal defence is nationalised for Iran, so ask the roster what this
+      // nation builds in that slot rather than naming the shared id.
+      const coastal = game.buildingIdFor(0, 'coastalBattery')!;
+      expect(game.canBuild(0, coastal), `${nation} ${coastal}`).toBe(true);
     }
   });
 
@@ -244,9 +252,13 @@ describe('production and construction follow the resolved roster', () => {
       game.advance(20 * 30);
       return game.stateHash();
     };
-    // Legacy presets remain the common baseline and are still deterministic.
+    // Legacy presets resolve to their own alliance baseline and stay
+    // deterministic. They are no longer the same roster: each preset fields the
+    // equipment of the coalition it belongs to.
     expect(run('baltic', 'expeditionary')).toBe(run('baltic', 'expeditionary'));
-    expect(resolveRoster('baltic')).toEqual(resolveRoster('expeditionary'));
+    expect(resolveRoster('baltic')).toEqual(ALLIANCES.defender.baseline);
+    expect(resolveRoster('expeditionary')).toEqual(ALLIANCES.eastern.baseline);
+    expect(resolveRoster('baltic')).not.toEqual(resolveRoster('expeditionary'));
   });
 });
 

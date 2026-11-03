@@ -2,6 +2,7 @@ import { Renderer } from './render/renderer';
 import { Game } from './sim/game';
 import { TICK_MS, TILE_SIZE } from './sim/constants';
 import { BUILDINGS } from './data/buildings';
+import { techDef } from './data/research';
 import { UNITS } from './data/units';
 import { createIslandAssault } from './data/scenarios';
 import {
@@ -54,6 +55,7 @@ import { unitVoiceForEvent } from './ui/unitVoice';
 import { eventVisibleToLocal } from './render/combatFx';
 import { announcementForEvent } from './ui/announcer';
 import { HUD } from './ui/hud';
+import { objectiveProgress } from './ui/objectiveBrief';
 import { InputController } from './ui/input';
 import { Editor } from './ui/editor';
 import { Overlay } from './ui/overlay';
@@ -83,7 +85,7 @@ import {
 import { pickTerrain, terrainVisualHeight, type TerrainHit } from './render/terrainSurface';
 import { constructionGridVisible } from './render/gridVisibility';
 import { contextOrderFor } from './ui/orderIntent';
-import { briefMapLabels, drawBriefMap } from './ui/mapPreview';
+import { briefLabelPosition, briefMapLabels, drawBriefMap } from './ui/mapPreview';
 import { flagNationForFaction, flagTextureUrl } from './render/flags';
 import { needsLandscape } from './ui/orientation';
 import { NationPicker } from './ui/nationPicker';
@@ -93,10 +95,18 @@ import { buildLobbyScenario, validateLobbyConfig } from './multiplayer/lobbyConf
 import { NetworkBattle } from './multiplayer/networkBattle';
 import { enterFullscreen, isFullscreen, toggleFullscreen } from './ui/fullscreen';
 import { MenuAttractMatch } from './ui/menuAttract';
+import type { BattleCursor } from './ui/cursors';
+import { addOrderGhost, type OrderGhost, type OrderGhostKind } from './ui/orderGhosts';
 import { TutorialDirector } from './ui/tutorial';
 import {
   GRAPHICS_QUALITIES,
+  EDGE_PAN_SPEED_MAX,
+  EDGE_PAN_SPEED_MIN,
+  EDGE_PAN_WIDTH_MAX,
+  EDGE_PAN_WIDTH_MIN,
   graphicsPreset,
+  normaliseEdgePanSpeed,
+  normaliseEdgePanWidth,
   normaliseEscBehavior,
   normaliseGraphicsQuality,
   normaliseLightBloom,
@@ -125,6 +135,9 @@ export type MenuView =
   | 'skirmish'
   | 'editor'
   | 'settings';
+/** Sections of the settings sheet; only one panel is visible at a time. */
+export type SettingsTab = 'display' | 'input' | 'audio';
+
 export type CommandMode =
   | 'none'
   | 'move'
@@ -156,6 +169,15 @@ export interface AppSettings {
   shake: boolean;
   fogVisual: boolean;
   edgePan: boolean;
+  /** Depth of the edge-pan band, in CSS pixels from the battlefield edge. */
+  edgePanWidth: number;
+  /** Multiplier on the authored edge-pan camera speed. */
+  edgePanSpeed: number;
+  /**
+   * Tactical reticles for orders, placement and box selection. Off falls back
+   * to the platform's native pointers for players who prefer them.
+   */
+  customCursors: boolean;
   /** Opponent strength for new battles; a loaded save keeps its own. */
   difficulty: AIDifficulty;
   /** Selected skirmish theatre. */
@@ -270,9 +292,19 @@ export class App {
   speed = 1;
   debug = false;
   settings: AppSettings;
+  /** Last settings section opened; survives leaving and reopening Settings. */
+  private settingsTab: SettingsTab = 'display';
   perf = { fps: 0, simMs: 0, frameMs: 0, entities: 0 };
   dragBox: DragBox = { active: false, x0: 0, y0: 0, x1: 0, y1: 0 };
   pointer = { x: 0, y: 0, over: false };
+  /**
+   * The drawn pointer for the battlefield. `visible` is false outside a battle,
+   * while the pointer is over a HUD panel, or when the player uses native
+   * cursors; the overlay only paints it when true.
+   */
+  pointerCursor = { name: 'select' as BattleCursor, visible: false };
+  /** Fading impressions left by right-click move and attack orders. */
+  orderGhosts: OrderGhost[] = [];
   padCursor = { x: 0, y: 0, active: false };
 
   private lastEventSeq = 0;
@@ -389,6 +421,9 @@ export class App {
       shake: true,
       fogVisual: true,
       edgePan: true,
+      edgePanWidth: 18,
+      edgePanSpeed: 1,
+      customCursors: true,
       difficulty: 'veteran',
       mapId: defaultScenarioId('skirmish'),
       nationId: PLAYABLE_NATION_IDS[0],
@@ -455,6 +490,12 @@ export class App {
           parsed.renderScale ??
             graphicsPreset(normaliseGraphicsQuality(parsed.graphicsQuality)).renderScale,
         ),
+        edgePanWidth: normaliseEdgePanWidth(parsed.edgePanWidth ?? defaults.edgePanWidth),
+        edgePanSpeed: normaliseEdgePanSpeed(parsed.edgePanSpeed ?? defaults.edgePanSpeed),
+        customCursors:
+          typeof parsed.customCursors === 'boolean'
+            ? parsed.customCursors
+            : defaults.customCursors,
         fpsReadout: typeof parsed.fpsReadout === 'boolean' ? parsed.fpsReadout : defaults.fpsReadout,
         escBehavior: normaliseEscBehavior(parsed.escBehavior),
         silhouettes: typeof parsed.silhouettes === 'boolean' ? parsed.silhouettes : defaults.silhouettes,
@@ -552,9 +593,15 @@ export class App {
         this.glitchSwitch();
       });
     });
-    document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const difficulty = btn.dataset.difficulty as AIDifficulty;
+    const difficultySelect = document.getElementById('difficulty') as HTMLSelectElement | null;
+    if (difficultySelect) {
+      // A dropdown, not a row of buttons: the deployment rail has to hold two
+      // nations, two colours, the start hour and weather without scrolling.
+      difficultySelect.innerHTML = DIFFICULTIES.map(
+        (id) => `<option value="${id}">${id.charAt(0).toUpperCase()}${id.slice(1)}</option>`,
+      ).join('');
+      difficultySelect.addEventListener('change', () => {
+        const difficulty = difficultySelect.value as AIDifficulty;
         if (!DIFFICULTIES.includes(difficulty)) return;
         this.audio.init();
         this.audio.play('ui');
@@ -562,7 +609,7 @@ export class App {
         this.saveSettings();
         this.applyDifficultyUi();
       });
-    });
+    }
     document.querySelectorAll<HTMLButtonElement>('[data-start-time]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const hour = Number(btn.dataset.startTime);
@@ -890,7 +937,8 @@ export class App {
     if (view === 'multiplayer') this.ensureMultiplayerPanel()?.show();
     else this.multiplayerPanel?.hide();
     if (view === 'editor') this.refreshEditorAutosaveButton();
-    if (view === 'skirmish') this.paintMapThumbnails();
+    // The board canvas has no size while the view is hidden; paint it on entry.
+    if (view === 'skirmish') this.paintBriefMap();
     if (view === 'campaign') {
       // Rebuild the rail from progress every time the deck opens: a victory
       // recorded during the last battle must show its newly unlocked operation.
@@ -1078,20 +1126,22 @@ export class App {
     // attract battle behind the deck has already cut to a different map.
     const scenario = this.selectedScenario();
     if (!canvas || !scenario) return;
-    drawBriefMap(canvas, scenario);
+    const rect = drawBriefMap(canvas, scenario);
     // The panel is sized by the stylesheet, so repaint whenever its box moves
     // (window resize, responsive column) instead of stretching one raster.
     if (!this.briefObserver && 'ResizeObserver' in window) {
       this.briefObserver = new ResizeObserver(() => this.paintBriefMap());
       this.briefObserver.observe(canvas);
     }
+    if (!rect) return;
     for (const label of briefMapLabels(scenario)) {
       const el = document.getElementById(
         label.side === 'friend' ? 'brief-label-friend' : 'brief-label-enemy',
       );
       if (!el) continue;
-      el.style.left = `${label.x.toFixed(2)}%`;
-      el.style.top = `${label.z.toFixed(2)}%`;
+      const at = briefLabelPosition(rect, label);
+      el.style.left = `${at.left.toFixed(2)}%`;
+      el.style.top = `${at.top.toFixed(2)}%`;
     }
   }
 
@@ -1130,36 +1180,24 @@ export class App {
   }
 
   private applyDifficultyUi(): void {
-    const current = this.settings.difficulty;
-    document.querySelectorAll<HTMLButtonElement>('[data-difficulty]').forEach((btn) => {
-      const active = btn.dataset.difficulty === current;
-      btn.classList.toggle('on', active);
-      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
-    });
-    const note = document.getElementById('difficulty-note');
-    if (note) note.textContent = DIFFICULTY_COPY[current];
+    const select = document.getElementById('difficulty') as HTMLSelectElement | null;
+    if (select) {
+      select.value = this.settings.difficulty;
+      // The explanatory sentence now rides on the control itself.
+      select.title = DIFFICULTY_COPY[this.settings.difficulty];
+    }
   }
 
   /** Time-of-day picker: four authored starts, each with its own light. */
   private applyTimeOfDayUi(): void {
-    const phase = phaseForStartHour(this.settings.startHour);
     const start = Math.round(this.settings.startHour);
     document.querySelectorAll<HTMLButtonElement>('[data-start-time]').forEach((btn) => {
       const on = Number(btn.dataset.startTime) === start;
       btn.classList.toggle('on', on);
       btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      const phase = phaseForStartHour(Number(btn.dataset.startTime));
+      btn.title = `${phase.charAt(0).toUpperCase()}${phase.slice(1)} start`;
     });
-    const note = document.getElementById('time-note');
-    if (note) {
-      note.textContent =
-        phase === 'night'
-          ? 'Night — detection and engagement ranges are cut; thermal optics and lighting decide the fight.'
-          : phase === 'dawn'
-            ? 'Dawn — light returns through the opening minutes; night optics lose their edge.'
-            : phase === 'day'
-              ? 'Day — full visual detection. The cycle runs a full day every hour.'
-              : 'Dusk — light falls through the first half of the battle. The full cycle is one hour.';
-    }
   }
 
   /**
@@ -1202,9 +1240,10 @@ export class App {
       const on = btn.dataset.weather === profile.kind;
       btn.classList.toggle('on', on);
       btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      // The hint that used to sit under the picker is now the button's tooltip,
+      // so the choice still explains itself without spending a rail row.
+      btn.title = `${WEATHER[btn.dataset.weather as WeatherKind].label} — ${WEATHER[btn.dataset.weather as WeatherKind].hint}`;
     });
-    const note = document.getElementById('weather-note');
-    if (note) note.textContent = `${profile.label} — ${profile.hint}`;
   }
 
   /* ------------------------------------------------------------------ */
@@ -1298,42 +1337,40 @@ export class App {
    * so they keep the blue/red faction colours.
    */
   private buildTeamColors(): void {
-    this.populateSwatches('team-colors', 'teamColor');
-    this.populateSwatches('opponent-colors', 'opponentColor');
+    this.populateColorSelect('team-color', 'teamColor');
+    this.populateColorSelect('opponent-color', 'opponentColor');
     this.applyTeamColorUi();
   }
 
-  private populateSwatches(hostId: string, key: 'teamColor' | 'opponentColor'): void {
-    const host = document.getElementById(hostId);
-    if (!host) return;
-    host.innerHTML = TEAM_COLORS.map(
-      (colour) =>
-        `<button type="button" class="team-swatch" role="radio" data-color="${colour.hex}" title="${colour.name}" aria-label="${colour.name}" aria-checked="false"><i style="background:${colour.hex}"></i></button>`,
+  /**
+   * Colours are a dropdown so the two nation cards stay one line each. The
+   * swatch beside the select carries the colour itself; the option text names
+   * it, which is what a native select can express.
+   */
+  private populateColorSelect(id: string, key: 'teamColor' | 'opponentColor'): void {
+    const select = document.getElementById(id) as HTMLSelectElement | null;
+    if (!select) return;
+    select.innerHTML = TEAM_COLORS.map(
+      (colour) => `<option value="${colour.hex}">${colour.name}</option>`,
     ).join('');
-    host.addEventListener('click', (event) => {
-      const button = (event.target as HTMLElement).closest<HTMLElement>('[data-color]');
-      const hex = button?.dataset.color;
-      if (!hex) return;
+    select.addEventListener('change', () => {
       this.audio.init();
       this.audio.play('ui');
-      this.settings[key] = hex;
+      this.settings[key] = select.value;
       this.saveSettings();
       this.applyTeamColorUi();
     });
   }
 
   private applyTeamColorUi(): void {
-    const mark = (hostId: string, value: string) => {
-      const host = document.getElementById(hostId);
-      if (!host) return;
-      for (const button of host.querySelectorAll<HTMLElement>('[data-color]')) {
-        const active = button.dataset.color?.toLowerCase() === value.toLowerCase();
-        button.setAttribute('aria-checked', String(active));
-        button.classList.toggle('on', active);
-      }
+    const mark = (selectId: string, dotId: string, value: string) => {
+      const select = document.getElementById(selectId) as HTMLSelectElement | null;
+      if (select) select.value = value;
+      const dot = document.getElementById(dotId);
+      if (dot) dot.style.background = value;
     };
-    mark('team-colors', this.settings.teamColor);
-    mark('opponent-colors', this.settings.opponentColor);
+    mark('team-color', 'team-color-dot', this.settings.teamColor);
+    mark('opponent-color', 'opponent-color-dot', this.settings.opponentColor);
     // The mission brief uses the same two colours for its side markers, so the
     // setup reads as one consistent pair before deployment.
     const friend = document.getElementById('brief-label-friend');
@@ -1370,11 +1407,6 @@ export class App {
       const el = document.getElementById(id);
       if (el) el.textContent = value;
     };
-    text('nation-note', `${identity.name} · ${alliance.name} — ${identity.blurb}`);
-    text(
-      'opponent-note',
-      `${opponent.name} · ${identityAlliance(opponent.id).name} — ${opponent.blurb}`,
-    );
     text('brief-command', identity.name);
     text('brief-formation', identity.legacy ? 'Alliance task force' : `${identity.name} Task Force`);
     text('brief-doctrine', identity.doctrine ?? 'Alliance task force');
@@ -1397,12 +1429,13 @@ export class App {
       btn.dataset.mapId = entry.id;
       btn.setAttribute('role', 'radio');
       btn.setAttribute('aria-checked', 'false');
+      // One line per battlefield, like a mission list: the name reads first and
+      // the authored footprint sits right-aligned. The raster moved to the
+      // large preview beside it, where it is actually legible.
+      btn.title = `${entry.focus} · ${entry.width}×${entry.height} · ${entry.tags.join(' · ')}`;
       btn.innerHTML = `
-        <canvas class="map-card-canvas" aria-hidden="true"></canvas>
-        <span class="map-card-text">
-          <b>${escapeHtml(entry.name)}</b>
-          <small>${escapeHtml(entry.focus)} · ${entry.width}×${entry.height} · ${escapeHtml(entry.tags.slice(0, 2).join(' · '))}</small>
-        </span>`;
+        <span class="map-card-name">${escapeHtml(entry.name)}</span>
+        <span class="map-card-size">${entry.targetSize}</span>`;
       btn.addEventListener('click', () => {
         this.audio.init();
         this.audio.play('ui');
@@ -1421,7 +1454,6 @@ export class App {
     }
     this.applyMapUi();
     this.applyNationUi();
-    this.paintMapThumbnails();
   }
 
   /** The head, the brief and the selector all describe the selected theatre. */
@@ -1455,15 +1487,6 @@ export class App {
     // Command, formation and the map's side labels are nation-driven; see
     // applyNationUi, which runs after this pass.
     this.paintBriefMap();
-  }
-
-  private paintMapThumbnails(): void {
-    document.querySelectorAll<HTMLButtonElement>('.map-card').forEach((btn) => {
-      const id = btn.dataset.mapId;
-      const canvas = btn.querySelector('canvas');
-      if (!id || !canvas || canvas.clientWidth < 4) return;
-      drawBriefMap(canvas, this.scenarioFor(id));
-    });
   }
 
   /* ------------------------------------------------------------------ */
@@ -1776,20 +1799,22 @@ export class App {
     const canvas = document.getElementById('campaign-map-canvas') as HTMLCanvasElement | null;
     if (!canvas) return;
     const scenario = this.campaignScenario();
-    drawBriefMap(canvas, scenario);
+    const rect = drawBriefMap(canvas, scenario);
     // The campaign panel is often hidden while this runs (boot, or the skirmish
     // view). ResizeObserver repaints it once the panel has a box.
     if (!this.campaignBriefObserver && 'ResizeObserver' in window) {
       this.campaignBriefObserver = new ResizeObserver(() => this.paintCampaignMap());
       this.campaignBriefObserver.observe(canvas);
     }
+    if (!rect) return;
     for (const label of briefMapLabels(scenario)) {
       const el = document.getElementById(
         label.side === 'friend' ? 'campaign-label-friend' : 'campaign-label-enemy',
       );
       if (!el) continue;
-      el.style.left = `${label.x.toFixed(2)}%`;
-      el.style.top = `${label.z.toFixed(2)}%`;
+      const at = briefLabelPosition(rect, label);
+      el.style.left = `${at.left.toFixed(2)}%`;
+      el.style.top = `${at.top.toFixed(2)}%`;
     }
   }
 
@@ -1813,7 +1838,7 @@ export class App {
     this.showMenuView(this.menuView);
     this.refreshEditorAutosaveButton();
     this.revealMenu();
-    this.paintMapThumbnails();
+    this.paintBriefMap();
     this.audio.playMenuMusic();
   }
 
@@ -1909,6 +1934,8 @@ export class App {
 
   async startBattle(scenario: Scenario): Promise<void> {
     this.finishTutorial();
+    // A new battle gets a clean pointer: no ghost from the last engagement.
+    this.orderGhosts.length = 0;
     const isTutorial = scenario.meta.id === TUTORIAL_SCENARIO_ID;
     const errors = validateScenario(scenario).filter((i) => i.severity === 'error');
     if (errors.length > 0) {
@@ -2084,10 +2111,12 @@ export class App {
           incomeHistory: new Array(60).fill(0),
           defeated: false,
           relayCount: 0,
+          research: { completed: [], project: null },
         })),
         projectiles: [],
         contacts: [],
         charted: [],
+        smoke: [],
         fog: new Uint8Array(scenario.width * scenario.height),
         tick: 0,
         victory: 'playing',
@@ -2649,8 +2678,17 @@ export class App {
     return document.getElementById('gl')!.getBoundingClientRect();
   }
 
-  orderAt(clientX: number, clientY: number, attackMove = false): void {
-    if (!this.game) return;
+  /**
+   * Resolve and dispatch a right-click order. Returns the order that actually
+   * reached the simulation, so the caller can leave a ghost only for a command
+   * the console accepted rather than for a refusal.
+   */
+  orderAt(
+    clientX: number,
+    clientY: number,
+    attackMove = false,
+  ): OrderGhostKind | null {
+    if (!this.game) return null;
     const target = this.pickAt(clientX, clientY);
     const hostile = !!target && this.game.isHostile(target.owner, this.localPlayerId);
     const occupants =
@@ -2658,32 +2696,38 @@ export class App {
     switch (contextOrderFor(target, this.ownSelected(), this.localPlayerId, hostile, occupants)) {
       case 'capture':
         if (target) this.commandCapture(target.id);
-        return;
+        return null;
       case 'repair':
         if (target) this.commandRepair(target.id);
-        return;
+        return null;
       case 'garrison':
         if (target) this.commandGarrison(target.id);
-        return;
+        return null;
       case 'attack':
-        if (target) this.commandAttack(target.id);
-        return;
+        if (target && this.commandAttack(target.id)) return 'attack';
+        return null;
       default: {
         const p = this.worldAt(clientX, clientY);
-        if (p) this.commandMove(p.x, p.z, attackMove);
+        if (p && this.commandMove(p.x, p.z, attackMove)) return 'move';
+        return null;
       }
     }
   }
 
-  commandMove(x: number, z: number, attackMove = false): void {
-    if (!this.game) return;
+  /** Remember an accepted right-click order as a fading mark on the ground. */
+  markOrderGhost(x: number, y: number, kind: OrderGhostKind): void {
+    addOrderGhost(this.orderGhosts, { x, y, kind, born: performance.now() });
+  }
+
+  commandMove(x: number, z: number, attackMove = false): boolean {
+    if (!this.game) return false;
     const units = this.ownSelected().filter((e) => e.kind === 'unit');
     const movable = units.filter((e) => !e.garrisonId);
     if (units.length > 0 && movable.length === 0) {
       this.mode = 'none';
       this.notify('Garrisoned infantry must exit the building before moving.', 'warning');
       this.audio.play('denied');
-      return;
+      return false;
     }
     const buildings = this.ownSelected().filter((e) => e.kind === 'building');
     if (movable.length > 0) {
@@ -2691,7 +2735,7 @@ export class App {
       this.dispatchCommand(cmd);
       this.audio.play('ui');
       this.mode = 'none';
-      return;
+      return true;
     }
     if (buildings.length === 1) {
       const target = buildings[0];
@@ -2701,20 +2745,21 @@ export class App {
       if (!status.ok) {
         this.notify(status.reason, 'warning');
         this.audio.play('denied');
-        return;
+        return false;
       }
       this.dispatchCommand({ type: 'setRally', team: this.localPlayerId, buildingId: target.id, x, z });
       this.audio.play('ui');
       this.mode = 'none';
       this.notify(target.defId === 'shipyard' ? 'Naval rally point set.' : 'Rally point set.', 'info');
-      return;
+      return true;
     }
     this.notify('Select units to issue orders.', 'warning');
     this.audio.play('denied');
+    return false;
   }
 
-  commandAttack(targetId: number): void {
-    if (!this.game) return;
+  commandAttack(targetId: number): boolean {
+    if (!this.game) return false;
     // Static defences with a traversing gun take the same target order as
     // mobile combat units; unarmed structures cannot be ordered to attack.
     const attackers = this.ownSelected().filter(
@@ -2727,11 +2772,12 @@ export class App {
     if (attackers.length === 0) {
       this.notify('Select combat units or an armed defence to attack.', 'warning');
       this.audio.play('denied');
-      return;
+      return false;
     }
     this.dispatchCommand({ type: 'attack', team: this.localPlayerId, ids: attackers.map((e) => e.id), targetId });
     this.audio.play('ui');
     this.mode = 'none';
+    return true;
   }
 
   commandCapture(targetId: number): void {
@@ -2821,6 +2867,51 @@ export class App {
     const ids = this.ownSelected().filter((e) => e.kind === 'unit').map((e) => e.id);
     if (ids.length === 0) return;
     this.dispatchCommand({ type: 'stance', team: this.localPlayerId, ids, stance });
+    this.audio.play('ui');
+  }
+
+  /**
+   * Use a researched unit ability on one inspected hull.
+   *
+   * The local status check only decides whether to bother the room; it is not
+   * authority. In a networked battle the command goes up and the server's own
+   * status call decides, exactly as it does for every other order.
+   */
+  useAbility(unitId: number, abilityId: string): void {
+    if (!this.game) return;
+    const unit = this.game.getEntity(unitId);
+    if (!unit || unit.kind !== 'unit' || unit.owner !== this.localPlayerId) return;
+    const status = this.game.abilityStatus(this.localPlayerId, unitId, abilityId);
+    if (!status.ok) {
+      this.notify(status.reason, 'warning');
+      this.audio.play('denied');
+      return;
+    }
+    this.dispatchCommand({ type: 'useAbility', team: this.localPlayerId, unitId, abilityId });
+    this.audio.play('ui');
+  }
+
+  /**
+   * Buy a researched module for one structure.
+   *
+   * The module is individual to the structure, so the command names both. The
+   * local status check decides whether to bother the room; it is not authority.
+   * In a networked battle the order goes up and the server's own
+   * `moduleStatus` decides, exactly as it does for every other order.
+   */
+  installModule(buildingId: number, moduleId: string): void {
+    if (!this.game) return;
+    const building = this.game.getEntity(buildingId);
+    if (!building || building.kind !== 'building' || building.owner !== this.localPlayerId) {
+      return;
+    }
+    const status = this.game.moduleStatus(this.localPlayerId, buildingId, moduleId);
+    if (!status.ok) {
+      this.notify(status.reason, 'warning');
+      this.audio.play('denied');
+      return;
+    }
+    this.dispatchCommand({ type: 'installModule', team: this.localPlayerId, buildingId, moduleId });
     this.audio.play('ui');
   }
 
@@ -2933,6 +3024,64 @@ export class App {
       defId,
       beforeDefId,
     });
+    this.audio.play('ui');
+  }
+
+  /**
+   * Start one project at the player's operational centre.
+   *
+   * The UI never marks the node active itself: the command is queued (or sent
+   * to the room) and the next authoritative tick owns the project. The local
+   * status check only turns a known refusal into immediate feedback.
+   */
+  startResearch(techId: string): void {
+    const game = this.game;
+    if (!game) return;
+    const tech = techDef(techId);
+    if (!tech) {
+      this.notify('That technology is not available.', 'warning');
+      return;
+    }
+    const centreId = game.researchCentreId(this.localPlayerId);
+    if (centreId === null) {
+      this.notify('An operational Research Centre is required.', 'warning');
+      this.audio.play('denied');
+      return;
+    }
+    const status = game.researchStatus(this.localPlayerId, centreId, techId);
+    if (!status.ok) {
+      this.notify(status.reason, 'warning');
+      this.audio.play('denied');
+      return;
+    }
+    this.dispatchCommand({
+      type: 'research',
+      team: this.localPlayerId,
+      buildingId: centreId,
+      techId,
+    });
+    this.notify(`${tech.name} research ordered.`, 'info');
+    this.audio.play('ui');
+  }
+
+  /** Cancel the player's project; the simulation owns the refund. */
+  cancelResearch(): void {
+    const game = this.game;
+    if (!game) return;
+    const centreId = game.researchCentreId(this.localPlayerId);
+    if (centreId === null) {
+      this.notify('An operational Research Centre is required to cancel.', 'warning');
+      this.audio.play('denied');
+      return;
+    }
+    const status = game.cancelResearchStatus(this.localPlayerId, centreId);
+    if (!status.ok) {
+      this.notify(status.reason, 'warning');
+      this.audio.play('denied');
+      return;
+    }
+    this.dispatchCommand({ type: 'cancelResearch', team: this.localPlayerId, buildingId: centreId });
+    this.notify('Research cancelled — committed resources refunded.', 'info');
     this.audio.play('ui');
   }
 
@@ -3214,6 +3363,15 @@ export class App {
     const threatMarkup = run
       ? `<h4>THREAT</h4><p>${escapeHtml(run.mission.threat)}</p>`
       : '';
+    // The rail's objective button opens this briefing, so the live objective
+    // and the tally it used to print in the sidebar belong here.
+    const liveObjective =
+      this.screen === 'battle' && this.game ? objectiveProgress(this.game) : null;
+    const objectiveBriefMarkup = liveObjective
+      ? `<h4>PRIMARY OBJECTIVE</h4>
+        <p class="briefing-objective">${escapeHtml(liveObjective.primary)}</p>
+        <p class="briefing-objective-progress">${escapeHtml(liveObjective.summary)}</p>`
+      : '';
     openModal({
       title: run ? `${run.mission.name} — Briefing & controls` : 'Briefing & controls',
       body: `
@@ -3221,6 +3379,7 @@ export class App {
           <div>
             <h4>MISSION</h4>
             <p>${escapeHtml(missionCopy)}</p>
+            ${objectiveBriefMarkup}
             ${objectiveMarkup}
             ${threatMarkup}
             <h4>COMBINED ARMS</h4>
@@ -3243,6 +3402,7 @@ export class App {
               <div><span>Briefing</span><kbd>F1</kbd></div>
               <div><span>Pan / zoom</span><kbd>Arrows / edge · wheel</kbd></div>
               <div><span>Pause / menu / speed</span><kbd>Esc · P · +/-</kbd></div>
+              <div><span>Hide interface (screenshots)</span><kbd>U</kbd></div>
               <div><span>Debug overlay</span><kbd>F3</kbd></div>
             </div>
             <h4>TOUCH & GAMEPAD</h4>
@@ -3404,33 +3564,75 @@ export class App {
 
   /**
    * One markup source for the settings rows, shared by the in-battle modal and
-   * the main-menu Settings view so the two can never drift apart.
+   * the main-menu Settings view so the two can never drift apart. Rows are
+   * grouped into tabs because the sheet grew past a comfortable single scroll.
    */
   private settingsRowsMarkup(): string {
     const s = this.settings;
     const qualityOptions = GRAPHICS_QUALITIES.map(
       (id) => `<option value="${id}" ${s.graphicsQuality === id ? 'selected' : ''}>${id[0].toUpperCase()}${id.slice(1)}</option>`,
     ).join('');
-    return `
+    const displayRows = `
       <div class="setting-row"><div><label>Interface scale</label><small>HUD type, rail and sidebar sizes</small></div><div class="set-inline"><input type="range" min="${Math.round(UI_SCALE_MIN * 100)}" max="${Math.round(UI_SCALE_MAX * 100)}" step="5" value="${Math.round(s.uiScale * 100)}" data-set="uiScale"><output data-value-for="uiScale">${Math.round(s.uiScale * 100)}%</output></div></div>
       <div class="setting-row"><div><label>Graphics quality</label><small>Resolution, particles, shadows and water</small></div><select data-choice="graphicsQuality" aria-label="Graphics quality">${qualityOptions}</select></div>
       <div class="setting-row"><div><label>Render scale</label><small>Share of the device pixel ratio, capped at 2×</small></div><div class="set-inline"><input type="range" min="50" max="100" step="5" value="${Math.round(s.renderScale * 100)}" data-set="renderScale"><output data-value-for="renderScale">${Math.round(s.renderScale * 100)}%</output></div></div>
       <div class="setting-row"><div><label>Frame rate</label><small>Show the live FPS badge in battle</small></div><button class="switch ${s.fpsReadout ? 'on' : ''}" data-toggle="fpsReadout"></button></div>
-      <div class="setting-row"><div><label>Escape key</label><small>Outside an order mode</small></div><select data-choice="escBehavior" aria-label="Escape key behaviour"><option value="pause" ${s.escBehavior === 'pause' ? 'selected' : ''}>Pauses the battle</option><option value="menu" ${s.escBehavior === 'menu' ? 'selected' : ''}>Opens the menu</option></select></div>
-      <div class="setting-row"><div><label>Effects volume</label><small>Weapons, impacts and alerts</small></div><input type="range" min="0" max="1" step="0.05" value="${s.sfx}" data-set="sfx"></div>
-      <div class="setting-row"><div><label>Announcer volume</label><small>Strategic voice lines</small></div><input type="range" min="0" max="1" step="0.05" value="${s.voice}" data-set="voice"></div>
-      <div class="setting-row"><div><label>Unit responses</label><small>Selection, orders and refusals</small></div><input type="range" min="0" max="1" step="0.05" value="${s.unitVoice}" data-set="unitVoice"></div>
-      <div class="setting-row"><div><label>Ambience volume</label><small>Sea, wind and low drone</small></div><input type="range" min="0" max="1" step="0.05" value="${s.ambient}" data-set="ambient"></div>
-      <div class="setting-row"><div><label>Music volume</label><small>Menu and battle soundtracks</small></div><input type="range" min="0" max="1" step="0.05" value="${s.music}" data-set="music"></div>
       <div class="setting-row"><div><label>Visual effects</label><small>Particles, smoke and tracers</small></div><button class="switch ${s.effects ? 'on' : ''}" data-toggle="effects"></button></div>
       <div class="setting-row"><div><label>Unit silhouettes</label><small>Outline a unit hidden behind a structure</small></div><button class="switch ${s.silhouettes ? 'on' : ''}" data-toggle="silhouettes"></button></div>
       <div class="setting-row"><div><label>Screen shake</label><small>Explosion camera movement</small></div><button class="switch ${s.shake ? 'on' : ''}" data-toggle="shake"></button></div>
       <div class="setting-row"><div><label>Fog of war</label><small>Visual fog; gameplay detection is unchanged</small></div><button class="switch ${s.fogVisual ? 'on' : ''}" data-toggle="fogVisual"></button></div>
       <div class="setting-row"><div><label>Night lights</label><small>Building and vehicle lights; their detection effect is unchanged</small></div><button class="switch ${s.nightLights ? 'on' : ''}" data-toggle="nightLights"></button></div>
       <div class="setting-row"><div><label>Light glow</label><small>Additive brightness of lamps and beams</small></div><div class="set-inline"><input type="range" min="0" max="150" step="5" value="${Math.round(s.lightBloom * 100)}" data-set="lightBloom"><output data-value-for="lightBloom">${Math.round(s.lightBloom * 100)}%</output></div></div>
-      <div class="setting-row"><div><label>Edge panning</label><small>Move camera at screen edges</small></div><button class="switch ${s.edgePan ? 'on' : ''}" data-toggle="edgePan"></button></div>
       <div class="setting-row"><div><label>Fullscreen</label><small>Fill the screen; Esc leaves it</small></div><button class="switch ${isFullscreen() ? 'on' : ''}" data-toggle="fullscreen"></button></div>
     `;
+    const inputRows = `
+      <div class="setting-row"><div><label>Escape key</label><small>Outside an order mode</small></div><select data-choice="escBehavior" aria-label="Escape key behaviour"><option value="pause" ${s.escBehavior === 'pause' ? 'selected' : ''}>Pauses the battle</option><option value="menu" ${s.escBehavior === 'menu' ? 'selected' : ''}>Opens the menu</option></select></div>
+      <div class="setting-row"><div><label>Edge panning</label><small>Move camera at screen edges</small></div><button class="switch ${s.edgePan ? 'on' : ''}" data-toggle="edgePan"></button></div>
+      <div class="setting-row"><div><label>Edge pan width</label><small>How far in from the battlefield edge the camera starts to move</small></div><div class="set-inline"><input type="range" min="${EDGE_PAN_WIDTH_MIN}" max="${EDGE_PAN_WIDTH_MAX}" step="2" value="${Math.round(s.edgePanWidth)}" data-set="edgePanWidth"><output data-value-for="edgePanWidth">${Math.round(s.edgePanWidth)}px</output></div></div>
+      <div class="setting-row"><div><label>Edge pan speed</label><small>Camera travel while the pointer sits in the band</small></div><div class="set-inline"><input type="range" min="${Math.round(EDGE_PAN_SPEED_MIN * 100)}" max="${Math.round(EDGE_PAN_SPEED_MAX * 100)}" step="5" value="${Math.round(s.edgePanSpeed * 100)}" data-set="edgePanSpeed"><output data-value-for="edgePanSpeed">${Math.round(s.edgePanSpeed * 100)}%</output></div></div>
+      <div class="setting-row"><div><label>Custom cursors</label><small>Animated tactical reticles for orders, placement and box selection</small></div><button class="switch ${s.customCursors ? 'on' : ''}" data-toggle="customCursors"></button></div>
+    `;
+    const audioRows = `
+      <div class="setting-row"><div><label>Effects volume</label><small>Weapons, impacts and alerts</small></div><input type="range" min="0" max="1" step="0.05" value="${s.sfx}" data-set="sfx"></div>
+      <div class="setting-row"><div><label>Announcer volume</label><small>Strategic voice lines</small></div><input type="range" min="0" max="1" step="0.05" value="${s.voice}" data-set="voice"></div>
+      <div class="setting-row"><div><label>Unit responses</label><small>Selection, orders and refusals</small></div><input type="range" min="0" max="1" step="0.05" value="${s.unitVoice}" data-set="unitVoice"></div>
+      <div class="setting-row"><div><label>Ambience volume</label><small>Sea, wind and low drone</small></div><input type="range" min="0" max="1" step="0.05" value="${s.ambient}" data-set="ambient"></div>
+      <div class="setting-row"><div><label>Music volume</label><small>Menu and battle soundtracks</small></div><input type="range" min="0" max="1" step="0.05" value="${s.music}" data-set="music"></div>
+    `;
+    const tabs: { id: SettingsTab; label: string }[] = [
+      { id: 'display', label: 'Display' },
+      { id: 'input', label: 'Controls' },
+      { id: 'audio', label: 'Audio' },
+    ];
+    const tabBar = tabs
+      .map((tab) => {
+        const active = this.settingsTab === tab.id;
+        return `<button type="button" class="settings-tab${active ? ' active' : ''}" data-settings-tab="${tab.id}" aria-pressed="${active}"${active ? ' aria-current="true"' : ''}>${tab.label}</button>`;
+      })
+      .join('');
+    const panel = (id: SettingsTab, rows: string) =>
+      `<section class="settings-panel" data-settings-panel="${id}" aria-label="${
+        tabs.find((tab) => tab.id === id)?.label ?? id
+      } settings"${this.settingsTab === id ? '' : ' hidden'}>${rows}</section>`;
+    return `<div class="settings-tabs" role="group" aria-label="Settings sections">${tabBar}</div>${panel(
+      'display',
+      displayRows,
+    )}${panel('input', inputRows)}${panel('audio', audioRows)}`;
+  }
+
+  /** Show one settings section and remember it for the next visit. */
+  private showSettingsTab(tab: SettingsTab): void {
+    this.settingsTab = tab;
+    document.querySelectorAll<HTMLElement>('[data-settings-panel]').forEach((panel) => {
+      panel.hidden = panel.dataset.settingsPanel !== tab;
+    });
+    document.querySelectorAll<HTMLButtonElement>('[data-settings-tab]').forEach((button) => {
+      const active = button.dataset.settingsTab === tab;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+      if (active) button.setAttribute('aria-current', 'true');
+      else button.removeAttribute('aria-current');
+    });
   }
 
   private renderMenuSettings(): void {
@@ -3441,6 +3643,12 @@ export class App {
   }
 
   private bindSettingsControls(root: HTMLElement): void {
+    root.querySelectorAll<HTMLButtonElement>('[data-settings-tab]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const tab = button.dataset.settingsTab;
+        if (tab === 'display' || tab === 'input' || tab === 'audio') this.showSettingsTab(tab);
+      });
+    });
     root.querySelectorAll<HTMLInputElement>('[data-set]').forEach((input) => {
       input.addEventListener('input', () => {
         const key = input.dataset.set;
@@ -3449,12 +3657,16 @@ export class App {
         else if (key === 'renderScale') this.settings.renderScale = normaliseRenderScale(raw / 100);
         else if (key === 'sfx' || key === 'voice' || key === 'unitVoice' || key === 'ambient' || key === 'music') {
           this.settings[key] = raw;
-        } else if (key === 'lightBloom') {
+        }        else if (key === 'lightBloom') {
           this.settings.lightBloom = normaliseLightBloom(raw / 100);
           this.renderer.settings.lightBloom = this.settings.lightBloom;
+        } else if (key === 'edgePanWidth') {
+          this.settings.edgePanWidth = normaliseEdgePanWidth(raw);
+        } else if (key === 'edgePanSpeed') {
+          this.settings.edgePanSpeed = normaliseEdgePanSpeed(raw / 100);
         } else return;
         const out = root.querySelector<HTMLElement>(`[data-value-for="${key}"]`);
-        if (out) out.textContent = `${Math.round(raw)}%`;
+        if (out) out.textContent = key === 'edgePanWidth' ? `${Math.round(raw)}px` : `${Math.round(raw)}%`;
         this.saveSettings();
       });
     });
@@ -3505,6 +3717,7 @@ export class App {
           key !== 'shake' &&
           key !== 'fogVisual' &&
           key !== 'edgePan' &&
+          key !== 'customCursors' &&
           key !== 'silhouettes' &&
           key !== 'nightLights'
         ) {

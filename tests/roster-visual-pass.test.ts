@@ -208,6 +208,63 @@ describe('completed unit roster visual pass', () => {
     }
   });
 
+  it('authors the national naval hulls instead of borrowing their family rig', () => {
+    const visby = unitStyle('visby')!;
+    const ghadir = unitStyle('ghadir')!;
+    const corvette = unitStyle('corvette')!;
+    const submarine = unitStyle('submarine')!;
+    // The two hulls are bespoke: no shared body and no shared gun or feather.
+    expect(visby.body).not.toBe(corvette.body);
+    expect(visby.turret).toBeDefined();
+    expect(visby.turret).not.toBe(corvette.turret);
+    expect(ghadir.body).not.toBe(submarine.body);
+    expect(ghadir.periscope).toBeDefined();
+    expect(ghadir.periscope).not.toBe(submarine.periscope);
+    expect(ghadir.turret).toBeUndefined();
+
+    const length = (id: string): number => {
+      const b = bounds(unitStyle(id)!.body);
+      return (b.maxX - b.minX) * unitVisualScale(id);
+    };
+    // A littoral corvette is shorter than the fleet corvette; a midget boat is
+    // a third the length of the ocean-going submarine rather than a rescale.
+    expect(length('visby')).toBeLessThan(length('corvette'));
+    expect(length('ghadir')).toBeLessThan(length('submarine') * 0.75);
+
+    // Tumblehome: the Visby's deck is narrower than its waterline, which is
+    // what separates the silhouette from every flared hull in the roster.
+    const zAtHeight = (part: { positions: ArrayLike<number> }, minY: number): number => {
+      let widest = 0;
+      for (let i = 0; i < part.positions.length; i += 3) {
+        if (part.positions[i + 1] < minY) continue;
+        widest = Math.max(widest, Math.abs(part.positions[i + 2]));
+      }
+      return widest;
+    };
+    expect(zAtHeight(visby.body, 0.55)).toBeLessThan(zAtHeight(visby.body, 0.1));
+
+    // The stealth mount still lands on the authored hardpoint.
+    const turret = visby.turret!;
+    const turretBounds = bounds(turret);
+    const scale = unitVisualScale('visby');
+    expect((visby.turretOffset[0] + turretBounds.maxX) * scale).toBeCloseTo(
+      UNITS.visby.muzzle!.forward,
+      1,
+    );
+    expect((visby.turretOffset[1] + tipHeight(turret)) * scale).toBeCloseTo(
+      UNITS.visby.muzzle!.height,
+      1,
+    );
+
+    for (const id of ['visby', 'ghadir']) {
+      const style = unitStyle(id)!;
+      expect(style.body.teamMask.some((v) => v >= 0.5), id).toBe(true);
+      expect(unitBannerHeight(id), id).toBeGreaterThan(
+        bounds(style.body).maxY * unitVisualScale(id) + 0.05,
+      );
+    }
+  });
+
   it('keeps the harvester cargo inside its new hopper', () => {
     const body = bounds(unitStyle('harvester')!.body);
     const load = bounds(unitStyle('harvester')!.load!);

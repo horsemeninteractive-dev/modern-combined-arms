@@ -78,6 +78,14 @@ const PATHS: Record<string, string> = {
   squad: `<circle cx="8" cy="8" r="2.2"/><path d="M8 11v5M5.5 21h5M5.5 14h5"/><circle cx="16" cy="9" r="2.2"/><path d="M16 12v5M13.5 21h5M13.5 15h5"/>`,
   build: `<path d="M3 21h18M5 21V10l7-5 7 5v11"/><path d="M9 21v-6h6v6M9 10h6"/>`,
   commander: `<circle cx="12" cy="7" r="3"/><path d="M5 21v-3a7 7 0 0 1 14 0v3"/><path d="M4 4l2 2M20 4l-2 2"/>`,
+  ifv: `<path d="M3 16V10h12l4 6"/><path d="M3 16h18v2H3z"/><circle cx="7" cy="19" r="1.8"/><circle cx="15" cy="19" r="1.8"/><path d="M9 10V7h4v3"/><path d="M14 8h5M19 8l1-2"/>`,
+  td: `<path d="M3 16l2-4h12l4 4"/><path d="M3 16h18v2H3z"/><circle cx="7" cy="19" r="1.8"/><circle cx="15" cy="19" r="1.8"/><path d="M13 12l8-6M21 6l1 2-2 1"/>`,
+  mrl: `<path d="M2 17V12h8l3 5"/><path d="M2 17h16v2H2z"/><circle cx="6" cy="20" r="1.6"/><circle cx="13" cy="20" r="1.6"/><path d="M11 9l6-4M13 11l6-4M15 13l6-4"/>`,
+  helo: `<ellipse cx="12" cy="15" rx="5" ry="3"/><path d="M2 6h20M12 6v5M12 12l-2 3M12 12l2 3"/><path d="M17 15h4M20 15l2 2"/><circle cx="9" cy="18" r="1.2" fill="currentColor"/>`,
+  research: `<path d="M4 21V8h7v13M11 21V4h9v17M2 21h20"/><path d="M6.5 11h2M6.5 14h2M6.5 17h2M14 8h3v3h-3z"/><path d="M14 15h3M17 15v3M12 4h4l-2-2"/>`,
+  monitor: `<path d="M2 16h18l2 2H2z"/><path d="M5 16V11h9l3 5"/><circle cx="9" cy="12.5" r="2.2"/><path d="M9 12.5l9-5M18 7.5l2 1.5"/><path d="M3 20c2-1 3 1 5 0s3 1 5 0 3 1 5 0"/>`,
+  eye: `<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>`,
+  eyeOff: `<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path d="M4 4l16 16"/>`,
 };
 
 export function icon(name: string, cls = ''): string {

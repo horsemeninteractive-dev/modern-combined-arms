@@ -118,11 +118,18 @@ export interface UnitDef {
   icon: string;
   hotkey?: string;
   /**
-   * Baseline slot this national variant substitutes, e.g. `tank`. A roster
-   * replacement swaps the slot without changing the facility's production
-   * list, and the UI/AI resolve the variant through this field.
+   * Baseline slot this variant specialises, e.g. `tank`. An alliance platform
+   * and a national replacement both declare it, so a roster swap keeps the
+   * facility's production list and the UI/AI resolve the definition through the
+   * canonical root of the chain.
    */
   variantOf?: string;
+  /**
+   * Nation-specific definition, as opposed to one of the two alliance
+   * platforms. Only a national variant earns the NATIONAL badge; every
+   * alliance platform is also a `variantOf`, so the badge cannot key on that.
+   */
+  national?: boolean;
   /** Combat domain used for target-class checks. */
   targetClass: TargetClass;
   /** Where this unit's weapons fire from. Absent units have no weapons. */
@@ -187,8 +194,10 @@ export interface BuildingDef {
   airfield?: boolean;
   /** Naval build / repair point. Requires navigable water adjacency. */
   shipyard?: boolean;
-  /** Baseline structure slot this national variant substitutes, e.g. `mgNest`. */
+  /** Baseline structure slot this variant specialises, e.g. `mgNest`. */
   variantOf?: string;
+  /** Nation-specific structure, as opposed to an alliance platform. */
+  national?: boolean;
   /**
    * Structure families that must already stand completed for this one to be
    * laid. Baseline ids, never variant ids: a national variant asks for the same
@@ -230,6 +239,13 @@ export interface BuildingDef {
   garrison?: GarrisonDef;
   /** Must be adjacent to navigable deep water. */
   requiresWater?: boolean;
+  /**
+   * Research speed multiplier while this structure runs a project: 1 is the
+   * standard centre, 1.25 finishes a project in four fifths of the time. The
+   * fastest operational centre supplies it; a destroyed or unfinished centre
+   * supplies nothing.
+   */
+  researchSpeed?: number;
   /**
    * The footprint is deck, not masonry: ground units may cross it, so it is
    * never stamped into the blocked grid while it stands. A span that is shot
@@ -305,7 +321,7 @@ export interface AllianceDef extends FactionIdentity {
   readonly baseline: RosterDef;
 }
 
-/** One of the six playable launch nations. */
+/** One of the ten playable nations. */
 export interface NationDef extends FactionIdentity {
   /** Alliance whose baseline this nation inherits. */
   readonly allianceId: string;
@@ -319,7 +335,7 @@ export interface NationDef extends FactionIdentity {
  * Legacy alliance-level preset (`baltic`, `expeditionary`).
  *
  * Existing maps and saves use these ids, so they stay valid and resolve to the
- * same shared baseline as their alliance. New playable identities are the six
+ * same shared baseline as their alliance. New playable identities are the ten
  * nations in `NATION_LIST`; do not add national behaviour here.
  */
 export interface FactionDef extends FactionIdentity {
@@ -516,6 +532,26 @@ export interface Entity {
   /** AI bookkeeping (serialised so saves remain faithful). */
   aiGroup: number;
   aiRole: string;
+  /**
+   * Research this unit has spent on itself, as unit-upgrade ids. Research makes
+   * an upgrade available to every eligible unit; this list records the ones
+   * this particular hull has actually taken. Absent on older saves and on
+   * buildings.
+   */
+  upgrades?: string[];
+  /**
+   * Research modules bought and installed on this particular structure. A
+   * module unlocked by research is offered on every eligible building, but each
+   * installation is individual. Absent on older saves and on units.
+   */
+  modules?: string[];
+  /**
+   * Per-ability reload for this hull, in seconds of simulation time remaining,
+   * keyed by unit-upgrade id. Cooldown is the unit's, not the player's: one recon
+   * troop firing smoke never reloads its neighbour. Absent on older saves and on
+   * structures, and never sent to the opposing team.
+   */
+  cooldowns?: Record<string, number>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -569,7 +605,13 @@ export type SimEventCode =
   | 'unitPromoted'
   | 'rallySet'
   | 'moveOrder'
-  | 'attackOrder';
+  | 'attackOrder'
+  | 'researchStarted'
+  | 'researchComplete'
+  | 'researchCancelled'
+  | 'moduleInstalled'
+  | 'upgradeApplied'
+  | 'abilityUsed';
 
 export type ImpactSurface = 'ground' | 'water' | 'armour' | 'structure' | 'air';
 
@@ -642,7 +684,21 @@ export type Command =
   | { type: 'cancelProduction'; team: number; buildingId: number; index: number }
   | { type: 'reorderProduction'; team: number; buildingId: number; defId: string; beforeDefId?: string }
   | { type: 'placeBuilding'; team: number; builderId?: number; defId: string; tileX: number; tileZ: number }
-  | { type: 'setRally'; team: number; buildingId: number; x: number; z: number };
+  | { type: 'setRally'; team: number; buildingId: number; x: number; z: number }
+  /** Start one project at an operational Research Centre. */
+  | { type: 'research'; team: number; buildingId: number; techId: string }
+  /** Cancel the player's project; the centre refunds its cost like a unit queue. */
+  | { type: 'cancelResearch'; team: number; buildingId: number }
+  /** Buy and install a researched module on one structure. */
+  | { type: 'installModule'; team: number; buildingId: number; moduleId: string }
+  /** Apply a researched upgrade to one owned unit. */
+  | { type: 'activateUpgrade'; team: number; unitId: number; upgradeId: string }
+  /**
+   * Use a runtime ability an owned unit has because of research. The effect is
+   * centred on the unit, so the command carries no destination: a client cannot
+   * ask for a cloud somewhere the hull could not lay one.
+   */
+  | { type: 'useAbility'; team: number; unitId: number; abilityId: string };
 
 /* ------------------------------------------------------------------ */
 /* Runtime state                                                       */
@@ -657,6 +713,26 @@ export interface PowerStatus {
   brownout: boolean;
 }
 
+/**
+ * One research project. Progress is measured in seconds of fixed-tick work,
+ * never wall-clock time, so two peers and a reload all advance it identically.
+ */
+export interface ResearchProject {
+  techId: string;
+  /** Seconds of work still to do. Never negative. */
+  remaining: number;
+  /** Seconds the project cost when it started, for the progress bar. */
+  total: number;
+}
+
+/** One player's permanent research record; player-global, not per-building. */
+export interface ResearchState {
+  /** Completed technology ids in completion order. */
+  completed: string[];
+  /** The single active project, or null when the branch is idle. */
+  project: ResearchProject | null;
+}
+
 export interface PlayerState {
   id: number;
   name: string;
@@ -665,6 +741,8 @@ export interface PlayerState {
   isAI: boolean;
   mats: number;
   req: number;
+  /** Player-global research progress and completed technologies. */
+  research: ResearchState;
   /** Convenience counters for UI and diagnostics. */
   stats: {
     matsGathered: number;
@@ -764,12 +842,44 @@ export interface GameState {
    */
   charted: ChartedStructure[];
   commandCount: number;
+  /**
+   * Authoritative smoke clouds, oldest first. A cloud is simulation state: it is
+   * timed on the fixed tick, saved, and replicated, because visibility is
+   * resolved from it on every peer rather than drawn by the client.
+   */
+  smoke: SmokeCloud[];
+  /** Next free cloud id. Saved so a reload never reuses a live id. */
+  nextSmokeId: number;
   /** True once the scenario has been initialised fully. */
   ready: boolean;
 }
 
 /** How much of a structure a team currently knows about. */
 export type VisionState = 'visible' | 'remembered' | 'hidden';
+
+/**
+ * One authoritative smoke cloud.
+ *
+ * Position and radius are the same numbers the vision refresh tests and the
+ * renderer draws, so what the player sees and what the simulation believes are
+ * one object. `expiresTick` is absolute, which keeps expiry deterministic across
+ * a reload and gives the renderer a fade without a second clock.
+ */
+export interface SmokeCloud {
+  id: number;
+  /** Player who laid it; -1 for none (never used, but keeps the field honest). */
+  owner: number;
+  /** Team that laid it. Smoke obscures everyone, including its owner. */
+  team: number;
+  x: number;
+  z: number;
+  /** Radius in world units. */
+  radius: number;
+  /** Tick the cloud was created, for the visual build-up. */
+  startTick: number;
+  /** Tick it is removed. Never earlier than `startTick`. */
+  expiresTick: number;
+}
 
 export interface ChartedStructure {
   team: number;

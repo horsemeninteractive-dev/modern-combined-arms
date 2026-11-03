@@ -110,6 +110,12 @@ button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
 .hidden { display: none !important; }
 .mono { font-family: var(--mono); }
+/* Accessible labels only: the deployment rail names its pickers for screen
+   readers without spending a visible row on each word. */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
 
 #app { position: relative; width: 100%; height: 100%; overflow: hidden; }
 #stage { position: absolute; inset: 0; }
@@ -1193,6 +1199,8 @@ button { cursor: pointer; }
 .hud-rail {
   position: absolute; top: 0; left: 0; bottom: 0; width: var(--rail-w); z-index: 12;
   display: flex; flex-direction: column; overflow-x: hidden; overflow-y: auto;
+  /* Room for the interface toggle, which is the rail's last strip. */
+  padding-bottom: 23px;
   scrollbar-width: thin;
   background: linear-gradient(180deg, rgba(8,13,15,0.98), rgba(8,13,15,0.93));
   border-right: 1px solid var(--line); box-shadow: 12px 0 30px rgba(0,0,0,0.3);
@@ -1212,16 +1220,42 @@ button { cursor: pointer; }
 .rail-stat b { max-width: 100%; font-family: var(--mono); font-size: var(--fs-xl); font-weight: 500; letter-spacing: -0.04em; color: var(--ink); line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rail-stat .rail-rate { max-width: 100%; font-family: var(--mono); font-size: var(--fs-xs); color: var(--green); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rail-stat.req b { color: var(--amber-soft); }
-.rail-stat.power b { font-size: var(--fs-lg); }
-.rail-stat.power .rail-rate { color: var(--ink-dim); font-size: var(--fs-xs); letter-spacing: 0.02em; }
-.rail-stat.power .rail-rate.low { color: var(--red-soft); }
-.rail-stat.power.brownout { background: rgba(239,108,77,0.08); }
-.rail-stat.power.brownout b { color: var(--red-soft); }
-.rail-objective { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 5px; text-align: center; color: var(--ink); background: rgba(239,108,77,0.06); border: 0; border-bottom: 1px solid var(--line); border-left: 2px solid var(--red); flex: 0 0 auto; }
+/* Power is a meter, not a fourth currency: it sits in its own block below the
+   resource stack, separated by a rule, and reads as load against supply. */
+.rail-grid {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 7px 6px 6px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  background: rgba(82,197,230,0.05); flex: 0 0 auto;
+}
+.rail-grid .rail-label { color: var(--blue); letter-spacing: 0.08em; }
+.rail-grid .rail-rate { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.06em; color: var(--green); min-height: 1em; }
+.power-bar {
+  position: relative; width: 100%; height: 9px; overflow: hidden;
+  border: 1px solid rgba(167,190,184,0.28); background: rgba(0,0,0,0.45);
+}
+.power-bar i { display: block; height: 100%; width: 0%; background: var(--green); transition: width 160ms ease, background-color 160ms ease; }
+/* Segment ticks over the fill, so it reads as a gauge rather than a progress bar. */
+.power-bar::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(90deg, transparent 0 7px, rgba(0,0,0,0.55) 7px 8px); }
+.rail-grid.strained .power-bar i, .mobile-grid.strained .power-bar i { background: var(--amber); }
+.rail-grid.strained .rail-rate { color: var(--amber-soft); }
+.rail-grid.brownout { background: rgba(239,108,77,0.1); }
+.rail-grid.brownout .power-bar i, .mobile-grid.brownout .power-bar i { background: var(--red); }
+.rail-grid.brownout .rail-rate { color: var(--red-soft); animation: power-pulse 1.1s ease-in-out infinite; }
+@keyframes power-pulse { 50% { opacity: 0.4; } }
+.rail-objective { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 5px; text-align: center; color: var(--ink); background: rgba(239,108,77,0.06); border: 0; border-bottom: 1px solid var(--line); border-left: 2px solid var(--red); flex: 0 0 auto; }
 .rail-objective:hover { background: rgba(239,108,77,0.12); }
-.rail-objective b { display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; font-size: var(--fs-sm); font-weight: 500; line-height: 1.3; color: var(--red-soft); }
-.rail-objective .objective-sub { font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.3; color: var(--ink-dim); }
-.rail-objective .objective-sub.bad { color: var(--red-soft); }
+.rail-objective.bad { background: rgba(239,108,77,0.16); }
+.rail-objective .rail-label { color: var(--ink-dim); }
+.rail-objective b { font-family: var(--mono); font-size: var(--fs-sm); font-weight: 500; letter-spacing: 0.06em; line-height: 1.3; color: var(--red-soft); }
+/*
+ * The rail's foot: force size and the briefing button, parked directly above
+ * the control-group strip. The bottom block is bottom-aligned, so the strip
+ * keeps its old position whatever this tail is worth.
+ */
+.rail-tail { display: flex; flex-direction: column; flex: 0 0 auto; }
+.rail-tail .rail-stat-army { padding: 4px 4px 3px; border-bottom: 1px solid var(--line); }
+.rail-tail .rail-stat-army b { font-size: var(--fs-lg); }
+.rail-tail .rail-objective { padding: 6px 5px; }
 /* The bottom block aligns with the battle console when it can, but it sizes to
    its own content: groups, clock and mission actions are three stacked rows and
    a fixed height used to crush the last of them to a sliver. */
@@ -1260,11 +1294,15 @@ button { cursor: pointer; }
 .mobile-stat span { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.04em; color: var(--ink-dim); }
 .mobile-stat b { font-family: var(--mono); font-size: var(--fs-md); font-weight: 500; line-height: 1.1; }
 .mobile-stat.req b { color: var(--amber-soft); }
-.mobile-stat.power b { color: var(--ink-dim); }
+.mobile-grid { flex: 0 0 auto; width: 58px; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 0 7px; border-right: 1px solid var(--line); }
+.mobile-grid span { font-family: var(--mono); font-size: var(--fs-xs); line-height: 1; letter-spacing: 0.04em; color: var(--blue); }
+.mobile-grid .power-bar { height: 6px; }
 .mobile-objective { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 1px; padding: 0 8px; border: 0; border-right: 1px solid var(--line); background: transparent; text-align: left; }
 .mobile-objective .label { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.04em; color: var(--ink-dim); }
 .mobile-objective b { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); font-weight: 500; color: var(--red-soft); }
 .mobile-objective .objective-sub { display: none; }
+/* Capability filtering hides whole orders; author display rules must not win. */
+.cmd-btn[hidden], .cmd-sep[hidden] { display: none !important; }
 .mobile-actions { display: flex; align-items: stretch; flex: 0 0 auto; }
 .mobile-action { width: 40px; border: 0; border-left: 1px solid var(--line); background: rgba(255,255,255,0.02); color: var(--ink-dim); display: grid; place-items: center; }
 .mobile-action:hover { color: var(--ink); background: rgba(255,255,255,0.06); }
@@ -1547,6 +1585,27 @@ button { cursor: pointer; }
 .stance-row { display: flex; align-items: center; gap: 3px; margin-top: 6px; flex-wrap: wrap; }
 .stance-row .stance-label { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.06em; color: var(--ink-dim); margin-right: 2px; }
 .stance-row .mini-btn { padding: 3px 6px; }
+/* Researched unit abilities. One row, one button per capability, and the row
+   only exists when the hull actually has something to fire. */
+.ability-row { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+.ability-btn { display: flex; align-items: center; gap: 6px; padding: 4px 7px; border: 1px solid rgba(224, 163, 74, 0.45); background: rgba(224, 163, 74, 0.1); color: var(--amber-soft); border-radius: 2px; text-align: left; min-width: 0; }
+.ability-btn:hover { border-color: var(--amber); background: rgba(224, 163, 74, 0.18); }
+.ability-btn.reloading { border-color: var(--line); background: rgba(255, 255, 255, 0.03); color: var(--ink-dim); }
+.ability-btn .ability-icon { width: 14px; height: 14px; flex: none; }
+.ability-btn .ability-copy { display: flex; flex-direction: column; min-width: 0; }
+.ability-btn .ability-copy b { font-family: var(--mono); font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0.05em; white-space: nowrap; }
+.ability-btn .ability-copy span { font-family: var(--mono); font-size: var(--fs-xs); opacity: 0.8; white-space: nowrap; }
+.ability-btn .ability-key { font-family: var(--mono); font-size: var(--fs-xs); padding: 1px 4px; border: 1px solid rgba(224, 163, 74, 0.4); color: var(--amber); }
+.layout-desktop .ability-btn .ability-copy span { display: none; }
+/* A fitted module is a state, not an offer: it keeps the row's shape but reads
+   as settled, so the amber "buy this" affordance belongs only to the price. */
+.module-btn.installed { border-color: rgba(122, 196, 148, 0.45); background: rgba(122, 196, 148, 0.1); color: #9fd8b4; }
+.module-btn.installed:hover { border-color: rgba(122, 196, 148, 0.45); background: rgba(122, 196, 148, 0.1); }
+.module-btn.installed .ability-key { border-color: rgba(122, 196, 148, 0.4); color: #9fd8b4; }
+/* Desktop hides the ability detail line to keep the panel one row; a module's
+   price and grid contribution are the whole decision, so they stay. */
+.layout-desktop .module-btn .ability-copy span { display: block; }
+.layout-desktop .ability-btn[aria-disabled="true"] .ability-copy span { display: block; }
 /* Production */
 /* Vertical only: every card grid is built from shrinkable tracks, so the panel
    must never grow a horizontal scrollbar of its own. */
@@ -1604,6 +1663,14 @@ button { cursor: pointer; }
 .cost-chip.mat { border-color: rgba(224,163,74,0.3); background: rgba(224,163,74,0.08); color: var(--amber-soft); }
 .cost-chip.req { border-color: rgba(74,163,224,0.32); background: rgba(74,163,224,0.09); color: var(--blue-soft); }
 .cost-chip.time b { color: var(--ink-dim); }
+/* Grid draw on a structure card. Generation reads green, draw stays neutral so
+   the cost row is not a wall of warning colour; the meter carries the alarm. */
+.cost-chip.power { align-self: flex-start; margin-top: 2px; border-color: rgba(167,190,184,0.28); }
+.cost-chip.power b { color: var(--ink); }
+.cost-chip.power.supply { border-color: rgba(134,199,145,0.4); background: rgba(134,199,145,0.1); color: var(--green); }
+.cost-chip.power.supply b { color: var(--green); }
+.cost-chip.power.deficit { border-color: rgba(239,108,77,0.55); background: rgba(239,108,77,0.12); color: var(--red-soft); }
+.cost-chip.power.deficit b { color: var(--red-soft); }
 .unit-card .u-hot { position: absolute; top: 8px; right: 8px; z-index: 4; padding: 1px 4px; background: rgba(6,10,12,0.82); font-family: var(--mono); font-size: var(--fs-xs); color: var(--ink); }
 .u-grip { position: absolute; top: 21px; right: 3px; z-index: 4; width: 16px; height: 22px; display: grid; place-items: center; color: rgba(224,163,74,0.82); cursor: grab; touch-action: none; }
 .u-grip::before { content: ''; width: 8px; height: 14px; background-image: radial-gradient(circle, currentColor 1.2px, transparent 1.5px); background-size: 4px 4px; }
@@ -1644,6 +1711,109 @@ button { cursor: pointer; }
 .build-card.locked .b-name { color: var(--ink-dim); }
 .build-card.locked .cost-chips { opacity: .55; }
 .build-card .b-req { margin-top: 2px; font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.35; letter-spacing: .02em; color: var(--amber-soft); }
+.build-card .b-req.research { color: var(--blue-soft); }
+
+/*
+ * Research sits at the foot of the production rail, styled as one of the
+ * category tabs because it opens in the same panel. The bar underneath is the
+ * only extra: an active project stays readable while the tree is closed.
+ */
+.prod-tab.research-tab { margin-top: auto; border-top: 1px solid var(--line); gap: 3px; }
+.prod-tab.research-tab .rail-label { color: var(--blue-soft); }
+.prod-tab.research-tab.researching .rail-label { color: var(--blue-soft); }
+.tab-research-bar { display: block; width: 100%; height: 4px; margin-top: 1px; background: rgba(0,0,0,0.48); border: 1px solid rgba(167,190,184,0.2); }
+.tab-research-bar i { display: block; height: 100%; width: 0; background: var(--blue); transition: width 160ms linear; }
+.prod-tab.research-tab.active::after { background: var(--blue); }
+
+/* Research tree in the production sidebar. */
+/*
+ * Two tier nodes, a 62 px active strip and a detail block cannot live in the
+ * 147 px production column. The shell keeps its normal width for cards and
+ * widens only while the tree is open, so the battlefield is never permanently
+ * narrower for a panel most players open occasionally.
+ */
+.layout-desktop.research-open { --sidebar-w: max(clamp(calc(320px * var(--ui-scale)), 21vw, calc(360px * var(--ui-scale))), 300px); }
+.research-panel { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.research-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding: 1px 1px 0; }
+.research-head .eyebrow { display: block; font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.14em; color: var(--blue); }
+.research-head h3 { margin: 2px 0 0; font-family: var(--mono); font-size: var(--fs-sm); font-weight: 500; letter-spacing: 0.04em; color: var(--ink); }
+.research-close { flex: 0 0 auto; width: 26px; height: 26px; border: 1px solid var(--line); background: rgba(255,255,255,0.03); color: var(--ink-dim); font-family: var(--mono); font-size: 15px; line-height: 1; }
+.research-close:hover { color: var(--ink); border-color: var(--line-strong); }
+.research-active { display: flex; flex-direction: column; gap: 4px; padding: 6px 7px; border: 1px solid rgba(82,197,230,0.3); border-left: 2px solid var(--blue); background: rgba(82,197,230,0.06); }
+.research-active.paused { border-left-color: var(--amber); background: rgba(224,163,74,0.055); }
+.research-active-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.05em; color: var(--ink-dim); }
+.research-active-head span:last-child { color: var(--blue-soft); white-space: nowrap; }
+.research-active.paused .research-active-head span:last-child { color: var(--amber-soft); }
+.research-active-title { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; min-width: 0; }
+.research-active-title b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); font-weight: 600; color: var(--ink); }
+.research-active-title span { flex: 0 0 auto; font-family: var(--mono); font-size: var(--fs-xs); color: var(--ink-dim); }
+.research-progress { height: 7px; overflow: hidden; border: 1px solid rgba(167,190,184,0.28); background: rgba(0,0,0,0.45); }
+.research-progress i { display: block; height: 100%; width: 0; background: var(--blue); transition: width 120ms linear; }
+.research-active.paused .research-progress i { background: var(--amber); }
+.research-active-meta { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.research-active-meta .cost-chips { margin-top: 0; }
+.research-committed { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.08em; color: var(--ink-faint); }
+.research-active-note { font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.35; color: var(--ink-dim); }
+.research-cancel { width: 100%; min-height: 28px; border: 1px solid rgba(239,108,77,0.35); background: rgba(239,108,77,0.08); color: var(--red-soft); font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.05em; }
+.research-cancel:hover:not(:disabled) { background: rgba(239,108,77,0.16); }
+.research-cancel:disabled { opacity: 0.45; cursor: not-allowed; }
+.research-idle { display: flex; flex-direction: column; gap: 3px; padding: 6px 7px; border: 1px solid var(--line); background: rgba(255,255,255,0.018); }
+.research-idle div { display: flex; flex-direction: column; gap: 2px; }
+.research-idle .eyebrow { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.12em; color: var(--ink-faint); }
+.research-idle b { font-family: var(--mono); font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0.05em; color: var(--ink-dim); }
+.research-idle p { margin: 0; font-size: var(--fs-xs); line-height: 1.4; color: var(--ink-dim); }
+.research-branches { display: flex; flex-direction: column; gap: 5px; }
+.research-branch { border: 1px solid rgba(167,190,184,0.13); background: rgba(255,255,255,0.018); }
+.research-branch-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 4px 6px; border-bottom: 1px solid rgba(167,190,184,0.1); font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.08em; color: var(--ink-dim); }
+.research-branch-head span:last-child { color: var(--ink-faint); }
+.research-tier-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; }
+.research-node { position: relative; display: flex; flex-direction: column; gap: 2px; min-width: 0; min-height: 62px; padding: 4px; border: 1px solid var(--line); background: rgba(255,255,255,0.022); color: var(--ink); text-align: left; }
+.research-node:hover { border-color: var(--line-strong); background: rgba(255,255,255,0.05); }
+.research-node.selected { border-color: var(--amber); box-shadow: inset 0 0 0 1px rgba(224,163,74,0.36); }
+.research-node-top { display: flex; align-items: center; justify-content: space-between; gap: 3px; }
+.research-node-icon .icon { width: 13px; height: 13px; color: var(--ink-dim); }
+.research-node-state { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.03em; color: var(--ink-faint); }
+.research-node-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: var(--fs-sm); font-weight: 500; line-height: 1.15; color: var(--ink); }
+.research-node-cost { font-family: var(--mono); font-size: var(--fs-xs); color: var(--ink-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.research-node.state-completed { border-color: rgba(134,199,145,0.34); background: rgba(134,199,145,0.07); }
+.research-node.state-completed .research-node-state { color: var(--green); }
+.research-node.state-researching { border-color: rgba(82,197,230,0.55); background: rgba(82,197,230,0.09); }
+.research-node.state-researching .research-node-state { color: var(--blue-soft); }
+.research-node.state-available { border-color: rgba(224,163,74,0.38); }
+.research-node.state-available .research-node-state { color: var(--amber-soft); }
+.research-node.state-faction,
+.research-node.state-prerequisite,
+.research-node.state-busy,
+.research-node.state-resources,
+.research-node.state-no-centre { border-style: dashed; }
+.research-node.state-faction .research-node-state,
+.research-node.state-prerequisite .research-node-state,
+.research-node.state-busy .research-node-state,
+.research-node.state-resources .research-node-state,
+.research-node.state-no-centre .research-node-state { color: var(--ink-faint); }
+.research-detail { display: flex; flex-direction: column; gap: 4px; padding: 2px 1px 8px; border-top: 1px solid var(--line); }
+.research-detail.empty { color: var(--ink-dim); font-size: var(--fs-sm); }
+.research-detail-head span { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.12em; color: var(--blue-soft); }
+.research-detail-head h4 { margin: 2px 0 0; font-size: var(--fs-md); font-weight: 600; color: var(--ink); }
+.research-detail > p { margin: 0; font-size: var(--fs-sm); line-height: 1.45; color: var(--ink-dim); }
+.research-effects { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 6px; padding-top: 2px; }
+.research-effects span, .research-requirement span { font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.3; letter-spacing: 0.1em; color: var(--ink-faint); padding-top: 1px; }
+.research-effects p { margin: 0; font-size: var(--fs-xs); line-height: 1.4; color: var(--ink); }
+.research-detail-costs .cost-chips { margin-top: 0; }
+.research-requirement { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 6px; }
+.research-requirement b { font-family: var(--mono); font-size: var(--fs-xs); font-weight: 500; line-height: 1.4; color: var(--ink-dim); }
+.research-reason { padding-top: 1px; }
+.research-reason.state-available { color: var(--green) !important; }
+.research-reason.state-completed { color: var(--green) !important; }
+.research-reason.state-researching { color: var(--blue-soft) !important; }
+.research-reason.state-prerequisite,
+.research-reason.state-faction,
+.research-reason.state-busy,
+.research-reason.state-resources,
+.research-reason.state-no-centre { color: var(--amber-soft) !important; }
+.research-start { width: 100%; min-height: 30px; border: 1px solid rgba(82,197,230,0.5); background: rgba(82,197,230,0.13); color: var(--blue-soft); font-family: var(--mono); font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.08em; }
+.research-start:hover:not(:disabled) { background: rgba(82,197,230,0.24); color: #fff; }
+.research-start:disabled { border-color: var(--line); background: rgba(255,255,255,0.025); color: var(--ink-faint); cursor: not-allowed; }
 /* Command bar */
 .command-bar { display: flex; gap: 3px; align-items: center; padding: 2px; min-width: 0; justify-content: center; }
 .cmd-btn { background: rgba(255,255,255,0.025); border: 1px solid transparent; color: var(--ink-dim); padding: 4px 6px; display: flex; align-items: center; gap: 3px; font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.01em; border-radius: 2px; white-space: nowrap; }
@@ -1771,6 +1941,11 @@ button { cursor: pointer; }
 .layout-mobile .queue-ghost b { font-size: var(--fs-sm); }
 .layout-mobile .queue-ghost span { font-size: var(--fs-xs); }
 .layout-mobile .stance-row .mini-btn { min-height: 44px; padding: 0 10px; }
+.layout-mobile .research-node { min-height: 70px; padding: 5px; }
+.layout-mobile .research-close,
+.layout-mobile .research-cancel,
+.layout-mobile .research-start { min-height: 44px; }
+.layout-mobile .research-close { width: 44px; height: 44px; }
 .layout-mobile .group-state { width: 5px; height: 5px; right: 5px; bottom: 5px; }
 .layout-mobile .mobile-console {
   position: absolute; left: 0; right: 0; bottom: 0; height: calc(90px + env(safe-area-inset-bottom, 0px));
@@ -1809,8 +1984,31 @@ button { cursor: pointer; }
 
 /* Debug */
 /* Optional frame-rate badge; quiet enough to leave on during a battle. */
-.perf-readout { position: absolute; top: 8px; left: calc(var(--rail-w) + 8px); z-index: 30; padding: 3px 7px; border: 1px solid var(--line); background: rgba(8,13,15,0.82); font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.04em; color: var(--ink-dim); pointer-events: none; }
-.layout-mobile .perf-readout { top: calc(48px + env(safe-area-inset-top, 0px)); left: 8px; }
+/* Bottom-right of the battlefield: it is a diagnostic, so it lives where the
+   eye does not go first, clear of the sidebar and above the console. */
+.perf-readout { position: absolute; top: auto; left: auto; right: calc(var(--sidebar-w) + 10px); bottom: calc(var(--console-h) + 10px); z-index: 30; padding: 3px 7px; border: 1px solid var(--line); background: rgba(8,13,15,0.82); font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.04em; color: var(--ink-dim); pointer-events: none; }
+/*
+ * Interface toggle for screenshots: it is the last strip of the left rail, so
+ * it reads as part of the sidebar rather than floating over the battlefield,
+ * and it stays put while everything else is hidden so the chrome can be
+ * brought back without leaving the battle. The rail reserves its height in
+ * `padding-bottom`, which keeps it off the mission actions above.
+ */
+.hud-toggle {
+  position: absolute; top: auto; left: 0; bottom: 0; width: var(--rail-w); z-index: 60;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 22px; padding: 0 4px;
+  border: 1px solid var(--line); border-left: 0; border-bottom: 0; background: rgba(8, 13, 15, 0.92); color: var(--ink-dim);
+  font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.1em;
+  opacity: 0.5; transition: opacity 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.hud-toggle .icon { width: 13px; height: 13px; }
+.hud-toggle:hover,
+.hud-toggle:focus-visible { opacity: 1; color: var(--amber-soft); border-color: var(--line-strong); outline: none; }
+.hud-toggle.is-off { opacity: 0.9; color: var(--amber-soft); border-color: rgba(224, 163, 74, 0.5); }
+.layout-mobile .hud-toggle { top: calc(48px + env(safe-area-inset-top, 0px)); left: 8px; bottom: auto; width: auto; padding: 0 7px; border: 1px solid var(--line); }
+/* Everything except the toggle leaves the frame; the battlefield takes it back. */
+.hud.hud-hidden > :not(.hud-toggle) { display: none !important; }
+.layout-mobile .perf-readout { top: calc(48px + env(safe-area-inset-top, 0px)); left: 8px; right: auto; bottom: auto; }
 .debug-panel { position: absolute; right: calc(var(--sidebar-w) + 14px); top: 14px; width: 268px; background: rgba(6,10,12,0.93); border: 1px solid var(--line); padding: 10px 12px; z-index: 20; font-family: var(--mono); font-size: var(--fs-xs); color: var(--ink-dim); line-height: 1.7; }
 .debug-panel b { color: var(--ink); font-weight: 500; }
 .debug-panel .section { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
@@ -1943,6 +2141,13 @@ button { cursor: pointer; }
 .menu-modal-list { display: grid; gap: 6px; }
 .menu-modal-list .btn { justify-content: flex-start; }
 .settings-grid { display: grid; gap: 12px; }
+/* Settings tabs keep the sheet one screen tall; only the active panel shows. */
+.settings-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+.settings-tab { flex: 1; padding: 8px 10px 7px; background: rgba(255,255,255,0.02); border: 1px solid transparent; border-bottom: none; color: var(--ink-faint); font-family: var(--mono); font-size: 10px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase; cursor: pointer; }
+.settings-tab:hover { color: var(--ink); background: rgba(255,255,255,0.05); }
+.settings-tab.active { color: var(--ink); background: rgba(224,163,74,0.12); border-color: rgba(224,163,74,0.34); box-shadow: inset 0 -2px 0 var(--amber); }
+.settings-panel { display: grid; gap: 12px; }
+.settings-panel[hidden] { display: none; }
 .setting-row { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,0.055); }
 .setting-row label { font-size: 12px; color: var(--ink); }
 .setting-row small { display: block; color: var(--ink-faint); font-size: 10px; margin-top: 2px; }
@@ -2137,6 +2342,8 @@ button { cursor: pointer; }
   margin: 0; padding-left: 18px; color: var(--ink-dim);
   font-size: 11.5px; line-height: 1.6;
 }
+.briefing-objective { margin: 0 0 4px; color: var(--ink); font-weight: 600; }
+.briefing-objective-progress { margin: 0 0 10px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.02em; color: var(--ink-dim); }
 .briefing-objectives li::marker {
   font-family: var(--mono); font-size: 9px; color: var(--amber);
 }
@@ -2465,6 +2672,7 @@ button { cursor: pointer; }
   .menu-settings { margin-top: 16px; }
   .menu-settings .setting-row { gap: 14px; padding: 12px 0; }
   .menu-settings .setting-row input[type='range'] { width: 140px; }
+  .settings-tab { padding: 8px 4px 7px 6px; font-size: 9px; letter-spacing: 0.06em; }
   .menu-footer { padding: 10px 16px; font-size: 7.5px; }
   .menu-footer-mid { display: none; }
   .intro-meta { left: max(18px, env(safe-area-inset-left, 0px)); bottom: 22px; }
@@ -2510,6 +2718,217 @@ button { cursor: pointer; }
   .menu-screen[data-view='settings'] .menu-view[data-menu-panel='settings'] {
     animation: none !important;
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Skirmish deployment                                                */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The deployment screen is one fixed composition: a command rail on the left
+ * and a single theatre frame beside it. Nothing in it scrolls at laptop
+ * heights. The rail holds the two nations, their colours and the three battle
+ * settings; the frame holds the battlefield list, the large map and the
+ * mission copy. Rows are compact and the explanatory notes now live on the
+ * controls as tooltips, because vertical space is the scarce resource.
+ */
+.menu-screen[data-view='skirmish'] .menu-nav {
+  overflow: hidden;
+  gap: 10px;
+  padding: 14px 14px 14px 20px;
+}
+.menu-screen[data-view='skirmish'] .menu-nav-level.menu-nav-options:not([hidden]) {
+  flex: 1;
+  min-height: 0;
+  gap: 9px;
+  padding: 0;
+}
+.skirmish-options .menu-crumb { margin: 0 0 2px; flex: 0 0 auto; }
+.skirmish-rail-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.skirmish-rail-head .menu-nav-head { margin: 0; }
+.rail-tag {
+  font-family: var(--mono); font-size: 8px; letter-spacing: 0.16em;
+  padding: 2px 5px; border: 1px solid rgba(224, 163, 74, 0.42); color: var(--amber-soft);
+}
+
+.side-card {
+  display: flex; flex-direction: column; gap: 7px;
+  padding: 8px 10px 9px; border: 1px solid var(--line);
+  background: rgba(9, 14, 16, 0.72);
+}
+.side-card-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.16em; color: var(--ink-dim);
+}
+.side-card-mark { width: 6px; height: 6px; flex: none; }
+.side-card-mark.blue { background: var(--blue); box-shadow: 0 0 8px rgba(82, 197, 230, 0.7); }
+.side-card-mark.red { background: var(--red); box-shadow: 0 0 8px rgba(239, 108, 77, 0.7); }
+.side-card .nation-field { gap: 0; }
+.side-card .nation-picker { width: 100%; }
+.side-card .nation-picker-btn { min-height: 34px; padding: 4px 9px; font-size: 10.5px; }
+.side-card .nation-picker-list { width: 100%; }
+
+.side-settings {
+  display: flex; flex-direction: column; gap: 6px;
+  padding-top: 9px; border-top: 1px solid rgba(167, 190, 184, 0.12);
+}
+/* Four short labels share one rail row: fit them rather than clip the row. */
+.side-settings { min-width: 0; }
+.side-settings .difficulty-options { width: 100%; min-width: 0; overflow: hidden; }
+.side-settings .difficulty-btn { min-height: 28px; padding: 0 2px; font-size: 7.5px; letter-spacing: 0.04em; }
+
+/* Weather gets its own band under its label. Seven profiles read as four then
+   three: squeezing seven names into one rail row made every one of them
+   unreadable. */
+.rail-block { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.weather-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; min-width: 0; }
+.weather-grid .difficulty-btn {
+  min-height: 25px; padding: 0 2px; border: 1px solid var(--line);
+  font-size: 7.5px; letter-spacing: 0.03em;
+}
+.weather-grid .difficulty-btn:hover { border-color: var(--line-strong); }
+.weather-grid .difficulty-btn[aria-pressed='true'] { border-color: var(--amber); }
+.rail-row {
+  display: grid; grid-template-columns: 54px minmax(0, 1fr);
+  align-items: center; gap: 8px; min-height: 30px;
+}
+.rail-row-label {
+  font-family: var(--mono); font-size: 8px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--ink-faint);
+}
+
+/* One dropdown treatment for difficulty and both colour fields. */
+.select-wrap { position: relative; display: block; min-width: 0; }
+.select-swatch {
+  position: absolute; left: 8px; top: 50%; width: 9px; height: 9px; margin-top: -4px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55); pointer-events: none;
+}
+.menu-select {
+  width: 100%; min-height: 30px; padding: 0 24px 0 9px;
+  border: 1px solid var(--line); border-radius: 0;
+  background-color: rgba(10, 15, 17, 0.72); color: var(--ink);
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase;
+  appearance: none; cursor: pointer;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ink-dim) 50%),
+    linear-gradient(135deg, var(--ink-dim) 50%, transparent 50%);
+  background-position: calc(100% - 13px) 50%, calc(100% - 8px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+.select-wrap .menu-select { padding-left: 23px; }
+.menu-select:hover { border-color: var(--line-strong); }
+.menu-select:focus-visible { outline: 1px solid var(--amber); outline-offset: 1px; }
+.menu-select option { background: #0c1215; color: var(--ink); }
+.skirmish-options .menu-actions { margin-top: auto; flex: 0 0 auto; }
+
+/* The stage is the board, and the board is exactly the viewport's leftover. */
+.menu-screen[data-view='skirmish'] .menu-stage {
+  display: flex; overflow: hidden;
+  padding: 14px clamp(14px, 2.2vw, 28px) 14px;
+}
+.menu-screen[data-view='skirmish'] .menu-view { width: 100%; height: 100%; max-width: none; }
+
+.skirmish-board {
+  position: relative; display: flex; flex-direction: column; gap: 10px;
+  width: 100%; height: 100%; min-height: 0; padding: 12px;
+  border: 1px solid rgba(167, 190, 184, 0.26);
+  background:
+    radial-gradient(ellipse at 50% 8%, rgba(46, 68, 74, 0.55), transparent 68%),
+    linear-gradient(180deg, rgba(9, 14, 16, 0.92), rgba(5, 9, 11, 0.96));
+  box-shadow: inset 0 0 90px rgba(0, 0, 0, 0.6), var(--shadow);
+}
+.board-corner { position: absolute; width: 15px; height: 15px; border: 1px solid rgba(224, 163, 74, 0.7); pointer-events: none; }
+.board-corner.tl { top: 6px; left: 6px; border-right: 0; border-bottom: 0; }
+.board-corner.tr { top: 6px; right: 6px; border-left: 0; border-bottom: 0; }
+.board-corner.bl { bottom: 6px; left: 6px; border-right: 0; border-top: 0; }
+.board-corner.br { bottom: 6px; right: 6px; border-left: 0; border-top: 0; }
+
+.board-grid {
+  display: grid; grid-template-columns: minmax(200px, 288px) minmax(0, 1fr);
+  gap: 10px; flex: 1; min-height: 0;
+}
+.board-col { display: flex; flex-direction: column; gap: 8px; min-height: 0; padding: 8px; border: 1px solid var(--line); background: rgba(8, 12, 14, 0.62); }
+.board-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 0 2px 6px; border-bottom: 1px solid rgba(167, 190, 184, 0.14);
+}
+.board-title { font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--amber-soft); }
+.board-head .mono { font-family: var(--mono); font-size: 8px; letter-spacing: 0.1em; color: var(--ink-faint); }
+
+/* Battlefield list: dense rows, one line each, scrolling only if the list
+   outgrows the frame (it does not at 800 px, it may at 620 px). */
+.board-list .map-cards {
+  display: flex; flex-direction: column; gap: 0; flex: 1; min-height: 0;
+  margin: 0; padding: 0; max-height: none; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--line) transparent;
+}
+.board-list .map-card {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  min-height: 21px; padding: 2px 7px; border: 0; border-bottom: 1px solid rgba(167, 190, 184, 0.07);
+  background: transparent; color: var(--ink-dim); text-align: left;
+  font-family: var(--sans); font-size: 11px; line-height: 1.2;
+  transition: background 120ms ease, color 120ms ease;
+}
+.board-list .map-card:hover { transform: none; background: rgba(241, 194, 126, 0.1); color: var(--amber-soft); border-color: rgba(241, 194, 126, 0.16); }
+.board-list .map-card.on { background: var(--amber); color: #0c1113; border-color: transparent; }
+.map-card-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-card-size { flex: none; font-family: var(--mono); font-size: 8px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-faint); }
+.board-list .map-card:hover .map-card-size { color: inherit; opacity: 0.8; }
+.board-list .map-card.on .map-card-size { color: inherit; opacity: 0.72; }
+
+.board-preview .brief-map { flex: 1; min-height: 0; margin: 0; aspect-ratio: auto; }
+.map-legend {
+  display: flex; align-items: center; gap: 14px; padding-top: 4px;
+  font-family: var(--mono); font-size: 8px; letter-spacing: 0.1em; color: var(--ink-dim);
+}
+.map-legend .mono { margin-left: auto; color: var(--ink-faint); }
+.legend-dot { display: inline-block; width: 6px; height: 6px; margin-right: 5px; vertical-align: 1px; }
+.legend-dot.blue { background: var(--blue); }
+.legend-dot.red { background: var(--red); }
+
+.board-foot {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  gap: 16px; align-items: end; flex: 0 0 auto;
+  padding-top: 8px; border-top: 1px solid rgba(167, 190, 184, 0.14);
+}
+.board-copy { min-width: 0; }
+.board-copy .eyebrow { margin: 0 0 3px; font-size: 8px; letter-spacing: 0.2em; }
+.board-copy h2 { margin: 0 0 4px; font-family: var(--display); font-size: clamp(17px, 1.9vw, 23px); line-height: 1; letter-spacing: 0.01em; text-transform: uppercase; }
+.board-copy .lede {
+  margin: 0; max-width: 58ch; font-size: 10.5px; line-height: 1.45; color: var(--ink-dim);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.board-foot .brief-rows { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 12px; padding: 0; }
+.board-foot .brief-rows div { gap: 2px; padding: 4px 0; border-bottom: 1px solid rgba(167, 190, 184, 0.08); }
+.board-foot .brief-rows span { font-size: 7.5px; letter-spacing: 0.12em; }
+.board-foot .brief-rows b { font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+@media (max-width: 1180px) {
+  .board-grid { grid-template-columns: minmax(170px, 232px) minmax(0, 1fr); }
+  .menu-screen[data-view='skirmish'] .menu-nav { padding: 12px 12px 12px 16px; }
+}
+@media (max-height: 700px) {
+  .menu-screen[data-view='skirmish'] .menu-nav { padding: 10px 12px 10px 16px; gap: 7px; }
+  .menu-screen[data-view='skirmish'] .menu-stage { padding: 10px 14px; }
+  .skirmish-board { gap: 7px; padding: 9px; }
+  .side-card { gap: 5px; padding: 6px 8px 7px; }
+  .skirmish-options .menu-actions .btn-large { min-height: 42px; }
+  .board-foot .brief-rows div { padding: 3px 0; }
+}
+@media (max-width: 900px), (max-height: 620px) {
+  /* Small screens lose the fixed composition: the rail returns to the normal
+     scrollable form and the board stacks, so the map stays readable. */
+  .menu-screen[data-view='skirmish'] .menu-nav { overflow-y: auto; }
+  .menu-screen[data-view='skirmish'] .menu-stage { overflow-y: auto; display: block; }
+  .menu-screen[data-view='skirmish'] .menu-view { height: auto; }
+  .skirmish-board { height: auto; min-height: 0; }
+  .board-grid { grid-template-columns: minmax(0, 1fr); }
+  .board-list .map-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: 132px; }
+  .board-list .map-card { min-height: 30px; border-right: 1px solid rgba(167, 190, 184, 0.07); }
+  .board-preview .brief-map { flex: 0 0 auto; aspect-ratio: 16 / 9; }
+  .board-foot { grid-template-columns: minmax(0, 1fr); gap: 8px; align-items: start; }
+  .board-copy .lede { -webkit-line-clamp: 1; }
 }
 
 /* ------------------------------------------------------------------ */
@@ -2703,6 +3122,7 @@ body.orientation-locked { overflow: hidden; touch-action: none; }
 .unit-card .u-reason.materials { color: var(--amber-soft); }
 .unit-card .u-reason.requisition { color: var(--blue-soft); }
 .unit-card .u-reason.queue { color: var(--red-soft); }
+.unit-card .u-reason.research { color: var(--blue-soft); }
 .unit-card .u-reason.tech { color: var(--ink-dim); }
 .unit-card .u-reason.other { color: var(--ink-faint); }
 /* Temporary affordability and tech locks share the dashed card silhouette but

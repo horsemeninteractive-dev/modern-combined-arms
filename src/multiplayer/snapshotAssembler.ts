@@ -6,7 +6,7 @@ import type {
   ProjectedProjectile,
   TeamSnapshot,
 } from './projection';
-import type { ContactRecord, SimEvent } from '../sim/types';
+import type { ContactRecord, SimEvent, SmokeCloud } from '../sim/types';
 import type { DeltaMessage, SyncMessage } from './protocol';
 
 /**
@@ -167,7 +167,7 @@ function validateEntity(value: unknown, worldWidth: number, worldHeight: number)
     [
       'id', 'kind', 'defId', 'owner', 'team', 'x', 'z', 'facing', 'turretFacing', 'hp', 'maxHp',
       'state', 'stance', 'buildProgress', 'construction', 'remembered', 'queue', 'rallyX',
-      'rallyZ', 'targetId', 'garrisonId', 'xp',
+      'rallyZ', 'targetId', 'garrisonId', 'xp', 'upgrades', 'modules', 'cooldowns',
     ],
     'Entity',
   );
@@ -202,6 +202,24 @@ function validateEntity(value: unknown, worldWidth: number, worldHeight: number)
     value.xp === undefined || (isNum(value.xp) && value.xp >= 0),
     'Entity veterancy is invalid.',
   );
+  for (const key of ['upgrades', 'modules'] as const) {
+    const list = value[key];
+    if (list === undefined) continue;
+    assert(value.remembered === undefined, `A remembered entity must not carry ${key}.`);
+    assert(Array.isArray(list) && list.length <= 32, `Entity ${key} is invalid.`);
+    for (const id of list) assert(isText(id, 64), `Entity ${key} id is invalid.`);
+    assert(new Set(list).size === list.length, `Entity ${key} repeats an id.`);
+  }
+  if (value.cooldowns !== undefined) {
+    assert(value.remembered === undefined, 'A remembered entity must not carry cooldowns.');
+    assert(isRecord(value.cooldowns), 'Entity cooldowns are invalid.');
+    const entries = Object.entries(value.cooldowns);
+    assert(entries.length <= 16, 'Entity has too many cooldowns.');
+    for (const [id, remaining] of entries) {
+      assert(isText(id, 64), 'Cooldown ability id is invalid.');
+      assert(isNum(remaining) && remaining > 0, 'Cooldown remaining time is invalid.');
+    }
+  }
   if (value.remembered === true) {
     assert(value.hp === null && value.maxHp === null, 'A remembered entity must not carry live hp.');
     assert(value.state === null && value.buildProgress === null, 'A remembered entity must not carry live state.');
@@ -209,13 +227,66 @@ function validateEntity(value: unknown, worldWidth: number, worldHeight: number)
   return value as unknown as ProjectedEntity;
 }
 
+/**
+ * Smoke clouds are visual and authoritative: the recipient validates the same
+ * geometry the server resolved, so no peer can draw a screen it cannot have.
+ */
+function validateSmoke(value: unknown, worldWidth: number, worldHeight: number): SmokeCloud[] {
+  assert(Array.isArray(value) && value.length <= 64, 'Smoke list is invalid.');
+  const clouds: SmokeCloud[] = [];
+  for (const raw of value) {
+    assert(isRecord(raw), 'Smoke cloud must be an object.');
+    checkKeys(
+      raw,
+      ['id', 'owner', 'team', 'x', 'z', 'radius', 'startTick', 'expiresTick'],
+      'Smoke cloud',
+    );
+    assert(isInt(raw.id, 1), 'Smoke cloud id is invalid.');
+    assert(isInt(raw.owner, -1), 'Smoke cloud owner is invalid.');
+    assert(isInt(raw.team, -1, 1), 'Smoke cloud team is invalid.');
+    assert(isNum(raw.x) && raw.x >= -1 && raw.x <= worldWidth + 1, 'Smoke cloud x is out of bounds.');
+    assert(isNum(raw.z) && raw.z >= -1 && raw.z <= worldHeight + 1, 'Smoke cloud z is out of bounds.');
+    assert(isNum(raw.radius) && raw.radius > 0 && raw.radius <= worldWidth, 'Smoke radius is invalid.');
+    assert(isInt(raw.startTick, 0), 'Smoke start tick is invalid.');
+    assert(isInt(raw.expiresTick, 0) && raw.expiresTick > raw.startTick, 'Smoke expiry is invalid.');
+    clouds.push({
+      id: raw.id,
+      owner: raw.owner,
+      team: raw.team,
+      x: raw.x,
+      z: raw.z,
+      radius: raw.radius,
+      startTick: raw.startTick,
+      expiresTick: raw.expiresTick,
+    });
+  }
+  assert(new Set(clouds.map((cloud) => cloud.id)).size === clouds.length, 'Smoke repeats a cloud id.');
+  return clouds.sort((a, b) => a.id - b.id);
+}
+
+function validateResearch(value: unknown): void {
+  assert(isRecord(value), 'Player research is invalid.');
+  checkKeys(value, ['completed', 'project'], 'Player research');
+  assert(Array.isArray(value.completed) && value.completed.length <= 64, 'Completed research is invalid.');
+  for (const id of value.completed) assert(isText(id, 64), 'Completed technology id is invalid.');
+  assert(new Set(value.completed).size === value.completed.length, 'Completed research repeats an id.');
+  if (value.project === null) return;
+  assert(isRecord(value.project), 'Research project is invalid.');
+  checkKeys(value.project, ['techId', 'remaining', 'total'], 'Research project');
+  assert(isText(value.project.techId, 64), 'Research project technology is invalid.');
+  assert(isNum(value.project.remaining) && value.project.remaining >= 0, 'Research progress is invalid.');
+  assert(isNum(value.project.total) && value.project.total > 0, 'Research duration is invalid.');
+  assert(value.project.remaining <= value.project.total, 'Research progress exceeds its duration.');
+}
+
 function validatePlayer(value: unknown): ProjectedPlayer {
   assert(isRecord(value), 'Player must be an object.');
   checkKeys(
     value,
-    ['id', 'name', 'factionId', 'team', 'mats', 'req', 'stats', 'defeated', 'relayCount'],
+    ['id', 'name', 'factionId', 'team', 'mats', 'req', 'stats', 'defeated', 'relayCount', 'research'],
     'Player',
   );
+  if (value.research !== undefined) validateResearch(value.research);
   assert(isInt(value.id, 0), 'Player id is invalid.');
   assert(isText(value.name, 80), 'Player name is invalid.');
   assert(isText(value.factionId, 64), 'Player faction is invalid.');
@@ -402,7 +473,7 @@ export class SnapshotAssembler {
       state,
       [
         'type', 'v', 'protocol', 'tick', 'team', 'map', 'fog', 'contacts', 'charted',
-        'players', 'entities', 'projectiles', 'events', 'result',
+        'smoke', 'players', 'entities', 'projectiles', 'events', 'result',
       ],
       'Sync state',
     );
@@ -431,6 +502,10 @@ export class SnapshotAssembler {
       validateEntity(entity, map.width * map.tileSize, map.height * map.tileSize),
     );
     assert(new Set(entities.map((entity) => entity.id)).size === entities.length, 'Sync repeats an entity id.');
+    // A build that predates smoke simply sends none.
+    const smoke = state.smoke === undefined
+      ? []
+      : validateSmoke(state.smoke, map.width * map.tileSize, map.height * map.tileSize);
     assert(Array.isArray(state.projectiles) && state.projectiles.length <= MAX_IDS, 'Sync projectiles are invalid.');
     const projectiles = state.projectiles.map((projectile) => validateProjectile(projectile));
     assert(
@@ -453,6 +528,7 @@ export class SnapshotAssembler {
       charted: (state.charted as number[]).slice(),
       players,
       entities,
+      smoke,
       projectiles,
       events,
       result,
@@ -494,7 +570,7 @@ export class SnapshotAssembler {
     assert(isRecord(changes), 'Delta changes must be an object.');
     checkKeys(
       changes,
-      ['fog', 'contacts', 'charted', 'players', 'entities', 'projectiles', 'events', 'result'],
+      ['fog', 'contacts', 'charted', 'smoke', 'players', 'entities', 'projectiles', 'events', 'result'],
       'Delta changes',
     );
 
@@ -517,6 +593,10 @@ export class SnapshotAssembler {
       for (const id of changes.charted) assert(isInt(id, 1), 'Delta charted id is invalid.');
       charted = (changes.charted as number[]).slice();
     }
+    const smoke =
+      changes.smoke === undefined
+        ? null
+        : validateSmoke(changes.smoke, worldWidth, worldHeight);
     let players: ProjectedPlayer[] | null = null;
     if (changes.players !== undefined) {
       const block = changes.players as unknown as Record<string, unknown>;
@@ -582,6 +662,7 @@ export class SnapshotAssembler {
     }
     if (contacts) current.contacts = contacts;
     if (charted) current.charted = charted;
+    if (smoke) current.smoke = smoke;
     if (players) {
       for (const player of players) {
         const index = current.players.findIndex((entry) => entry.id === player.id);

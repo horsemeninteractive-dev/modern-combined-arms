@@ -20,15 +20,17 @@ function checksum(text: string): string {
 
 /**
  * Phase 2A.6 deployed stress setup and first-tick checksums. Both were
- * re-baselined after the day/night detection, bridge-deck, reachable-stand and
- * unit-veterancy phases changed what the opening order produces (a formation
- * slot the hull cannot drive to is now walked out to reachable ground instead
- * of being refused) and what the state hash contains (veterancy carries the
- * crew's experience per entity). The workload, its ground-unit count and the
+ * re-baselined after the day/night detection, bridge-deck, reachable-stand,
+ * unit-veterancy and research phases changed what the opening order produces (a
+ * formation slot the hull cannot drive to is now walked out to reachable ground
+ * instead of being refused) and what the state hash contains (veterancy carries
+ * the crew's experience per entity, research carries each player's completed
+ * technologies and active project, and the ability layer adds each hull's reload
+ * clock plus the live smoke list). The workload, its ground-unit count and the
  * per-tick order accounting are unchanged.
  */
-const DEPLOYED_STRESS_SETUP = 'dae9d509a4fe6587';
-const DEPLOYED_STRESS_FIRST_TICK = '2b9a929f42e072e4';
+const DEPLOYED_STRESS_SETUP = 'b52e483d514948ca';
+const DEPLOYED_STRESS_FIRST_TICK = '2e6080094ae40ea5';
 
 function groundUnitCount(game: Game): number {
   return game.state.entities.filter(

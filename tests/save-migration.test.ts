@@ -25,6 +25,8 @@ function legacySave(): { save: any; original: Game } {
     p.nationId = p.factionId;
     delete p.factionId;
     delete p.relayCount;
+    // A version 1 battle predates research entirely.
+    delete p.research;
   }
   return { save, original };
 }
@@ -33,7 +35,7 @@ describe('save format versioning', () => {
   it('writes the current version', () => {
     const game = new Game(createIslandAssault(), { enableAI: false });
     expect(game.toSave().version).toBe(SAVE_FORMAT_VERSION);
-    expect(SAVE_FORMAT_VERSION).toBe(2);
+    expect(SAVE_FORMAT_VERSION).toBe(3);
   });
 
   it('upgrades a v1 save to the current schema', () => {
@@ -53,6 +55,8 @@ describe('save format versioning', () => {
     for (const p of state.players) {
       expect(typeof p.factionId).toBe('string');
       expect(p.incomeHistory).toHaveLength(60);
+      // Research is initialised, never granted, when an older battle loads.
+      expect(p.research).toEqual({ completed: [], project: null });
     }
   });
 

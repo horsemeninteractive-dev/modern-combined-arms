@@ -1970,6 +1970,228 @@ function watchtowerDressing(): MeshBuffers {
   return b.build();
 }
 
+/* -------------------------------------------------------------------------
+ * National building variants
+ *
+ * Each is its parent structure with one authored difference, so the family
+ * stays readable from the tactical camera while the variant is recognisable:
+ * a light observation post, a bermed works, a tented strip, a taller SAM mast
+ * and a lattice listening bureau. Nothing here changes the footprint.
+ * ---------------------------------------------------------------------- */
+
+/** Lithuanian light observation post: a pad, a parapet and a sensor mast. */
+function buildForwardPost(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.box(0, 0.18, 0, 6.4, 0.36, 6.4, PALETTE.concreteDark);
+  b.box(0, 0.44, 0, 5.8, 0.18, 5.8, PALETTE.concrete);
+  sandbagWall(b, 0, 2.6, 4.6, true, 0.5);
+  sandbagWall(b, 0, -2.6, 4.6, true, 0.5);
+  sandbagWall(b, -2.6, 0, 4.0, false, 0.5);
+  // Two-post mast with a compact sensor head instead of the shared dish.
+  b.box(-0.5, 2.3, 0.3, 0.16, 3.4, 0.16, PALETTE.metal);
+  b.box(0.4, 2.3, -0.3, 0.14, 3.0, 0.14, PALETTE.metal);
+  b.box(-0.2, 4.0, 0.1, 1.0, 0.46, 0.66, PALETTE.hullDark);
+  b.box(-0.2, 4.02, 0.43, 0.62, 0.28, 0.04, PALETTE.glass);
+  b.box(0.1, 3.55, 0.1, 1.1, 0.10, 0.10, PALETTE.metal);
+  // Generator box and a shallow command dugout.
+  b.box(1.9, 0.9, 1.6, 1.2, 0.9, 1.0, PALETTE.oliveDark);
+  b.box(-1.9, 0.8, -1.6, 1.4, 0.7, 1.4, PALETTE.concreteDark);
+  b.box(-1.9, 1.18, -1.6, 1.1, 0.10, 1.1, PALETTE.olive);
+  b.box(0.2, 0.58, 0, 2.2, 0.02, 2.2, PALETTE.hull, 0.82);
+  ownershipPanel(b, 0.4, 0.66, -1.9, 2.0, 2.0);
+  return b.build();
+}
+
+/** Applied research centre: a laboratory hall, an instrument annex and a sensor mast. */
+/**
+ * Applied Research Centre: a laboratory campus for a 4x3 footprint.
+ *
+ * The hall, annex, mast and apron are sized to the ground the building really
+ * occupies (16 x 12 world units). The first version was drawn at roughly half
+ * that and read as a two-by-two shed dropped in the middle of its own footprint,
+ * which also left the selection outline and the banner floating around it.
+ */
+function buildResearchCentre(): MeshBuffers {
+  const b = new MeshBuilder();
+  // Paved apron out to the footprint edge.
+  b.box(0, 0.16, 0, 15.5, 0.32, 11.4, PALETTE.concreteDark);
+  b.box(0, 0.46, 0, 14.9, 0.28, 10.8, PALETTE.concrete);
+  // Main hall with a clerestory strip; the annex is deliberately lower.
+  b.box(-2.6, 2.55, -0.4, 9.4, 3.9, 8.2, PALETTE.oliveDark);
+  b.box(-2.6, 4.65, -0.4, 9.7, 0.3, 8.5, PALETTE.concreteDark);
+  b.box(-2.6, 3.62, 3.7, 8.6, 0.62, 0.08, PALETTE.glass);
+  b.box(-2.6, 1.72, 3.9, 1.8, 1.5, 0.08, PALETTE.glassDark);
+  b.box(-6.1, 1.35, 3.9, 1.0, 0.9, 0.08, PALETTE.glassDark);
+  // Low instrument annex on the east side, with a glazed gallery facing the yard.
+  b.box(4.9, 1.7, 0.8, 4.6, 2.4, 7.4, PALETTE.hullDark);
+  b.box(4.9, 3.0, 0.8, 4.8, 0.2, 7.6, PALETTE.hull);
+  b.box(2.58, 1.85, 2.4, 0.06, 0.7, 2.6, PALETTE.glass);
+  b.box(4.9, 1.85, 4.62, 2.6, 0.7, 0.06, PALETTE.glass);
+  // Instrument mast and a compact dish, lower than the radar array's.
+  b.box(-6.5, 4.6, -4.3, 0.18, 9.2, 0.18, PALETTE.metal);
+  b.box(-6.5, 8.6, -4.3, 2.0, 0.12, 0.7, PALETTE.hullDark);
+  b.box(-6.5, 8.9, -3.9, 1.5, 0.5, 0.06, PALETTE.glass);
+  // Cable duct and a warning beacon at the service door.
+  b.box(0.4, 0.66, -4.9, 5.4, 0.22, 0.26, PALETTE.darkMetal);
+  b.box(4.9, 3.2, 4.1, 0.2, 0.2, 0.2, PALETTE.warning);
+  ownershipPanel(b, -2.6, 4.92, -0.4, 4.6, 3.0);
+  return b.build();
+}
+
+/** Belarusian signals bureau: a hut under a six-metre lattice mast. */
+function buildSignalsBureau(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.box(0, 0.16, 0, 6.6, 0.32, 6.6, PALETTE.concreteDark);
+  b.box(0, 0.44, 0, 6.0, 0.20, 6.0, PALETTE.concrete);
+  b.box(0, 0.88, 0, 2.6, 0.70, 2.6, PALETTE.oliveDark);
+  b.box(0, 1.36, 0, 2.2, 0.26, 2.2, PALETTE.olive);
+  b.box(1.42, 1.02, 0, 0.05, 0.42, 0.8, PALETTE.glassDark);
+  // Four-legged lattice with cross-bracing and three antenna fins.
+  for (const x of [-0.66, 0.66]) {
+    for (const z of [-0.66, 0.66]) b.box(x, 3.5, z, 0.12, 5.0, 0.12, PALETTE.metal);
+  }
+  for (const y of [1.9, 3.1, 4.3, 5.5]) {
+    b.box(0, y, 0.66, 1.44, 0.08, 0.08, PALETTE.metal);
+    b.box(0, y, -0.66, 1.44, 0.08, 0.08, PALETTE.metal);
+    b.box(0.66, y, 0, 0.08, 0.08, 1.44, PALETTE.metal);
+    b.box(-0.66, y, 0, 0.08, 0.08, 1.44, PALETTE.metal);
+  }
+  for (const y of [3.4, 3.9, 4.4]) b.box(0, y, 0, 1.9, 0.06, 1.9, PALETTE.darkMetal);
+  b.box(0, 6.14, 0, 0.5, 0.42, 0.5, PALETTE.hullDark);
+  b.box(0, 6.40, 0, 0.18, 0.12, 0.18, PALETTE.warning);
+  ownershipPanel(b, 0, 1.52, 0, 2.0, 2.0);
+  return b.build();
+}
+
+/** Concrete blast walls and a second roof panel for the Polish works. */
+function armourWorksDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  for (const x of [-7.0, 6.6]) {
+    b.box(x, 1.4, 4.4, 1.0, 2.2, 2.6, PALETTE.concreteDark);
+    b.box(x, 1.4, -4.4, 1.0, 2.2, 2.6, PALETTE.concreteDark);
+    b.box(x, 2.6, 4.4, 1.2, 0.2, 2.8, PALETTE.concrete);
+    b.box(x, 2.6, -4.4, 1.2, 0.2, 2.8, PALETTE.concrete);
+  }
+  b.box(0, 1.1, 5.55, 9.0, 0.9, 0.5, PALETTE.concreteDark);
+  b.box(-3.6, 6.42, -2.6, 2.2, 0.02, 2.2, PALETTE.hull, 0.86);
+  b.box(4.9, 0.95, 5.0, 1.0, 0.5, 0.8, PALETTE.warning);
+  return b.build();
+}
+
+/** Tented servicing line and fuel bladders for the British expeditionary strip. */
+function expeditionaryDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  for (const x of [1.2, 5.4, 9.4]) {
+    b.box(x, 0.95, -6.2, 3.2, 0.6, 3.6, PALETTE.canvas);
+    gableRoof(b, x, 1.22, -6.2, 3.4, 3.8, 1.0, PALETTE.canvas);
+    b.box(x, 0.55, -4.3, 3.6, 0.3, 0.2, PALETTE.oliveDark);
+  }
+  for (const x of [4.0, 6.0]) {
+    b.cylinder(x, 1.1, 6.0, 1.1, 1.8, 10, PALETTE.olive);
+    b.cylinder(x, 2.05, 6.0, 1.15, 0.16, 10, PALETTE.hullDark);
+  }
+  b.box(2.4, 0.62, 6.0, 5.0, 0.2, 0.2, PALETTE.metal);
+  b.box(8.6, 0.62, 1.4, 2.3, 0.02, 2.3, PALETTE.hull, 0.84);
+  b.box(8.6, 0.44, 1.4, 2.6, 0.18, 2.6, PALETTE.hullDark);
+  return b.build();
+}
+
+/** Taller fire-control mast for the Russian long-range SAM site. */
+function longRangeSamMast(): MeshBuffers {
+  const b = new MeshBuilder();
+  for (const x of [-2.55, -1.85]) {
+    for (const z of [-0.35, 0.35]) b.box(x, 4.5, z, 0.10, 6.0, 0.10, PALETTE.metal);
+  }
+  for (const y of [2.4, 4.2, 6.0]) {
+    b.box(-2.2, y, 0.35, 0.80, 0.06, 0.06, PALETTE.metal);
+    b.box(-2.2, y, -0.35, 0.80, 0.06, 0.06, PALETTE.metal);
+  }
+  b.box(-2.2, 7.6, 0, 1.5, 0.72, 0.30, PALETTE.hullDark);
+  b.box(-1.52, 7.6, 0, 0.10, 0.52, 0.22, PALETTE.glass);
+  b.box(-2.2, 8.05, 0, 1.2, 0.18, 0.40, PALETTE.metal);
+  b.box(3.1, 1.1, 2.9, 0.5, 0.5, 0.5, PALETTE.warning);
+  return b.build();
+}
+
+/** Mobilisation hall dressing: a timber annexe, a sandbag line and a mast. */
+function garrisonBarracksDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  // Lean-to annexe along the rear wall.
+  b.box(-2.0, 1.15, -4.55, 5.0, 2.3, 2.4, PALETTE.concreteDark);
+  gableRoof(b, -2.0, 2.42, -4.55, 5.2, 2.6, 0.9, PALETTE.canvas);
+  // Sandbag line across the front, with the squad bay behind it.
+  for (const x of [-3.4, -1.7, 0, 1.7, 3.4]) {
+    b.box(x, 0.34, 4.05, 1.6, 0.62, 0.55, PALETTE.oliveDark);
+    b.box(x, 0.92, 4.02, 1.5, 0.52, 0.5, PALETTE.olive);
+  }
+  // Whip antenna and a fuel drum rack.
+  b.cylinder(4.2, 2.6, -2.4, 0.07, 3.2, 6, PALETTE.metal);
+  b.box(4.2, 4.28, -2.4, 0.16, 0.16, 0.16, PALETTE.warning);
+  for (const z of [-2.0, -1.2]) b.cylinder(-4.4, 0.62, z, 0.5, 1.24, 10, PALETTE.oliveDark);
+  return b.build();
+}
+
+/** Hardened naval yard dressing: blast walls and a covered fitting-out gantry. */
+function kockumsDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  for (const z of [-8.4, 8.4]) {
+    b.box(-6.4, 1.8, z, 2.4, 3.4, 1.0, PALETTE.concreteDark);
+    b.box(-6.4, 3.6, z, 2.6, 0.22, 1.2, PALETTE.concrete);
+  }
+  // Roofed gantry over the inner basin: four legs and a beam.
+  for (const x of [-2.0, 6.0]) {
+    for (const z of [-5.0, 5.0]) {
+      b.box(x, 3.6, z, 0.34, 7.2, 0.34, PALETTE.metal);
+    }
+  }
+  b.box(2.0, 7.35, 0, 8.8, 0.3, 0.5, PALETTE.metal);
+  b.box(2.0, 7.35, -5.0, 8.8, 0.3, 0.4, PALETTE.metal);
+  b.box(2.0, 7.35, 5.0, 8.8, 0.3, 0.4, PALETTE.metal);
+  b.box(2.0, 6.6, 0, 1.4, 1.2, 1.4, PALETTE.hullDark);
+  b.box(2.0, 5.9, 0, 0.2, 0.3, 0.2, PALETTE.warning);
+  return b.build();
+}
+
+/** Dispersed shore site dressing: a revetment, a launch truck and cable runs. */
+function noorDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  // Sandbag revetment open to the seaward side.
+  for (const x of [-2.4, -1.2, 0, 1.2, 2.4]) {
+    b.box(x, 0.28, -2.2, 1.3, 0.52, 0.5, PALETTE.oliveDark);
+  }
+  for (const z of [-1.2, 0, 1.2]) {
+    b.box(2.6, 0.28, z, 0.5, 0.52, 1.3, PALETTE.oliveDark);
+    b.box(-2.6, 0.28, z, 0.5, 0.52, 1.3, PALETTE.oliveDark);
+  }
+  // Launcher truck parked behind the wall.
+  b.box(-1.5, 0.55, 2.4, 2.6, 0.6, 1.4, PALETTE.olive);
+  b.box(-2.4, 1.05, 2.4, 1.0, 0.7, 1.3, PALETTE.hullDark);
+  for (const x of [-2.4, -0.6]) b.cylinder(x, 0.32, 2.4, 0.32, 0.24, 8, PALETTE.rubber);
+  // Cable spool and a ranging mast.
+  b.cylinder(1.9, 0.42, 2.0, 0.42, 0.5, 10, PALETTE.darkMetal);
+  b.cylinder(-2.9, 1.7, 0.4, 0.06, 3.4, 6, PALETTE.metal);
+  return b.build();
+}
+
+/** Casemate dressing for the North Korean anti-tank strongpoint. */
+function entrenchedAtGunDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  // Timber-and-concrete walls on three sides, open to the front.
+  b.box(0, 0.95, -2.5, 4.6, 1.9, 0.7, PALETTE.concreteDark);
+  b.box(-2.2, 0.9, -0.4, 0.7, 1.8, 3.6, PALETTE.concreteDark);
+  b.box(2.2, 0.9, -0.4, 0.7, 1.8, 3.6, PALETTE.concreteDark);
+  b.box(0, 1.98, -2.5, 4.9, 0.22, 0.9, PALETTE.concrete);
+  b.box(-2.2, 1.88, -0.4, 0.9, 0.2, 3.9, PALETTE.concrete);
+  b.box(2.2, 1.88, -0.4, 0.9, 0.2, 3.9, PALETTE.concrete);
+  // Sandbag apron and a ready-ammunition stack.
+  for (const x of [-2.0, -0.8, 0.4, 1.6]) {
+    b.box(x, 0.24, 1.9, 1.1, 0.46, 0.6, PALETTE.oliveDark);
+  }
+  b.box(-3.0, 0.5, 1.4, 0.8, 1.0, 0.8, PALETTE.olive);
+  b.box(-3.0, 1.08, 1.4, 0.88, 0.14, 0.88, PALETTE.oliveDark);
+  return b.build();
+}
+
 const STYLES: Record<string, BuildingStyle> = {
   commandPost: {
     body: buildCommandPost(),
@@ -1990,6 +2212,7 @@ const STYLES: Record<string, BuildingStyle> = {
     rotor: { mesh: buildAirfieldRadar(), offset: [8.4, 8.35, -7.0], rate: 1.5 },
   },
   shipyard: { body: buildShipyard() },
+  researchCentre: { body: buildResearchCentre() },
   // The shipyard has no shutter: its corvettes launch from the open slipway
   // basin, not through a door in a wall it does not have.
   samBattery: { body: buildSam() },
@@ -2002,6 +2225,35 @@ const STYLES: Record<string, BuildingStyle> = {
     body: buildBunkerBody(),
     turret: buildMgNestTurret(),
     turretOffset: [0, 1.55, 0],
+  },
+  forwardPost: {
+    body: buildForwardPost(),
+    rotor: { mesh: buildRadarDish(), offset: [-0.2, 4.05, 0.1], rate: 1.15 },
+  },
+  signalsBureau: { body: buildSignalsBureau() },
+  armourWorks: {
+    body: mergeMeshes(buildFactory(), armourWorksDressing()),
+    door: { mesh: buildFactoryDoor(), offset: [-0.5, 4.45, 4.9], retract: 0.92 },
+  },
+  expeditionaryAirfield: {
+    body: mergeMeshes(buildAirfield(), expeditionaryDressing()),
+    door: { mesh: buildHangarDoor(), offset: [-8.2, 3.85, -3.36], retract: 0.9 },
+  },
+  longRangeSam: { body: mergeMeshes(buildSam(), longRangeSamMast()) },
+  garrisonBarracks: {
+    body: mergeMeshes(buildBarracks(), garrisonBarracksDressing()),
+    door: { mesh: buildBarracksDoor(), offset: [2.6, 2.45, 2.74], retract: 0.9 },
+  },
+  kockumsYard: { body: mergeMeshes(buildShipyard(), kockumsDressing()) },
+  noorBattery: {
+    body: mergeMeshes(buildCoastalBatteryBody(), noorDressing()),
+    turret: buildCoastalBatteryTurret(),
+    turretOffset: [0, 1.35, 0],
+  },
+  entrenchedAtGun: {
+    body: mergeMeshes(buildAtTurretBody(), entrenchedAtGunDressing()),
+    turret: buildAtTurretGun(),
+    turretOffset: [0, 1.3, 0],
   },
   atTurret: {
     body: buildAtTurretBody(),

@@ -97,11 +97,35 @@ function hash(x: number, z: number): number {
   return n - Math.floor(n);
 }
 
+/**
+ * Where the raster actually landed inside its frame, as fractions of the
+ * frame. Briefing frames are flexible, the terrain is not: the raster is
+ * letterboxed to its own tile ratio, so the side markers have to be placed
+ * against this rect rather than the frame.
+ */
+export interface BriefMapRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** A label's position in frame percentages, given the drawn-rect fractions. */
+export function briefLabelPosition(
+  rect: BriefMapRect,
+  label: BriefMapLabel,
+): { left: number; top: number } {
+  return {
+    left: (rect.x + (label.x / 100) * rect.w) * 100,
+    top: (rect.y + (label.z / 100) * rect.h) * 100,
+  };
+}
+
 /** Paint the scenario into the briefing canvas at the element's pixel size. */
-export function drawBriefMap(canvas: HTMLCanvasElement, scenario: Scenario): void {
+export function drawBriefMap(canvas: HTMLCanvasElement, scenario: Scenario): BriefMapRect | null {
   const cssWidth = canvas.clientWidth;
   const cssHeight = canvas.clientHeight;
-  if (cssWidth < 4 || cssHeight < 4) return;
+  if (cssWidth < 4 || cssHeight < 4) return null;
   // Never below 1: a zoomed-out browser would otherwise render the raster
   // smaller than its box and blur it.
   const density = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
@@ -112,13 +136,25 @@ export function drawBriefMap(canvas: HTMLCanvasElement, scenario: Scenario): voi
     canvas.height = height;
   }
   const ctx = canvas.getContext('2d');
-  if (!ctx) return;
+  if (!ctx) return null;
   const raster = terrainRaster(scenario);
-  if (!raster) return;
+  if (!raster) return null;
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   ctx.fillStyle = '#071012';
   ctx.fillRect(0, 0, width, height);
-  ctx.drawImage(raster, 0, 0, width, height);
+  // Fit the terrain, never stretch it: a wide frame on a square battlefield
+  // used to smear the raster across the panel.
+  const ratio = scenario.width / scenario.height;
+  let drawW = width;
+  let drawH = width / ratio;
+  if (drawH > height) {
+    drawH = height;
+    drawW = height * ratio;
+  }
+  const dx = (width - drawW) / 2;
+  const dy = (height - drawH) / 2;
+  ctx.drawImage(raster, dx, dy, drawW, drawH);
+  return { x: dx / width, y: dy / height, w: drawW / width, h: drawH / height };
 }

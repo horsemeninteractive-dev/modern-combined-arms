@@ -8,7 +8,7 @@ type Extra = { defId: string; x: number; z: number; owner?: number };
 
 /**
  * Consumers authored as fixtures. The battle starts with a command post only
- * (80 supply, no draw), so extra structures are pushed into the scenario rather
+ * (50 supply, no draw), so extra structures are pushed into the scenario rather
  * than mocked.
  */
 const CONSUMERS: Extra[] = [
@@ -39,9 +39,9 @@ function engineerAt(game: Game, x: number, z: number) {
 describe('base power grid', () => {
   it('derives supply and demand from completed structures', () => {
     const game = gameWith();
-    expect(game.powerStatus(0)).toEqual({ supply: 80, demand: 0, ratio: 1, brownout: false });
+    expect(game.powerStatus(0)).toEqual({ supply: 50, demand: 0, ratio: 1, brownout: false });
     expect(game.powerSpeed(0)).toBe(1);
-    expect(game.powerStatus(1)).toEqual({ supply: 80, demand: 0, ratio: 1, brownout: false });
+    expect(game.powerStatus(1)).toEqual({ supply: 50, demand: 0, ratio: 1, brownout: false });
   });
 
   it('matches the structure definitions rather than a hard-coded table', () => {
@@ -56,31 +56,57 @@ describe('base power grid', () => {
   it('flags a deficit once demand exceeds supply and scales speed by the ratio', () => {
     const game = gameWith([...CONSUMERS, BARRACKS]);
     const power = game.powerStatus(0);
-    expect(power.supply).toBe(80);
+    expect(power.supply).toBe(50);
     expect(power.demand).toBe(93);
     expect(power.brownout).toBe(true);
-    expect(power.ratio).toBeCloseTo(80 / 93, 6);
-    expect(game.powerSpeed(0)).toBeCloseTo(80 / 93, 6);
+    expect(power.ratio).toBeCloseTo(50 / 93, 6);
+    expect(game.powerSpeed(0)).toBeCloseTo(50 / 93, 6);
   });
 
   it('restores full speed with a turbine plant and leaves headroom', () => {
     const game = gameWith([...CONSUMERS, BARRACKS, { defId: 'powerPlant', x: 44, z: 34 }]);
     const power = game.powerStatus(0);
-    expect(power.supply).toBe(180);
+    expect(power.supply).toBe(110);
     expect(power.demand).toBe(93);
     expect(power.brownout).toBe(false);
     expect(game.powerSpeed(0)).toBe(1);
+  });
+
+  it('needs a second plant once the base is fully built out', () => {
+    // One of every player-buildable structure: the single-plant grid that used
+    // to cover the whole tech tree now runs a deficit, so power stays a
+    // decision instead of a one-off purchase.
+    const full: Extra[] = [
+      { defId: 'barracks', x: 20, z: 38 },
+      { defId: 'factory', x: 26, z: 38 },
+      { defId: 'refinery', x: 32, z: 38 },
+      { defId: 'airfield', x: 38, z: 26 },
+      { defId: 'shipyard', x: 38, z: 34 },
+      { defId: 'radar', x: 44, z: 30 },
+      { defId: 'samBattery', x: 44, z: 40 },
+      { defId: 'mgNest', x: 20, z: 30 },
+      { defId: 'atTurret', x: 20, z: 34 },
+      { defId: 'coastalBattery', x: 44, z: 44 },
+      { defId: 'powerPlant', x: 22, z: 32 },
+    ];
+    const onePlant = gameWith(full);
+    expect(onePlant.powerStatus(0).supply).toBe(110);
+    expect(onePlant.powerStatus(0).demand).toBeGreaterThan(110);
+    expect(onePlant.powerStatus(0).brownout).toBe(true);
+    const twoPlants = gameWith([...full, { defId: 'powerPlant', x: 46, z: 32 }]);
+    expect(twoPlants.powerStatus(0).supply).toBe(170);
+    expect(twoPlants.powerStatus(0).brownout).toBe(false);
   });
 
   it('does not count construction sites or destroyed structures', () => {
     const game = gameWith([{ defId: 'powerPlant', x: 22, z: 32 }]);
     const plant = game.entitiesOf(0, 'building').find((e) => e.defId === 'powerPlant')!;
     plant.construction = true;
-    expect(game.powerStatus(0).supply).toBe(80);
+    expect(game.powerStatus(0).supply).toBe(50);
     plant.construction = false;
-    expect(game.powerStatus(0).supply).toBe(180);
+    expect(game.powerStatus(0).supply).toBe(110);
     plant.hp = 0;
-    expect(game.powerStatus(0).supply).toBe(80);
+    expect(game.powerStatus(0).supply).toBe(50);
     expect(game.powerStatus(0).demand).toBe(0);
   });
 
@@ -139,7 +165,7 @@ describe('brownout effects', () => {
     }
     // The site itself does not draw, so the ratio is read after that.
     const ratio = stressed.powerStatus(0).ratio;
-    expect(ratio).toBeCloseTo(80 / 85, 6);
+    expect(ratio).toBeCloseTo(50 / 85, 6);
 
     balanced.advance(60);
     stressed.advance(60);
@@ -209,8 +235,8 @@ describe('brownout effects', () => {
     const entered = gridNotices();
     expect(entered).toHaveLength(1);
     expect(entered[0].level).toBe('warning');
-    expect(entered[0].text).toMatch(/80 supply for 93 demand/);
-    expect(entered[0].text).toMatch(/86%/);
+    expect(entered[0].text).toMatch(/50 supply for 93 demand/);
+    expect(entered[0].text).toMatch(/54%/);
 
     game.advance(60);
     expect(gridNotices()).toHaveLength(1);
@@ -243,8 +269,8 @@ describe('brownout effects', () => {
     expect(gridAlertCopy(balanced.powerStatus(0))).toBeNull();
     const copy = gridAlertCopy(gameWith([...CONSUMERS, BARRACKS]).powerStatus(0));
     expect(copy).toContain('GRID DEFICIT');
-    expect(copy).toContain('80 SUPPLY / 93 DEMAND');
-    expect(copy).toContain('PRODUCTION AT 86%');
+    expect(copy).toContain('50 SUPPLY / 93 DEMAND');
+    expect(copy).toContain('PRODUCTION AT 54%');
   });
 
   it('builds turbine plants on a deficit instead of waiting', () => {

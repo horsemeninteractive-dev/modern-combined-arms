@@ -1,6 +1,8 @@
 import type { App } from '../app';
 import { BUILDINGS } from '../data/buildings';
 import { isGarrisonTarget, isRepairTarget } from './orderIntent';
+import { edgePanVector } from './hudLayout';
+import { battleCursor, cursorProperty } from './cursors';
 
 /** Arrow keys pan; A/S/H/C stay free for the orders the briefing advertises. */
 const PAN_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
@@ -39,10 +41,18 @@ export class InputController {
   private keys = new Set<string>();
   private lastClick = { id: 0, time: 0 };
   private touches = new Map<number, { x: number; y: number }>();
+  /**
+   * Window-level pointer position for edge panning. The canvas stops receiving
+   * pointer events once the cursor crosses onto the rail or a sidebar, which is
+   * exactly where three of the four edge-pan strips sit.
+   */
+  private edgePointer = { x: 0, y: 0, inside: false };
   private pinch: { distance: number; cx: number; cy: number } | null = null;
   private padButtons: boolean[] = [];
   private padIndex: number | null = null;
   private padWasActive = false;
+  /** Last cursor key applied, so the DOM is only touched when it changes. */
+  private cursorKey = '';
 
   constructor(app: App, canvas: HTMLCanvasElement) {
     this.app = app;
@@ -54,6 +64,13 @@ export class InputController {
     canvas.addEventListener('pointerleave', () => {
       this.app.pointer.over = false;
     });
+    window.addEventListener('pointermove', this.onWindowPointerMove, { passive: true });
+    window.addEventListener('blur', () => {
+      this.edgePointer.inside = false;
+    });
+    document.addEventListener('pointerout', (event) => {
+      if (!event.relatedTarget) this.edgePointer.inside = false;
+    });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     canvas.addEventListener('wheel', this.onWheel, { passive: false });
     window.addEventListener('keydown', this.onKeyDown);
@@ -64,6 +81,12 @@ export class InputController {
   /* ------------------------------------------------------------------ */
   /* Pointer                                                             */
   /* ------------------------------------------------------------------ */
+
+  private onWindowPointerMove = (event: PointerEvent): void => {
+    this.edgePointer.x = event.clientX;
+    this.edgePointer.y = event.clientY;
+    this.edgePointer.inside = event.pointerType !== 'touch';
+  };
 
   private onPointerDown = (event: PointerEvent): void => {
     if (this.app.screen !== 'battle') return;
@@ -187,7 +210,10 @@ export class InputController {
       // The order lands where the button went down, which is where the player
       // aimed: a stray pixel of travel must not move the destination.
       if (!touch && !press.dragging && event.button === 2) {
-        this.app.orderAt(press.startX, press.startY, event.shiftKey);
+        const order = this.app.orderAt(press.startX, press.startY, event.shiftKey);
+        // Only an order the console accepted leaves a mark: a refused order is
+        // already reported by its notice, and a ghost would contradict it.
+        if (order) this.app.markOrderGhost(press.startX, press.startY, order);
       }
       return;
     }
@@ -339,7 +365,7 @@ export class InputController {
       const occupants =
         target && app.game ? app.game.garrisonOccupants(target.id) : [];
       if (!isRepairTarget(target, app.localPlayerId, occupants)) {
-        app.notify('Select a damaged friendly or neutral structure.', 'warning');
+        app.notify('Select a damaged friendly structure or your own construction site.', 'warning');
         app.audio.play('denied');
         return;
       }
@@ -495,6 +521,12 @@ export class InputController {
         event.preventDefault();
         this.app.commandDive();
         break;
+      case 'KeyU':
+        // Hides the interface for a clean capture; the same shortcut brings it
+        // back, so a screenshot never traps the player without a HUD.
+        event.preventDefault();
+        this.app.hud.toggleVisibility();
+        break;
       case 'KeyB':
         event.preventDefault();
         this.app.hud.showBuildTab();
@@ -523,6 +555,7 @@ export class InputController {
   /* ------------------------------------------------------------------ */
 
   update(dt: number): void {
+    this.syncCursor();
     if (this.app.screen !== 'battle') {
       this.updateGamepad(dt);
       return;
@@ -536,23 +569,72 @@ export class InputController {
     if (this.keys.has('ArrowUp')) dz -= speed;
     if (this.keys.has('ArrowDown')) dz += speed;
     if (dx !== 0 || dz !== 0) camera.panView(dx, dz);
-    if (this.app.settings.edgePan && this.app.pointer.over) {
-      const margin = 14;
-      const w = camera.width;
-      const h = camera.height;
-      const rect = this.canvas.getBoundingClientRect();
-      const px = this.app.pointer.x - rect.left;
-      const py = this.app.pointer.y - rect.top;
-      let ex = 0;
-      let ez = 0;
-      const edgeSpeed = camera.zoom * 1.25 * dt;
-      if (px < margin && px >= 0) ex -= edgeSpeed;
-      if (px > w - margin) ex += edgeSpeed;
-      if (py < margin && py >= 0) ez -= edgeSpeed;
-      if (py > h - margin) ez += edgeSpeed;
+    const modal = document.getElementById('modal-root');
+    const modalOpen = !!modal && !modal.classList.contains('hidden');
+    if (this.app.settings.edgePan && this.edgePointer.inside && !modalOpen) {
+      // Pan against the real display edges, not the inner battlefield frame.
+      // The rail, production sidebar and battle console cover the outer strip
+      // of the viewport, so measuring from the battlefield's inner frame left
+      // three edges dead exactly where a fullscreen player pushes the pointer:
+      // the cursor stops at the screen border, which sits over the HUD.
+      const view = { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+      const edgeSpeed = camera.zoom * 1.25 * dt * this.app.settings.edgePanSpeed;
+      const { dx: ex, dz: ez } = edgePanVector(
+        this.edgePointer.x,
+        this.edgePointer.y,
+        view,
+        this.app.settings.edgePanWidth,
+        edgeSpeed,
+      );
       if (ex !== 0 || ez !== 0) camera.panView(ex, ez);
     }
     this.updateGamepad(dt);
+  }
+
+  /**
+   * Keep the battlefield pointer in step with the armed order.
+   *
+   * The canvas owns the cursor, so HUD controls keep their own native pointer
+   * and a cursor crossing onto a panel never leaves an attack reticle behind.
+   * Placement validity costs a raycast and a footprint check, so it is only
+   * recomputed when the mode, screen or pointer position actually changed;
+   * the hot path is a string comparison.
+   */
+  private syncCursor(): void {
+    const app = this.app;
+    const battle = app.screen === 'battle' && !!app.game;
+    const panning = !!this.pan?.dragging;
+    const draggingBox = app.dragBox.active;
+    const x = Math.round(app.pointer.x);
+    const y = Math.round(app.pointer.y);
+    const custom = app.settings.customCursors;
+    // A modal covers the battlefield without moving the pointer off it, so the
+    // drawn reticle has to be gated explicitly while one is open.
+    const modal = document.getElementById('modal-root');
+    const modalOpen = !!modal && !modal.classList.contains('hidden');
+    const key = `${battle}|${app.mode}|${x}|${y}|${panning}|${draggingBox}|${custom}|${app.pointer.over}|${modalOpen}`;
+    if (key === this.cursorKey) return;
+    this.cursorKey = key;
+    if (!battle) {
+      app.pointerCursor.visible = false;
+      this.applyCursor('');
+      return;
+    }
+    let placementOk: boolean | null = null;
+    if (app.mode === 'place' && app.pointer.over) {
+      const site = app.placementAtScreen(app.pointer.x, app.pointer.y);
+      if (site) placementOk = site.ok;
+    }
+    const cursor = battleCursor(app.mode, { placementOk, panning, draggingBox });
+    // With custom cursors on, the overlay paints the reticle and the OS pointer
+    // is hidden over the battlefield. Off restores the platform pointer.
+    app.pointerCursor.name = cursor;
+    app.pointerCursor.visible = custom && app.pointer.over && !modalOpen;
+    this.applyCursor(cursorProperty(cursor, custom));
+  }
+
+  private applyCursor(css: string): void {
+    if (this.canvas.style.cursor !== css) this.canvas.style.cursor = css;
   }
 
   private updateGamepad(dt: number): void {

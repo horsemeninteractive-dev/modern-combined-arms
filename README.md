@@ -276,13 +276,15 @@ override the project, branch and verification URL.
   still orders the levels clearly; the current numbers and limits are in
   [docs/VERIFICATION_REPORT.md](docs/VERIFICATION_REPORT.md) §35–§38. The choice is
   saved for new battles; a loaded save keeps the level it was fought at.
-- **Nation setup**: a skirmish starts with one of the six launch nations. The
-  picker groups them by alliance, the mission brief and loading screen name both
-  sides, and the HUD, selection panel, relay meter and end screen read the same
-  registry identity (never a hard-coded side). The opposing AI is the other
-  alliance's default nation. Each nation fields one national substitution —
-  Pathfinder, Spearhead, MLRS, Heavy Howitzer, Deep Recon UAV or Reinforced
-  Bunker — shown with a NATIONAL badge in production and construction. Legacy
+- **Nation setup**: a skirmish starts with one of the ten nations. The picker
+  groups them by alliance, the mission brief and loading screen name both sides,
+  and the HUD, selection panel, relay meter and end screen read the same registry
+  identity (never a hard-coded side). The opposing AI is the other alliance's
+  default nation. Each nation fields one national substitution, one exclusive
+  unit and one structure variant — Pathfinder, Spearhead, MLRS, K9 Thunder, CV90,
+  Heavy Howitzer, 3rd Khordad, Bulsae-4 and their structures among them — shown
+  with a NATIONAL badge in production and construction, alongside a second,
+  nation-only unit the shared baseline never lists. Legacy
   `baltic`/`expeditionary` scenarios and saves keep working, and the editor can
   assign any nation or preset per player.
 - **Interface**: two battle HUD compositions over one simulation. Desktop uses a
@@ -364,14 +366,15 @@ the save-persisted seeded generator.
 
 ### Faction content model
 
-`src/data/factions.ts` defines the two alliance baselines, the six playable
-launch nations and the legacy `baltic`/`expeditionary` presets. The presets stay
-valid for existing maps and saves; new playable identities are the nations.
+`src/data/factions.ts` defines the two alliance baselines, the ten playable
+nations — the six launch nations plus Finland, Sweden, Iran and North Korea — and
+the legacy `baltic`/`expeditionary` presets. The presets stay valid for existing
+maps and saves; new playable identities are the nations.
 `src/data/roster.ts` resolves either one to a frozen roster, with national
 additions, exclusions and substitutions declared as data. A substitution maps a
 baseline id to another registered definition with a unique id, so a national
 variant can keep the baseline production slot without cloning simulation code.
-Skirmish setup selects one of the six nations, stamps it (and the opposing
+Skirmish setup selects one of the ten nations, stamps it (and the opposing
 alliance's default nation) into the scenario and carries it through battle
 state, save/load and every side label. `Game.rosterFor` resolves the acting
 player's roster and gates production and construction, so a later national
@@ -483,12 +486,12 @@ latest runs are recorded in
 - One AI opponent. The campaign is a short linear prologue over the built-in
   theatres rather than a full campaign; online play is 1v1 only, joined by room
   code with no room browser, accounts or matchmaking (`MULTIPLAYER_FEATURE`
-  keeps `roomDiscovery` and `accountLinking` off); there is no mod SDK. The six launch nations are selectable in skirmish and each substitutes
-  one shared baseline slot with a national variant, but they have no national
-  upgrades or signature
-  abilities yet; every other slot is common. The national values are not
-  balance-tuned against human play, and no human match has been played with each
-  of the six nations.
+  keeps `roomDiscovery` and `accountLinking` off); there is no mod SDK. All ten nations are selectable in skirmish and each substitutes one shared baseline
+  slot with a national variant, adds one exclusive unit and one structure
+  variant, and Sweden and Iran also add a national naval hull of their own; but
+  they have no national-only upgrades or signature abilities yet;
+  every shared slot is common. The national values are not balance-tuned against
+  human play, and no human match has been played with each of the ten nations.
 - The shared baseline has no mechanised transport or IFV: the simulation still
   lacks passenger/load/unload state. Recovery is a repair vehicle, not a
   recovery-and-tow system. Attack helicopters, field obstacles and a second

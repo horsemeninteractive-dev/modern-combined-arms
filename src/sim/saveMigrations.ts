@@ -136,8 +136,66 @@ function migrateV1ToV2(raw: Json): Json {
   };
 }
 
+/**
+ * v2 → v3: research, unit upgrades and building modules. A v2 battle has no
+ * research at all, so the honest default is an empty record — never a grant.
+ * Unknown ids are kept here and dropped by the loader, which owns the live
+ * content catalogue; the migration itself stays content-free.
+ */
+function migrateV2ToV3(raw: Json): Json {
+  const state = asRecord(raw.state);
+  return {
+    ...raw,
+    version: 3,
+    state: {
+      ...state,
+      players: asArray(state.players).map((entry) => {
+        const p = asRecord(entry);
+        const research = asRecord(p.research);
+        const project = asRecord(research.project);
+        const completed = asArray(research.completed).filter(
+          (id): id is string => typeof id === 'string' && id.length > 0,
+        );
+        const techId = typeof project.techId === 'string' ? project.techId : '';
+        const remaining = num(project.remaining, 0);
+        const total = num(project.total, 0);
+        return {
+          ...p,
+          research: {
+            completed,
+            project: techId && total > 0
+              ? {
+                  techId,
+                  remaining: Math.max(0, Math.min(total, remaining)),
+                  total,
+                }
+              : null,
+          },
+        };
+      }),
+      entities: asArray(state.entities).map((entry) => {
+        const e = asRecord(entry);
+        const next: Json = { ...e };
+        for (const key of ['upgrades', 'modules'] as const) {
+          if (!Array.isArray(e[key])) {
+            delete next[key];
+            continue;
+          }
+          const ids = [...new Set(asArray(e[key]).filter(
+            (id): id is string => typeof id === 'string' && id.length > 0,
+          ))];
+          if (ids.length > 0) next[key] = ids;
+          else delete next[key];
+        }
+        return next;
+      }),
+    },
+  };
+}
+
 const SAVE_MIGRATIONS: Record<number, (data: Json) => Json> = {
   1: migrateV1ToV2,
+  2: migrateV2ToV3,
 };
 
 /**

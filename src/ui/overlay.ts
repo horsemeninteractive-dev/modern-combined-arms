@@ -10,6 +10,17 @@ import { buildingBannerAnchor, buildingBannerPoints, buildingTopHeight } from '.
 import { buildingWireframe } from '../render/buildingWireframe';
 import { relayMeterState } from './relayMeter';
 import { experienceOf, rankForXp } from '../sim/veterancy';
+import { drawBattleCursor, drawOrderGhostGlyph } from './cursors';
+import {
+  GHOST_ECHOES,
+  GHOST_ECHO_STAGGER_MS,
+  ORDER_GHOST_LIFE_MS,
+  ghostOpacity,
+  ghostProgress,
+  ghostRise,
+  ghostScale,
+  pruneOrderGhosts,
+} from './orderGhosts';
 
 const BLUE = '#52c5e6';
 const RED = '#ef6c4d';
@@ -21,6 +32,10 @@ export class Overlay {
   private ctx: CanvasRenderingContext2D;
   width = 1;
   height = 1;
+  /** Continuous reticle motion is suppressed for reduced-motion players. */
+  private reducedMotion =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -197,7 +212,61 @@ export class Overlay {
       ctx.arc(x, y, 2, 0, Math.PI * 2);
       ctx.fill();
     }
+    const now = performance.now();
+    this.drawOrderGhosts(app, now, rect.left, rect.top);
+    // The drawn pointer is the topmost mark: it must never be hidden behind a
+    // selection ring, a ghost or a hover label.
+    if (app.pointerCursor.visible && app.settings.customCursors) {
+      drawBattleCursor(
+        ctx,
+        app.pointerCursor.name,
+        app.pointer.x - rect.left,
+        app.pointer.y - rect.top,
+        this.reducedMotion ? 0 : now,
+      );
+    }
     ctx.restore();
+  }
+
+  /**
+   * Fading impressions of accepted right-click orders. Each click leaves three
+   * staggered echoes that grow, drift up and fade, plus a ring that spreads
+   * from the point: the mark confirms *where* the order landed without
+   * lingering long enough to clutter a fight.
+   */
+  private drawOrderGhosts(app: App, now: number, offsetX: number, offsetY: number): void {
+    const ghosts = pruneOrderGhosts(app.orderGhosts, now);
+    const ctx = this.ctx;
+    for (const ghost of ghosts) {
+      const progress = ghostProgress(ghost.born, now);
+      const x = ghost.x - offsetX;
+      const y = ghost.y - offsetY;
+      const color = ghost.kind === 'attack' ? RED : AMBER;
+      for (let echo = 0; echo < GHOST_ECHOES; echo += 1) {
+        // Each echo starts a beat later, so the trail reads as a quick smear
+        // rather than three pointers stacked on one pixel.
+        const delayed = Math.max(0, progress - (echo * GHOST_ECHO_STAGGER_MS) / ORDER_GHOST_LIFE_MS);
+        if (delayed <= 0) continue;
+        drawOrderGhostGlyph(
+          ctx,
+          ghost.kind,
+          x,
+          y,
+          ghostScale(delayed) + echo * 0.08,
+          ghostOpacity(delayed) * (1 - echo * 0.26),
+          ghostRise(delayed),
+        );
+      }
+      const spread = Math.min(1, Math.max(0, progress));
+      ctx.save();
+      ctx.globalAlpha = Math.pow(1 - spread, 1.5) * 0.55;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(x, y, 6 + spread * 18, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   /**

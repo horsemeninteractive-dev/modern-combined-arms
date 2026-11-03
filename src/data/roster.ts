@@ -1,7 +1,8 @@
 import type { NationRosterModifications, RosterDef } from '../sim/types';
-import { BUILDINGS } from './buildings';
+import { BUILDINGS, buildingFamily } from './buildings';
 import { ALLIANCE_LIST, ALLIANCES, FACTIONS, NATION_LIST, NATIONS } from './factions';
-import { UNITS } from './units';
+import { UNITS, unitFamily } from './units';
+import { resolveVariantChain } from './variant';
 
 type EntityKind = 'unit' | 'building';
 
@@ -122,19 +123,23 @@ export function mergeRoster(
 }
 
 /**
- * Actual roster id for a baseline unit slot. A national variant declares
- * `variantOf`, so a replacement is found without a parallel alias table.
- * Returns undefined when the roster has neither the slot nor a variant of it.
+ * Actual roster id for a baseline unit slot. Variants declare `variantOf`, and
+ * the chain is followed to its canonical root, so an alliance platform and a
+ * national replacement of that platform both answer the canonical slot the
+ * production list names. Returns undefined when the roster has no definition in
+ * that slot.
  */
 export function unitSlotId(roster: RosterDef, slotId: string): string | undefined {
   if (roster.units.includes(slotId)) return slotId;
-  return roster.units.find((id) => UNITS[id]?.variantOf === slotId);
+  const slot = unitFamily(slotId);
+  return roster.units.find((id) => unitFamily(id) === slot);
 }
 
-/** Actual roster id for a baseline structure slot. */
+/** Actual roster id for a baseline structure slot, resolved through the chain. */
 export function buildingSlotId(roster: RosterDef, slotId: string): string | undefined {
   if (roster.buildings.includes(slotId)) return slotId;
-  return roster.buildings.find((id) => BUILDINGS[id]?.variantOf === slotId);
+  const slot = buildingFamily(slotId);
+  return roster.buildings.find((id) => buildingFamily(id) === slot);
 }
 
 /**
@@ -146,15 +151,22 @@ export function productionEntries(roster: RosterDef, buildingId: string): string
   const def = BUILDINGS[buildingId];
   if (!def?.productionList) return [];
   const entries: string[] = [];
+  // Unit definitions name the canonical facility (`factory`, `airfield`), not a
+  // national structure variant. Compare families so a Polish Armoured Workshop
+  // still builds everything the Vehicle Factory family produces instead of an
+  // empty list, while a structure that is not of that family still refuses.
+  const facilitySlot = buildingFamily(buildingId);
+  const producesHere = (id: string): boolean =>
+    (UNITS[id]?.producedBy ?? []).some((facility) => buildingFamily(facility) === facilitySlot);
   const push = (id: string | undefined): void => {
     if (!id || entries.includes(id)) return;
     if (!roster.units.includes(id)) return;
-    if (!UNITS[id]?.producedBy.includes(buildingId)) return;
+    if (!producesHere(id)) return;
     entries.push(id);
   };
   for (const slot of def.productionList) push(unitSlotId(roster, slot));
   for (const id of roster.units) {
-    if (UNITS[id]?.producedBy.includes(buildingId)) push(id);
+    if (producesHere(id)) push(id);
   }
   return entries;
 }
@@ -214,11 +226,84 @@ export function resolveRoster(id: string): RosterDef {
 }
 
 /**
+ * Every registered definition's `variantOf` chain must reach a canonical slot.
+ * Reports the offending definition and the chain that broke, so a multi-level
+ * variant cannot hide a missing target, a self-reference or a cycle until a
+ * player fields it. Called from `validateRosterRegistry` at module load.
+ */
+export function validateVariantChains(): void {
+  for (const id of Object.keys(UNITS)) {
+    const chain = resolveVariantChain(UNITS, id);
+    if (chain.error) fail(`unit "${id}"`, chain.error);
+  }
+  for (const id of Object.keys(BUILDINGS)) {
+    const chain = resolveVariantChain(BUILDINGS, id);
+    if (chain.error) fail(`building "${id}"`, chain.error);
+  }
+}
+
+/**
+ * A replacement must occupy the same canonical slot as the definition it
+ * replaces. Because the slot is the *root* of the variant chain, a nation may
+ * replace an alliance platform (itself a variant of the canonical slot) without
+ * escaping the family its production list and prerequisites name.
+ */
+export function assertSameVariantSlot(
+  kind: EntityKind,
+  from: string,
+  to: string,
+  subject = 'roster',
+): void {
+  const target = (kind === 'unit' ? UNITS : BUILDINGS)[to];
+  if (!target) fail(subject, `unknown replacement ${kind} "${to}"`);
+  if (!target.variantOf) {
+    fail(subject, `${kind} "${to}" must declare variantOf to occupy a slot`);
+  }
+  const family = kind === 'unit' ? unitFamily : buildingFamily;
+  const sourceSlot = family(from);
+  const targetSlot = family(to);
+  if (targetSlot !== sourceSlot) {
+    fail(
+      subject,
+      `${kind} "${to}" resolves to slot "${targetSlot}", but "${from}" occupies "${sourceSlot}"`,
+    );
+  }
+}
+
+/**
+ * A roster may hold at most one definition per canonical slot, or slot
+ * resolution would have to guess which of two definitions the production list
+ * means. Bases are distinct ids, so this only rejects genuinely ambiguous data.
+ */
+function assertOneSlotPerFamily(roster: RosterDef, subject: string): void {
+  const occupied = new Map<string, string>();
+  for (const id of roster.units) {
+    const slot = unitFamily(id);
+    const taken = occupied.get(slot);
+    if (taken !== undefined) {
+      fail(subject, `units "${taken}" and "${id}" both occupy slot "${slot}"`);
+    }
+    occupied.set(slot, id);
+  }
+  occupied.clear();
+  for (const id of roster.buildings) {
+    const slot = buildingFamily(id);
+    const taken = occupied.get(slot);
+    if (taken !== undefined) {
+      fail(subject, `buildings "${taken}" and "${id}" both occupy slot "${slot}"`);
+    }
+    occupied.set(slot, id);
+  }
+}
+
+/**
  * Fail fast if the shipped registry has an unknown reference, a duplicate id,
  * a bad alliance link or a legacy preset that has drifted from its baseline.
  * Called once at module load; also exported so a test can assert the invariant.
  */
 export function validateRosterRegistry(): void {
+  validateVariantChains();
+
   const ids = new Set<string>();
   const register = (kind: string, id: string): void => {
     if (ids.has(id)) throw new Error(`Faction content id "${id}" is used by more than one ${kind}.`);
@@ -232,7 +317,8 @@ export function validateRosterRegistry(): void {
   }
   for (const alliance of ALLIANCE_LIST) {
     register('alliance', alliance.id);
-    mergeRoster(alliance.baseline, {}, `alliance "${alliance.id}"`);
+    const subject = `alliance "${alliance.id}"`;
+    assertOneSlotPerFamily(mergeRoster(alliance.baseline, {}, subject), subject);
   }
 
   if (NATION_LIST.length !== Object.keys(NATIONS).length) {
@@ -250,12 +336,7 @@ export function validateRosterRegistry(): void {
       const target = Object.hasOwn(UNITS, to) ? UNITS[to] : undefined;
       if (!source) fail(`nation "${nation.id}"`, `unknown replacement source unit "${from}"`);
       if (!target) fail(`nation "${nation.id}"`, `unknown replacement unit "${to}"`);
-      if (target.variantOf !== from) {
-        fail(
-          `nation "${nation.id}"`,
-          `unit "${to}" must declare variantOf "${from}"`,
-        );
-      }
+      assertSameVariantSlot('unit', from, to, `nation "${nation.id}"`);
       if (!source.producedBy.some((facility) => target.producedBy.includes(facility))) {
         fail(
           `nation "${nation.id}"`,
@@ -269,17 +350,12 @@ export function validateRosterRegistry(): void {
         fail(`nation "${nation.id}"`, `unknown replacement source building "${from}"`);
       }
       if (!target) fail(`nation "${nation.id}"`, `unknown replacement building "${to}"`);
-      if (target.variantOf !== from) {
-        fail(
-          `nation "${nation.id}"`,
-          `building "${to}" must declare variantOf "${from}"`,
-        );
-      }
+      assertSameVariantSlot('building', from, to, `nation "${nation.id}"`);
       if (target.authoredOnly) {
         fail(`nation "${nation.id}"`, `replacement building "${to}" must be player-buildable`);
       }
     }
-    resolveRoster(nation.id);
+    assertOneSlotPerFamily(resolveRoster(nation.id), `nation "${nation.id}"`);
   }
 
   for (const legacy of Object.values(FACTIONS)) {
@@ -296,7 +372,7 @@ export function validateRosterRegistry(): void {
     if (!mirrors) {
       fail(`legacy faction "${legacy.id}"`, 'preset must mirror its alliance baseline');
     }
-    resolveRoster(legacy.id);
+    assertOneSlotPerFamily(resolveRoster(legacy.id), `legacy faction "${legacy.id}"`);
   }
 }
 

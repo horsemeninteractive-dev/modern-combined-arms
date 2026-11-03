@@ -165,6 +165,9 @@ function createEntity(projected: ProjectedEntity, x: number, z: number): Entity 
       revealed: state === 'attacking',
     };
   }
+  // The projection ships reload clocks for own hulls only, which is exactly
+  // what the selection box needs to draw a disabled ability button.
+  if (projected.cooldowns) entity.cooldowns = { ...projected.cooldowns };
   if (projected.kind === 'unit' && projected.defId === 'harvester') {
     entity.harvester = {
       phase: state === 'delivering' ? 'toRefinery' : 'seek',
@@ -214,6 +217,9 @@ function updatePlayer(row: PlayerState, projected: TeamSnapshot['players'][numbe
   row.stats = { ...projected.stats };
   row.defeated = projected.defeated;
   row.relayCount = projected.relayCount;
+  // The projection only carries the seat's own research, so assigning it here
+  // cannot reveal an opponent's plan.
+  if (projected.research) row.research = projected.research;
 }
 
 /** A command as it goes on the wire: intent only, never authority. */
@@ -344,6 +350,8 @@ export class NetworkBattle {
         // rank it last knew rather than inventing one.
         entity.xp = projected.remembered === true ? entity.xp ?? 0 : projected.xp ?? entity.xp ?? 0;
         entity.targetId = projected.targetId ?? 0;
+        if (projected.cooldowns) entity.cooldowns = { ...projected.cooldowns };
+        else delete entity.cooldowns;
         if (entity.aircraft) {
           entity.aircraft.landed =
             projected.remembered === true ||
@@ -383,6 +391,7 @@ export class NetworkBattle {
           incomeHistory: new Array(60).fill(0),
           defeated: projected.defeated,
           relayCount: projected.relayCount,
+          research: projected.research ?? { completed: [], project: null },
         } satisfies PlayerState);
       updatePlayer(row, projected);
       return row;
@@ -398,6 +407,7 @@ export class NetworkBattle {
       projectiles: snapshot.projectiles.map(createProjectile),
       contacts,
       charted,
+      smoke: snapshot.smoke.map((cloud) => ({ ...cloud })),
       fog: Uint8Array.from(snapshot.fog),
       tick: snapshot.tick,
       victory: victoryFor(snapshot.result, this.team),

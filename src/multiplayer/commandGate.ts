@@ -58,6 +58,9 @@ export type CommandGateRejectionCode =
   | 'invalid-building'
   | 'invalid-index'
   | 'production-unavailable'
+  | 'research-unavailable'
+  | 'upgrade-unavailable'
+  | 'module-unavailable'
   | 'placement-invalid'
   | 'no-builder'
   | 'rally-invalid'
@@ -114,6 +117,11 @@ const ALLOWED_FIELDS: Record<CommandType, readonly string[]> = {
   reorderProduction: ['type', 'buildingId', 'defId', 'beforeDefId'],
   placeBuilding: ['type', 'builderId', 'defId', 'tileX', 'tileZ'],
   setRally: ['type', 'buildingId', 'x', 'z'],
+  research: ['type', 'buildingId', 'techId'],
+  cancelResearch: ['type', 'buildingId'],
+  installModule: ['type', 'buildingId', 'moduleId'],
+  activateUpgrade: ['type', 'unitId', 'upgradeId'],
+  useAbility: ['type', 'unitId', 'abilityId'],
 };
 
 const COMMAND_TYPES = new Set<string>(Object.keys(ALLOWED_FIELDS));
@@ -288,6 +296,12 @@ export class CommandGate {
         ? this.parsePlaceBuilding(raw, seat)
         : this.parseSetRally(raw, seat);
     }
+    if (type === 'research' || type === 'cancelResearch') {
+      return this.parseResearch(type, raw, seat);
+    }
+    if (type === 'installModule') return this.parseModule(raw, seat);
+    if (type === 'activateUpgrade') return this.parseUpgrade(raw, seat);
+    if (type === 'useAbility') return this.parseAbility(raw, seat);
 
     const idsResult = this.readIds(raw.ids);
     if (!idsResult.ok) return idsResult;
@@ -547,6 +561,114 @@ export class CommandGate {
     }
   }
 
+  /**
+   * Research and its cancellation.
+   *
+   * The seat is derived from the session, never from the payload, and the
+   * centre must belong to that seat's player. Technology and prerequisite rules
+   * are answered by the simulation's own status call, so the gate and the tick
+   * cannot disagree about what is legal.
+   */
+  private parseResearch(
+    type: 'research' | 'cancelResearch',
+    raw: Record<string, unknown>,
+    seat: SeatAuthority,
+  ): { ok: true; command: Command } | GateRejection {
+    const buildingId = this.readTargetId(raw.buildingId);
+    if (buildingId === null) return reject('invalid-building', 'Research centre is not valid.');
+    const centre = this.game.getEntity(buildingId);
+    if (
+      !centre ||
+      centre.hp <= 0 ||
+      centre.kind !== 'building' ||
+      centre.owner !== seat.playerId
+    ) {
+      return reject('not-your-entity', 'That research centre does not belong to this player.');
+    }
+    if (type === 'cancelResearch') {
+      const status = this.game.cancelResearchStatus(seat.playerId, buildingId);
+      if (!status.ok) {
+        return reject('research-unavailable', 'Research cannot be cancelled.', status.reason);
+      }
+      return { ok: true, command: { type, team: seat.team, buildingId } };
+    }
+    const techId = readDefId(raw.techId);
+    if (techId === null) return reject('invalid-definition', 'Technology is not valid.');
+    const status = this.game.researchStatus(seat.playerId, buildingId, techId);
+    if (!status.ok) {
+      return reject('research-unavailable', 'That project cannot be started.', status.reason);
+    }
+    return { ok: true, command: { type, team: seat.team, buildingId, techId } };
+  }
+
+  /** Buying a researched module for one owned structure. */
+  private parseModule(
+    raw: Record<string, unknown>,
+    seat: SeatAuthority,
+  ): { ok: true; command: Command } | GateRejection {
+    const buildingId = this.readTargetId(raw.buildingId);
+    if (buildingId === null) return reject('invalid-building', 'Structure is not valid.');
+    const building = this.game.getEntity(buildingId);
+    if (
+      !building ||
+      building.hp <= 0 ||
+      building.kind !== 'building' ||
+      building.owner !== seat.playerId
+    ) {
+      return reject('not-your-entity', 'That structure does not belong to this player.');
+    }
+    const moduleId = readDefId(raw.moduleId);
+    if (moduleId === null) return reject('invalid-definition', 'Module is not valid.');
+    const status = this.game.moduleStatus(seat.playerId, buildingId, moduleId);
+    if (!status.ok) return reject('module-unavailable', 'That module cannot be installed.', status.reason);
+    return { ok: true, command: { type: 'installModule', team: seat.team, buildingId, moduleId } };
+  }
+
+  /** Applying a researched upgrade to one owned unit. */
+  private parseUpgrade(
+    raw: Record<string, unknown>,
+    seat: SeatAuthority,
+  ): { ok: true; command: Command } | GateRejection {
+    const unitId = this.readTargetId(raw.unitId);
+    if (unitId === null) return reject('invalid-target', 'Unit is not valid.');
+    const unit = this.game.getEntity(unitId);
+    if (!unit || unit.hp <= 0 || unit.kind !== 'unit' || unit.owner !== seat.playerId) {
+      return reject('not-your-entity', 'That unit does not belong to this player.');
+    }
+    const upgradeId = readDefId(raw.upgradeId);
+    if (upgradeId === null) return reject('invalid-definition', 'Upgrade is not valid.');
+    const status = this.game.upgradeStatus(seat.playerId, unitId, upgradeId);
+    if (!status.ok) {
+      return reject('upgrade-unavailable', 'That upgrade cannot be applied.', status.reason);
+    }
+    return { ok: true, command: { type: 'activateUpgrade', team: seat.team, unitId, upgradeId } };
+  }
+
+  /**
+   * Using a researched ability on one owned unit.
+   *
+   * Ownership, eligibility, research and the hull's own reload are all answered
+   * by the simulation's status call, so the gate and the tick cannot disagree
+   * about whether a cloud is legal. The command carries no position: the smoke is
+   * centred on the hull, so a client cannot ask for one elsewhere.
+   */
+  private parseAbility(
+    raw: Record<string, unknown>,
+    seat: SeatAuthority,
+  ): { ok: true; command: Command } | GateRejection {
+    const unitId = this.readTargetId(raw.unitId);
+    if (unitId === null) return reject('invalid-target', 'Unit is not valid.');
+    const unit = this.game.getEntity(unitId);
+    if (!unit || unit.hp <= 0 || unit.kind !== 'unit' || unit.owner !== seat.playerId) {
+      return reject('not-your-entity', 'That unit does not belong to this player.');
+    }
+    const abilityId = readDefId(raw.abilityId);
+    if (abilityId === null) return reject('invalid-definition', 'Ability is not valid.');
+    const status = this.game.abilityStatus(seat.playerId, unitId, abilityId);
+    if (!status.ok) return reject('upgrade-unavailable', 'That ability cannot be used.', status.reason);
+    return { ok: true, command: { type: 'useAbility', team: seat.team, unitId, abilityId } };
+  }
+
   private parseProduction(
     type: 'produce' | 'cancelProduction' | 'reorderProduction',
     raw: Record<string, unknown>,
@@ -724,14 +846,13 @@ export class CommandGate {
   }
 
   private isRepairable(seat: SeatAuthority, target: Entity): boolean {
-    if (
-      target.kind !== 'building' ||
-      target.hp <= 0 ||
-      target.construction ||
-      target.hp >= target.maxHp
-    ) {
-      return false;
+    if (target.kind !== 'building' || target.hp <= 0) return false;
+    // Resuming your own paused construction site travels on the same order as
+    // a repair: nothing is damaged, but the engineer is needed on the site.
+    if (target.construction) {
+      return target.owner === seat.playerId && target.buildProgress < 1;
     }
+    if (target.hp >= target.maxHp) return false;
     if (target.owner === seat.playerId) return true;
     if (target.owner !== -1 || !BUILDINGS[target.defId]?.garrison) return false;
     return !this.game

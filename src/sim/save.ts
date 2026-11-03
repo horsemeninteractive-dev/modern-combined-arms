@@ -8,6 +8,7 @@ import type {
   PlayerState,
   Projectile,
   SimEvent,
+  SmokeCloud,
   VictoryState,
 } from './types';
 
@@ -44,6 +45,13 @@ export interface SerializedGameState {
   /** Structures each team has seen, so remembered silhouettes survive a reload. */
   charted?: ChartedStructure[];
   commandCount: number;
+  /**
+   * Live smoke clouds. Optional: a save written before the ability layer has no
+   * field, and the loader starts with a clear battlefield rather than inventing
+   * one. Expired clouds are dropped on load.
+   */
+  smoke?: SmokeCloud[];
+  nextSmokeId?: number;
 }
 
 /**

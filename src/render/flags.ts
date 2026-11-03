@@ -4,10 +4,10 @@ import { hexToRgb } from './math';
 import { NATION_LIST, defaultNationFor, tryIdentityDef } from '../data/factions';
 
 /**
- * The six launch nations have real flag textures in `public/flags`, sourced
- * from the public-domain flag artwork at flagcdn.com. Legacy alliance presets
- * have no national flag of their own, so they borrow the default nation of
- * their alliance rather than inventing a seventh flag.
+ * Every playable nation has a real flag texture in `public/flags`, sourced from
+ * the public-domain flag artwork at flagcdn.com. Legacy alliance presets have
+ * no national flag of their own, so they borrow the default nation of their
+ * alliance rather than inventing another flag.
  */
 export const FLAG_NATIONS = NATION_LIST.map((nation) => nation.id);
 export type FlagNation = (typeof FLAG_NATIONS)[number];
@@ -17,9 +17,13 @@ const FLAG_ASPECT: Readonly<Record<FlagNation, number>> = {
   lithuania: 5 / 3,
   poland: 8 / 5,
   uk: 2,
+  finland: 18 / 11,
+  sweden: 8 / 5,
   russia: 3 / 2,
   belarus: 2,
   hungary: 2,
+  iran: 7 / 4,
+  northKorea: 2,
 };
 
 /** Blue for the defender coalition, red for the eastern coalition. */
@@ -72,7 +76,7 @@ export function flagNationForFaction(factionId: string): FlagNation | undefined 
 
 /**
  * The first flag is the alliance colour, not the nation's palette colour, so
- * all three defender nations read blue and all three eastern nations red.
+ * every defender nation reads blue and every eastern nation red.
  */
 export function allianceFlagColor(factionId: string | undefined): Color {
   if (!factionId) return NEUTRAL;
@@ -124,12 +128,26 @@ export const BUILDING_FLAG_ANCHORS: Record<string, FlagAnchor> = {
   airfield: { x: 0, y: 0.45, z: 8.8, apron: true },
   shipyard: { x: -7.0, y: 0.95, z: 8.6, apron: true },
   powerPlant: { x: -1.4, y: 4.25, z: -1.0 },
+  // On the hall's clerestory cap: the building was enlarged to fill its 4x3
+  // footprint, so the pole must start on the new roof, not inside it.
+  researchCentre: { x: 1.6, y: 4.8, z: -0.4 },
   radar: { x: -2.6, y: 3.12, z: 1.2 },
   samBattery: { x: -0.4, y: 2.65, z: 0 },
   mgNest: { x: -1.9, y: 1.67, z: 2.1 },
   atTurret: { x: 3.15, y: 0.53, z: -3.05 },
   coastalBattery: { x: -3.0, y: 1.61, z: -2.2 },
   bunker: { x: -0.5, y: 3.0, z: -2.45 },
+  forwardPost: { x: -0.2, y: 4.55, z: 0.1 },
+  signalsBureau: { x: 0, y: 6.5, z: 0 },
+  armourWorks: { x: 0, y: 6.55, z: 1.2 },
+  expeditionaryAirfield: { x: 0, y: 0.45, z: 8.8, apron: true },
+  longRangeSam: { x: -2.2, y: 8.2, z: 0 },
+  garrisonBarracks: { x: -0.4, y: 5.65, z: -1.6 },
+  // The yard keeps the shipyard's apron mount: its own gantry would foul the
+  // pole, and an open yard flies from ground level anyway.
+  kockumsYard: { x: -7.0, y: 0.95, z: 8.6, apron: true },
+  noorBattery: { x: -3.0, y: 1.61, z: -2.2 },
+  entrenchedAtGun: { x: 0, y: 2.14, z: -2.5 },
   relay: { x: -2.9, y: 3.56, z: 0.2 },
   supplyDepot: { x: 3.0, y: 3.95, z: -2.6 },
   radarStation: { x: -3.9, y: 4.44, z: -2.4 },

@@ -17,6 +17,13 @@ interface ArenaOptions {
   mats: number;
   req?: number;
   fog?: boolean;
+  /**
+   * Technologies the scenario grants at match start. These tests measure
+   * employment, not research, so a support arm that is behind a research gate
+   * is granted the way an authored scenario grants it — the AI still has to pay
+   * for the unit itself.
+   */
+  technologies?: string[];
 }
 
 /**
@@ -38,6 +45,7 @@ function arena(nation: string, options: ArenaOptions): Scenario {
   scenario.players[1].factionId = nation;
   scenario.players[1].startX = 40;
   scenario.players[1].startZ = 24;
+  if (options.technologies) scenario.players[1].technologies = [...options.technologies];
   scenario.structures.push(
     { defId: 'commandPost', owner: 0, x: 16, z: 33 },
     { defId: 'commandPost', owner: 1, x: 44, z: 33 },
@@ -118,7 +126,12 @@ describe('AI support-arm employment', () => {
       ['russia', 'heavyHowitzer'],
     ] as const) {
       const game = new Game(
-        arena(nation, { buildings: [...CORE, 'airfield'], units: FORMED_ARMY, mats: 3000 }),
+        arena(nation, {
+          buildings: [...CORE, 'airfield'],
+          units: FORMED_ARMY,
+          mats: 3000,
+          technologies: ['fires1'],
+        }),
         { enableAI: false },
       );
       runAI(game, 8);
@@ -166,9 +179,15 @@ describe('AI support-arm employment', () => {
       { defId: 'rifle', x: 38, z: 40 },
       ...Array.from({ length: 4 }, (_, i) => ({ defId: 'atgm', x: 46 + i, z: 30 })),
     ];
-    const game = new Game(arena('baltic', { buildings: [...CORE, 'airfield'], units: short, mats: 450 }), {
-      enableAI: false,
-    });
+    const game = new Game(
+      arena('baltic', {
+        buildings: [...CORE, 'airfield'],
+        units: short,
+        mats: 450,
+        technologies: ['fires1'],
+      }),
+      { enableAI: false },
+    );
     runAI(game, 2);
     // The bank is held: the one affordable infantry demand is not taken, and
     // the battery itself is not yet affordable.
@@ -223,7 +242,12 @@ describe('AI support-arm employment', () => {
 
   it('keeps at most one battery alive or queued', () => {
     const game = new Game(
-      arena('baltic', { buildings: [...CORE, 'airfield'], units: FORMED_ARMY, mats: 4000 }),
+      arena('baltic', {
+        buildings: [...CORE, 'airfield'],
+        units: FORMED_ARMY,
+        mats: 4000,
+        technologies: ['fires1'],
+      }),
       { enableAI: false },
     );
     let peak = 0;

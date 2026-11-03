@@ -390,6 +390,40 @@ export class ParticleSystem {
     }
   }
 
+  /**
+   * One emission of a smoke screen: large, soft, slow puffs spread across the
+   * cloud footprint instead of a thin column from a single point. `radius` and
+   * `density` come from the authoritative cloud, so the visible cloud is the
+   * same size as the obstruction and thins out as its clock runs down.
+   */
+  smokeScreen(x: number, y: number, z: number, radius: number, density = 1): void {
+    const count = Math.max(1, Math.round(4 * density));
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const r = radius * Math.sqrt(Math.random()) * 0.85;
+      const life = 2.1 + Math.random() * 1.5;
+      this.push({
+        x: x + Math.cos(a) * r,
+        y: y + Math.random() * 0.9,
+        z: z + Math.sin(a) * r,
+        vx: (Math.random() - 0.5) * 0.35,
+        vy: 0.22 + Math.random() * 0.3,
+        vz: (Math.random() - 0.5) * 0.35,
+        life,
+        maxLife: life,
+        size0: radius * 0.5,
+        size1: radius * 1.05,
+        r: 0.66, g: 0.66, b: 0.63,
+        alpha: 0.1 + 0.16 * density,
+        gravity: -0.04,
+        drag: 0.5,
+        additive: false,
+        soft: 1,
+        turbulence: 0.22,
+      });
+    }
+  }
+
   dust(x: number, y: number, z: number, count: number, tint = 0.4): void {
     for (let i = 0; i < count; i++) {
       const a = Math.random() * Math.PI * 2;
