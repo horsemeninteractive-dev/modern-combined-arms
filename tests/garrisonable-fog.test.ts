@@ -50,9 +50,11 @@ describe('garrisonable buildings in the fog', () => {
     // And the memory treatment: dimmer than a seen building, and desaturated,
     // so a tenement cannot pass for something the team currently has eyes on.
     expect(battle).toContain('const alpha = remembered ? 0.46 : liveAlpha;');
-    expect(battle).toContain('remembered ? 0.52 : 1');
-    expect(battle).toContain('remembered ? 0.6 : 1');
-    expect(battle).toContain('remembered ? 0.66 : 1');
+    // Visible structures take the battle-damage tint, so only the remembered
+    // branch is a fixed cold colour.
+    expect(battle).toContain('remembered ? 0.52 : char[0]');
+    expect(battle).toContain('remembered ? 0.6 : char[1]');
+    expect(battle).toContain('remembered ? 0.66 : char[2]');
   });
 
   it('never lights the windows of a shelter the team has only charted', () => {

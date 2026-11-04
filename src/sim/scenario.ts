@@ -20,7 +20,7 @@ import {
 import type { MoveClass } from './types';
 import { BUILDINGS } from '../data/buildings';
 import { dist2 } from '../core/math';
-import { UNITS } from '../data/units';
+import { UNITS, unitFamily } from '../data/units';
 import { TECHS } from '../data/research';
 import { identityLabel, isKnownFactionId, tryIdentityDef } from '../data/factions';
 import {
@@ -31,6 +31,8 @@ import {
   normaliseStartHour,
 } from './dayNight';
 import { isWeatherKind, type WeatherKind } from './weather';
+import { MissionFormatError, parseMission, validateMission, isMissionId } from '../mission';
+import type { MissionDoc } from '../mission';
 
 export interface ScenarioTile {
   /** Base terrain id. */
@@ -44,6 +46,28 @@ export interface ScenarioTile {
    * buildability answer and one movement cost.
    */
   v?: number;
+}
+
+/**
+ * Per-commander limits for one battle.
+ *
+ * A campaign operation is fought with the force that was actually landed, not
+ * the whole roster: the technology tree is trimmed to what the operation
+ * supports, and a platform the theatre cannot sustain is refused even where a
+ * granted technology would normally open it. Absent means "no limits", which is
+ * what every skirmish and multiplayer scenario still means.
+ *
+ * The lists name canonical slots or concrete definitions; the simulation
+ * resolves a concrete definition through its family, so locking `tank` also
+ * locks a national tank replacement.
+ */
+export interface ScenarioRestrictions {
+  /** Unit ids the commander may not field in this battle. */
+  units?: string[];
+  /** Structure ids the commander may not construct in this battle. */
+  buildings?: string[];
+  /** Technology ids the commander may not research in this battle. */
+  technologies?: string[];
 }
 
 export interface ScenarioPlayer {
@@ -67,11 +91,19 @@ export interface ScenarioPlayer {
    * is presentation only: team masks, ownership and visibility still use `team`.
    */
   color?: string;
+  /** Authored roster limits for this battle; absent means the full roster. */
+  restrictions?: ScenarioRestrictions;
 }
 
 export interface ScenarioStructure {
   defId: string;
   owner: number;
+  /**
+   * Stable authored identity for this placement (mission references, named
+   * assets). Optional: an ordinary skirmish placement has no key and behaves
+   * exactly as before.
+   */
+  key?: string;
   /** Top-left tile of the footprint. */
   x: number;
   z: number;
@@ -86,6 +118,8 @@ export interface ScenarioStructure {
 export interface ScenarioUnit {
   defId: string;
   owner: number;
+  /** Stable authored identity; see `ScenarioStructure.key`. */
+  key?: string;
   /** Centre tile. */
   x: number;
   z: number;
@@ -110,6 +144,12 @@ export interface ScenarioSettings {
   startHour: number;
   /** Real minutes per in-game day; 0 freezes the clock at `startHour`. */
   dayLengthMinutes: number;
+  /**
+   * Whether national strategic superweapons may be built and called in. Absent
+   * means enabled: existing skirmish and competitive maps keep their behaviour,
+   * and a campaign theatre that wants them off says so explicitly.
+   */
+  superweapons?: boolean;
 }
 
 export interface ScenarioCampaignRef {
@@ -158,6 +198,12 @@ export interface Scenario {
   settings: ScenarioSettings;
   /** Four rotated starts on competitive maps; absent elsewhere. */
   slots?: ScenarioSlot[];
+  /**
+   * Optional mission document. A skirmish scenario has none and behaves exactly
+   * as it did before missions existed. The mission is parsed and validated here
+   * so nothing downstream can hold a malformed one.
+   */
+  mission?: MissionDoc;
 }
 
 export interface ValidationIssue {
@@ -252,8 +298,19 @@ function asBool(value: unknown, path: string): boolean {
   return value;
 }
 
+/** Authored placement keys share the mission identifier alphabet. */
+function asAuthoredKey(value: unknown, path: string): string {
+  const key = asString(value, path);
+  if (!isMissionId(key)) fail(path, 'a letter-first identifier of at most 64 characters');
+  return key;
+}
+
 /** Accept an object (from JSON or localStorage) and return a typed, checked scenario. */
-export function parseScenario(raw: unknown): Scenario {
+export function parseScenario(
+  raw: unknown,
+  /** Draft recovery only; see `parseMission`. Everything else stays strict. */
+  options: { allowInvalidMission?: boolean } = {},
+): Scenario {
   if (!raw || typeof raw !== 'object') fail('scenario', 'object');
   const r = raw as Record<string, unknown>;
   if (r.format !== MAP_FORMAT) fail('format', MAP_FORMAT);
@@ -315,6 +372,42 @@ export function parseScenario(raw: unknown): Scenario {
               return techId;
             })
           : fail(`players[${i}].technologies`, 'array');
+    // Roster limits are optional: a scenario authored before them, or one whose
+    // theatre fields the whole roster, carries no restrictions at all.
+    const restrictionsRaw = pr.restrictions;
+    let restrictions: ScenarioRestrictions | undefined;
+    if (restrictionsRaw !== undefined && restrictionsRaw !== null) {
+      if (typeof restrictionsRaw !== 'object' || Array.isArray(restrictionsRaw)) {
+        fail(`players[${i}].restrictions`, 'object');
+      }
+      const rr = restrictionsRaw as Record<string, unknown>;
+      const list = (key: 'units' | 'buildings' | 'technologies', known: (id: string) => boolean) => {
+        const value = rr[key];
+        if (value === undefined) return undefined;
+        if (!Array.isArray(value)) fail(`players[${i}].restrictions.${key}`, 'array');
+        const ids = value.map((entry, index) => {
+          const id = asString(entry, `players[${i}].restrictions.${key}[${index}]`);
+          if (!known(id)) fail(`players[${i}].restrictions.${key}[${index}]`, 'known id');
+          return id;
+        });
+        // Duplicates are harmless for a deny list, but a repeated id in an
+        // authored file is always a copy-paste slip worth reporting.
+        if (new Set(ids).size !== ids.length) {
+          fail(`players[${i}].restrictions.${key}`, 'unique ids');
+        }
+        return ids.length > 0 ? ids : undefined;
+      };
+      const units = list('units', (id) => Boolean(UNITS[id]));
+      const buildings = list('buildings', (id) => Boolean(BUILDINGS[id]));
+      const technologies = list('technologies', (id) => Boolean(TECHS[id]));
+      if (units || buildings || technologies) {
+        restrictions = {
+          ...(units ? { units } : {}),
+          ...(buildings ? { buildings } : {}),
+          ...(technologies ? { technologies } : {}),
+        };
+      }
+    }
     return {
       id: asNumber(pr.id, `players[${i}].id`, 0, 7),
       name: asString(pr.name, `players[${i}].name`),
@@ -325,6 +418,7 @@ export function parseScenario(raw: unknown): Scenario {
       startZ: asNumber(pr.startZ, `players[${i}].startZ`, 0, height - 1),
       ...(color ? { color } : {}),
       ...(technologies && technologies.length > 0 ? { technologies } : {}),
+      ...(restrictions ? { restrictions } : {}),
     };
   });
   const structures: ScenarioStructure[] = (Array.isArray(r.structures) ? r.structures : []).map(
@@ -335,6 +429,7 @@ export function parseScenario(raw: unknown): Scenario {
       return {
         defId,
         owner: asNumber(sr.owner, `structures[${i}].owner`, -1, 7),
+        ...(sr.key === undefined ? {} : { key: asAuthoredKey(sr.key, `structures[${i}].key`) }),
         x: asNumber(sr.x, `structures[${i}].x`, 0, width - 1),
         z: asNumber(sr.z, `structures[${i}].z`, 0, height - 1),
         // Authored orientation (yards face their harbour) survives a reload.
@@ -352,9 +447,25 @@ export function parseScenario(raw: unknown): Scenario {
     return {
       defId,
       owner: asNumber(ur.owner, `units[${i}].owner`, -1, 7),
+      ...(ur.key === undefined ? {} : { key: asAuthoredKey(ur.key, `units[${i}].key`) }),
       x: asNumber(ur.x, `units[${i}].x`, 0, width - 1),
       z: asNumber(ur.z, `units[${i}].z`, 0, height - 1),
     };
+  });
+  // Authored keys are the identity mission references resolve against, so they
+  // are unique across both placement lists, not merely within one of them.
+  const authoredKeys = new Map<string, string>();
+  structures.forEach((s, i) => {
+    if (!s.key) return;
+    const owner = authoredKeys.get(s.key);
+    if (owner) fail(`structures[${i}].key`, `a unique authored key (already used by ${owner})`);
+    authoredKeys.set(s.key, `structures[${i}]`);
+  });
+  units.forEach((u, i) => {
+    if (!u.key) return;
+    const owner = authoredKeys.get(u.key);
+    if (owner) fail(`units[${i}].key`, `a unique authored key (already used by ${owner})`);
+    authoredKeys.set(u.key, `units[${i}]`);
   });
   const fog = asBool(settingsRaw.fog ?? true, 'settings.fog');
   const victory = settingsRaw.victory ?? 'destroyHQ';
@@ -385,7 +496,32 @@ export function parseScenario(raw: unknown): Scenario {
       settingsRaw.dayLengthMinutes,
       phaseDefaults.dayLengthMinutes,
     ),
+    ...(settingsRaw.superweapons === undefined
+      ? {}
+      : { superweapons: asBool(settingsRaw.superweapons, 'settings.superweapons') }),
   };
+  // A mission is optional, but when present it is parsed and validated rather
+  // than passed through: an unknown condition kind or a dangling trigger
+  // reference must not reach the simulation as a half-typed object.
+  let mission: MissionDoc | undefined;
+  if (r.mission !== undefined) {
+    try {
+      mission = parseMission(
+        r.mission,
+        {
+          width,
+          height,
+          entityKeys: new Set(authoredKeys.keys()),
+        },
+        { allowInvalid: options.allowInvalidMission === true },
+      );
+    } catch (error) {
+      if (error instanceof MissionFormatError) {
+        throw new ScenarioFormatError(`Invalid scenario at mission — ${error.message}`);
+      }
+      throw error;
+    }
+  }
   const slots: ScenarioSlot[] | undefined = Array.isArray(r.slots)
     ? r.slots.map((value, i) => {
         const slot = value as Record<string, unknown>;
@@ -418,6 +554,7 @@ export function parseScenario(raw: unknown): Scenario {
       : [],
     settings,
     ...(slots ? { slots } : {}),
+    ...(mission ? { mission } : {}),
   };
 }
 
@@ -706,6 +843,39 @@ export function validateScenario(scenario: Scenario): ValidationIssue[] {
           `${tech.name} is not available to ${p.name}'s nation.`,
           p.startX,
           p.startZ,
+        );
+      }
+    }
+    // An operation that grants a technology it also forbids is an authoring
+    // contradiction: the launch would either honour the grant or the limit, and
+    // either answer silently overrules the file.
+    const restrictedTechs = new Set(p.restrictions?.technologies ?? []);
+    for (const techId of p.technologies ?? []) {
+      if (restrictedTechs.has(techId)) {
+        add(
+          'error',
+          'restriction-grant-conflict',
+          `${p.name} is granted "${techId}" but the operation forbids it.`,
+          p.startX,
+          p.startZ,
+        );
+      }
+    }
+    // A restricted platform that is already on the map is legal but almost
+    // always unintended, so it is reported rather than refused.
+    const restrictedUnits = new Set(p.restrictions?.units ?? []);
+    if (restrictedUnits.size > 0) {
+      for (const unit of scenario.units) {
+        if (unit.owner !== p.id) continue;
+        if (!restrictedUnits.has(unit.defId) && !restrictedUnits.has(unitFamily(unit.defId))) {
+          continue;
+        }
+        add(
+          'warning',
+          'restriction-placed-unit',
+          `${p.name} starts with ${UNITS[unit.defId]?.name ?? unit.defId}, which the operation restricts.`,
+          unit.x,
+          unit.z,
         );
       }
     }
@@ -1051,6 +1221,51 @@ export function validateScenario(scenario: Scenario): ValidationIssue[] {
       'overlay-unsupported',
       `${TERRAIN[entry.terrain as TerrainId].name} carries ${OVERLAYS[overlayIdOf(entry.overlay)].name.toLowerCase()} on ${entry.count} tile${entry.count === 1 ? '' : 's'}; that ground does not support it.`,
     );
+  }
+
+  // Authored placement keys are the identities mission documents resolve
+  // against. Parse rejects duplicates in a JSON scenario; this pass also covers
+  // scenarios assembled in code (the editor's working copy, fixtures).
+  const entityKeys = new Set<string>();
+  const keyOwner = new Map<string, string>();
+  const claimKey = (key: string | undefined, path: string, x: number, z: number) => {
+    if (!key) return;
+    const prior = keyOwner.get(key);
+    if (prior) {
+      add(
+        'error',
+        'duplicate-authored-key',
+        `Authored key "${key}" is used by both ${prior} and ${path}.`,
+        x,
+        z,
+        path,
+      );
+      return;
+    }
+    keyOwner.set(key, path);
+    entityKeys.add(key);
+  };
+  scenario.structures.forEach((s, i) => claimKey(s.key, `structures[${i}]`, s.x, s.z));
+  scenario.units.forEach((u, i) => claimKey(u.key, `units[${i}]`, u.x, u.z));
+
+  // Mission findings are reported with the map's own, tagged with the document
+  // path. Parse already rejects error-severity mission problems; this pass exists
+  // so authored warnings are visible where missions are validated and edited.
+  if (scenario.mission) {
+    for (const issue of validateMission(scenario.mission, {
+      width: scenario.width,
+      height: scenario.height,
+      entityKeys,
+    })) {
+      add(
+        issue.severity,
+        `mission-${issue.code}`,
+        `${issue.message} (${issue.path})`,
+        undefined,
+        undefined,
+        issue.path,
+      );
+    }
   }
 
   return issues;

@@ -8,6 +8,160 @@ The release version and stage come from `package.json`; the build number shown
 in the menu is the repository commit count at build time. The same file is
 rendered in game from **Changelog** in the main-menu footer.
 
+## [0.5.0 BETA] — 2026-11-04
+
+A command, campaign and identity release. Two twelve-operation campaigns give the
+war a beginning and an end, the Scenario Forge becomes a mission workbench with a
+library behind it, accounts and a service record sit in the menu, national
+strategic capabilities arrive, and the battlefield gains a real soundtrack,
+alliance narrators, detailed sun shadows and a rebuilt command interface.
+
+### Campaign
+
+- **Two complete twelve-operation campaigns:** the Baltic Line holds the coalition
+  beachhead and carries it through Polish armour, a UK task force and a Swedish
+  counter-stroke; the Eastern Corridor tells the same war from the corps' side,
+  from the landing through occupation to the coalition counter-offensive. Every
+  operation has its own theatre, briefing, objectives, triggers and debrief, and
+  the full 24-operation chain validates and launches from a fresh run.
+- **A named commander:** name, callsign, optional pronouns and a short background
+  are part of the campaign save and appear in briefings through `{{callsign}}`.
+  The deck shows the commander line and the operation's friendly forces, named
+  personnel, enemy intent and instructions rather than a generic mission card.
+- **Objectives that drive the battle:** primary, secondary and bonus objectives,
+  hidden dependencies that open as phases complete, variables, region occupancy,
+  entity survival, deadlines, trigger priorities, delays and cooldowns, and one
+  in-mission cinematic context. Victory is every primary complete; one failed
+  primary, or the loss of a keyed command post, is a defeat.
+- **A campaign is a run, not a mission list:** progress advances only when a
+  result is accepted, retrying restores the pre-mission roster and variables, and
+  named veterans survive into the next operation or are retired by an accepted
+  loss. Operations enforce their own roster and technology restrictions in the
+  simulation, not only on the production cards, so early operations really are
+  infantry, armour and air in the order the campaign intends.
+- Campaign progress, the pending result and veteran records persist in a
+  versioned local save, and older cleared-set saves migrate without inventing
+  results.
+
+### Mission workbench
+
+- **The Scenario Forge now authors missions.** The editor owns one canonical
+  scenario, and the embedded mission document is edited in place rather than in
+  a second copy: overview, briefing and debrief, objectives and dependencies,
+  variables, regions, triggers and cinematics all live in the same working
+  document the test launch and export read.
+- The workbench adds a mission library with create, duplicate, delete, search and
+  sort; standalone mission and scenario import/export; a draft autosave; and a
+  versioned archive that keeps unreadable entries quarantined instead of
+  discarding the rest. Storage quota and write failures are reported instead of
+  pretending a save succeeded.
+- **Authoring diagnostics point at the document:** missing objective completions,
+  unobserved regions, actions on hidden objectives, dependency cycles, broken
+  entity references, duplicate authored keys and unreachable placements are
+  reported by section and item. Region drag, resize, overlap and clamp helpers and
+  the entity-key manager keep the authored map and the document in agreement.
+- Campaign operations are authored through the same mission kit and runtime as
+  player-made missions, so a campaign is data and rules the editor can inspect,
+  not a separate engine.
+
+### Accounts and service record
+
+- **A player account service:** Google and Discord sign-in through a same-origin
+  Pages route backed by a Cloudflare Worker and D1. Sessions are opaque,
+  HttpOnly, hashed at rest and rotated after sign-in and provider changes; provider
+  identities are linked and unlinked explicitly, and a provider identity is never
+  merged into a second account by matching an email.
+- **Guest play is unchanged and first-class.** A guest profile is created lazily
+  in local storage, receives a stable callsign, and can be migrated once into an
+  account with an idempotent migration record. Signing out or losing the account
+  service does not gate single-player, campaign or skirmish.
+- The menu header carries rank, level, avatar and identity, and opens an Account
+  screen with Identity and Service Record tabs. The service record shows the
+  career ledger, match history and progress to the next rank; both the account
+  chip and the in-battle pause card use the same standing data.
+- **Career XP is server-computed** from mode, outcome, AI difficulty and a capped
+  duration bonus, never from a client-supplied value. A 16-step ladder runs from
+  Private to General. Guests keep the same ledger locally; a guest import is
+  validated and recomputed, one match reference pays once, and a daily budget
+  bounds submissions.
+- **Multiplayer identity foundation:** a signed-in seat can present a short-lived
+  HMAC ticket when opening a room, and the room records a verified account on the
+  seat. No ticket still means a guest seat; an invalid ticket is refused rather
+  than downgraded. Account ids stay server-side, and the lobby does not yet show
+  names or profiles.
+- Sign-in requires the account Worker, its D1 database, provider credentials and
+  the Pages service binding. A deployment without them reports accounts as
+  unavailable and leaves guest play untouched.
+
+### Strategic operations
+
+- **Five national strategic capabilities** — hypersonic precision strike,
+  saturation barrage, electronic attack, loitering drone swarm and a defensive
+  directed-energy field — with one nation per family in each alliance. A nation
+  without a capability is a supported state, and the legacy alliance presets field
+  none.
+- A capability is authorised from an operational **Strategic Operations Centre**
+  after a four-node authority chain of existing and strategic researches, then
+  called in from the HUD or the map. The status panel names the first unmet gate
+  and the whole research chain rather than offering a dead button.
+- Every call-in is re-validated by the simulation: battle setting, national
+  capability, centre, authority chain, an operation already committed, reload and
+  cost. A refused target spends nothing. Area patterns are deterministic, saves
+  keep the reload and active operation, and the multiplayer command gate accepts
+  the same `superweapon` intent with its own field validation.
+- The AI researches and spends a capability only when its army is viable, its
+  bank keeps a research reserve and a valid target exists. The skirmish setup can
+  disable strategic operations entirely.
+
+### Sound and battlefield presentation
+
+- **A five-track in-match soundtrack** with a settings playlist editor: include,
+  exclude, reorder, shuffle and repeat off/all/one, preview any track, and keep the
+  menu theme separate. Volume and mute apply immediately, an announcer line ducks
+  the music without restarting it, a blocked autoplay waits for the next gesture
+  instead of spinning, and a failed track is skipped once rather than retried.
+- **Two alliance narrators with 23 cues each.** The Defender tactical AI is the
+  shipped female recording, now under `public/audio/narrator/defender/`; the
+  Eastern command AI is a Kokoro voice with one short sentence per cue. The same
+  cue table drives both, so a line cannot ship in one voice and be missing in the
+  other.
+- **Detailed sun shadows** join the existing flat projected pass: a 2048 depth
+  map fitted around the camera footprint, PCF sampling in every lit receiver, and
+  instanced props included as casters. Shadow detail is an explicit Off, Basic or
+  Detailed setting and the graphics presets recommend one.
+- Structures now show battle damage as a model state: paint chars toward soot at
+  each integrity band, debris gathers at each new stage and failing structures
+  smoke. Installed modules change the model too, including the Advanced Turbine
+  skid. Unit status plates add health, ammunition pips and an endurance rail for
+  aircraft and ships, with a critical-hull pulse that respects reduced motion.
+- The command interface is rebuilt around a power gauge on the scrolling rail, a
+  compact 2x3 battle control pad, coalition and nation identity at the head, and
+  staged shell entrances. A dedicated cursor layer gives the pointer the same
+  treatment in the menu, editor and battle.
+
+### Structures and controls
+
+- **Selling a finished structure** dismantles it over half its build time (at
+  least three seconds) and returns 75% of its material and requisition cost when
+  it comes down. Queued production is refunded and cleared when the sale starts.
+  Garrisoned, unfinished and objective structures cannot be sold.
+- Right-click cancels building placement without disturbing the current unit
+  selection, and right-click on a production card cancels that queued item and
+  refunds it.
+
+### Verification
+
+- `npm run typecheck` clean and `npm run build` clean. `npm run release -- --dry-run` confirms that `package.json`, this file and the menu footer all agree on `v0.5.0 BETA` and stamps the built bundle with it.
+- Focused coverage was added for campaign integrity and progression, mission parsing, triggers, objectives and cinematics, the mission library and draft recovery, accounts, sessions, OAuth, guest migration and career rules, strategic superweapons, narrators and narrator assets, the music playlist, detailed shadows, battlefield status plates, building damage and sale, and the rebuilt HUD shell.
+- Full `vitest` run: 157 files and 2,323 tests, with 2,322 passing. The one failure is the tracked difficulty-ladder baseline in `tests/ai-matchups.test.ts` (`recruitVsVeteran.margin` −16,547 against its < −30,000 bar), unchanged from 0.4.0 and 0.4.1; the ladder, arena and AI were not retuned to make the suite green.
+
+### Known gaps
+
+- Production sign-in needs provider clients registered for the pages.dev origin, a real D1 database id, Worker secrets and the Pages `MCA_ACCOUNT` service binding. None of those credentials belong in the repository, so the shipped release can show the account service unavailable until the deployment is configured; guest play is unaffected.
+- Multiplayer matches earn no career XP yet, and the lobby does not display account names or profiles. Campaign is single-player and the two campaign runs are independent; a Baltic consequence cannot change an Eastern Corridor operation.
+- The mission runtime executes objectives, variables, messages and the authored consequences, but `activateAiGroup`, `spawnReinforcement` and `endMission` remain deferred and are never authored as if they run.
+- The soundtrack has no crossfade between tracks, and the detailed shadow pass is verified by source-level and focused renderer tests rather than an independent visual review on low-end hardware.
+
 ## [0.4.1 BETA] — 2026-11-03
 
 A patch release for the two things the 0.4.0 build got wrong in play: static

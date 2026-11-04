@@ -165,13 +165,22 @@ export class LobbyClient {
   private commandsSent = 0;
   private commandsAccepted = 0;
   private commandsRejected = 0;
+  /**
+   * Supplies a short-lived, server-signed identity ticket for opening or
+   * joining a room. Optional: without it the seat is a guest, exactly as
+   * before accounts existed. The ticket is fetched per action rather than
+   * cached, because it expires in two minutes.
+   */
+  private readonly identityTicket: (() => Promise<string | null>) | null;
 
   constructor(options: {
     origin: string;
     onChange: (view: LobbyView) => void;
     fetch?: typeof fetch;
     createSocket?: (url: string, protocols: string[]) => LobbySocket;
+    identityTicket?: () => Promise<string | null>;
   }) {
+    this.identityTicket = options.identityTicket ?? null;
     this.transport = {
       origin: options.origin.replace(/\/+$/, ''),
       fetch: options.fetch ?? ((input, init) => fetch(input, init)),
@@ -667,11 +676,23 @@ export class LobbyClient {
     path: string,
     options: { body: unknown; roomToken?: string },
   ): Promise<{ ok: boolean; status: number; body: Record<string, unknown> }> {
+    // Only the two routes that establish a seat carry identity. Every other
+    // action is authorised by the seat token and needs no ticket.
+    const wantsIdentity = /\/(open|join)$/.test(path);
+    let ticket: string | null = null;
+    if (wantsIdentity && this.identityTicket) {
+      try {
+        ticket = await this.identityTicket();
+      } catch {
+        ticket = null;
+      }
+    }
     try {
       const response = await this.transport.fetch(`${this.transport.origin}${path}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(ticket ? { 'X-MCA-Identity-Ticket': ticket } : {}),
           ...(options.roomToken ? { Authorization: `Room ${options.roomToken}` } : {}),
         },
         body: JSON.stringify(options.body),

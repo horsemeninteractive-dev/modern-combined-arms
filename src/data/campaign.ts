@@ -1,17 +1,39 @@
 /**
- * Campaign prologue content. The screen is a command deck over the existing
- * simulation: every operation names one built-in theatre and a fixed pair of
- * nations, so a campaign battle cannot inherit a skirmish nation or colour
- * choice. Operations are linear: a victory clears the current operation and
- * opens the next one. The cleared set is persisted by the app shell, while the
- * battle itself remains a standalone scenario.
+ * Campaign definitions and deck progression helpers.
+ *
+ * A campaign is authored data, not a second scenario format: every operation
+ * embeds a real, versioned `MissionDoc` and deploys on a campaign theatre
+ * authored for that operation. The mission document is what the authoritative
+ * simulation runs, so campaign battles and skirmish battles share one runtime.
+ *
+ * The campaign layer (src/campaign) owns progress between missions. The helpers
+ * at the bottom of this file are the deck's view of that progress: the cleared
+ * set is derived from accepted mission records, never stored twice.
+ *
+ * The operations themselves live in `opsBaltic.ts` and `opsEastern.ts`, one
+ * module per campaign, because twenty-four mission documents in one file cannot
+ * be read or reviewed. This module stays the single catalogue.
  */
+import type { MissionDoc } from '../mission/types';
+import type { CampaignVeteranSlot } from '../campaign/types';
+import { BALTIC_OPERATIONS } from './campaign/opsBaltic';
+import { EASTERN_OPERATIONS } from './campaign/opsEastern';
+
+/**
+ * Definition version. Kept at 1 across the content expansion: the original
+ * operation ids, orders and campaign variables are unchanged, so a run started
+ * against the earlier deck still resolves its accepted records and its next
+ * operation is simply the following entry in the longer chain. The version is
+ * for *shape* changes, and the shape did not change.
+ */
+export const CAMPAIGN_DEFINITION_VERSION = 1;
+
 export interface CampaignMission {
   id: string;
   /** Short operation code shared by the rail, dossier and brief. */
   code: string;
   name: string;
-  /** Built-in theatre this operation deploys on. */
+  /** Campaign theatre this operation deploys on; authored for this operation. */
   mapId: string;
   /** One-line operation type shown under the rail entry. */
   focus: string;
@@ -23,10 +45,30 @@ export interface CampaignMission {
   playerNationId: string;
   /** The fixed opposing command. */
   opponentNationId: string;
+  /** The authoritative, versioned mission document this operation runs. */
+  mission: MissionDoc;
+  /** Named individuals this operation may carry out of the campaign roster. */
+  veterans: readonly CampaignVeteranSlot[];
+}
+
+export interface CampaignVariable {
+  id: string;
+  type: 'number' | 'boolean' | 'string';
+  default: number | boolean | string;
+  description?: string;
+}
+
+export interface CampaignRosterEntry {
+  id: string;
+  name: string;
+  defId: string;
+  role: 'veteran' | 'asset';
 }
 
 export interface CampaignDef {
   id: string;
+  /** Definition version a run is started against and validated with. */
+  version: number;
   name: string;
   /** Coalition label, also the campaign's colour source. */
   coalition: string;
@@ -36,141 +78,53 @@ export interface CampaignDef {
   accent: string;
   lede: string;
   note: string;
+  /** Campaign-level persistent variables, written by mission consequences. */
+  variables: readonly CampaignVariable[];
+  /** The persistent named individuals the campaign starts with. */
+  roster: readonly CampaignRosterEntry[];
   missions: readonly CampaignMission[];
 }
+
+/** Campaign variables every operation's consequences are allowed to write. */
+const CAMPAIGN_VARIABLES: readonly CampaignVariable[] = [
+  { id: 'standing', type: 'number', default: 0, description: 'Operations accepted for the coalition.' },
+  { id: 'lastOperation', type: 'string', default: '', description: 'Most recently accepted operation.' },
+];
 
 export const CAMPAIGNS: readonly CampaignDef[] = [
   {
     id: 'baltic-line',
+    version: CAMPAIGN_DEFINITION_VERSION,
     name: 'The Baltic Line',
     coalition: 'Defender Coalition',
     allianceId: 'defender',
     accent: '#37b6e0',
     lede:
-      'Three opening operations holding the Baltic approach: a beachhead on Kestrel Bay, the armour passes of Rust Valley, and the sea lane through the Kestrel Straits. Finland and Sweden entered when the corridor reached the Gulf of Finland, opening a northern front the coalition now holds with Baltic and Scandinavian formations alike.',
-    note: 'Fixed commands · blue versus red. Each operation is a standalone battle.',
-    missions: [
-      {
-        id: 'baltic-01',
-        code: 'BALTIC / 01',
-        name: 'Kestrel Beachhead',
-        mapId: 'island-assault',
-        focus: 'Beachhead · Combined',
-        situation:
-          'The 11th Corps has dug into the ridge above Kestrel Bay. A Lithuanian battlegroup holds the western beachhead while coalition reinforcements race to land behind it.',
-        threat: 'Entrenched armour, layered air defence and a coastal missile corvette.',
-        objectives: [
-          'Destroy the Russian Command Post above Kestrel Bay.',
-          'Hold the western beachhead while reinforcements land.',
-          'Capture the beachhead signals relay to fund the advance.',
-          'Keep the Lithuanian Command Post operational.',
-        ],
-        playerNationId: 'lithuania',
-        opponentNationId: 'russia',
-      },
-      {
-        id: 'baltic-02',
-        code: 'BALTIC / 02',
-        name: 'Rust Pass',
-        mapId: 'rust-valley',
-        focus: 'Armour · Land',
-        situation:
-          'Polish armour must force the central massif before Belarus can close the two wide passes. Whoever holds the high ground controls the eastern plain.',
-        threat: 'Massed armour and prepared anti-tank screens in the passes.',
-        objectives: [
-          'Destroy the Belarusian Command Post beyond the passes.',
-          'Control both armour passes through the central massif.',
-          'Take the forward supply depot to sustain the armour.',
-          'Keep the Polish Command Post operational.',
-        ],
-        playerNationId: 'poland',
-        opponentNationId: 'belarus',
-      },
-      {
-        id: 'baltic-03',
-        code: 'BALTIC / 03',
-        name: 'Strait Denial',
-        mapId: 'kestrel-straits',
-        focus: 'Naval · Littoral',
-        situation:
-          "A UK task force is ordered to cut the expeditionary corps' sea lane through the Kestrel Straits and hold the islands that anchor it.",
-        threat: 'Coastal missile corvettes, strike aircraft and fortified radar stations.',
-        objectives: [
-          'Destroy the Russian Command Post covering the straits.',
-          'Cut the expeditionary corps sea lane through the Kestrel Straits.',
-          'Take the island radar station to blind the coast.',
-          'Keep the UK Command Post and shipyard operational.',
-        ],
-        playerNationId: 'uk',
-        opponentNationId: 'russia',
-      },
+      'Twelve operations holding, then retaking, the Baltic approach: a beachhead on Kestrel Bay, the passes of Rust Valley, the foundry city, the granite uplands and finally the Kestrel Straits. Lithuania opens the line, Poland brings the armour, the United Kingdom fights for the sea lane, Finland screens the north and Sweden leads the counter-stroke. Finland and Sweden entered when the corridor reached the Gulf of Finland, opening a northern front the coalition now holds with Baltic and Scandinavian formations alike.',
+    note: 'Fixed commands · blue versus red. Each operation is a standalone battle with its own theatre and force.',
+    variables: CAMPAIGN_VARIABLES,
+    roster: [
+      { id: 'vet-kestrel', name: 'Sgt. Emilija Raudonė', defId: 'rifle', role: 'veteran' },
+      { id: 'vet-vilkas', name: 'Cpl. Tomas Vilkas', defId: 'medic', role: 'veteran' },
     ],
+    missions: BALTIC_OPERATIONS,
   },
   {
     id: 'eastern-corridor',
+    version: CAMPAIGN_DEFINITION_VERSION,
     name: 'The Eastern Corridor',
     coalition: 'Eastern Coalition',
     allianceId: 'eastern',
     accent: '#ef6a4a',
     lede:
-      'Three opening operations driving the corridor to the coast: the Kestrel beachhead, the foundry city, and the strait blockade. Iran and North Korea joined once the corridor became a long war, supplying the drones and siege artillery the corps now spends in place of its own dwindling stocks.',
-    note: 'Fixed commands · red versus blue. Each operation is a standalone battle.',
-    missions: [
-      {
-        id: 'corridor-01',
-        code: 'CORRIDOR / 01',
-        name: 'Red Beach',
-        mapId: 'island-assault',
-        focus: 'Assault · Combined',
-        situation:
-          'The corps has landed on Kestrel Bay and must clear the beachhead before coalition reinforcements arrive. The first hour decides whether the landing holds.',
-        threat: 'Anti-tank screens, prepared defences and coalition air cover.',
-        objectives: [
-          'Destroy the Lithuanian Command Post above the beachhead.',
-          'Clear the anti-tank screen before coalition reinforcements arrive.',
-          'Capture the beachhead signals relay to fund the assault.',
-          'Keep the Russian Command Post operational.',
-        ],
-        playerNationId: 'russia',
-        opponentNationId: 'lithuania',
-      },
-      {
-        id: 'corridor-02',
-        code: 'CORRIDOR / 02',
-        name: 'Foundry Pocket',
-        mapId: 'foundry-district',
-        focus: 'Urban · Land',
-        situation:
-          'Belarusian troops push into the foundry district, where Polish defenders hold the warehouses and the rail link. The city core is the decisive ground.',
-        threat: 'Urban ambushes, fortified tenements and close-range armour.',
-        objectives: [
-          'Destroy the Polish Command Post in the foundry core.',
-          'Clear the tenements and hold the central rail link.',
-          'Garrison the warehouses and offices to hold the streets.',
-          'Keep the Belarusian Command Post operational.',
-        ],
-        playerNationId: 'belarus',
-        opponentNationId: 'poland',
-      },
-      {
-        id: 'corridor-03',
-        code: 'CORRIDOR / 03',
-        name: 'Strait Blockade',
-        mapId: 'kestrel-straits',
-        focus: 'Blockade · Littoral',
-        situation:
-          "The coalition's island chain keeps the Kestrel Straits open. The corps must close the sea lane before the next convoy runs it.",
-        threat: 'A coalition naval task group and long-range coastal fires.',
-        objectives: [
-          'Destroy the UK Command Post covering the straits.',
-          'Break the coalition naval task group in the Kestrel Straits.',
-          'Take the coastal radar station to cover the blockade.',
-          'Keep the Russian Command Post and shipyard operational.',
-        ],
-        playerNationId: 'russia',
-        opponentNationId: 'uk',
-      },
+      'Twelve operations driving the corridor to the coast and then defending it: the Red Beach landing, the foundry pocket, the strait blockade, the armoured breach and the winter road. Russia lands the corps, Belarus fights the cities, Iran supplies the drones, North Korea the siege guns, and the corridor holds the straits at the end of the season. Iran and North Korea joined once the corridor became a long war, supplying the reach the corps could no longer afford itself.',
+    note: 'Fixed commands · red versus blue. Each operation is a standalone battle with its own theatre and force.',
+    variables: CAMPAIGN_VARIABLES,
+    roster: [
+      { id: 'vet-volkov', name: 'Sgt. Dmitri Volkov', defId: 'rifle', role: 'veteran' },
+      { id: 'vet-amari', name: 'Cpl. Nadia Amari', defId: 'atgm', role: 'veteran' },
     ],
+    missions: EASTERN_OPERATIONS,
   },
 ];
 
@@ -191,12 +145,11 @@ export interface CampaignSelection {
 }
 
 /**
- * The persistent half of a campaign: operations the player has finished and
- * the last operation they had open.
+ * The deck's persistent view of a campaign: operations the player has finished
+ * and the last operation they had open.
  *
- * A linear operation unlocks when the one before it is cleared, so the store
- * only needs the cleared set. It is intentionally small and JSON-only; the
- * campaign screen owns the browser storage around it.
+ * This is derived from authoritative campaign state by `campaignProgressOf`; it
+ * is not a second stored source of truth.
  */
 export interface CampaignProgress {
   version: 1;
@@ -312,16 +265,14 @@ export function parseCampaignProgress(raw: unknown): CampaignProgress {
   for (const campaign of CAMPAIGNS) {
     const entries = (source as Record<string, unknown>)[campaign.id];
     if (!Array.isArray(entries)) continue;
-    const known = new Set(
-      entries.filter((id): id is string => typeof id === 'string'),
-    );
+    const known = new Set(entries.filter((id): id is string => typeof id === 'string'));
     const ordered = campaign.missions
       .filter((mission) => known.has(mission.id))
       .map((mission) => mission.id);
     if (ordered.length > 0) cleared[campaign.id] = ordered;
   }
-  // A stale or hand-edited selection is dropped without discarding the
-  // cleared set; the menu then falls back to the first unfinished operation.
+  // A stale or hand-edited selection is dropped without discarding the cleared
+  // set; the menu then falls back to the first unfinished operation.
   const selectionRaw = record.lastSelection;
   let lastSelection: CampaignSelection | undefined;
   if (selectionRaw && typeof selectionRaw === 'object') {

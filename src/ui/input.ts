@@ -2,7 +2,14 @@ import type { App } from '../app';
 import { BUILDINGS } from '../data/buildings';
 import { isGarrisonTarget, isRepairTarget } from './orderIntent';
 import { edgePanVector } from './hudLayout';
-import { battleCursor, cursorProperty } from './cursors';
+import {
+  battleCursor,
+  cursorProperty,
+  editorCursor,
+  uiCursorFor,
+  wantsNativeCursor,
+  type AppCursor,
+} from './cursors';
 
 /** Arrow keys pan; A/S/H/C stay free for the orders the briefing advertises. */
 const PAN_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
@@ -86,10 +93,17 @@ export class InputController {
     this.edgePointer.x = event.clientX;
     this.edgePointer.y = event.clientY;
     this.edgePointer.inside = event.pointerType !== 'touch';
+    // The cursor layer is app-wide, so the position is tracked even while the
+    // pointer is over the deck, a panel, a modal or the editor.
+    this.app.pointer.x = event.clientX;
+    this.app.pointer.y = event.clientY;
   };
 
   private onPointerDown = (event: PointerEvent): void => {
     if (this.app.screen !== 'battle') return;
+    // A cinematic camera is not an order surface. The overlay owns the pointer
+    // for the duration of the scene.
+    if (this.app.cinematicLocked) return;
     try {
       this.canvas.setPointerCapture(event.pointerId);
     } catch {
@@ -150,6 +164,7 @@ export class InputController {
 
   private onPointerMove = (event: PointerEvent): void => {
     if (this.app.screen !== 'battle') return;
+    if (this.app.cinematicLocked) return;
     this.app.pointer.x = event.clientX;
     this.app.pointer.y = event.clientY;
     this.app.pointer.over = true;
@@ -265,6 +280,7 @@ export class InputController {
 
   private onWheel = (event: WheelEvent): void => {
     if (this.app.screen !== 'battle') return;
+    if (this.app.cinematicLocked) return;
     event.preventDefault();
     this.app.renderer.camera.zoomBy(event.deltaY > 0 ? 1.1 : 0.9);
   };
@@ -277,6 +293,10 @@ export class InputController {
     const app = this.app;
     if (app.mode === 'place') {
       app.placeAtScreen(clientX, clientY);
+      return;
+    }
+    if (app.mode === 'superweapon') {
+      app.superweaponAtScreen(clientX, clientY);
       return;
     }
     if (app.mode === 'move') {
@@ -414,6 +434,15 @@ export class InputController {
   }
 
   private onKeyDown = (event: KeyboardEvent): void => {
+    // Cinematic playback owns Space, Enter and Escape, including on the campaign
+    // deck after an operation has been accepted. No command is dispatched.
+    if (this.app.cinematicLocked) {
+      if (event.code === 'Space' || event.code === 'Enter' || event.code === 'Escape') {
+        event.preventDefault();
+        this.app.skipCinematic();
+      }
+      return;
+    }
     if (this.app.screen !== 'battle') return;
     const target = event.target as HTMLElement | null;
     if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
@@ -556,6 +585,12 @@ export class InputController {
 
   update(dt: number): void {
     this.syncCursor();
+    if (this.app.cinematicLocked) {
+      // Held keys would otherwise pan the authored camera the moment the scene
+      // ended. Clear them and let the sequence own the frame.
+      this.keys.clear();
+      return;
+    }
     if (this.app.screen !== 'battle') {
       this.updateGamepad(dt);
       return;
@@ -592,45 +627,96 @@ export class InputController {
   }
 
   /**
-   * Keep the battlefield pointer in step with the armed order.
+   * Keep the app-wide pointer in step with the armed order.
    *
-   * The canvas owns the cursor, so HUD controls keep their own native pointer
-   * and a cursor crossing onto a panel never leaves an attack reticle behind.
-   * Placement validity costs a raycast and a footprint check, so it is only
-   * recomputed when the mode, screen or pointer position actually changed;
+   * The cursor layer owns the pointer on every screen, but only the battlefield
+   * arms an order. Moving onto the rail, a sidebar or a modal drops the order
+   * reticle and asks the control under the pointer whether it is actionable or
+   * blocked. Placement validity costs a raycast and a footprint check, so it is
+   * only recomputed when the mode, screen or pointer position actually changed;
    * the hot path is a string comparison.
    */
   private syncCursor(): void {
     const app = this.app;
-    const battle = app.screen === 'battle' && !!app.game;
+    // A cinematic is not an order surface: no reticle is drawn over the shot.
+    const battle = app.screen === 'battle' && !!app.game && !app.cinematicLocked;
     const panning = !!this.pan?.dragging;
     const draggingBox = app.dragBox.active;
     const x = Math.round(app.pointer.x);
     const y = Math.round(app.pointer.y);
     const custom = app.settings.customCursors;
-    // A modal covers the battlefield without moving the pointer off it, so the
-    // drawn reticle has to be gated explicitly while one is open.
+    // A modal covers the battlefield without moving the pointer off it, so an
+    // armed order belongs to the modal surface, not the field below.
     const modal = document.getElementById('modal-root');
     const modalOpen = !!modal && !modal.classList.contains('hidden');
-    const key = `${battle}|${app.mode}|${x}|${y}|${panning}|${draggingBox}|${custom}|${app.pointer.over}|${modalOpen}`;
+    const hit = document.elementFromPoint(x, y);
+    const uiCursor = uiCursorFor(hit);
+    // Text entry keeps the platform I-beam, even though the OS pointer is
+    // hidden everywhere else while custom cursors are on.
+    const native = custom && wantsNativeCursor(hit);
+    // The editor draws its map under a transparent chrome layer, so the canvas
+    // under the pointer is the authoring surface. Its armed tool decides whether
+    // this is a placement, a camera drag or an ordinary panel control.
+    const editor = app.screen === 'editor' && app.editor.active ? app.editor : null;
+    const overEditorMap = !!editor && hit === this.canvas;
+    const editorState = editor && !modalOpen
+      ? editorCursor({
+          overMap: overEditorMap,
+          overControl: uiCursor !== 'select',
+          panning: editor.panning,
+          panMode: editor.panMode,
+          placing: editor.placementToolActive,
+          placementOk:
+            overEditorMap && editor.placementToolActive && !editor.panning && !editor.panMode
+              ? editor.placementOk
+              : false,
+        })
+      : null;
+    // The control state is part of the key as well as the position: a card can
+    // become unaffordable or disabled under a still pointer, and the pointer
+    // has to turn blocked without waiting for a mouse move.
+    const key = `${battle}|${editor ? 'ed' : 'ui'}|${editorState ?? ''}|${app.mode}|${x}|${y}|${panning}|${draggingBox}|${custom}|${app.pointer.over}|${modalOpen}|${app.cinematicLocked}|${this.edgePointer.inside}|${native}|${uiCursor}`;
     if (key === this.cursorKey) return;
     this.cursorKey = key;
-    if (!battle) {
-      app.pointerCursor.visible = false;
-      this.applyCursor('');
-      return;
-    }
+    // Resolve the surface from the element under the pointer, not from the last
+    // canvas press: a camera drag can end over the rail with pointer capture
+    // still set, and the rail must not inherit the battlefield reticle.
+    const onField = battle && hit === this.canvas && !modalOpen;
     let placementOk: boolean | null = null;
-    if (app.mode === 'place' && app.pointer.over) {
+    if (onField && app.mode === 'place') {
       const site = app.placementAtScreen(app.pointer.x, app.pointer.y);
       if (site) placementOk = site.ok;
     }
-    const cursor = battleCursor(app.mode, { placementOk, panning, draggingBox });
-    // With custom cursors on, the overlay paints the reticle and the OS pointer
-    // is hidden over the battlefield. Off restores the platform pointer.
+    let cursor: AppCursor;
+    let nativeName = '';
+    if (editorState) {
+      cursor = editorState;
+      nativeName = cursorProperty(editorState, false);
+    } else if (battle && (onField || panning || draggingBox)) {
+      // A pan or box gesture outlives the battlefield frame: once it starts it
+      // keeps its reticle while the pointer crosses the rail and sidebar.
+      const fieldCursor = battleCursor(app.mode, { placementOk, panning, draggingBox });
+      cursor = fieldCursor;
+      nativeName = cursorProperty(fieldCursor, false);
+    } else if (battle && app.mode === 'place' && !modalOpen) {
+      // The deployment rail is not a build surface, so inert rail background
+      // reports the placement as refused. Its actual controls still accept
+      // clicks: an affordable card keeps the action hand and a disabled one the
+      // blocked pointer instead of every button reading as a bad build site.
+      cursor = uiCursor === 'select' ? 'placeBlocked' : uiCursor;
+      nativeName = cursor === 'placeBlocked' ? cursorProperty('placeBlocked', false) : '';
+    } else {
+      // Over the deck, a panel or a modal: the control under the pointer decides
+      // whether this is an ordinary arrow, an actionable hand or a blocked one.
+      cursor = uiCursor;
+      if (editor && overEditorMap) nativeName = 'crosshair';
+    }
+    // With custom cursors on, the level above every screen paints the pointer.
+    // Off restores the platform pointer with the closest native meaning.
     app.pointerCursor.name = cursor;
-    app.pointerCursor.visible = custom && app.pointer.over && !modalOpen;
-    this.applyCursor(cursorProperty(cursor, custom));
+    app.pointerCursor.visible = custom && this.edgePointer.inside && !native;
+    if (custom) this.applyCursor('none');
+    else this.applyCursor(nativeName);
   }
 
   private applyCursor(css: string): void {
@@ -638,6 +724,7 @@ export class InputController {
   }
 
   private updateGamepad(dt: number): void {
+    if (this.app.cinematicLocked) return;
     if (this.app.screen !== 'battle' || typeof navigator.getGamepads !== 'function') return;
     const pads = navigator.getGamepads();
     let pad: Gamepad | null = null;

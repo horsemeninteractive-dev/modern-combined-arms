@@ -29,6 +29,11 @@ export interface MultiplayerPanelOptions {
    */
   onMatchStart?: (client: LobbyClient, view: LobbyView) => void;
   fetchImpl?: typeof fetch;
+  /**
+   * Verified account identity for a seat, when the player is signed in. Absent
+   * or null means guest, which is a fully supported way to play.
+   */
+  identityTicket?: () => Promise<string | null>;
 }
 
 /**
@@ -131,6 +136,7 @@ export class MultiplayerPanel {
       ? new LobbyClient({
           origin: options.origin,
           fetch: options.fetchImpl,
+          identityTicket: options.identityTicket,
           onChange: (view) => this.render(view),
         })
       : null;

@@ -7,7 +7,7 @@ import { MeshBuilder } from './geometry';
 import { MATERIAL } from './materials';
 import type { MeshBuffers } from './gl';
 import { hash01 } from './math';
-import type { PropInstance } from './gl';
+import type { OreInstance, PropInstance } from './gl';
 import { WATER_LEVEL, terrainCornerHeight, terrainSurfaceHeight } from './terrainSurface';
 
 export interface TerrainGeometry {
@@ -711,6 +711,79 @@ export function buildShoreTexture(scenario: Scenario): Uint8Array {
   return data;
 }
 
+/** Crystal nodes standing in one ore tile, each holding a fifth of the seam. */
+export const ORE_NODES_PER_TILE = 5;
+/** Radius of the node ring inside a tile, as a fraction of the tile size. */
+const ORE_NODE_RING = 0.17;
+const ORE_NODE_RING_JITTER = 0.09;
+/** Height of a full node in world units; five of these fill one tile. */
+const ORE_NODE_SCALE = 1.3;
+
+/** One crystal node's world placement, scaled by the share it still holds. */
+export interface OreNodePlacement {
+  x: number;
+  y: number;
+  z: number;
+  rotation: number;
+  /** 1 for an untouched node, down to 0 as its fifth is mined out. */
+  scale: number;
+  /** Fraction of this node's fifth still in the ground, 0..1. */
+  share: number;
+  /** Ground-glow weight; 0 on every node but the seam's anchor. */
+  glow: number;
+}
+
+/**
+ * The crystal nodes standing in one seam tile at a given amount of ore.
+ *
+ * Nodes fill from the first, so the last one is always the node being mined:
+ * the renderer points the harvester's cutting beam at it, which is what makes
+ * the beam follow the shard down as it shrinks and jump to the next one when a
+ * fifth is gone.
+ */
+export function oreNodesInTile(
+  scenario: Scenario,
+  x: number,
+  z: number,
+  amount: number,
+  max: number,
+): OreNodePlacement[] {
+  if (amount <= 0) return [];
+  const ratio = Math.min(1, amount / Math.max(1, max));
+  const filled = ratio * ORE_NODES_PER_TILE;
+  const spin = hash01(x, z, 23) * Math.PI * 2;
+  // The seam's one ground glow rides the last node that still stands, so five
+  // nodes do not stack five pools on the same patch of ground.
+  const anchor = Math.min(ORE_NODES_PER_TILE - 1, Math.max(0, Math.ceil(filled) - 1));
+  const nodes: OreNodePlacement[] = [];
+  for (let node = 0; node < ORE_NODES_PER_TILE; node++) {
+    const share = Math.min(1, filled - node);
+    if (share <= 1e-6) continue;
+    const angle =
+      spin +
+      (node / ORE_NODES_PER_TILE) * Math.PI * 2 +
+      (hash01(x, z * 7 + node, 26) - 0.5) * 0.42;
+    const ring = TILE_SIZE * (ORE_NODE_RING + hash01(x * 7 + node, z, 24) * ORE_NODE_RING_JITTER);
+    const wx = (x + 0.5) * TILE_SIZE + Math.cos(angle) * ring;
+    const wz = (z + 0.5) * TILE_SIZE + Math.sin(angle) * ring;
+    nodes.push({
+      x: wx,
+      y: terrainSurfaceHeight(scenario, wx, wz) + 0.02,
+      z: wz,
+      rotation: hash01(x, z, 25 + node) * Math.PI * 2,
+      scale: ORE_NODE_SCALE * share * (0.9 + hash01(x, z, 31 + node) * 0.2),
+      share,
+      glow: node === anchor ? Math.max(0.3, ratio) : 0,
+    });
+  }
+  return nodes;
+}
+
+/**
+ * A material seam is five crystal nodes to a tile rather than one giant spire.
+ * Each node holds a fifth of the deposit and shrinks with what it still holds,
+ * so 20% gathered has already taken one node down to nothing.
+ */
 export function buildPropInstances(
   scenario: Scenario,
   ore?: Uint16Array,
@@ -718,7 +791,7 @@ export function buildPropInstances(
 ): {
   trees: PropInstance[];
   rocks: PropInstance[];
-  ore: PropInstance[];
+  ore: OreInstance[];
   bushes: PropInstance[];
   shrubs: PropInstance[];
   tufts: PropInstance[];
@@ -731,7 +804,7 @@ export function buildPropInstances(
 } {
   const trees: PropInstance[] = [];
   const rocks: PropInstance[] = [];
-  const oreInstances: PropInstance[] = [];
+  const oreInstances: OreInstance[] = [];
   const bushes: PropInstance[] = [];
   const shrubs: PropInstance[] = [];
   const tufts: PropInstance[] = [];
@@ -1120,18 +1193,24 @@ export function buildPropInstances(
 
       const amount = ore ? ore[i] : tile.o;
       if (amount > 0) {
-        const max = maxOre ? maxOre[i] : tile.o || 1;
-        const ratio = Math.max(0.25, Math.min(1, amount / Math.max(1, max)));
-        const wx = (x + 0.5) * TILE_SIZE + (hash01(x, z, 21) - 0.5) * 1.8;
-        const wz = (z + 0.5) * TILE_SIZE + (hash01(x, z, 22) - 0.5) * 1.8;
-        oreInstances.push({
-          x: wx,
-          y: terrainSurfaceHeight(scenario, wx, wz) + 0.02,
-          z: wz,
-          rotation: hash01(x, z, 23) * Math.PI * 2,
-          scale: 0.45 + ratio * 0.75,
-          color: [1, 0.94 + ratio * 0.06, 0.82],
-        });
+        const nodes = oreNodesInTile(
+          scenario,
+          x,
+          z,
+          amount,
+          maxOre ? maxOre[i] : tile.o || 1,
+        );
+        for (const node of nodes) {
+          oreInstances.push({
+            x: node.x,
+            y: node.y,
+            z: node.z,
+            rotation: node.rotation,
+            scale: node.scale,
+            color: [1, 0.94 + node.share * 0.06, 0.82],
+            glow: node.glow,
+          });
+        }
       }
     }
   }
@@ -1151,7 +1230,7 @@ export function buildPropInstances(
   };
 }
 
-export function runtimeOreInstances(scenario: Scenario, map: RuntimeMap): PropInstance[] {
+export function runtimeOreInstances(scenario: Scenario, map: RuntimeMap): OreInstance[] {
   return buildPropInstances(scenario, map.ore, map.maxOre).ore;
 }
 

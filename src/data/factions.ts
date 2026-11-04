@@ -117,6 +117,7 @@ const NATION_DATA: readonly NationDef[] = [
     color: '#37b6e0',
     accent: '#a8ecff',
     doctrine: 'Reconnaissance screen',
+    superweapon: 'ew',
     blurb:
       'Front-line defender in the opening Baltic crisis. Fields the unarmed Pathfinder scout for cheap long-range optics, the Kestrel air team for air denial that can hide in a building, and a cheaper Forward Observation Post in place of the shared radar array.',
     roster: {
@@ -133,6 +134,7 @@ const NATION_DATA: readonly NationDef[] = [
     color: '#4f9ad8',
     accent: '#b9dcff',
     doctrine: 'Armoured spearhead',
+    superweapon: 'drone',
     blurb:
       'Major regional military actor and the coalition\'s armoured weight. Fields the harder-hitting Spearhead MBT, the Wilk heavy IFV that can fight tanks, and an Armoured Workshop that keeps its vehicle line alive under fire.',
     roster: {
@@ -149,6 +151,7 @@ const NATION_DATA: readonly NationDef[] = [
     color: '#6f8fce',
     accent: '#c7d8ff',
     doctrine: 'Saturation fires',
+    superweapon: 'saturation',
     blurb:
       'Expeditionary specialist contribution. Fields the long-reach Rocket Battery, the Storm Shadow deep-strike launcher that breaks a position from beyond sight, and a cheap Expeditionary Airfield that is easier to lose.',
     roster: {
@@ -165,6 +168,7 @@ const NATION_DATA: readonly NationDef[] = [
     color: '#4a86b8',
     accent: '#cfe6ff',
     doctrine: 'Territorial defence',
+    superweapon: 'dew',
     blurb:
       'Northern anchor of the coalition line. Fields the long-reaching K9 Thunder howitzer, the Spike ER team that kills armour from behind a ridge, and a cheap Garrison Barracks so every sector can raise its own infantry.',
     roster: {
@@ -181,6 +185,7 @@ const NATION_DATA: readonly NationDef[] = [
     color: '#3b6ea8',
     accent: '#ffd76a',
     doctrine: 'Mobile combined arms',
+    superweapon: 'hypersonic',
     blurb:
       'Technologically advanced northern contributor. Fields the fast, long-sighted CV90, the Gripen multirole fighter that carries both an air-to-air and a strike missile, the Visby-class corvette that outruns anything else afloat, and a hardened Kockums Shipyard on the coast.',
     roster: {
@@ -197,6 +202,7 @@ const NATION_DATA: readonly NationDef[] = [
     color: '#ef6a4a',
     accent: '#ffc19e',
     doctrine: 'Siege artillery',
+    superweapon: 'hypersonic',
     blurb:
       'Principal aggressor in the opening crisis; broad conventional capabilities. Fields the devastating Heavy Howitzer, the short-range TOSP thermobaric launcher for clearing positions, and a Long-Range SAM site that reaches further than the shared battery.',
     roster: {
@@ -213,6 +219,7 @@ const NATION_DATA: readonly NationDef[] = [
     color: '#d97a4a',
     accent: '#ffd0ad',
     doctrine: 'Deep surveillance',
+    superweapon: 'ew',
     blurb:
       'Closely integrated with Russia in this timeline. Fields the thirty-tile Deep Recon UAV, cheap Sprint recon buggies to saturate the map with eyes, and a Signals Bureau that runs national research a fifth faster than the shared centre at the cost of survivability.',
     roster: {
@@ -229,6 +236,7 @@ const NATION_DATA: readonly NationDef[] = [
     color: '#c98f5a',
     accent: '#f2d6b3',
     doctrine: 'Fortified defence',
+    superweapon: 'dew',
     blurb:
       'Limited specialist involvement; politically significant, but not an equal mass conventional force. Fields the fast-reloading Hedgehog AT team, the Taszar mortar team — indirect fire that fits in a building — and the Reinforced Bunker.',
     roster: {
@@ -245,6 +253,7 @@ const NATION_DATA: readonly NationDef[] = [
     color: '#4f8c5a',
     accent: '#e2f2d8',
     doctrine: 'Unmanned strike',
+    superweapon: 'drone',
     blurb:
       'Unmanned-systems specialist of the eastern coalition. Fields the long-reaching 3rd Khordad SAM vehicle, the Mohajer-6 armed drone that finds a position and then bombs it, the Ghadir midget submarine that ambushes from shallow water, and cheap dispersed Noor coast launchers.',
     roster: {
@@ -261,6 +270,7 @@ const NATION_DATA: readonly NationDef[] = [
     color: '#b8433c',
     accent: '#ffd3c9',
     doctrine: 'Siege fires',
+    superweapon: 'saturation',
     blurb:
       'Siege-fire specialist pressing the eastern front. Replaces its assault gun with the Bulsae-4 missile carrier that stands off fourteen tiles, adds the 170mm Koksan that out-ranges every tube in the game beside the shared howitzer, and builds an Entrenched AT Gun meant to be assaulted.',
     roster: {

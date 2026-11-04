@@ -1,6 +1,6 @@
 import { ELEVATION_HEIGHT, HARVESTER_CAPACITY, TICK_RATE, TILE_SIZE } from '../sim/constants';
 import { Terrain, tileIndex } from '../sim/terrain';
-import { effectivePixelRatio } from '../settings';
+import { effectivePixelRatio, type ShadowDetail } from '../settings';
 import { BUILDINGS } from '../data/buildings';
 import { UNITS } from '../data/units';
 import { NATION_LIST } from '../data/factions';
@@ -20,6 +20,7 @@ import {
   MESH_MATERIAL_TEXTURE_UNIT,
   PROP_MATERIAL_TEXTURE_UNIT,
   createProgram,
+  type OreInstance,
   type PropInstance,
   type MeshBuffers,
 } from './gl';
@@ -28,12 +29,22 @@ import {
   MESH_VS,
   PROP_FS,
   PROP_VS,
+  SHADOW_DEPTH_FS,
+  SHADOW_DEPTH_VS,
   TERRAIN_FS,
   TERRAIN_VS,
   WATER_FS,
   WATER_VS,
 } from './shaders';
 import { buildingStyle, buildingTopHeight, FALLBACK_BUILDING } from './buildingMeshes';
+import {
+  buildingDamageAnchors,
+  buildingDamageMesh,
+  buildingDamageStage,
+  buildingDamageTint,
+  type BuildingDamageStage,
+} from './buildingDamage';
+import { buildingModuleMesh } from './buildingModules';
 import {
   buildFlagRig,
   flagColorForOwner,
@@ -74,6 +85,7 @@ import {
   buildShoreTexture,
   buildTerrainGeometry,
   isWaterAt,
+  oreNodesInTile,
   tileWorldHeight,
   type TerrainGeometry,
 } from './terrainMesh';
@@ -86,9 +98,15 @@ import { weatherFor, type WeatherProfile } from '../sim/weather';
 import { DecalGpu } from './decalGpu';
 import { DecalStore, decalAlpha, type GroundDecal } from './decalStore';
 import { ShadowGpu, type GpuShadow } from './shadowGpu';
-import type { Vec3 } from './math';
+import { ShadowMap, shadowLightMatrix, SHADOW_MAP_SIZE } from './shadowMap';
+import { identity, type Vec3 } from './math';
 import { teamColorForOwner } from './teamColor';
-import { limbModelMatrix, turretModelMatrix, unitBodyHeading } from './unitTransform';
+import {
+  limbModelMatrix,
+  turretModelMatrix,
+  unitBodyHeading,
+  unitDrawnBodyHeading,
+} from './unitTransform';
 import { rotateLocalOffset } from '../core/math';
 import {
   eventVisibleToLocal,
@@ -113,6 +131,11 @@ const FOG_UPDATE_SECONDS = 3 / TICK_RATE;
  */
 const SILHOUETTE_DEPTH_PULL = 8;
 const SILHOUETTE_ALPHA = 0.5;
+
+/** Texture unit reserved for the detailed shadow map, clear of every lit pass. */
+const SHADOW_TEXTURE_UNIT = 5;
+/** Light-space depth bias before the grazing-angle scale in the shader. */
+const SHADOW_BIAS = 0.00018;
 
 interface VisualEntity {
   x: number;
@@ -166,8 +189,8 @@ export interface RenderSettings {
   grid: boolean;
   /** Fraction of the device pixel ratio used for the battlefield canvas. */
   renderScale: number;
-  /** Flat projected ground shadows for units, structures and props. */
-  shadows: boolean;
+  /** Shadow fidelity: off, the flat projected pass, or a real shadow map. */
+  shadowDetail: ShadowDetail;
   /** Team-coloured outlines where a unit is hidden behind a structure. */
   silhouettes: boolean;
   /** Animated water normals; off keeps the sea but freezes the ripple. */
@@ -241,7 +264,7 @@ export class Renderer {
     showFog: true,
     grid: false,
     renderScale: 1,
-    shadows: true,
+    shadowDetail: 'detailed',
     silhouettes: true,
     waterDetail: true,
     nightLights: true,
@@ -258,6 +281,10 @@ export class Renderer {
   private particleGpu!: ParticleGpu;
   private decalGpu!: DecalGpu;
   private shadowGpu!: ShadowGpu;
+  private shadowProgram!: MeshProgram;
+  private shadowMap!: ShadowMap;
+  /** World-to-light-clip matrix for the frame's detailed shadow map. */
+  private shadowMatrix: Float32Array = identity();
   /** Fading tracks, tyre marks, scorch and craters; presentation-only and bounded. */
   private readonly decals = new DecalStore();
   private decalScratch: GroundDecal[] = [];
@@ -282,7 +309,7 @@ export class Renderer {
   private polesMesh!: InstancedMesh;
   private treeInstances: PropInstance[] = [];
   private rockInstances: PropInstance[] = [];
-  private oreInstances: PropInstance[] = [];
+  private oreInstances: OreInstance[] = [];
   private bushInstances: PropInstance[] = [];
   private shrubInstances: PropInstance[] = [];
   private tuftInstances: PropInstance[] = [];
@@ -321,6 +348,13 @@ export class Renderer {
       flagMount: Vec3;
     }
   >();
+  /**
+   * Damage and retrofit geometry, built on first use from the authored
+   * definition and shared by every instance. Neither cache touches the data
+   * footprint, picking or the flag mount.
+   */
+  private damageMeshes = new Map<string, StaticMesh | null>();
+  private moduleMeshes = new Map<string, StaticMesh | null>();
   private flagMeshes = new Map<string, FlagMesh>();
   private flagTextures = new Map<string, WebGLTexture>();
   private whiteTexture!: WebGLTexture;
@@ -349,6 +383,8 @@ export class Renderer {
   private projectileTrailTimers = new Map<number, number>();
   /** Per-cloud emission clocks, so a screen puffs at a fixed rate, not per frame. */
   private smokeEmitTimers = new Map<number, number>();
+  /** Per-harvester cutting-beam clocks, keyed by entity id. */
+  private miningTimers = new Map<number, number>();
   private projectileViews = new Map<number, { previous: ProjectileSample; current: ProjectileSample }>();
   private simulationAlpha = 1;
   private lastEventSeq = 0;
@@ -461,8 +497,11 @@ export class Renderer {
    */
   private initGpuResources(): void {
     const gl = this.gl;
+    this.shadowMap?.dispose();
     this.unitMeshes.clear();
     this.buildingMeshes.clear();
+    this.damageMeshes.clear();
+    this.moduleMeshes.clear();
     this.flagMeshes.clear();
     this.flagTextures.clear();
     this.meshProgram = { program: createProgram(gl, MESH_VS, MESH_FS), u: {} };
@@ -474,11 +513,13 @@ export class Renderer {
       'uModel', 'uTeamColor', 'uSun', 'uTint', 'uAmbient', 'uTone', 'uAlpha', 'uFlash', 'uNightGlow',
       'uFogTex', 'uFogTexOld', 'uFogBlend', 'uFlagTex', 'uMatLut', 'uUseFog',
       'uWorldSize', 'uTime', 'uSilhouette', 'uDepthPull', 'uHaze', 'uHazeColor', 'uHazeRef',
+      'uShadowMap', 'uLightVP', 'uShadowTexel', 'uShadowStrength', 'uShadowBias',
     ]);
     this.terrainProgram.u = uniformMap(gl, this.terrainProgram.program, [
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
       'uSun', 'uAmbient', 'uTone', 'uFogTex', 'uFogTexOld', 'uFogBlend', 'uShoreTex',
       'uUseFog', 'uTime', 'uGrid', 'uWet', 'uHaze', 'uHazeColor', 'uHazeRef',
+      'uShadowMap', 'uLightVP', 'uShadowTexel', 'uShadowStrength', 'uShadowBias',
     ]);
     this.waterProgram.u = uniformMap(gl, this.waterProgram.program, [
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
@@ -489,11 +530,18 @@ export class Renderer {
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
       'uSun', 'uAmbient', 'uTone', 'uEmissive', 'uGlow', 'uFogTex', 'uFogTexOld', 'uFogBlend',
       'uMatLut', 'uUseFog', 'uWorldSize', 'uWind', 'uTime', 'uHaze', 'uHazeColor', 'uHazeRef',
+      'uShadowMap', 'uLightVP', 'uShadowTexel', 'uShadowStrength', 'uShadowBias',
     ]);
     this.particleGpu = new ParticleGpu(gl);
     this.lightGpu = new LightGpu(gl);
     this.decalGpu = new DecalGpu(gl);
     this.shadowGpu = new ShadowGpu(gl);
+    this.shadowProgram = { program: createProgram(gl, SHADOW_DEPTH_VS, SHADOW_DEPTH_FS), u: {} };
+    this.shadowProgram.u = uniformMap(gl, this.shadowProgram.program, [
+      'uModel', 'uLightVP', 'uStaticScale',
+    ]);
+    this.shadowMap = new ShadowMap(gl, SHADOW_MAP_SIZE);
+    this.shadowMatrix = identity();
 
     this.treesMesh = new InstancedMesh(gl, buildTreeMesh());
     this.rocksMesh = new InstancedMesh(gl, buildRockMesh());
@@ -791,6 +839,7 @@ export class Renderer {
     this.trailTimers.clear();
     this.projectileTrailTimers.clear();
     this.smokeEmitTimers.clear();
+    this.miningTimers.clear();
     this.projectileViews.clear();
     this.particles.clear();
     if (game) {
@@ -1378,7 +1427,7 @@ export class Renderer {
   private refreshOre(): void {
     if (!this.scenario) return;
     const game = this.game;
-    let data: PropInstance[];
+    let data: OreInstance[];
     if (game) {
       if (this.oreInstances.length > 0 && game.state.tick - this.lastOreRefresh < 20) return;
       this.lastOreRefresh = game.state.tick;
@@ -1388,10 +1437,8 @@ export class Renderer {
       data = this.oreInstances;
     }
     if (data.length !== this.oreInstances.length || game) {
-      const changed = data.length !== this.oreInstances.length;
       this.oreInstances = data;
       this.oreMesh.setInstances(this.oreInstances);
-      if (changed) this.rebuildPropShadows();
     }
   }
 
@@ -1421,6 +1468,7 @@ export class Renderer {
       this.updateWreckEffects(dt, this.game);
       this.updateSmokeClouds(dt, this.game);
       this.updateProjectileTrails(dt, this.game);
+      this.updateMiningBeams(dt, this.game);
       this.refreshOre();
       this.updateFog();
     } else {
@@ -1632,13 +1680,31 @@ export class Renderer {
         }
       }
       const hpRatio = e.hp / e.maxHp;
-      if (hpRatio < 0.5) {
+      if (e.kind === 'building' && !e.construction) {
+        // Smoke and fire leave the structure from its actual damage anchors:
+        // the pile of fallen masonry, not one arbitrary point above the roof.
+        if (hpRatio < 0.5) {
+          v.damageTimer -= dt;
+          if (v.damageTimer <= 0) {
+            const stage = buildingDamageStage(hpRatio);
+            const ground = tileWorldHeight(this.scenario!, v.x, v.z);
+            for (const [ax, ay, az] of buildingDamageAnchors(e.defId, stage)) {
+              const off = rotateLocalOffset(ax, az, v.facing);
+              const px = v.x + off.x;
+              const pz = v.z + off.z;
+              this.particles.damageSmoke(px, ground + ay, pz, hpRatio < 0.22);
+              if (hpRatio < 0.22) this.particles.wreckFlame(px, ground + ay, pz, 0.9);
+            }
+            v.damageTimer = hpRatio < 0.22 ? 0.42 : 0.6;
+          }
+        }
+      } else if (hpRatio < 0.5) {
         v.damageTimer -= dt;
         if (v.damageTimer <= 0) {
           const y =
-            (def?.domain === 'air' && !e.aircraft?.landed
+            def?.domain === 'air' && !e.aircraft?.landed
               ? AIR_UNIT_ALTITUDE
-              : tileWorldHeight(this.scenario!, v.x, v.z) + (e.kind === 'building' ? 3.5 : 1.3));
+              : tileWorldHeight(this.scenario!, v.x, v.z) + 1.3;
           this.particles.damageSmoke(v.x, y, v.z, hpRatio < 0.25);
           v.damageTimer = 0.65;
         }
@@ -1737,6 +1803,67 @@ export class Renderer {
 
   private pointVisible(game: Game, x: number, z: number): boolean {
     return pointVisibleToLocal(game, x, z);
+  }
+
+  /**
+   * The harvester cuts what it collects.
+   *
+   * A cutting beam runs from the drum to the last standing crystal node of the
+   * tile being mined — the node whose share is shrinking — with gold chips
+   * thrown off the seam face and pulled back into the intake. As the fifths are
+   * taken the beam follows the shrinking shard down, then jumps to the next
+   * node when one is gone, so the cut is always on the crystal that is actually
+   * disappearing. Emission is clocked rather than per frame; the beam quad
+   * outlives a couple of emissions so it reads as a continuous cut.
+   */
+  private updateMiningBeams(dt: number, game: Game): void {
+    const scenario = this.scenario;
+    if (!scenario || !this.settings.effects) {
+      if (this.miningTimers.size > 0) this.miningTimers.clear();
+      return;
+    }
+    const team = game.teamOf(game.localPlayerId);
+    const map = game.state.map;
+    const seen = new Set<number>();
+    for (const e of game.state.entities) {
+      if (e.kind !== 'unit' || e.hp <= 0 || !e.harvester) continue;
+      if (e.harvester.phase !== 'mining') continue;
+      if (!game.isVisibleTo(team, e.id)) continue;
+      seen.add(e.id);
+      let timer = (this.miningTimers.get(e.id) ?? 0) - dt;
+      if (timer > 0) {
+        this.miningTimers.set(e.id, timer);
+        continue;
+      }
+      const tileX = e.harvester.oreTileX;
+      const tileZ = e.harvester.oreTileZ;
+      const idx = tileIndex(map.width, tileX, tileZ);
+      if (idx < 0 || idx >= map.ore.length) continue;
+      const amount = map.ore[idx];
+      if (amount <= 0) continue;
+      const nodes = oreNodesInTile(scenario, tileX, tileZ, amount, map.maxOre[idx]);
+      const node = nodes[nodes.length - 1];
+      if (!node) continue;
+      this.miningTimers.set(e.id, 0.05);
+      const v = this.visuals.get(e.id);
+      const x = v?.x ?? e.x;
+      const z = v?.z ?? e.z;
+      const facing = v?.facing ?? e.facing;
+      const ground = game.deckHeightAt(x, z) ?? tileWorldHeight(scenario, x, z);
+      const vs = unitVisualScale(e.defId);
+      // The drum is authored at local (2.53, 0.40) on the harvester hull.
+      const drum = rotateLocalOffset(2.53 * vs, 0, facing);
+      const drumX = x + drum.x;
+      const drumY = ground + 0.4 * vs;
+      const drumZ = z + drum.z;
+      // Cut the upper body of the shard, not its buried foot.
+      const contactY = node.y + 0.55 * node.scale;
+      this.particles.cutBeam(drumX, drumY, drumZ, node.x, contactY, node.z);
+      this.particles.oreChips(node.x, contactY, node.z, drumX, drumY, drumZ);
+    }
+    for (const id of [...this.miningTimers.keys()]) {
+      if (!seen.has(id)) this.miningTimers.delete(id);
+    }
   }
 
   private updateProjectileTrails(dt: number, game: Game): void {
@@ -1957,6 +2084,9 @@ export class Renderer {
     gl.clearColor(...this.clearColor, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
+    // Detailed shadows are cast before anything reads the map. The pass renders
+    // into its own depth target, so the cleared battlefield is untouched.
+    this.renderShadowMap();
     this.drawTerrain();
     this.drawWater();
     this.drawGroundDecals();
@@ -2059,6 +2189,7 @@ export class Renderer {
     bindTextureUnit(gl, 1, this.shoreTexture, p.u.uShoreTex ?? null);
     // Fog at unit 0, the previous field at unit 2; the shore map keeps unit 1.
     this.bindFogFields(p.u, 0, 2);
+    this.bindShadowSampling(p);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindVertexArray(this.terrainGpu.vao);
     gl.drawElements(gl.TRIANGLES, this.terrainGpu.count, gl.UNSIGNED_INT, 0);
@@ -2087,6 +2218,7 @@ export class Renderer {
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
       this.bindFlagTexture();
+      this.bindShadowSampling(mp);
       this.roadMesh.draw();
       gl.disable(gl.BLEND);
     }
@@ -2134,6 +2266,7 @@ export class Renderer {
     gl.uniform2f(p.u.uWorldSize, this.scenario!.width * TILE_SIZE, this.scenario!.height * TILE_SIZE);
     this.bindFogFields(p.u, 0, 2);
     bindTextureUnit(gl, PROP_MATERIAL_TEXTURE_UNIT, this.materialTexture, p.u.uMatLut ?? null);
+    this.bindShadowSampling(p);
     gl.uniform1f(p.u.uEmissive, 0);
     gl.uniform3f(p.u.uGlow, 0, 0, 0);
     // Wind reaches the canopy through the prop shader; fences, lamps and rock
@@ -2239,8 +2372,269 @@ export class Renderer {
     this.decalGpu.draw(this.camera, decals);
   }
 
+  /**
+   * How much of the sun's light a detailed shadow removes.
+   *
+   * It follows the actual clock rather than the authored time-of-day label the
+   * blob pass reads, and the weather profile scales it: overcast and storms
+   * diffuse the sun until a hard cast would be a lie.
+   */
+  private detailedShadowStrength(): number {
+    // Night keeps only a faint moon shadow instead of the daylight cast: the sun
+    // is down, but a completely flat field reads worse than a soft one.
+    const light = Math.max(0, Math.min(1, this.dayNight.light));
+    return Math.max(0, Math.min(1, 0.2 + 0.8 * light)) * this.weather.shadow;
+  }
+
+  /** Bind the detailed shadow map and its light matrix to a lit program. */
+  private bindShadowSampling(program: MeshProgram): void {
+    if (!this.shadowMap) return;
+    const gl = this.gl;
+    const u = program.u;
+    bindTextureUnit(gl, SHADOW_TEXTURE_UNIT, this.shadowMap.texture, u.uShadowMap ?? null);
+    gl.uniformMatrix4fv(u.uLightVP ?? null, false, this.shadowMatrix);
+    gl.uniform2f(u.uShadowTexel ?? null, 1 / this.shadowMap.size, 1 / this.shadowMap.size);
+    gl.uniform1f(u.uShadowBias ?? null, SHADOW_BIAS);
+    gl.uniform1f(
+      u.uShadowStrength ?? null,
+      this.settings.shadowDetail === 'detailed' ? this.detailedShadowStrength() : 0,
+    );
+  }
+
+  /**
+   * Render the detailed shadow map for this frame.
+   *
+   * The light-space box is fitted to the camera's visible ground footprint plus
+   * the reach of the tallest structure shadow, so the map spends its resolution
+   * on what the player can actually see. Terrain is included as a caster, which
+   * is what gives ridges and terraces real self-shadowing rather than a uniform
+   * sun on every slope.
+   */
+  private renderShadowMap(): void {
+    if (!this.scenario) return;
+    if (this.settings.shadowDetail !== 'detailed') {
+      this.shadowMatrix = identity();
+      return;
+    }
+    const gl = this.gl;
+    const rect = this.camera.viewRect();
+    const cx = (rect.x0 + rect.x1) * 0.5;
+    const cz = (rect.z0 + rect.z1) * 0.5;
+    const footprint = Math.hypot(rect.x1 - rect.x0, rect.z1 - rect.z0) * 0.5;
+    // Low sun throws a long shadow; extend the box so a mast's shadow still
+    // lands inside the map at dawn and dusk.
+    const radius = footprint + 26 + 20 / Math.max(0.28, this.sun[1]);
+    const volume = shadowLightMatrix(this.sun, cx, cz, radius);
+    this.shadowMatrix = volume.matrix;
+    const p = this.shadowProgram;
+    gl.useProgram(p.program);
+    gl.uniformMatrix4fv(p.u.uLightVP, false, volume.matrix);
+    // The depth texture is about to be the render target; unbind it from the
+    // sampler unit so no pass can read and write it at once.
+    gl.activeTexture(gl.TEXTURE0 + SHADOW_TEXTURE_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.shadowMap.framebuffer);
+    gl.viewport(0, 0, this.shadowMap.size, this.shadowMap.size);
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(true);
+    // Push casters away from the light by a depth increment so a surface that
+    // is both caster and receiver does not shadow itself with its own depth.
+    gl.enable(gl.POLYGON_OFFSET_FILL);
+    gl.polygonOffset(1.5, 4.0);
+    gl.uniformMatrix4fv(p.u.uModel, false, identity());
+    // Static meshes have no instance attributes bound, so their disabled
+    // attributes read as zero; the uniform scales them back to full size.
+    gl.uniform1f(p.u.uStaticScale, 1);
+    if (this.terrainGpu) {
+      gl.bindVertexArray(this.terrainGpu.vao);
+      gl.drawElements(gl.TRIANGLES, this.terrainGpu.count, gl.UNSIGNED_INT, 0);
+      gl.bindVertexArray(null);
+    }
+    // One transform covers all instanced props: the instance attributes supply
+    // position, rotation and scale, and the identity places the batch.
+    gl.uniform1f(p.u.uStaticScale, 0);
+    this.treesMesh.draw(this.treeInstances.length);
+    this.rocksMesh.draw(this.rockInstances.length);
+    this.oreMesh.draw(this.oreInstances.length);
+    this.bushesMesh.draw(this.bushInstances.length);
+    this.shrubsMesh.draw(this.shrubInstances.length);
+    this.tuftsMesh.draw(this.tuftInstances.length);
+    this.fencesMesh.draw(this.fenceInstances.length);
+    this.lampsMesh.draw(this.lampInstances.length);
+    this.signsMesh.draw(this.signInstances.length);
+    this.rubbleMesh.draw(this.rubbleInstances.length);
+    this.reedsMesh.draw(this.reedInstances.length);
+    this.polesMesh.draw(this.poleInstances.length);
+    this.drawShadowCasters(cx, cz, footprint);
+    gl.disable(gl.POLYGON_OFFSET_FILL);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+  }
+
+  /**
+   * Structures, hulls and wrecks drawn as silhouettes into the shadow map.
+   *
+   * Only the main mass of each entity is cast: body, retrofit modules, turret
+   * and the ruined span. Flags, lights, glow quads and decals are presentation
+   * overlays, and casting them would only add depth taps for shapes that do not
+   * block sunlight. Vision is the same gate the main pass uses, so a unit in the
+   * fog cannot advertise itself with a shadow.
+   */
+  private drawShadowCasters(cx: number, cz: number, footprint: number): void {
+    const gl = this.gl;
+    const p = this.shadowProgram;
+    gl.uniform1f(p.u.uStaticScale, 1);
+    const reach = footprint + 48;
+    const near = (x: number, z: number) =>
+      Math.abs(x - cx) <= reach && Math.abs(z - cz) <= reach;
+    if (this.game) {
+      const game = this.game;
+      const team = game.teamOf(game.localPlayerId);
+      for (const e of game.state.entities) {
+        if (e.hp <= 0) continue;
+        if (e.kind === 'unit' && (e.garrisonId || e.submarine?.dived)) continue;
+        if (game.visionStateOf(team, e.id) !== 'visible') continue;
+        const v = this.visuals.get(e.id);
+        const x = v?.x ?? e.x;
+        const z = v?.z ?? e.z;
+        if (!near(x, z)) continue;
+        // Cast the drawn pose, not the simulation tick: the hull the player
+        // sees is an eased visual heading, and a shadow on the tick pose leads
+        // the model through every turn.
+        const facing = v?.facing ?? e.facing;
+        const turretFacing = v?.turret ?? e.turretFacing;
+        const groundY = game.deckHeightAt(x, z) ?? tileWorldHeight(this.scenario!, x, z);
+        if (e.kind === 'building') {
+          const rig = this.buildingMeshes.get(e.defId);
+          if (!rig) continue;
+          const construction = e.construction;
+          const progress = construction ? 0.04 + e.buildProgress * 0.96 : 1;
+          const vertical = construction ? 0.06 + progress * 0.94 : 1;
+          const garrisoned =
+            !!BUILDINGS[e.defId]?.garrison && game.garrisonOccupants(e.id).length > 0;
+          const occupied = garrisoned && rig.garrisoned ? rig.garrisoned : rig.body;
+          const model = modelFor(x, groundY, z, -facing, 1, vertical);
+          gl.uniformMatrix4fv(p.u.uModel, false, model);
+          occupied.draw();
+          for (const moduleId of e.modules ?? []) {
+            this.moduleMeshFor(e.defId, moduleId)?.draw();
+          }
+          if (rig.turret) {
+            gl.uniformMatrix4fv(
+              p.u.uModel,
+              false,
+              turretModelMatrix(
+                x,
+                groundY,
+                z,
+                facing,
+                turretFacing,
+                rig.turretOffset,
+                1,
+                vertical,
+              ),
+            );
+            rig.turret.draw();
+          }
+          continue;
+        }
+        const def = UNITS[e.defId];
+        const style = this.unitMeshes.get(e.defId);
+        if (!def || !style) continue;
+        const air = def.domain === 'air';
+        const y = air
+          ? e.aircraft?.landed
+            ? groundY + 0.25
+            : groundY + 0.25 + (AIR_UNIT_ALTITUDE - groundY - 0.25) * (v?.emergeAlt ?? 1)
+          : groundY + (def.domain === 'naval' ? 0.12 : 0);
+        const turret = turretFacing;
+        // Same rule as the lit pass, so the hull and its shadow turn together.
+        const bodyFacing = unitDrawnBodyHeading(
+          !!style.turret,
+          air,
+          def.moveClass,
+          facing,
+          turret,
+          v?.motion ?? facing,
+          !!v && (e.state === 'moving' || e.path.length > 0),
+        );
+        const vs = unitVisualScale(e.defId);
+        gl.uniformMatrix4fv(p.u.uModel, false, modelFor(x, y, z, -bodyFacing, vs, vs));
+        style.body.draw();
+        // The turret is the part of a vehicle that reads as its silhouette, so
+        // it casts on the same mount the lit pass uses instead of being lost in
+        // the hull's block shadow.
+        if (style.turret) {
+          gl.uniformMatrix4fv(
+            p.u.uModel,
+            false,
+            turretModelMatrix(
+              x,
+              y,
+              z,
+              facing,
+              turret,
+              this.turretOffset(e.defId),
+              vs,
+              vs,
+            ),
+          );
+          style.turret.draw();
+        }
+      }
+      for (const wreck of this.wrecks.wrecks) {
+        if (!near(wreck.x, wreck.z)) continue;
+        if (!this.pointVisible(game, wreck.x, wreck.z)) continue;
+        const body = this.unitMeshes.get(wreck.defId)?.body;
+        if (!body) continue;
+        const vs = unitVisualScale(wreck.defId);
+        gl.uniformMatrix4fv(p.u.uModel, false, modelFor(wreck.x, wreck.y, wreck.z, -wreck.facing, vs, vs));
+        body.draw();
+      }
+      return;
+    }
+    // The forge has no game yet; cast the authored scenario so a detailed
+    // preview still grounds its structures and units.
+    const scenario = this.scenario;
+    if (!scenario) return;
+    for (const s of scenario.structures) {
+      const def = BUILDINGS[s.defId];
+      if (!def) continue;
+      const center = footprintCenter(s.defId, s.x, s.z);
+      if (!near(center.x, center.z)) continue;
+      const y = tileWorldHeight(scenario, center.x, center.z);
+      const rig = this.buildingMeshes.get(s.defId) ?? this.buildingMeshes.get('commandPost');
+      if (!rig) continue;
+      gl.uniformMatrix4fv(p.u.uModel, false, modelFor(center.x, y, center.z, -(s.facing ?? 0), 1, 1));
+      rig.body.draw();
+    }
+    for (const u of scenario.units) {
+      const def = UNITS[u.defId];
+      const style = this.unitMeshes.get(u.defId);
+      if (!def || !style) continue;
+      const x = (u.x + 0.5) * TILE_SIZE;
+      const z = (u.z + 0.5) * TILE_SIZE;
+      if (!near(x, z)) continue;
+      const y = def.domain === 'air' ? AIR_UNIT_ALTITUDE : tileWorldHeight(scenario, x, z);
+      const vs = unitVisualScale(u.defId);
+      gl.uniformMatrix4fv(p.u.uModel, false, modelFor(x, y, z, 0.6, vs, vs));
+      style.body.draw();
+      if (style.turret) {
+        gl.uniformMatrix4fv(
+          p.u.uModel,
+          false,
+          turretModelMatrix(x, y, z, 0, 0, this.turretOffset(u.defId), vs, vs),
+        );
+        style.turret.draw();
+      }
+    }
+  }
+
   private drawShadows(): void {
-    if (!this.scenario || !this.settings.shadows) return;
+    // Detailed mode replaces the flat quads with the real shadow map; drawing
+    // both would double every structure's shadow.
+    if (!this.scenario || this.settings.shadowDetail !== 'basic') return;
     const shadows = this.shadowScratch;
     shadows.length = 0;
     if (this.game) {
@@ -2390,11 +2784,26 @@ export class Renderer {
         });
       }
     }
+    // Ore nodes shrink as they are mined, so their shadows read the live
+    // instance scale instead of the cached static-prop set.
+    for (const ore of this.oreInstances) {
+      const s = ore.scale;
+      const lean = this.shadowLean(0.12 * s);
+      shadows.push({
+        x: ore.x + lean.x,
+        y: ore.y + 0.07,
+        z: ore.z + lean.z,
+        rx: 0.42 * s,
+        rz: 0.36 * s,
+        rotation: 0,
+        alpha: 0.62,
+      });
+    }
     for (const s of this.propShadows) shadows.push(s);
     this.shadowGpu.draw(this.camera, shadows, 0.62);
   }
 
-  /** Cache the static ground shadows for terrain props; ore is refreshed on depletion. */
+  /** Cache the static ground shadows for terrain props; ore is per-frame. */
   private rebuildPropShadows(): void {
     if (!this.scenario) return;
     const out: GpuShadow[] = [];
@@ -2514,19 +2923,6 @@ export class Renderer {
         alpha: 0.55,
       });
     }
-    for (const ore of this.oreInstances) {
-      const s = ore.scale;
-      const lean = this.shadowLean(0.12 * s);
-      out.push({
-        x: ore.x + lean.x,
-        y: ore.y + 0.07,
-        z: ore.z + lean.z,
-        rx: 1.12 * s,
-        rz: 0.92 * s,
-        rotation: 0,
-        alpha: 0.7,
-      });
-    }
     this.propShadows = out;
   }
 
@@ -2549,6 +2945,7 @@ export class Renderer {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     bindTextureUnit(gl, MESH_MATERIAL_TEXTURE_UNIT, this.materialTexture, mp.u.uMatLut ?? null);
+    this.bindShadowSampling(mp);
     for (const s of this.scenario.structures) {
       const def = BUILDINGS[s.defId];
       if (!def) continue;
@@ -2733,6 +3130,7 @@ export class Renderer {
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     this.bindFlagTexture();
+    this.bindShadowSampling(mp);
     for (const wreck of this.wrecks.wrecks) {
       if (!this.pointVisible(game, wreck.x, wreck.z)) continue;
       const body = this.unitMeshes.get(wreck.defId)?.body;
@@ -2783,6 +3181,7 @@ export class Renderer {
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     this.bindFlagTexture();
     bindTextureUnit(gl, MESH_MATERIAL_TEXTURE_UNIT, this.materialTexture, mp.u.uMatLut ?? null);
+    this.bindShadowSampling(mp);
     const team = game.teamOf(game.localPlayerId);
     for (const e of game.state.entities) {
       // A shot-out bridge stays on the map as wreckage, so it is still drawn:
@@ -2837,11 +3236,21 @@ export class Renderer {
       // as solid and as brightly trimmed as a building the team can see right
       // now. The cold, desaturated tint is the fog of war's own colour, and it
       // applies to every structure on the map — torch-lit objectives included.
+      // Battle damage is a model state, not only a number in a bar: as a
+      // structure's integrity falls its paint chars toward soot, on top of the
+      // cold remembered tint when it is only charted. A site still under
+      // construction keeps its clean team colour and its full-height ghost.
+      const damageStage =
+        e.kind === 'building' && !construction
+          ? buildingDamageStage(e.hp / e.maxHp)
+          : 0;
+      const char =
+        remembered || construction ? [1, 1, 1] : buildingDamageTint(e.hp / e.maxHp);
       gl.uniform3f(
         mp.u.uTint,
-        remembered ? 0.52 : 1,
-        remembered ? 0.6 : 1,
-        remembered ? 0.66 : 1,
+        remembered ? 0.52 : char[0],
+        remembered ? 0.6 : char[1],
+        remembered ? 0.66 : char[2],
       );
       // Moving parts are frozen on a remembered silhouette: the shape that was
       // charted is all the team can know, not what it is doing now.
@@ -2877,6 +3286,8 @@ export class Renderer {
         // A shot-out bridge is drawn as wreckage rather than removed: the
         // crossing is closed, and the span is what shows it.
         e.kind === 'building' && e.hp <= 0 && !!BUILDINGS[e.defId]?.walkable,
+        damageStage,
+        e.kind === 'building' && !construction ? e.modules ?? [] : [],
       );
     }
     gl.uniform3f(mp.u.uTint, 1, 1, 1);
@@ -2984,6 +3395,8 @@ export class Renderer {
     remembered = false,
     submerged = false,
     collapsed = false,
+    damageStage: BuildingDamageStage = 0,
+    modules: readonly string[] = [],
   ): void {
     const mp = this.meshProgram;
     const gl = this.gl;
@@ -3011,6 +3424,10 @@ export class Renderer {
       gl.uniform1f(mp.u.uAlpha, alpha);
       gl.uniform1f(mp.u.uFlash, flash);
       occupied.draw();
+      // Debris and retrofit hardware share the body's transform, alpha and hit
+      // flash: they are part of the structure, not a separate overlay.
+      if (damageStage > 0) this.damageMeshFor(defId, damageStage)?.draw();
+      for (const moduleId of modules) this.moduleMeshFor(defId, moduleId)?.draw();
       if (rig.turret) {
         // Mount height and mesh both follow the construction squash, so a gun
         // sits on the revetment that exists instead of hovering over it.
@@ -3051,15 +3468,17 @@ export class Renderer {
     // A unit with no turret mesh aims with its whole body; a turreted hull
     // keeps its own heading; an airframe follows its flight heading.
     const airframe = UNITS[defId]?.domain === 'air';
-    let bodyFacing = unitBodyHeading(!!style.turret, airframe, facing, turretFacing);
-    if (
-      !airframe &&
-      anim?.moving &&
-      anim.motion !== undefined &&
-      UNITS[defId]?.moveClass !== 'foot'
-    ) {
-      bodyFacing = anim.motion;
-    }
+    const bodyFacing = anim
+      ? unitDrawnBodyHeading(
+          !!style.turret,
+          airframe,
+          UNITS[defId]?.moveClass,
+          facing,
+          turretFacing,
+          anim.motion ?? facing,
+          !!anim.moving,
+        )
+      : unitBodyHeading(!!style.turret, airframe, facing, turretFacing);
     if (submerged) {
       const periscope = style.periscope;
       if (!periscope) return;
@@ -3125,6 +3544,28 @@ export class Renderer {
       gl.uniformMatrix4fv(mp.u.uModel, false, tm);
       style.turret.draw();
     }
+  }
+
+  /** Cached GPU mesh for one structure's current damage stage. */
+  private damageMeshFor(defId: string, stage: BuildingDamageStage): StaticMesh | null {
+    const key = `${defId}:${stage}`;
+    const cached = this.damageMeshes.get(key);
+    if (cached !== undefined) return cached;
+    const buffers = buildingDamageMesh(defId, stage);
+    const mesh = buffers ? new StaticMesh(this.gl, buffers) : null;
+    this.damageMeshes.set(key, mesh);
+    return mesh;
+  }
+
+  /** Cached GPU mesh for one installed module on one structure. */
+  private moduleMeshFor(defId: string, moduleId: string): StaticMesh | null {
+    const key = `${defId}:${moduleId}`;
+    const cached = this.moduleMeshes.get(key);
+    if (cached !== undefined) return cached;
+    const buffers = buildingModuleMesh(defId, moduleId);
+    const mesh = buffers ? new StaticMesh(this.gl, buffers) : null;
+    this.moduleMeshes.set(key, mesh);
+    return mesh;
   }
 
   /**
@@ -3312,6 +3753,7 @@ export class Renderer {
     this.particleGpu.dispose();
     this.decalGpu.dispose();
     this.shadowGpu.dispose();
+    this.shadowMap?.dispose();
   }
 }
 

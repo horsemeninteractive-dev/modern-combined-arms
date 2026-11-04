@@ -51,6 +51,8 @@ export interface ProjectedPlayer {
    * reveal its entire build plan, so the team projection never carries them.
    */
   research?: PlayerState['research'];
+  /** The team's own strategic state; never projected for an opponent. */
+  superweapon?: PlayerState['superweapon'];
 }
 
 export interface ProjectedEntity {
@@ -87,6 +89,11 @@ export interface ProjectedEntity {
   upgrades?: string[];
   /** Own entities only: modules installed on this structure. */
   modules?: string[];
+  /**
+   * Own entities only: seconds left on a sale. The countdown is the player's
+   * own commitment, not combat information about an opponent.
+   */
+  deconstruct?: { remaining: number; total: number };
   /**
    * Own entities only: per-ability reload clocks. An opponent's remaining
    * cooldown is combat information the projection does not hand over.
@@ -187,6 +194,12 @@ function projectPlayer(player: PlayerState): ProjectedPlayer {
       completed: [...player.research.completed],
       project: player.research.project ? { ...player.research.project } : null,
     },
+    superweapon: {
+      cooldowns: { ...player.superweapon.cooldowns },
+      active: player.superweapon.active ? { ...player.superweapon.active } : null,
+      ewUntilTick: player.superweapon.ewUntilTick,
+      defence: player.superweapon.defence ? { ...player.superweapon.defence } : null,
+    },
   };
 }
 
@@ -225,6 +238,7 @@ function liveEntity(game: Game, entity: Entity, team: number, own: boolean): Pro
   if (entity.cooldowns && Object.keys(entity.cooldowns).length > 0) {
     projected.cooldowns = { ...entity.cooldowns };
   }
+  if (entity.deconstruct) projected.deconstruct = { ...entity.deconstruct };
   return projected;
 }
 

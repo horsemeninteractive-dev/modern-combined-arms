@@ -107,7 +107,9 @@ describe('research tree view state', () => {
     expect(researchNodeState(TECHS.fires1, { ...BASE, allianceId: 'eastern' }).name).toBe(
       'Massed Fires',
     );
-    expect(RESEARCH.techs.map((tech) => tech.id)).toEqual([
+    // The eight branch nodes come first, in catalogue order, exactly as the
+    // panel lists them; the strategic authority nodes follow as their own class.
+    expect(RESEARCH.techs.filter((tech) => !tech.strategic).map((tech) => tech.id)).toEqual([
       'manoeuvre1',
       'manoeuvre2',
       'fires1',
@@ -117,6 +119,7 @@ describe('research tree view state', () => {
       'naval1',
       'naval2',
     ]);
+    expect(RESEARCH.techs.filter((tech) => tech.strategic).every((tech) => tech.effects.length === 0)).toBe(true);
   });
 
   it('reports authoritative project progress and remaining time', () => {

@@ -131,6 +131,9 @@ export const BUILDING_FLAG_ANCHORS: Record<string, FlagAnchor> = {
   // On the hall's clerestory cap: the building was enlarged to fill its 4x3
   // footprint, so the pole must start on the new roof, not inside it.
   researchCentre: { x: 1.6, y: 4.8, z: -0.4 },
+  // Same hall as the research centre, so the pole uses the same clerestory
+  // cap; the mast farm and signals annex own the corners of this roof.
+  strategicOps: { x: 1.6, y: 4.8, z: -0.4 },
   radar: { x: -2.6, y: 3.12, z: 1.2 },
   // The launcher trains now, so the pole stands on the rear pad corner where
   // the old rack anchor used to be — a flag must not swing with the turret.

@@ -97,6 +97,76 @@ export function gridReport(structures: readonly PowerStructure[]): GridReport {
   };
 }
 
+/** The grid's state word, shared by the meter, the cards and the hover readout. */
+export type GridLoadState = 'brownout' | 'strained' | 'stable' | 'idle';
+
+export const GRID_LOAD_LABEL: Readonly<Record<GridLoadState, string>> = Object.freeze({
+  brownout: 'BROWNOUT',
+  strained: 'STRAINED',
+  stable: 'STABLE',
+  idle: 'NO LOAD',
+});
+
+export function gridLoadState(
+  supply: number,
+  demand: number,
+  brownout: boolean,
+): GridLoadState {
+  if (brownout) return 'brownout';
+  if (demand <= 0) return 'idle';
+  return demand / Math.max(1, supply) >= 0.85 ? 'strained' : 'stable';
+}
+
+/** One line of the gauge's hover readout, with its bar scaled to the column. */
+export interface PowerReadoutRow extends PowerLine {
+  /** Absolute total over the column's largest line, 0..1. */
+  share: number;
+}
+
+export interface PowerReadout {
+  state: GridLoadState;
+  label: string;
+  supply: number;
+  demand: number;
+  /** Largest generators, biggest first, capped at the requested limit. */
+  sources: PowerReadoutRow[];
+  /** Largest consumers, biggest draw first, capped at the requested limit. */
+  consumers: PowerReadoutRow[];
+  /** Lines left out of each column, reported rather than silently dropped. */
+  hiddenSources: number;
+  hiddenConsumers: number;
+}
+
+function readoutRows(lines: readonly PowerLine[], limit: number): PowerReadoutRow[] {
+  const top = lines.slice(0, limit);
+  const peak = top.reduce((max, line) => Math.max(max, Math.abs(line.total)), 0);
+  return top.map((line) => ({
+    ...line,
+    share: peak > 0 ? Math.abs(line.total) / peak : 0,
+  }));
+}
+
+/**
+ * The rail gauge's hover copy: state, totals and the top contributors on each
+ * side of the grid. A readout that lists every structure stops being glanceable
+ * inside a brownout, so the largest few answer "what is drawing this?" and the
+ * remainder is counted.
+ */
+export function powerReadout(report: GridReport, limit = 3): PowerReadout {
+  const count = Math.max(1, Math.round(limit));
+  const state = gridLoadState(report.supply, report.demand, report.brownout);
+  return {
+    state,
+    label: GRID_LOAD_LABEL[state],
+    supply: report.supply,
+    demand: report.demand,
+    sources: readoutRows(report.sources, count),
+    consumers: readoutRows(report.consumers, count),
+    hiddenSources: Math.max(0, report.sources.length - count),
+    hiddenConsumers: Math.max(0, report.consumers.length - count),
+  };
+}
+
 function formatLine(line: PowerLine): string {
   const total = line.total > 0 ? `+${line.total}` : `${line.total}`;
   return line.count > 1

@@ -60,6 +60,7 @@ export type CommandGateRejectionCode =
   | 'production-unavailable'
   | 'research-unavailable'
   | 'upgrade-unavailable'
+  | 'superweapon-unavailable'
   | 'module-unavailable'
   | 'placement-invalid'
   | 'no-builder'
@@ -116,12 +117,14 @@ const ALLOWED_FIELDS: Record<CommandType, readonly string[]> = {
   cancelProduction: ['type', 'buildingId', 'index'],
   reorderProduction: ['type', 'buildingId', 'defId', 'beforeDefId'],
   placeBuilding: ['type', 'builderId', 'defId', 'tileX', 'tileZ'],
+  sellBuilding: ['type', 'buildingId'],
   setRally: ['type', 'buildingId', 'x', 'z'],
   research: ['type', 'buildingId', 'techId'],
   cancelResearch: ['type', 'buildingId'],
   installModule: ['type', 'buildingId', 'moduleId'],
   activateUpgrade: ['type', 'unitId', 'upgradeId'],
   useAbility: ['type', 'unitId', 'abilityId'],
+  superweapon: ['type', 'familyId', 'x', 'z', 'targetId'],
 };
 
 const COMMAND_TYPES = new Set<string>(Object.keys(ALLOWED_FIELDS));
@@ -291,10 +294,10 @@ export class CommandGate {
     if (type === 'produce' || type === 'cancelProduction' || type === 'reorderProduction') {
       return this.parseProduction(type, raw, seat);
     }
-    if (type === 'placeBuilding' || type === 'setRally') {
-      return type === 'placeBuilding'
-        ? this.parsePlaceBuilding(raw, seat)
-        : this.parseSetRally(raw, seat);
+    if (type === 'placeBuilding' || type === 'setRally' || type === 'sellBuilding') {
+      if (type === 'placeBuilding') return this.parsePlaceBuilding(raw, seat);
+      if (type === 'setRally') return this.parseSetRally(raw, seat);
+      return this.parseSellBuilding(raw, seat);
     }
     if (type === 'research' || type === 'cancelResearch') {
       return this.parseResearch(type, raw, seat);
@@ -302,6 +305,7 @@ export class CommandGate {
     if (type === 'installModule') return this.parseModule(raw, seat);
     if (type === 'activateUpgrade') return this.parseUpgrade(raw, seat);
     if (type === 'useAbility') return this.parseAbility(raw, seat);
+    if (type === 'superweapon') return this.parseSuperweapon(raw, seat);
 
     const idsResult = this.readIds(raw.ids);
     if (!idsResult.ok) return idsResult;
@@ -669,6 +673,53 @@ export class CommandGate {
     return { ok: true, command: { type: 'useAbility', team: seat.team, unitId, abilityId } };
   }
 
+  /**
+   * Authorising the seat's national strategic capability.
+   *
+   * Availability and the aim point are both answered by the simulation's own
+   * status calls, so the gate cannot accept a strike the tick would refuse or
+   * reject a legal one. The family is validated against the nation here, not
+   * trusted from the client, and the cooldown/resource transaction happens only
+   * when the queue reaches the command.
+   */
+  private parseSuperweapon(
+    raw: Record<string, unknown>,
+    seat: SeatAuthority,
+  ): { ok: true; command: Command } | GateRejection {
+    const familyId = readDefId(raw.familyId);
+    if (familyId === null) return reject('invalid-definition', 'Strategic capability is not valid.');
+    const x = readCoordinate(raw.x, this.game.state.map.width * TILE_SIZE);
+    const z = readCoordinate(raw.z, this.game.state.map.height * TILE_SIZE);
+    if (x === null || z === null) return reject('out-of-bounds', 'Aim point is outside the map.');
+    const status = this.game.superweaponStatus(seat.playerId);
+    if (!status.ok || !status.family || status.family.id !== familyId) {
+      return reject('superweapon-unavailable', 'Strategic capability is not available.', status.reason);
+    }
+    const targetId = raw.targetId === undefined ? undefined : this.readTargetId(raw.targetId);
+    if (raw.targetId !== undefined && targetId === null) {
+      return reject('invalid-target', 'Target is not valid.');
+    }
+    const target = this.game.superweaponTargetStatus(
+      seat.playerId,
+      familyId,
+      x,
+      z,
+      targetId ?? undefined,
+    );
+    if (!target.ok) return reject('invalid-target', 'Aim point is not valid.', target.reason);
+    return {
+      ok: true,
+      command: {
+        type: 'superweapon',
+        team: seat.team,
+        familyId,
+        x,
+        z,
+        ...(targetId ? { targetId } : {}),
+      },
+    };
+  }
+
   private parseProduction(
     type: 'produce' | 'cancelProduction' | 'reorderProduction',
     raw: Record<string, unknown>,
@@ -780,6 +831,31 @@ export class CommandGate {
     const command: Command = { type: 'placeBuilding', team: seat.team, defId, tileX, tileZ };
     if (builderId !== undefined) command.builderId = builderId;
     return { ok: true, command };
+  }
+
+  /**
+   * Selling one owned structure. Every rule — finished, not objective, nobody
+   * garrisoned inside — is answered by the simulation's own status call, so the
+   * gate and the deconstruction clock cannot disagree.
+   */
+  private parseSellBuilding(
+    raw: Record<string, unknown>,
+    seat: SeatAuthority,
+  ): { ok: true; command: Command } | GateRejection {
+    const buildingId = this.readTargetId(raw.buildingId);
+    if (buildingId === null) return reject('invalid-building', 'Structure is not valid.');
+    const building = this.game.getEntity(buildingId);
+    if (
+      !building ||
+      building.hp <= 0 ||
+      building.kind !== 'building' ||
+      building.owner !== seat.playerId
+    ) {
+      return reject('not-your-entity', 'That structure does not belong to this player.');
+    }
+    const status = this.game.sellStatus(seat.playerId, buildingId);
+    if (!status.ok) return reject('invalid-building', 'That structure cannot be sold.', status.reason);
+    return { ok: true, command: { type: 'sellBuilding', team: seat.team, buildingId } };
   }
 
   private parseSetRally(

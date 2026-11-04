@@ -206,6 +206,8 @@ export interface BuildingDef {
   requires?: string[];
   /** Headquarters buildings are victory objectives. */
   commandPost?: boolean;
+  /** Coordinates the owner's national strategic superweapon. */
+  strategicOps?: boolean;
   /** Provides the tactical minimap while operational and powered. */
   radar?: boolean;
   /** Secondary-resource income per second while owned. */
@@ -329,6 +331,12 @@ export interface NationDef extends FactionIdentity {
   readonly doctrine: string;
   /** National additions, exclusions and substitutions; absent means baseline only. */
   readonly roster?: NationRosterModifications;
+  /**
+   * Strategic superweapon family this nation can field. Absent means the nation
+   * has no strategic call-in; it keeps every other national strength. The id is
+   * a catalogue key, never a nation-specific runtime branch.
+   */
+  readonly superweapon?: string;
 }
 
 /**
@@ -397,6 +405,7 @@ export type EntityState =
   | 'takingOff'
   | 'returning'
   | 'capturing'
+  | 'selling'
   | 'constructing'
   /** Engineer standing at a construction site and working on it. */
   | 'building'
@@ -442,6 +451,13 @@ export interface Entity {
   kind: EntityKind;
   defId: string;
   owner: number;
+  /**
+   * Stable authored identity, copied from the scenario placement that created
+   * this entity. Optional: units produced in a match and ordinary placements
+   * have none. It is the join key mission documents and, later, campaign
+   * veterans use, so it survives save/load unchanged.
+   */
+  authoredKey?: string;
   x: number;
   z: number;
   hp: number;
@@ -475,6 +491,12 @@ export interface Entity {
   /** Buildings: 0..1 construction progress; 1 for complete. */
   buildProgress: number;
   construction: boolean;
+  /**
+   * Seconds left before a sold structure is dismantled. Present only while it
+   * is being deconstructed: the building is already non-operational, remains
+   * targetable, and pays its 75% refund when the clock reaches zero.
+   */
+  deconstruct?: { remaining: number; total: number };
   queue: QueueItem[];
   rallyX: number;
   rallyZ: number;
@@ -578,6 +600,11 @@ export interface Projectile {
   armourMul: Partial<Record<ArmourClass, number>>;
   suppression: number;
   seed: number;
+  /**
+   * Set on an off-map strategic munition. Such a round is resolved by its own
+   * impact rules and can be engaged by local air defence and defensive fields.
+   */
+  strategic?: { family: string; operationId: number };
   /** Launch point and arc data, present on indirect-fire projectiles. */
   startX?: number;
   startY?: number;
@@ -594,10 +621,17 @@ export interface Projectile {
  * or polling state, and they never affect simulation rules.
  */
 export type SimEventCode =
+  | 'superweaponAuthorised'
+  | 'superweaponWarning'
+  | 'superweaponImpact'
+  | 'superweaponIntercept'
+  | 'superweaponComplete'
+  | 'superweaponBlocked'
   | 'queueFull'
   | 'productionStarted'
   | 'productionCancelled'
   | 'siteLost'
+  | 'buildingSold'
   | 'powerRestored'
   | 'baseUnderAttack'
   | 'forcesUnderAttack'
@@ -609,6 +643,10 @@ export type SimEventCode =
   | 'researchStarted'
   | 'researchComplete'
   | 'researchCancelled'
+  | 'objectiveActivated'
+  | 'objectiveComplete'
+  | 'objectiveFailed'
+  | 'missionMessage'
   | 'moduleInstalled'
   | 'upgradeApplied'
   | 'abilityUsed';
@@ -624,6 +662,7 @@ export type SimEventType =
   | 'buildingPlaced'
   | 'unitLost'
   | 'buildingLost'
+  | 'buildingSold'
   | 'capture'
   | 'income'
   | 'alert'
@@ -684,6 +723,8 @@ export type Command =
   | { type: 'cancelProduction'; team: number; buildingId: number; index: number }
   | { type: 'reorderProduction'; team: number; buildingId: number; defId: string; beforeDefId?: string }
   | { type: 'placeBuilding'; team: number; builderId?: number; defId: string; tileX: number; tileZ: number }
+  /** Sell one finished owned structure; it dismantles before paying a 75% refund. */
+  | { type: 'sellBuilding'; team: number; buildingId: number }
   | { type: 'setRally'; team: number; buildingId: number; x: number; z: number }
   /** Start one project at an operational Research Centre. */
   | { type: 'research'; team: number; buildingId: number; techId: string }
@@ -698,7 +739,21 @@ export type Command =
    * centred on the unit, so the command carries no destination: a client cannot
    * ask for a cloud somewhere the hull could not lay one.
    */
-  | { type: 'useAbility'; team: number; unitId: number; abilityId: string };
+  | { type: 'useAbility'; team: number; unitId: number; abilityId: string }
+  /**
+   * Authorise the commander's national strategic capability against one target.
+   * The family is carried so a stale client cannot activate a different one;
+   * the simulation checks it against the nation and the target mode.
+   */
+  | {
+      type: 'superweapon';
+      team: number;
+      familyId: string;
+      /** World-space aim point (tile centre for an area, entity centre for a target). */
+      x: number;
+      z: number;
+      targetId?: number;
+    };
 
 /* ------------------------------------------------------------------ */
 /* Runtime state                                                       */
@@ -733,6 +788,51 @@ export interface ResearchState {
   project: ResearchProject | null;
 }
 
+/**
+ * One committed strategic operation, as the simulation sees it.
+ *
+ * The warning phase is a real scheduled event, not a UI delay: the command
+ * charges, sets the cooldown and schedules execution on the authoritative tick.
+ * A structure lost during the warning therefore cannot cancel it, which is the
+ * documented behaviour of a committed operation.
+ */
+export interface SuperweaponOperationState {
+  id: number;
+  family: string;
+  phase: 'warning' | 'executing';
+  startTick: number;
+  executeTick: number;
+  endTick: number;
+  targetX: number;
+  targetZ: number;
+  targetId: number;
+  /** Munitions released so far, for a staged volley. */
+  launched: number;
+}
+
+/** A directed-energy defensive field established by one commander. */
+export interface SuperweaponDefenceField {
+  x: number;
+  z: number;
+  radiusTiles: number;
+  untilTick: number;
+  /** Munitions stopped during the current second, reset each second. */
+  spentThisSecond: number;
+  secondMark: number;
+}
+
+/** Per-player strategic state: cooldowns survive the centre that earned them. */
+export interface PlayerSuperweaponState {
+  /** Absolute tick each family becomes available again. */
+  cooldowns: Record<string, number>;
+  /** At most one committed operation per commander. */
+  active: SuperweaponOperationState | null;
+  /** Tick an enemy electronic attack stops degrading this commander. */
+  ewUntilTick: number;
+  /** The commander's own defensive field, when one is established. */
+  defence: SuperweaponDefenceField | null;
+}
+
 export interface PlayerState {
   id: number;
   name: string;
@@ -754,6 +854,8 @@ export interface PlayerState {
   incomeHistory: number[];
   defeated: boolean;
   relayCount: number;
+  /** Strategic superweapon authority and cooldown state. */
+  superweapon: PlayerSuperweaponState;
 }
 
 export type AIStrategy = 'armour' | 'infantry' | 'air' | 'economy' | 'pressure';
@@ -850,6 +952,12 @@ export interface GameState {
   smoke: SmokeCloud[];
   /** Next free cloud id. Saved so a reload never reuses a live id. */
   nextSmokeId: number;
+  /**
+   * Authoritative mission state, or null for a skirmish. It is held as plain
+   * data so a save and a state hash read the same object; the owner is
+   * `Game.mission`, which is the only writer.
+   */
+  mission: import('../mission').MissionRuntimeState | null;
   /** True once the scenario has been initialised fully. */
   ready: boolean;
 }

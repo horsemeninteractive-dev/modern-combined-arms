@@ -17,6 +17,8 @@ const PATHS: Record<string, string> = {
   frigate: `<path d="M2 15h19l2 3H2z"/><path d="M5 15V9h8l3 6M9 9V5h4v4M13 7h4v3h-4z"/><path d="M18 6l3-3M19 8l3-3"/><path d="M3 20c2-1 3 1 5 0s3 1 5 0 3 1 5 0 3 1 5 0"/>`,
   submarine: `<path d="M3 14h16c2 0 3 1 3 3H4z"/><path d="M8 14v-3h4v3M13 11V8h3"/><path d="M19 8V3M18 4h2M7 20c3-1 7 1 12 0"/><circle cx="12" cy="16" r="1"/>`,
   command: `<path d="M4 20V8l5-3 5 3v12"/><path d="M9 5V2M9 2l4 1-4 2M14 20V12h4v8"/><path d="M2 20h20"/>`,
+  strategic: `<path d="M3 21h18M5 21V11h14v10"/><path d="M9 21v-5h6v5"/><path d="M12 11V6M12 6a4 4 0 0 1 4 4M12 6a7 7 0 0 0-7 7"/><circle cx="12" cy="6" r="1.2"/>`,
+  mrocket: `<path d="M4 19l6-2 9-9-4-4-9 9z"/><path d="M10 17l-3-3M15 8l1 1"/><path d="M3 21c2-1 3 1 5 0s3 1 5 0"/>`,
   barracks: `<path d="M3 20V11l9-5 9 5v9"/><path d="M3 15h18M8 20v-5h8v5"/><path d="M12 6V3"/>`,
   factory: `<path d="M3 20V10l5 3V10l5 3V7h6v13z"/><path d="M16 7V3h3v4"/><path d="M6 20v-4h4v4"/>`,
   refinery: `<path d="M4 20V8h6v12"/><ellipse cx="7" cy="8" rx="3" ry="1.4"/><path d="M13 20V12h6v8"/><ellipse cx="16" cy="12" rx="3" ry="1.4"/><path d="M10 16h3M3 20h18"/>`,

@@ -6,7 +6,7 @@ import { UNITS } from '../src/data/units';
 import { WEAPONS } from '../src/data/weapons';
 import { TILE_SIZE } from '../src/sim/constants';
 import { normalizeAngle } from '../src/core/math';
-import { unitBodyHeading } from '../src/render/unitTransform';
+import { unitBodyHeading, unitDrawnBodyHeading } from '../src/render/unitTransform';
 import type { Scenario } from '../src/sim/scenario';
 import type { ArmourClass } from '../src/sim/types';
 
@@ -237,6 +237,17 @@ describe('harvester and unit movement', () => {
     expect(unitBodyHeading(false, true, fighter.facing, Math.PI)).toBe(fighter.facing);
     expect(unitBodyHeading(false, false, 1.2, 0.3)).toBe(0.3);
     expect(unitBodyHeading(true, false, 1.2, 0.3)).toBe(1.2);
+  });
+
+  it('draws the hull and its shadow on the same travel heading', () => {
+    // A driving vehicle follows the direction it is moving, not the simulated
+    // heading it is still easing toward; both render passes must agree.
+    expect(unitDrawnBodyHeading(true, false, 'tracked', 1.2, 0.3, 2.4, true)).toBe(2.4);
+    expect(unitDrawnBodyHeading(false, false, 'wheeled', 1.2, 0.3, 2.4, true)).toBe(2.4);
+    // Stopped, airborne and on foot keep the established heading rules.
+    expect(unitDrawnBodyHeading(true, false, 'tracked', 1.2, 0.3, 2.4, false)).toBe(1.2);
+    expect(unitDrawnBodyHeading(true, true, 'air', 1.2, 0.3, 2.4, true)).toBe(1.2);
+    expect(unitDrawnBodyHeading(true, false, 'foot', 1.2, 0.3, 2.4, true)).toBe(1.2);
   });
 
   it('drives along the hull heading rather than sliding sideways', () => {

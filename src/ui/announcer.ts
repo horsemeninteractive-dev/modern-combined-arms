@@ -1,4 +1,9 @@
 import type { SimEvent } from '../sim/types';
+import {
+  DEFAULT_NARRATOR,
+  narratorAssetPath,
+  type NarratorId,
+} from '../data/narrators';
 
 /**
  * Strategic voice announcer.
@@ -35,7 +40,10 @@ export type AnnouncementId =
   | 'victory';
 
 export interface VoiceCue {
-  /** Filename under /audio/battlesys/. The existing assets are authoritative. */
+  /**
+   * Filename only. The narrator catalogue owns the directory, so both narrators
+   * share one cue table and a new voice is a new folder, not a new manifest.
+   */
   file: string;
   /** Higher priority lines may interrupt lower ones. */
   priority: number;
@@ -46,7 +54,15 @@ export interface VoiceCue {
   label: string;
 }
 
-const VOICE_ROOT = '/audio/battlesys/';
+/**
+ * Path of one cue for a named narrator.
+ *
+ * Kept pure so the cue-to-asset contract can be asserted without a browser, and
+ * so no trigger site ever builds a URL of its own.
+ */
+export function narratorVoicePath(narrator: NarratorId, id: AnnouncementId): string {
+  return narratorAssetPath(narrator, VOICE_MANIFEST[id].file);
+}
 
 /**
  * One table for playback, tests and future additions. The five cues at the end
@@ -87,8 +103,9 @@ export const VOICE_MANIFEST: Record<AnnouncementId, VoiceCue> = {
 
 export const ANNOUNCEMENT_IDS = Object.keys(VOICE_MANIFEST) as AnnouncementId[];
 
+/** Default-narrator path; the active voice is chosen per battle. */
 export function voicePath(id: AnnouncementId): string {
-  return `${VOICE_ROOT}${VOICE_MANIFEST[id].file}`;
+  return narratorVoicePath(DEFAULT_NARRATOR, id);
 }
 
 /**
@@ -171,6 +188,7 @@ export class Announcer {
   private lastAt = new Map<AnnouncementId, number>();
   private oncePlayed = new Set<AnnouncementId>();
   private timer: unknown = null;
+  private narrator: NarratorId = DEFAULT_NARRATOR;
   private readonly now: () => number;
   private readonly schedule: (fn: () => void, ms: number) => unknown;
   private readonly cancel: (handle: unknown) => void;
@@ -186,6 +204,27 @@ export class Announcer {
 
   get currentId(): AnnouncementId | null {
     return this.active?.id ?? null;
+  }
+
+  /** The voice currently reporting for the local commander. */
+  get narratorId(): NarratorId {
+    return this.narrator;
+  }
+
+  /**
+   * Switch the reporting voice. Called once per battle, after the seat's
+   * faction is known, so no trigger site needs to know about factions.
+   *
+   * A line already in flight is cut rather than finished: parts of a sentence
+   * in the previous faction's voice would read as two commanders talking. The
+   * pending slot is cleared for the same reason; cooldowns and `once` bookkeeping
+   * are deliberately untouched, because those describe the battle, not the voice.
+   */
+  setNarrator(id: NarratorId): void {
+    if (id === this.narrator) return;
+    this.stopActive();
+    this.pending = null;
+    this.narrator = id;
   }
 
   /** Returns true when the cue started immediately, false when suppressed or queued. */
@@ -229,7 +268,7 @@ export class Announcer {
     // synchronously, and that must clear the timer it just created.
     this.timer = this.schedule(() => this.finish(token), MAX_LINE_MS);
     try {
-      this.playback.play(voicePath(id), () => this.finish(token));
+      this.playback.play(narratorVoicePath(this.narrator, id), () => this.finish(token));
     } catch {
       this.finish(token);
     }

@@ -521,6 +521,124 @@ export class ParticleSystem {
     this.dust(x, y, z, 1, 0.3);
   }
 
+  /**
+   * One frame of a cutting beam from the harvester's drum to the seam face.
+   *
+   * The particle pass already lays a streak along a world axis, so the beam is
+   * one stretched additive quad re-emitted a few times a second rather than a
+   * line mesh rebuilt every frame. The sprite's rounded ends keep it reading as
+   * a cutting arc instead of a ruler.
+   */
+  cutBeam(
+    x0: number,
+    y0: number,
+    z0: number,
+    x1: number,
+    y1: number,
+    z1: number,
+    width = 0.12,
+  ): void {
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const dz = z1 - z0;
+    const len = Math.hypot(dx, dy, dz);
+    if (len < 0.01) return;
+    const w = width * (0.9 + Math.random() * 0.25);
+    this.push({
+      x: (x0 + x1) / 2,
+      y: (y0 + y1) / 2,
+      z: (z0 + z1) / 2,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      life: 0.07,
+      maxLife: 0.07,
+      size0: w,
+      size1: w * 0.75,
+      r: 1,
+      g: 0.88,
+      b: 0.5,
+      alpha: 0.5 + Math.random() * 0.24,
+      gravity: 0,
+      drag: 0,
+      additive: true,
+      // The quad spans size * stretch either side of its centre, so this is the
+      // beam length restated as a stretch factor.
+      stretch: len / (2 * w),
+      soft: 0.12,
+      dir: [dx / len, dy / len, dz / len],
+    });
+    // A hot spot where the cutter touches mineral, so the beam has a source of
+    // light rather than ending in mid-air.
+    this.push({
+      x: x1,
+      y: y1,
+      z: z1,
+      vx: 0,
+      vy: 0.2,
+      vz: 0,
+      life: 0.08,
+      maxLife: 0.08,
+      size0: 0.55,
+      size1: 0.16,
+      r: 1,
+      g: 0.9,
+      b: 0.56,
+      alpha: 0.8,
+      gravity: 0,
+      drag: 0,
+      additive: true,
+      soft: 0.2,
+    });
+  }
+
+  /** Gold chips thrown off the seam face and pulled back into the intake. */
+  oreChips(
+    x: number,
+    y: number,
+    z: number,
+    towardX: number,
+    towardY: number,
+    towardZ: number,
+  ): void {
+    for (let i = 0; i < 2; i++) {
+      const px = x + (Math.random() - 0.5) * 0.55;
+      const py = y + (Math.random() - 0.5) * 0.55;
+      const pz = z + (Math.random() - 0.5) * 0.55;
+      let dx = towardX - px;
+      let dy = towardY - py + 0.9 + Math.random() * 1.1;
+      let dz = towardZ - pz;
+      const len = Math.hypot(dx, dy, dz) || 1;
+      const speed = 6 + Math.random() * 5;
+      dx = (dx / len) * speed;
+      dy = (dy / len) * speed;
+      dz = (dz / len) * speed;
+      const life = 0.18 + Math.random() * 0.12;
+      this.push({
+        x: px,
+        y: py,
+        z: pz,
+        vx: dx,
+        vy: dy,
+        vz: dz,
+        life,
+        maxLife: life,
+        size0: 0.2 + Math.random() * 0.08,
+        size1: 0.05,
+        r: 1,
+        g: 0.74 + Math.random() * 0.14,
+        b: 0.26,
+        alpha: 0.9,
+        gravity: 7,
+        drag: 1.4,
+        additive: true,
+        stretch: 1.8,
+        soft: 0.18,
+        dir: [dx / speed, dy / speed, dz / speed],
+      });
+    }
+  }
+
   sparks(x: number, y: number, z: number, scale = 1): void {
     const count = Math.max(2, Math.round(4 * scale));
     for (let i = 0; i < count; i++) {

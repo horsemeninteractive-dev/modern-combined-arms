@@ -330,7 +330,7 @@ describe('start gate and fullscreen', () => {
 describe('menu music', () => {
   it('plays the authored theme on the deck, stops it elsewhere and ships it offline', () => {
     const audioTs = readFileSync(new URL('../src/ui/audio.ts', import.meta.url), 'utf8');
-    expect(audioTs).toContain("new Audio('/audio/menu-theme.mp3')");
+    expect(audioTs).toContain('new Audio(MAIN_THEME_SRC)');
     expect(audioTs).toContain('el.loop = true');
 
     const app = readFileSync(new URL('../src/app.ts', import.meta.url), 'utf8');
@@ -343,8 +343,8 @@ describe('menu music', () => {
 
     const sw = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
     const buildSw = readFileSync(new URL('../tools/build-sw.mjs', import.meta.url), 'utf8');
-    expect(sw).toContain('/audio/menu-theme.mp3');
-    expect(buildSw).toContain('/audio/menu-theme.mp3');
+    expect(sw).toContain('/audio/music/menu-theme.mp3');
+    expect(buildSw).toContain('/audio/music/menu-theme.mp3');
   });
 });
 
@@ -528,12 +528,14 @@ describe('HUD layout resilience', () => {
   });
 
   it('keeps the rail mission actions at a usable height', () => {
-    // The block used to be pinned to the console height, which crushed the 2x2
+    // The block used to be pinned to the console height, which crushed the
     // save/pause/settings/menu grid to a few pixels once the clock and control
-    // groups were laid out above it.
+    // groups were laid out above it. The briefing joined the pad as a third
+    // row, so the floor is three rows tall rather than two.
     const bottom = styleCss.slice(styleCss.indexOf('.rail-bottom {'));
     expect(bottom.slice(0, bottom.indexOf('}'))).toContain('height: auto');
-    expect(styleCss).toMatch(/\.rail-actions \{[^}]*min-height: calc\(48px \* var\(--ui-scale\)\)/);
+    expect(styleCss).toMatch(/\.rail-actions \{[^}]*grid-template-rows: repeat\(3, minmax\(0, 1fr\)\)/);
+    expect(styleCss).toMatch(/\.rail-actions \{[^}]*min-height: calc\(72px \* var\(--ui-scale\)\)/);
   });
 
   it('holds a usable card column at a reduced interface scale', () => {

@@ -43,11 +43,13 @@ describe('scenario catalogue', () => {
   it('lists every battlefield once, with stable unique ids', () => {
     const ids = SCENARIOS.map((entry) => entry.id);
     expect(new Set(ids).size).toBe(ids.length);
-    // Four campaign theatres plus the competitive pool, which grew to
-    // seventeen when the island battlefield joined the roster.
-    expect(ids.length).toBe(21);
+    // One bespoke theatre per campaign operation (12 + 12) plus the
+    // competitive pool of seventeen.
+    expect(ids.length).toBe(45);
+    // Four original campaign theatres, 24 operation theatres, 17 competitive.
     expect(CAMPAIGN_SCENARIO_IDS.length).toBe(4);
     expect(COMPETITIVE_SCENARIO_IDS.length).toBe(17);
+    expect(ids.length - CAMPAIGN_SCENARIO_IDS.length - COMPETITIVE_SCENARIO_IDS.length).toBe(24);
   });
 
   it('reserves the four original theatres for the campaign', () => {

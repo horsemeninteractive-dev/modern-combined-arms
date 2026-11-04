@@ -257,6 +257,18 @@ export interface PropInstance {
   color: [number, number, number];
 }
 
+/**
+ * One crystal node of a material seam. A tile holds several, each carrying a
+ * share of the deposit, so a node's scale is also its remaining ore.
+ */
+export interface OreInstance extends PropInstance {
+  /**
+   * Ground-glow weight. The seam pays for one pool, not one per node: the
+   * anchor node carries the remaining fraction and every other node is 0.
+   */
+  glow: number;
+}
+
 /** Static mesh with per-instance position/rotation/scale/color. */
 export class InstancedMesh {
   readonly vao: WebGLVertexArrayObject;

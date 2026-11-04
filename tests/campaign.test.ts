@@ -23,10 +23,13 @@ const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../src/app.ts', import.meta.url), 'utf8');
 
 describe('campaign prologue', () => {
-  it('offers two coalitions with three operations each', () => {
+  it('offers two coalitions with a full twelve-operation chain each', () => {
     expect(CAMPAIGNS).toHaveLength(2);
     for (const campaign of CAMPAIGNS) {
-      expect(campaign.missions).toHaveLength(3);
+      expect(campaign.missions).toHaveLength(12);
+      // The chain is authored in order and every operation has its own ground.
+      expect(new Set(campaign.missions.map((m) => m.mapId)).size).toBe(12);
+      expect(new Set(campaign.missions.map((m) => m.id)).size).toBe(12);
       expect(campaign.accent).toBe(ALLIANCES[campaign.allianceId].color);
       expect(campaign.name.length).toBeGreaterThan(0);
       expect(campaign.lede.length).toBeGreaterThan(0);
@@ -42,7 +45,7 @@ describe('campaign prologue', () => {
         expect(missionIds.has(mission.id), `${mission.id} is duplicated`).toBe(false);
         missionIds.add(mission.id);
         expect(mapIds.has(mission.mapId), `${mission.id} names an unknown theatre`).toBe(true);
-        expect(mission.code).toMatch(/^[A-Z]+ \/ 0[1-3]$/);
+        expect(mission.code).toMatch(/^[A-Z]+ \/ (0[1-9]|1[0-2])$/);
         expect(mission.situation.length).toBeGreaterThan(0);
         expect(mission.threat.length).toBeGreaterThan(0);
         expect(mission.objectives.length).toBeGreaterThan(0);
@@ -96,10 +99,16 @@ describe('campaign progression', () => {
     expect(resumeMissionId(afterSecond, campaign)).toBe(third.id);
     expect(clearedMissionCount(afterSecond, campaign)).toBe(2);
 
-    const afterThird = recordCampaignVictory(afterSecond, campaign.id, third.id);
-    expect(clearedMissionCount(afterThird, campaign)).toBe(3);
-    expect(resumeMissionId(afterThird, campaign)).toBe(third.id);
-    expect(nextMissionId(campaign, third.id)).toBeNull();
+    // The chain stays one-at-a-time to the very end of twelve operations.
+    let progress = afterSecond;
+    for (const operation of campaign.missions.slice(2)) {
+      expect(isMissionUnlocked(progress, campaign, operation.id)).toBe(true);
+      progress = recordCampaignVictory(progress, campaign.id, operation.id);
+    }
+    const last = campaign.missions[campaign.missions.length - 1];
+    expect(clearedMissionCount(progress, campaign)).toBe(campaign.missions.length);
+    expect(resumeMissionId(progress, campaign)).toBe(last.id);
+    expect(nextMissionId(campaign, last.id)).toBeNull();
   });
 
   it('does not duplicate a replay or unlock another campaign', () => {
@@ -193,9 +202,31 @@ describe('campaign screen', () => {
     expect(html).toContain('id="btn-campaign-deploy"');
   });
 
-  it('routes deployment through the campaign scenario, not the skirmish settings', () => {
-    expect(app).toContain("on('btn-campaign-deploy', () => void this.startBattle(this.campaignScenario()));");
+  it('mounts the commander profile fields on the campaign dossier', () => {
+    expect(html).toContain('id="campaign-commander-name"');
+    expect(html).toContain('id="campaign-commander-callsign"');
+    expect(html).toContain('id="campaign-commander-background"');
+    expect(html).toContain('id="campaign-commander-pronouns"');
+  });
+
+  it('routes deployment through the campaign flow, not the skirmish settings', () => {
+    expect(app).toContain("on('btn-campaign-deploy', () => this.deployCampaignMission());");
     expect(app).toContain("view === 'campaign'");
     expect(app).toContain("this.setMenuBackdrop(this.campaignScenario())");
+  });
+
+  it('embeds a versioned mission document in every operation', () => {
+    for (const campaign of CAMPAIGNS) {
+      campaign.missions.forEach((mission, index) => {
+        expect(mission.mission.format).toBe('mca-mission');
+        expect(mission.mission.id).toBe(mission.id);
+        expect(mission.mission.campaign).toEqual({
+          campaignId: campaign.id,
+          order: index + 1,
+          side: campaign.allianceId,
+        });
+        expect(mission.mission.objectives.length).toBeGreaterThan(0);
+      });
+    }
   });
 });

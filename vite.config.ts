@@ -32,7 +32,18 @@ export default defineConfig({
     __MCA_BUILD__: JSON.stringify(buildNumber),
     __MCA_COMMIT__: JSON.stringify(commit),
   },
-  server: { port: 5173, strictPort: false },
+  server: {
+    port: 5173,
+    strictPort: false,
+    // The account API is same-origin in production through a Pages Function.
+    // Development mirrors that: the dev server proxies the same path to the
+    // local account Worker, so the session cookie is first-party either way.
+    proxy: {
+      '/api/account': {
+        target: process.env.MCA_ACCOUNT_URL ?? 'http://127.0.0.1:8792',
+      },
+    },
+  },
   build: { target: 'es2022' },
   test: {
     include: ['tests/**/*.test.ts'],

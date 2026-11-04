@@ -23,7 +23,7 @@ const precache = [
   '/insignia.svg',
   '/irontide-mark.svg',
   '/studio-logo.mp4',
-  '/audio/menu-theme.mp3',
+  '/audio/music/menu-theme.mp3',
   '/icons/icon-180.png',
   '/icons/icon-192.png',
   '/icons/icon-512.png',

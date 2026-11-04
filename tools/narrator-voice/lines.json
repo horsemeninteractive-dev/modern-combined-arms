@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "engine": "kokoro-82m-onnx",
+  "note": "Spoken text for every battlefield narrator. The Defender clips in public/audio/narrator/defender/ were made outside this catalogue with TTSMaker voice 2403 (Jennifer, UK English female) and have no recorded script, so they are authoritative assets and this tool never rewrites them. Only the Eastern narrator is synthesised here.",
+  "presets": {
+    "command": {
+      "highpass": 110.0,
+      "lowpass": 9000.0,
+      "presence": 2100.0,
+      "presence_gain": 1.5,
+      "presence_q": 0.8,
+      "comp_threshold": -19.0,
+      "comp_ratio": 2.2,
+      "comp_attack_ms": 5.0,
+      "comp_release_ms": 90.0,
+      "makeup_db": 1.5,
+      "drive": 1.05,
+      "target_peak_db": -1.5
+    },
+    "command-east": {
+      "highpass": 110.0,
+      "lowpass": 9000.0,
+      "presence": 2100.0,
+      "presence_gain": 1.5,
+      "presence_q": 0.8,
+      "comp_threshold": -19.0,
+      "comp_ratio": 2.2,
+      "comp_attack_ms": 5.0,
+      "comp_release_ms": 90.0,
+      "makeup_db": 1.5,
+      "drive": 1.05,
+      "target_peak_db": -3.2
+    }
+  },
+  "narrators": {
+    "defender": {
+      "label": "Defender tactical AI",
+      "assetRoot": "/audio/narrator/defender",
+      "generation": "legacy",
+      "assetVoice": "TTSMaker 2403 · Jennifer (UK English female)",
+      "voice": { "voice": "af_bella", "speed": 1.0, "preset": "command" },
+      "notes": "Female, coalition tactical AI. Shipped recordings are TTSMaker voice 2403 (Jennifer, UK English female), used outside this catalogue and treated as authoritative; they are never regenerated. af_bella is the closest Kokoro-82M female by median pitch and brightness (207 Hz / centroid 3034 against 195 Hz / 3695 measured across the shipped clips). It exists only so a future Defender line could be generated in a similar register, under the matching process in docs/NARRATORS.md; no generated line may replace an existing one.",
+      "cues": [
+        "battlefieldEstablished",
+        "baseUnderAttack",
+        "buildingSold",
+        "buildingUnderConstruction",
+        "constructionComplete",
+        "enemyDetected",
+        "forcesUnderAttack",
+        "powerRestored",
+        "productionCancelled",
+        "productionUnderway",
+        "queueFull",
+        "rallyPointSet",
+        "reinforcementsAvailable",
+        "siteContested",
+        "siteLost",
+        "siteSecured",
+        "structureLost",
+        "technologyUnlocked",
+        "unitLost",
+        "unitPromoted",
+        "unitReady",
+        "upgradeComplete",
+        "victory"
+      ],
+      "lines": {}
+    },
+    "eastern": {
+      "label": "Eastern command AI",
+      "assetRoot": "/audio/narrator/eastern",
+      "generation": "kokoro",
+      "voice": { "voice": "am_adam", "speed": 0.97, "preset": "command-east" },
+      "notes": "Male, command-network AI. One short sentence per cue: the Defender AI reports in two clauses, this one states the fact and stops. am_adam was picked by ear from the five candidates in docs/narrator-voice-candidates.html: a composed default voice with no regional colour and no theatrics, which is the register a command network should read in. It is also a unit bark voice, so its narrator clips are mixed as a clean command channel rather than field radio.",
+      "lines": {
+        "battlefieldEstablished": "Command uplink established.",
+        "constructionComplete": "Structure operational.",
+        "buildingUnderConstruction": "Construction initiated.",
+        "buildingSold": "Structure decommissioned.",
+        "structureLost": "Structure lost.",
+        "unitReady": "Asset ready.",
+        "productionUnderway": "Production initiated.",
+        "productionCancelled": "Production cancelled.",
+        "queueFull": "Production queue full.",
+        "reinforcementsAvailable": "Reinforcements available.",
+        "upgradeComplete": "Refit complete.",
+        "siteSecured": "Strategic site secured.",
+        "siteContested": "Strategic site contested.",
+        "siteLost": "Strategic site lost.",
+        "powerRestored": "Power grid restored.",
+        "technologyUnlocked": "Research complete.",
+        "baseUnderAttack": "Command node under attack.",
+        "forcesUnderAttack": "Forces under fire.",
+        "unitLost": "Asset eliminated.",
+        "enemyDetected": "Enemy elements identified.",
+        "unitPromoted": "Veteran status logged.",
+        "rallyPointSet": "Rally point established.",
+        "victory": "Operational objectives achieved."
+      }
+    }
+  }
+}

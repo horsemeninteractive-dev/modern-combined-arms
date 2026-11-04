@@ -122,15 +122,21 @@ function startTestResearch(game: Game): void {
 
 describe('research definitions', () => {
   it('ships the four approved branches with two tiers each', () => {
-    expect(RESEARCH.techs).toHaveLength(8);
+    // The branch tree is the eight-node core; strategic authority nodes are a
+    // separate, documented class layered on top of it (see the next test).
+    const branchTechs = RESEARCH.techs.filter((tech) => !tech.strategic);
+    expect(branchTechs).toHaveLength(8);
     for (const branch of RESEARCH_BRANCHES) {
-      const nodes = RESEARCH.techs.filter((tech) => tech.branch === branch);
+      const nodes = branchTechs.filter((tech) => tech.branch === branch);
       expect(nodes.map((tech) => tech.tier).sort()).toEqual([1, 2]);
     }
+    expect(RESEARCH.techs.filter((tech) => tech.strategic).length).toBeGreaterThan(0);
   });
 
   it('makes tier 2 depend only on its own tier 1 and nothing cross-branch', () => {
     for (const tech of RESEARCH.techs.filter((entry) => entry.tier === 2)) {
+      // An authority node is gated on its branch's entry tier; a branch node on
+      // the tier directly below it. Both rules keep a chain inside one branch.
       expect(tech.requires).toHaveLength(1);
       const prerequisite = TECHS[tech.requires[0]];
       expect(prerequisite.branch).toBe(tech.branch);
@@ -142,6 +148,13 @@ describe('research definitions', () => {
   it('validates the shipped catalogue without issues and resolves every effect', () => {
     expect(validateResearchCatalog()).toEqual([]);
     for (const tech of RESEARCH.techs) {
+      // Every technology either unlocks something or is one of the four
+      // authority nodes a national capability is built from. There are no dead
+      // nodes in either class, which the validator also checks.
+      if (tech.strategic) {
+        expect(tech.effects, tech.id).toHaveLength(0);
+        continue;
+      }
       expect(tech.effects.length, tech.id).toBeGreaterThan(0);
       for (const effect of tech.effects) {
         if (effect.kind === 'unlockUnit') expect(unitFamily(effect.slot)).toBe(effect.slot);

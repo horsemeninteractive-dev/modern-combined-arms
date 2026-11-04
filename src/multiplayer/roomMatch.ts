@@ -76,6 +76,12 @@ export interface RoomSeatDefinition {
   playerId: number;
   team: number;
   token: string;
+  /**
+   * Verified MCA account for this seat, set only from a ticket the room Worker
+   * validated. It is server-side identity: never sent to the opponent, and
+   * never trusted from a client-supplied id. `null`/absent means guest.
+   */
+  accountId?: string | null;
 }
 
 interface SeatState extends RoomSeatDefinition {
@@ -291,6 +297,12 @@ export class RoomMatch {
 
   constructor(options: RoomMatchOptions) {
     assertSeatTable(options.seats);
+    // Campaign missions are single-player in this stage. A room is an
+    // authoritative 1v1 construct, so a mission-bearing scenario is refused at
+    // this boundary rather than quietly hosting a runtime nobody owns.
+    if (options.game?.state.scenario.mission) {
+      throw new Error('Multiplayer rooms cannot host a mission scenario.');
+    }
     this.roomId = options.roomId;
     this.matchDurationMs = options.matchDurationMs;
     this.matchDeadlineAt = options.matchDeadlineAt;
@@ -324,6 +336,9 @@ export class RoomMatch {
       // No game was handed in, so build the catalogue's default multiplayer
       // battlefield rather than a campaign theatre a lobby cannot choose.
       const scenario = scenarioById(defaultScenarioId('multiplayer'))!.create();
+      if (scenario.mission) {
+        throw new Error('The multiplayer battlefield catalogue cannot carry a mission.');
+      }
       scenario.settings.fog = true;
       scenario.settings.timeLimitSec = Math.max(1, Math.ceil(options.matchDurationMs / 1000));
       scenario.players[0].isAI = false;

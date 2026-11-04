@@ -342,10 +342,10 @@ describe('scenario data', () => {
 });
 
 describe('competitive roster after the expansion', () => {
-  it('offers seventeen competitive maps and keeps four campaign theatres', () => {
+  it('offers seventeen competitive maps and a bespoke theatre per campaign operation', () => {
     expect(COMPETITIVE_SCENARIO_IDS).toHaveLength(17);
     const campaign = SCENARIOS.filter((entry) => !entry.modes.includes('skirmish'));
-    expect(campaign).toHaveLength(4);
+    expect(campaign).toHaveLength(28);
     for (const id of COMPETITIVE_SCENARIO_IDS) {
       const entry = scenarioById(id)!;
       expect(entry.modes).toEqual(['skirmish', 'multiplayer']);

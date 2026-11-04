@@ -220,6 +220,9 @@ function updatePlayer(row: PlayerState, projected: TeamSnapshot['players'][numbe
   // The projection only carries the seat's own research, so assigning it here
   // cannot reveal an opponent's plan.
   if (projected.research) row.research = projected.research;
+  // Strategic cooldowns and the committed operation are the seat's own state,
+  // projected only to its team; the client HUD reads them like the server's.
+  if (projected.superweapon) row.superweapon = projected.superweapon;
 }
 
 /** A command as it goes on the wire: intent only, never authority. */
@@ -364,6 +367,10 @@ export class NetworkBattle {
           entity.submarine.revealed = entity.state === 'attacking';
         }
       }
+      // A sale can begin between snapshots, or the structure can arrive in a
+      // sync mid-dismantle, so the replica adopts the timer every time.
+      if (projected.deconstruct) entity.deconstruct = { ...projected.deconstruct };
+      else delete entity.deconstruct;
       entities.push(entity);
       // Remembered structures are charted, not seen: they are excluded from the
       // visible set so the renderer draws them as silhouettes.
@@ -392,6 +399,12 @@ export class NetworkBattle {
           defeated: projected.defeated,
           relayCount: projected.relayCount,
           research: projected.research ?? { completed: [], project: null },
+          superweapon: projected.superweapon ?? {
+            cooldowns: {},
+            active: null,
+            ewUntilTick: 0,
+            defence: null,
+          },
         } satisfies PlayerState);
       updatePlayer(row, projected);
       return row;

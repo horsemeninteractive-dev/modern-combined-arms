@@ -9,6 +9,7 @@ import {
   waterFacingFor,
   type Scenario,
   type ScenarioStructure,
+  type ScenarioUnit,
   type ValidationIssue,
 } from '../sim/scenario';
 import { createEmptyScenario, createIslandAssault } from '../data/scenarios';
@@ -44,7 +45,29 @@ import { WEATHER, WEATHER_KINDS, weatherFor } from '../sim/weather';
 import { pickTerrain } from '../render/terrainSurface';
 import { icon } from './icons';
 import { openModal, closeModal, escapeHtml } from './modal';
-import { drawEditorOverlay, terrainNameAt, unitPaletteName } from './editorRender';
+import { drawEditorOverlay, regionHandleScreenPoints, terrainNameAt, unitPaletteName } from './editorRender';
+import { MissionWorkbench } from './missionWorkbench';
+import { ensureEntityKey, type MissionSection } from '../mission/authoring';
+import {
+  applyRect,
+  moveRegion,
+  rectFromTiles,
+  rectOfRegion,
+  regionAt,
+  resizeRegion,
+  sameRect,
+  type RegionHandle,
+  type TileRect,
+} from '../mission/regions';
+import {
+  readEditorDraft,
+  writeEditorDraft,
+  type EditorDraftState,
+  type EditorDraftWrite,
+} from '../mission/draft';
+import type { LibraryStorage } from '../mission/library';
+import { openMissionLibrary } from './missionLibrary';
+import { missionBriefingMarkup } from './missionBriefing';
 import {
   dismissEditorSheet,
   editorSheetHeight,
@@ -80,7 +103,19 @@ type EditorTool =
   /** Strip the surface layer without touching the ground under it. */
   | 'overlayClear';
 
-const AUTOSAVE_KEY = 'iron-tide.editor.autosave.v1';
+/**
+ * Browser storage, or null when the browser refuses access entirely.
+ *
+ * Merely reading `localStorage` can throw in locked-down browsing modes, so
+ * every draft path goes through this guard instead of assuming it exists.
+ */
+function browserStorage(): LibraryStorage | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
 
 export class Editor {
   readonly app: App;
@@ -108,6 +143,35 @@ export class Editor {
   hoverScreen = { x: 0, y: 0 };
   overlayWidth = 1;
   overlayHeight = 1;
+  /** Draw mission region rectangles on the map while the workbench is open. */
+  showRegions = false;
+  /**
+   * Mission-region authoring mode.
+   *
+   * While it is anything other than `off` the map belongs to the region tool:
+   * a left gesture draws, moves or resizes, and no brush, placement or erase
+   * code runs. Right/middle drag still pans, so framing the shot is never a
+   * separate mode.
+   */
+  regionTool: 'off' | 'draw' | 'select' = 'off';
+  selectedRegionId: string | null = null;
+  /** Rectangle being dragged, before it is written to the document. */
+  regionDraft: TileRect | null = null;
+  /** Authored placement ringed on the map while a reference is inspected. */
+  highlightEntityKey: string | null = null;
+  /** Called after a region gesture commits, so the workbench can re-anchor. */
+  onRegionEdited: (() => void) | null = null;
+
+  private regionDrag: {
+    mode: 'draw' | 'move' | 'resize';
+    handle: RegionHandle | null;
+    startX: number;
+    startZ: number;
+    origin: TileRect;
+    regionId: string | null;
+  } | null = null;
+  /** Pending map pick; resolved to an authored key or cancelled with null. */
+  private entityPick: ((key: string | null) => void) | null = null;
 
   private root: HTMLElement | null = null;
   private pan: { x: number; y: number } | null = null;
@@ -116,11 +180,15 @@ export class Editor {
   private terrainDirty = false;
   private lastTerrainRefresh = 0;
   private autosaveTimer = 0;
+  /** Outcome of the last draft write; drives the recovery panel and toasts. */
+  private lastDraftWrite: EditorDraftWrite | null = null;
+  private draftFailureNotified = false;
   private touchLayout = false;
   private sheetDrag: { startY: number; dy: number; target: HTMLElement } | null = null;
   /** Which slide rails are drawn out. Remembered while the forge is open. */
   private rails: Record<RailSide, boolean> = { left: true, right: true };
   private canvas: HTMLCanvasElement;
+  private workbench: MissionWorkbench | null = null;
 
   constructor(app: App) {
     this.app = app;
@@ -136,27 +204,40 @@ export class Editor {
   /* Open / close                                                        */
   /* ------------------------------------------------------------------ */
 
-  /** Whether this browser holds a Scenario Forge autosave. */
+  /** Whether this browser holds a Scenario Forge draft. */
   static hasAutosave(): boolean {
-    try {
-      return localStorage.getItem(AUTOSAVE_KEY) !== null;
-    } catch {
-      return false;
-    }
+    const storage = browserStorage();
+    return storage ? readEditorDraft(storage).present : false;
   }
 
-  /** Read the autosaved scenario without opening the forge; null if unusable. */
+  /** Read the draft without opening the forge; null if unusable. */
   static readAutosave(): Scenario | null {
-    try {
-      const raw = localStorage.getItem(AUTOSAVE_KEY);
-      if (!raw) return null;
-      return parseScenario(JSON.parse(raw));
-    } catch {
-      return null;
+    const storage = browserStorage();
+    return storage ? readEditorDraft(storage).scenario : null;
+  }
+
+  /** The latest recoverable draft, including metadata for the workbench. */
+  draftState(): EditorDraftState {
+    const storage = browserStorage();
+    if (!storage) {
+      return {
+        scenario: null,
+        meta: null,
+        error: 'Browser storage is unavailable in this browsing mode, so nothing can be drafted.',
+        present: false,
+      };
     }
+    return readEditorDraft(storage);
+  }
+
+  /** Result of the most recent draft write, so the UI never claims a failed save. */
+  get draftStatus(): EditorDraftWrite | null {
+    return this.lastDraftWrite;
   }
 
   open(scenario: Scenario): void {
+    this.workbench?.close(true);
+    this.workbench = null;
     this.active = true;
     this.load(scenario, false);
     const root = document.getElementById('hud-root');
@@ -187,6 +268,13 @@ export class Editor {
 
   close(): void {
     this.active = false;
+    this.workbench?.close(true);
+    this.workbench = null;
+    this.showRegions = false;
+    this.resetRegionEditing();
+    this.onRegionEdited = null;
+    this.highlightEntityKey = null;
+    this.entityPick = null;
     this.sheetDrag = null;
     window.removeEventListener('resize', this.onResize);
     this.detachCanvas();
@@ -209,6 +297,9 @@ export class Editor {
     this.hover = null;
     this.terrainDirty = false;
     this.lastPaint = '';
+    // A loaded document is a different set of regions: a stale selection or
+    // half-drawn rectangle must never be applied to it.
+    this.resetRegionEditing();
     this.syncSymmetryRow();
     if (refresh && this.active) {
       this.app.renderer.settings.showFog = false;
@@ -238,6 +329,7 @@ export class Editor {
           <button class="btn btn-ghost" data-ed="menu" aria-label="Scenario menu">${icon('menu')} <span class="btn-label">MENU</span></button>
           <button class="btn btn-ghost" data-ed="new" aria-label="New scenario">${icon('box')} <span class="btn-label">NEW</span></button>
           <button class="btn btn-ghost" data-ed="open" aria-label="Open scenario">${icon('folder')} <span class="btn-label">OPEN</span></button>
+          <button class="btn btn-ghost" data-ed="library" aria-label="Mission library">${icon('folder')} <span class="btn-label">LIBRARY</span></button>
           <button class="btn btn-ghost" data-ed="save" aria-label="Save scenario">${icon('save')} <span class="btn-label">SAVE</span></button>
           <button class="btn btn-ghost editor-inspect-btn" data-ed="inspector" aria-label="Scenario settings" aria-expanded="false">${icon('settings')} <span class="btn-label">INSPECT</span></button>
           <button class="btn btn-primary" data-ed="launch" aria-label="Deploy scenario">${icon('play')} <span class="btn-label">DEPLOY</span></button>
@@ -252,6 +344,7 @@ export class Editor {
         </div>
         <div class="editor-sym-row" id="ed-symmetry" role="group" aria-label="Authoring symmetry">${this.symmetryRow()}</div>
         <div class="tool-scroll" id="ed-tools"></div>
+        <div class="editor-workbench-host" id="ed-workbench" hidden></div>
         <button class="editor-rail" data-rail="tools" aria-label="Slide the authoring tools away" aria-expanded="true"><span class="editor-rail-grip"></span></button>
       </aside>
       <aside class="editor-side" aria-label="Scenario settings">
@@ -277,9 +370,7 @@ export class Editor {
     if (!this.root) return;
     this.root.querySelectorAll<HTMLElement>('[data-tab]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        this.tab = (btn.dataset.tab as EditorTab) ?? 'terrain';
-        this.root?.querySelectorAll('.editor-tab').forEach((b) => b.classList.toggle('active', b === btn));
-        this.renderTools();
+        this.setTab((btn.dataset.tab as EditorTab) ?? 'terrain');
       });
     });
     this.root.querySelectorAll<HTMLElement>('[data-ed]').forEach((btn) => {
@@ -297,6 +388,9 @@ export class Editor {
         break;
       case 'open':
         this.showOpenDialog();
+        break;
+      case 'library':
+        this.openMissionLibrary();
         break;
       case 'save':
         this.saveJson();
@@ -496,7 +590,10 @@ export class Editor {
         }
         drag = null;
         panel.classList.remove('dragging');
-        this.setRail(side, railSettlesCollapsed(side, width, offset));
+        // `railSettlesCollapsed` answers "stowed?", while `setRail` takes "open":
+        // passing it straight through used to push the panel back open exactly
+        // when the author had dragged it shut.
+        this.setRail(side, !railSettlesCollapsed(side, width, offset));
       };
       rail.addEventListener('pointerdown', (event) => {
         if (this.touchLayout) return;
@@ -520,7 +617,8 @@ export class Editor {
       rail.addEventListener('pointerup', (event) => {
         if (!drag) return;
         settle(event.clientX, moved);
-        if (!moved) this.setRail(side, this.rails[side]);
+        // A press that never became a drag leaves the panel alone; the click
+        // that follows owns the toggle.
       });
       rail.addEventListener('pointercancel', () => {
         if (!drag) return;
@@ -528,16 +626,12 @@ export class Editor {
         drag = null;
         panel.classList.remove('dragging');
       });
-      rail.addEventListener('keydown', (event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        this.setRail(side, this.rails[side]);
-      });
-      // A tap that never became a drag toggles the panel, so the rail works for
-      // anyone who would rather click than pull.
+      // A press that never became a drag toggles the panel, so the rail works for
+      // anyone who would rather click than pull. The rail is a button, so Enter
+      // and Space arrive here as clicks and need no separate handler.
       rail.addEventListener('click', () => {
         if (this.touchLayout || moved) return;
-        this.setRail(side, this.rails[side]);
+        this.setRail(side, !this.rails[side]);
       });
     });
   }
@@ -611,6 +705,52 @@ export class Editor {
   /* Tools                                                               */
   /* ------------------------------------------------------------------ */
 
+  /**
+   * Select a sidebar view.
+   *
+   * The mission view can hold the docked workbench, so a tab change has to
+   * re-dock as well as re-render: the workbench is a view of this panel, not an
+   * overlay that outlives whichever tab happens to be showing.
+   */
+  private setTab(tab: EditorTab): void {
+    this.tab = tab;
+    this.root?.querySelectorAll<HTMLElement>('[data-tab]').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.tab === tab);
+      btn.setAttribute('aria-selected', String(btn.dataset.tab === tab));
+    });
+    this.renderTools();
+    this.syncWorkbenchDock();
+  }
+
+  /** Column the workbench mounts into, when the Forge is open. */
+  get missionWorkbenchHost(): HTMLElement | null {
+    return this.root?.querySelector<HTMLElement>('#ed-workbench') ?? null;
+  }
+
+  /**
+   * Show or hide the docked workbench.
+   *
+   * Docking rules: the workbench claims the MISSION view of the same column the
+   * map tools live in. Switching to TERRAIN or FORCES hands the column back
+   * without discarding the document, and the panel rail slides the whole column
+   * away so the map can be worked on full-width and re-opened where it left off.
+   */
+  private syncWorkbenchDock(): void {
+    const screen = this.root?.querySelector<HTMLElement>('.editor-screen');
+    const host = this.missionWorkbenchHost;
+    if (!screen || !host) return;
+    const docked = Boolean(this.workbench?.active && this.tab === 'mission');
+    screen.classList.toggle('mission-view', docked);
+    host.hidden = !docked;
+  }
+
+  /** The workbench released its document view; hand the column back. */
+  workbenchClosed(): void {
+    if (!this.root) return;
+    this.syncWorkbenchDock();
+    this.renderTools();
+  }
+
   private renderTools(): void {
     if (!this.root) return;
     const el = this.root.querySelector('#ed-tools');
@@ -631,8 +771,11 @@ export class Editor {
           const def = TERRAIN[t];
           const color = `rgb(${def.color.map((c) => Math.round(c * 255)).join(',')})`;
           const active = this.tool === 'paint' && this.terrain === t;
-          const title = def.note ? `${def.name} — ${def.note}` : def.name;
-          return `<button class="terrain-swatch ${active ? 'active' : ''}" data-terrain="${t}" title="${escapeHtml(title)}" style="background:${color}">${escapeHtml(def.name.toUpperCase())}</button>`;
+          // The swatch already prints its name and the map hint names the tool, so
+          // the hover tip carries only the note: two copies of the same words on
+          // screen at once is noise, not help.
+          const note = def.note ? ` title="${escapeHtml(def.note)}"` : '';
+          return `<button class="terrain-swatch ${active ? 'active' : ''}" data-terrain="${t}"${note} style="background:${color}">${escapeHtml(def.name.toUpperCase())}</button>`;
         })
         .join('');
       return `<h4 class="terrain-group">${group.name.toUpperCase()}</h4><div class="terrain-grid">${cells}</div>`;
@@ -702,6 +845,7 @@ export class Editor {
   }
 
   private missionTools(): string {
+    const mission = this.scenario.mission;
     const startButtons = this.scenario.players
       .map(
         (p) => `<button class="tool-btn ${this.tool === 'start' && this.startPlayerId === p.id ? 'active' : ''}" data-start="${p.id}">${icon(p.isAI ? 'target' : 'commander')}${escapeHtml(p.name)}<small>(${p.startX}, ${p.startZ})</small></button>`,
@@ -715,6 +859,18 @@ export class Editor {
       <div class="tool-section"><h4>OBJECTIVES</h4>
         <textarea id="ed-objectives" rows="4">${escapeHtml(this.scenario.objectives.join('\n'))}</textarea>
         <p class="tool-note">One objective per line. These appear in battle and the briefing.</p>
+      </div>
+      <div class="tool-section"><h4>MISSION DOCUMENT</h4>
+        ${
+          mission
+            ? `<p class="tool-note"><b>${escapeHtml(mission.title)}</b> · ${escapeHtml(mission.id)} · ${mission.objectives.length} objectives · ${mission.triggers.length} triggers</p>`
+            : '<p class="tool-note">This scenario has no mission document. The workbench can create a playable opening draft from the current map.</p>'
+        }
+        <div class="tool-grid">
+          <button class="tool-btn" data-mission="workbench">${icon('command')}${mission ? 'OPEN WORKBENCH' : 'CREATE MISSION'}</button>
+          <button class="tool-btn" data-mission="library">${icon('folder')}MISSION LIBRARY</button>
+        </div>
+        <p class="tool-note">The library stores complete scenarios with embedded missions. Import and export live in the workbench.</p>
       </div>
       <div class="tool-section"><h4>QUICK CHECK</h4>
         <div class="tool-grid">
@@ -834,6 +990,570 @@ export class Editor {
     });
     this.root.querySelectorAll<HTMLElement>('[data-quick]').forEach((btn) => {
       btn.addEventListener('click', () => this.quickAction(btn.dataset.quick ?? ''));
+    });
+    this.root.querySelectorAll<HTMLElement>('[data-mission]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (btn.dataset.mission === 'library') this.openMissionLibrary();
+        else this.openMissionWorkbench();
+      });
+    });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Mission authoring                                                   */
+  /* ------------------------------------------------------------------ */
+
+  /** Open the structured mission workbench in the authoring sidebar. */
+  openMissionWorkbench(section?: MissionSection): void {
+    if (!this.active) return;
+    if (!this.workbench) this.workbench = new MissionWorkbench(this.app, this);
+    if (this.tab !== 'mission') this.setTab('mission');
+    this.workbench.open(section);
+    this.syncWorkbenchDock();
+    // On a phone the same column is a drawer: opening the workbench has to
+    // bring the drawer forward instead of loading a panel nobody can see.
+    if (this.touchLayout) this.openTools();
+  }
+
+  /** Section the workbench is on, if it is open. */
+  get missionWorkbenchSection(): MissionSection | null {
+    return this.workbench?.active ? this.workbench.currentSection : null;
+  }
+
+  openMissionLibrary(): void {
+    if (!this.active) return;
+    openMissionLibrary(this.app, this);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Map-assisted mission authoring                                      */
+  /* ------------------------------------------------------------------ */
+
+  /** Whether a region gesture or entity pick currently owns the map. */
+  get mapToolActive(): boolean {
+    return this.regionTool !== 'off' || this.entityPick !== null;
+  }
+
+  /** Whether a right/middle-button or PAN-mode camera drag is under way. */
+  get panning(): boolean {
+    return this.pan !== null;
+  }
+
+  /** Whether the armed tool writes a structure, unit or player start. */
+  get placementToolActive(): boolean {
+    return !this.mapToolActive && (this.tool === 'structure' || this.tool === 'unit' || this.tool === 'start');
+  }
+
+  /**
+   * Whether the highlighted tile would accept the armed placement tool.
+   *
+   * This mirrors the gate in paintAtScreen, including symmetric twins, so the
+   * reticle and the click cannot disagree about a site. Every call starts from
+   * a fresh occupancy mask: cursor evaluation must never mutate the document
+   * or leak state into the next authoring stroke.
+   */
+  get placementOk(): boolean {
+    if (!this.placementToolActive || !this.hover) return false;
+    const { x, z } = this.hover;
+    if (this.tool === 'start') {
+      return this.scenario.players.some((p) => p.id === this.startPlayerId);
+    }
+    if (this.tool === 'structure') {
+      const def = BUILDINGS[this.structureDef];
+      if (!def) return false;
+      const tx = x - Math.floor(def.footprint.w / 2);
+      const tz = z - Math.floor(def.footprint.h / 2);
+      const occupied = this.occupancy();
+      if (!checkPlacement(this.scenario, this.structureDef, tx, tz, occupied).ok) return false;
+      // A starting unit standing on the foundation refuses the placement just
+      // as it does when the button is released.
+      if (
+        this.scenario.units.some(
+          (u) => u.x >= tx && u.x < tx + def.footprint.w && u.z >= tz && u.z < tz + def.footprint.h,
+        )
+      ) {
+        return false;
+      }
+      this.markFootprint(occupied, tx, tz, def.footprint.w, def.footprint.h);
+      for (const rect of symmetryRects(
+        this.symmetry,
+        this.scenario.width,
+        this.scenario.height,
+        tx,
+        tz,
+        def.footprint.w,
+        def.footprint.h,
+      )) {
+        if (!checkPlacement(this.scenario, this.structureDef, rect.x, rect.z, occupied).ok) return false;
+        this.markFootprint(occupied, rect.x, rect.z, rect.w, rect.h);
+      }
+      return true;
+    }
+    if (this.tool === 'unit') {
+      const def = UNITS[this.unitDef];
+      if (this.owner < 0 || !def) return false;
+      const terrain = new Uint8Array(this.scenario.tiles.map((entry) => entry.t));
+      const slots = [
+        { x, z },
+        ...symmetryTiles(
+          this.symmetry,
+          this.scenario.width,
+          this.scenario.height,
+          x,
+          z,
+        ),
+      ];
+      for (const slot of slots) {
+        if (!inBounds(this.scenario.width, this.scenario.height, slot.x, slot.z)) return false;
+        if (this.structureAt(slot.x, slot.z)) return false;
+        if (
+          !canStandOn(
+            this.scenario.width,
+            this.scenario.height,
+            terrain,
+            tileIndex(this.scenario.width, slot.x, slot.z),
+            def.moveClass,
+          )
+        ) {
+          return false;
+        }
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /** Region whose rectangle the in-progress gesture is editing, if any. */
+  get regionEditTargetId(): string | null {
+    return this.regionDrag?.regionId ?? null;
+  }
+
+  /** Whether a drag is currently in progress (draw, move or resize). */
+  get regionGestureActive(): boolean {
+    return this.regionDrag !== null;
+  }
+
+  /**
+   * Enter or leave a region tool.
+   *
+   * Leaving the tool cancels any half-finished gesture, so a mode change can
+   * never commit a rectangle the author did not confirm.
+   */
+  setRegionTool(tool: 'off' | 'draw' | 'select'): void {
+    if (tool === 'off') this.cancelRegionEdit();
+    this.regionTool = tool;
+    if (tool !== 'off') {
+      this.showRegions = true;
+      // A map tool owns the pointer, so on a phone the drawer has to stop
+      // covering the ground being drawn on. Desktop keeps the panel where it is.
+      if (this.touchLayout) this.closeTools();
+    }
+    this.syncMapCursor();
+    this.setHint();
+  }
+
+  selectRegion(id: string | null): void {
+    this.selectedRegionId = id;
+    this.draw();
+  }
+
+  /** Frame one region without changing the selection semantics of the list. */
+  focusRegion(id: string): void {
+    const region = this.scenario.mission?.regions.find((entry) => entry.id === id);
+    if (!region) return;
+    this.selectedRegionId = id;
+    const cx = (region.x + Math.max(1, region.width) / 2) * TILE_SIZE;
+    const cz = (region.z + Math.max(1, region.height) / 2) * TILE_SIZE;
+    this.app.renderer.camera.centerOn(cx, cz);
+    const span = Math.max(region.width, region.height) * TILE_SIZE;
+    this.app.renderer.camera.setZoom(Math.max(24, Math.min(90, span * 0.9)));
+    this.showRegions = true;
+    this.draw();
+  }
+
+  /** Frame an authored placement, so a reference can be inspected on the map. */
+  focusEntity(key: string): void {
+    const point = this.entityPoint(key);
+    if (!point) return;
+    this.highlightEntityKey = key;
+    this.app.renderer.camera.centerOn(point.x * TILE_SIZE, point.z * TILE_SIZE);
+    this.app.renderer.camera.setZoom(Math.max(24, this.app.renderer.camera.zoom));
+    this.draw();
+  }
+
+  /** Ring an authored placement without moving the camera. */
+  setEntityHighlight(key: string | null): void {
+    this.highlightEntityKey = key;
+    this.draw();
+  }
+
+  /**
+   * Ask for the next map click to resolve an authored entity key.
+   *
+   * Clicking empty ground cancels; it never substitutes a nearby placement, so a
+   * failed pick leaves the authored reference exactly as it was.
+   */
+  pickEntityOnMap(callback: (key: string | null) => void): void {
+    this.entityPick = callback;
+    this.regionTool = 'off';
+    this.regionDraft = null;
+    this.regionDrag = null;
+    this.syncMapCursor();
+    this.setHint();
+    if (this.touchLayout) this.closeTools();
+    this.app.notify('Select an authored placement on the map. Escape cancels.', 'info');
+  }
+
+  cancelEntityPick(): void {
+    const pending = this.entityPick;
+    this.entityPick = null;
+    this.syncMapCursor();
+    this.setHint();
+    pending?.(null);
+  }
+
+  /**
+   * Abandon the in-progress gesture.
+   *
+   * Nothing has been written to the document at this point: the draft rectangle
+   * lives only in this object, so cancelling is exactly "forget the draft".
+   */
+  cancelRegionEdit(): boolean {
+    const hadWork = this.regionDrag !== null || this.regionDraft !== null;
+    this.regionDrag = null;
+    this.regionDraft = null;
+    if (hadWork) {
+      this.app.notify('Region edit cancelled. The document is unchanged.', 'info');
+      this.draw();
+    }
+    return hadWork;
+  }
+
+  /** Drop every map-authoring mode without notifying; used on close/load. */
+  private resetRegionEditing(): void {
+    this.regionTool = 'off';
+    this.regionDrag = null;
+    this.regionDraft = null;
+    this.selectedRegionId = null;
+    this.syncMapCursor();
+  }
+
+  private syncMapCursor(): void {
+    this.canvas.style.cursor = this.mapToolActive ? 'crosshair' : '';
+  }
+
+  private entityPoint(key: string): { x: number; z: number } | null {
+    const structure = this.scenario.structures.find((entry) => entry.key === key);
+    if (structure) {
+      const def = BUILDINGS[structure.defId];
+      return {
+        x: structure.x + (def?.footprint.w ?? 1) / 2,
+        z: structure.z + (def?.footprint.h ?? 1) / 2,
+      };
+    }
+    const unit = this.scenario.units.find((entry) => entry.key === key);
+    return unit ? { x: unit.x + 0.5, z: unit.z + 0.5 } : null;
+  }
+
+  /** Convert a click to an authored key, or cancel if nothing keyed is there. */
+  private resolveEntityPick(clientX: number, clientY: number): void {
+    const pending = this.entityPick;
+    this.entityPick = null;
+    this.updateHover(clientX, clientY);
+    const key = this.hover ? this.entityKeyAt(this.hover.x, this.hover.z) : null;
+    this.syncMapCursor();
+    this.setHint();
+    if (!pending) return;
+    if (!key) {
+      this.app.notify('No authored placement there. The reference is unchanged.', 'warning');
+      pending(null);
+      return;
+    }
+    this.highlightEntityKey = key;
+    pending(key);
+    this.draw();
+  }
+
+  /** Keyed placement covering a tile: a structure footprint first, then a unit. */
+  private entityKeyAt(x: number, z: number): string | null {
+    for (const structure of this.scenario.structures) {
+      if (!structure.key) continue;
+      const def = BUILDINGS[structure.defId];
+      if (!def) continue;
+      if (x >= structure.x && x < structure.x + def.footprint.w && z >= structure.z && z < structure.z + def.footprint.h) {
+        return structure.key;
+      }
+    }
+    const unit = this.scenario.units.find((entry) => entry.key && entry.x === x && entry.z === z);
+    return unit?.key ?? null;
+  }
+
+  private beginRegionGesture(event: PointerEvent): void {
+    this.updateHover(event.clientX, event.clientY);
+    const mission = this.scenario.mission;
+    if (!mission || !this.hover) return;
+    const bounds = { width: this.scenario.width, height: this.scenario.height };
+    const tx = this.hover.x;
+    const tz = this.hover.z;
+    const selected = mission.regions.find((entry) => entry.id === this.selectedRegionId) ?? null;
+
+    // A grip wins over the body of the rectangle it belongs to, so resizing a
+    // region whose edge sits under another one still does the obvious thing.
+    if (selected) {
+      const handle = this.regionHandleAt(selected, event.clientX, event.clientY);
+      if (handle) {
+        this.regionDrag = {
+          mode: 'resize',
+          handle,
+          startX: tx,
+          startZ: tz,
+          origin: rectOfRegion(selected),
+          regionId: selected.id,
+        };
+        this.regionDraft = rectOfRegion(selected);
+        this.draw();
+        return;
+      }
+    }
+
+    const under = regionAt(mission.regions, tx, tz);
+    if (this.regionTool === 'select') {
+      this.selectedRegionId = under?.id ?? null;
+      this.regionDrag = under
+        ? {
+            mode: 'move',
+            handle: null,
+            startX: tx,
+            startZ: tz,
+            origin: rectOfRegion(under),
+            regionId: under.id,
+          }
+        : null;
+      this.regionDraft = under ? rectOfRegion(under) : null;
+      this.onRegionEdited?.();
+      this.draw();
+      return;
+    }
+
+    // Draw mode: dragging inside the selected region moves it; dragging its
+    // grip resizes (handled above). Elsewhere starts a new rectangle, which is
+    // what an author expects after framing a fresh area.
+    if (selected && under?.id === selected.id) {
+      this.regionDrag = {
+        mode: 'move',
+        handle: null,
+        startX: tx,
+        startZ: tz,
+        origin: rectOfRegion(selected),
+        regionId: selected.id,
+      };
+      this.regionDraft = rectOfRegion(selected);
+      this.draw();
+      return;
+    }
+    this.regionDrag = {
+      mode: 'draw',
+      handle: null,
+      startX: tx,
+      startZ: tz,
+      origin: { x: tx, z: tz, width: 1, height: 1 },
+      regionId: null,
+    };
+    this.regionDraft = rectFromTiles(tx, tz, tx, tz, bounds);
+    this.draw();
+  }
+
+  private updateRegionGesture(clientX: number, clientY: number): void {
+    const drag = this.regionDrag;
+    if (!drag) return;
+    this.updateHover(clientX, clientY);
+    if (!this.hover) return;
+    const bounds = { width: this.scenario.width, height: this.scenario.height };
+    const dx = this.hover.x - drag.startX;
+    const dz = this.hover.z - drag.startZ;
+    if (drag.mode === 'draw') {
+      this.regionDraft = rectFromTiles(drag.startX, drag.startZ, this.hover.x, this.hover.z, bounds);
+    } else if (drag.mode === 'move') {
+      this.regionDraft = moveRegion(drag.origin, dx, dz, bounds);
+    } else if (drag.handle) {
+      this.regionDraft = resizeRegion(drag.origin, drag.handle, dx, dz, bounds);
+    }
+    this.draw();
+  }
+
+  /** Write the dragged rectangle to the document. A no-op drag changes nothing. */
+  private commitRegionGesture(): void {
+    const drag = this.regionDrag;
+    const draft = this.regionDraft;
+    this.regionDrag = null;
+    this.regionDraft = null;
+    if (!drag || !draft) return;
+    if (drag.mode !== 'draw' && sameRect(drag.origin, draft)) return;
+    const mission = this.scenario.mission;
+    if (!mission) return;
+    if (drag.mode === 'draw') {
+      const id = this.uniqueRegionId(mission.regions.map((entry) => entry.id));
+      mission.regions.push({ id, x: draft.x, z: draft.z, width: draft.width, height: draft.height });
+      this.selectedRegionId = id;
+      this.app.notify(`Region ${id} added: ${draft.width}×${draft.height} tiles.`, 'success');
+    } else {
+      const region = mission.regions.find((entry) => entry.id === drag.regionId);
+      if (!region) return;
+      applyRect(region, draft);
+    }
+    this.missionChanged();
+    this.onRegionEdited?.();
+    this.draw();
+  }
+
+  private uniqueRegionId(taken: readonly string[]): string {
+    const used = new Set(taken);
+    if (!used.has('region')) return 'region';
+    let n = 2;
+    while (used.has(`region-${n}`)) n++;
+    return `region-${n}`;
+  }
+
+  /** Grip under a screen point, if any, for the selected rectangle. */
+  private regionHandleAt(
+    region: { id: string; x: number; z: number; width: number; height: number },
+    clientX: number,
+    clientY: number,
+  ): RegionHandle | null {
+    const rect = this.canvas.getBoundingClientRect();
+    const px = clientX - rect.left;
+    const py = clientY - rect.top;
+    const points = regionHandleScreenPoints(this, region);
+    for (const handle of Object.keys(points) as RegionHandle[]) {
+      const point = points[handle];
+      if (Math.abs(point.x - px) <= 9 && Math.abs(point.y - py) <= 9) return handle;
+    }
+    return null;
+  }
+
+  private onKeyDown = (event: KeyboardEvent): void => {
+    if (!this.active) return;
+    if (event.key !== 'Escape') return;
+    if (this.entityPick) {
+      this.cancelEntityPick();
+      event.preventDefault();
+      return;
+    }
+    if (this.regionDrag || this.regionDraft) {
+      this.cancelRegionEdit();
+      event.preventDefault();
+      return;
+    }
+    if (this.regionTool !== 'off') {
+      this.setRegionTool('off');
+      this.onRegionEdited?.();
+      event.preventDefault();
+    }
+  };
+
+  /** Load a document chosen from the library or an import. */
+  loadScenario(scenario: Scenario): void {
+    this.load(scenario);
+    this.workbench?.reload();
+    this.noticeStoredDraft();
+  }
+
+  /**
+   * Warn when a different draft is still stored.
+   *
+   * Opening an older library snapshot never deletes a newer draft; it only says
+   * where it is, so the author decides which version to keep.
+   */
+  private noticeStoredDraft(): void {
+    const draft = this.draftState();
+    if (!draft.scenario || !draft.meta) return;
+    if (scenarioToJson(draft.scenario) === scenarioToJson(this.scenario)) return;
+    this.app.notify(
+      `A browser draft from ${new Date(draft.meta.savedAt).toLocaleString()} is still stored and differs from this document. It is listed under Recovery in the workbench.`,
+      'info',
+    );
+  }
+
+  /**
+   * Persist the draft and its metadata.
+   *
+   * Never throws and never reports success it cannot verify: the workbench reads
+   * the returned status to decide whether the document is safe on disk.
+   */
+  private storeDraft(): EditorDraftWrite {
+    const storage = browserStorage();
+    if (!storage) {
+      const failed: EditorDraftWrite = {
+        ok: false,
+        error:
+          'Browser storage is unavailable in this browsing mode. Save the scenario JSON to keep your work.',
+        code: 'unavailable',
+        meta: null,
+      };
+      this.lastDraftWrite = failed;
+      this.reportDraftFailure(failed);
+      return failed;
+    }
+    const result = writeEditorDraft(storage, this.scenario, {
+      entryId: this.workbench?.currentEntryId ?? null,
+      missionId: this.scenario.mission?.id ?? null,
+      errorCount: this.issues.filter((issue) => issue.severity === 'error').length,
+      warningCount: this.issues.filter((issue) => issue.severity === 'warning').length,
+    });
+    this.lastDraftWrite = result;
+    if (result.ok) this.draftFailureNotified = false;
+    else this.reportDraftFailure(result);
+    this.workbench?.refresh();
+    return result;
+  }
+
+  /** Report a draft failure once, rather than on every keystroke. */
+  private reportDraftFailure(result: EditorDraftWrite): void {
+    if (this.draftFailureNotified) return;
+    this.draftFailureNotified = true;
+    this.app.notify(`Draft not saved. ${result.error ?? 'Browser storage refused the write.'}`, 'critical');
+  }
+
+  /** Called by the workbench after every authoritative edit. */
+  missionChanged(): void {
+    this.refreshValidation();
+    this.scheduleAutosave();
+    this.workbench?.refresh();
+  }
+
+  /** Launch the real runtime on a disposable copy of the working document. */
+  testLaunchMission(): void {
+    const errors = this.issues.filter((issue) => issue.severity === 'error');
+    if (errors.length > 0) {
+      this.app.notify(`Cannot test: ${errors[0].message}`, 'critical');
+      return;
+    }
+    if (!this.scenario.mission) {
+      this.app.notify('Create a mission document before testing the operation.', 'warning');
+      return;
+    }
+    const mission = this.scenario.mission;
+    openModal({
+      title: `${mission.title} — Test briefing`,
+      wide: true,
+      body: `
+        <p class="wb-warning">TEST RUN · This launches the real mission runtime on a disposable copy. No campaign progress, consequence or veteran change is committed.</p>
+        ${missionBriefingMarkup(mission, { commander: this.app.missionCommander() })}`,
+      actions: [
+        { label: 'Cancel' },
+        {
+          label: 'Deploy test',
+          primary: true,
+          onClick: () => {
+            // The section has to be read before the panel closes: the test run
+            // reopens the workbench where the author left off, not wherever a
+            // freshly constructed workbench happens to default to.
+            const section = this.workbench?.currentSection;
+            this.workbench?.close(true);
+            void this.app.startMissionTest(cloneScenario(this.scenario), section);
+          },
+        },
+      ],
     });
   }
 
@@ -1088,6 +1808,17 @@ export class Editor {
       return;
     }
     if (event.button !== 0) return;
+    // Mission-authoring modes own the left button completely: no brush stroke,
+    // placement or erase can run while a rectangle is being drawn or an entity
+    // is being picked.
+    if (this.entityPick) {
+      this.resolveEntityPick(event.clientX, event.clientY);
+      return;
+    }
+    if (this.regionTool !== 'off') {
+      this.beginRegionGesture(event);
+      return;
+    }
     this.painting = true;
     this.lastPaint = '';
     this.paintAtScreen(event.clientX, event.clientY);
@@ -1101,6 +1832,10 @@ export class Editor {
       this.pan = { x: event.clientX, y: event.clientY };
       return;
     }
+    if (this.regionDrag) {
+      this.updateRegionGesture(event.clientX, event.clientY);
+      return;
+    }
     if (this.painting && (this.tool === 'paint' || this.tool === 'raise' || this.tool === 'lower' || this.tool === 'ore' || this.tool === 'erase')) {
       this.paintAtScreen(event.clientX, event.clientY);
     }
@@ -1109,6 +1844,10 @@ export class Editor {
   private onPointerUp = (): void => {
     this.painting = false;
     this.pan = null;
+    if (this.regionDrag) {
+      this.commitRegionGesture();
+      return;
+    }
     if (this.terrainDirty) this.refreshTerrain(true);
     this.refreshValidation();
     this.scheduleAutosave();
@@ -1131,6 +1870,7 @@ export class Editor {
     this.canvas.addEventListener('pointercancel', this.onPointerUp);
     this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
     this.canvas.addEventListener('contextmenu', this.onContext);
+    window.addEventListener('keydown', this.onKeyDown);
   }
 
   private detachCanvas(): void {
@@ -1140,6 +1880,7 @@ export class Editor {
     this.canvas.removeEventListener('pointercancel', this.onPointerUp);
     this.canvas.removeEventListener('wheel', this.onWheel);
     this.canvas.removeEventListener('contextmenu', this.onContext);
+    window.removeEventListener('keydown', this.onKeyDown);
   }
 
   private updateHover(clientX: number, clientY: number): void {
@@ -1224,6 +1965,13 @@ export class Editor {
         const placed: ScenarioStructure = { defId: this.structureDef, owner: this.owner, x: tx, z: tz };
         if (bdef.requiresWater) placed.facing = waterFacingFor(this.scenario, placed);
         this.scenario.structures.push(placed, ...accepted);
+        // A mission cannot refer to a placement without a key. Keying happens
+        // only for mission-aware scenarios, so an ordinary skirmish map's
+        // authored data stays exactly as it was written.
+        if (this.scenario.mission) {
+          ensureEntityKey(this.scenario, placed);
+          for (const twin of accepted) ensureEntityKey(this.scenario, twin);
+        }
       } else {
         const udef = UNITS[this.unitDef];
         const blocked = this.scenario.structures.some((s) => {
@@ -1274,7 +2022,9 @@ export class Editor {
             this.scenario.width,
             this.scenario.height,
           );
-          this.scenario.units.push({ defId: this.unitDef, owner, x: slot.x, z: slot.z });
+          const unit = { defId: this.unitDef, owner, x: slot.x, z: slot.z };
+          this.scenario.units.push(unit);
+          if (this.scenario.mission) ensureEntityKey(this.scenario, unit);
         }
       }
       this.app.audio.play('build');
@@ -1520,17 +2270,22 @@ export class Editor {
             const kind = btn.dataset.open;
             if (kind === 'file') file?.click();
             if (kind === 'auto') {
-              try {
-                const raw = localStorage.getItem(AUTOSAVE_KEY);
-                if (!raw) {
-                  this.app.notify('No editor autosave exists yet.', 'warning');
-                  return;
-                }
-                this.load(parseScenario(JSON.parse(raw)));
-                this.app.notify('Editor autosave restored.', 'success');
-              } catch (error) {
-                this.app.notify(`Autosave could not be restored: ${error instanceof Error ? error.message : String(error)}`, 'critical');
+              const draft = this.draftState();
+              if (!draft.present) {
+                this.app.notify('No editor autosave exists yet.', 'warning');
+                return;
               }
+              if (!draft.scenario) {
+                this.app.notify(draft.error ?? 'Autosave could not be restored.', 'critical');
+                return;
+              }
+              this.load(draft.scenario);
+              this.app.notify(
+                draft.meta
+                  ? `Editor autosave restored from ${new Date(draft.meta.savedAt).toLocaleString()}.`
+                  : 'Editor autosave restored.',
+                'success',
+              );
             }
             if (kind === 'builtin') {
               this.load(createIslandAssault());
@@ -1565,8 +2320,13 @@ export class Editor {
       a.download = `${this.scenario.meta.id || 'scenario'}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      localStorage.setItem(AUTOSAVE_KEY, json);
-      this.app.notify('Scenario saved as JSON and in browser autosave.', 'success');
+      const stored = this.storeDraft();
+      this.app.notify(
+        stored.ok
+          ? 'Scenario downloaded and stored in the browser draft.'
+          : `Scenario downloaded. The browser draft was not updated: ${stored.error ?? 'storage refused the write.'}`,
+        stored.ok ? 'success' : 'warning',
+      );
     } catch (error) {
       this.app.notify(`Save failed: ${error instanceof Error ? error.message : String(error)}`, 'critical');
     }
@@ -1575,11 +2335,7 @@ export class Editor {
   private scheduleAutosave(): void {
     window.clearTimeout(this.autosaveTimer);
     this.autosaveTimer = window.setTimeout(() => {
-      try {
-        localStorage.setItem(AUTOSAVE_KEY, scenarioToJson(this.scenario));
-      } catch {
-        /* Autosave is best-effort. */
-      }
+      this.storeDraft();
     }, 1800);
   }
 
@@ -1588,11 +2344,16 @@ export class Editor {
     if (errors.length > 0) {
       this.app.notify(`Cannot deploy: ${errors[0].message}`, 'critical');
       this.app.audio.play('denied');
-      this.tab = 'mission';
-      this.renderTools();
+      this.setTab('mission');
       return;
     }
     this.app.launchEditorScenario(cloneScenario(this.scenario));
+  }
+
+  /** Key a freshly placed entity when this scenario carries a mission. */
+  private keyIfMission(entry: ScenarioStructure | ScenarioUnit): void {
+    if (!this.scenario.mission) return;
+    ensureEntityKey(this.scenario, entry);
   }
 
   private quickAction(kind: string): void {
@@ -1605,7 +2366,9 @@ export class Editor {
           const tx = Math.max(0, Math.min(this.scenario.width - 4, p.startX - 2 + (attempt % 6) - 3));
           const tz = Math.max(0, Math.min(this.scenario.height - 4, p.startZ - 2 + Math.floor(attempt / 6) - 3));
           if (checkPlacement(this.scenario, 'commandPost', tx, tz, occupied).ok) {
-            this.scenario.structures.push({ defId: 'commandPost', owner: p.id, x: tx, z: tz });
+            const post: ScenarioStructure = { defId: 'commandPost', owner: p.id, x: tx, z: tz };
+            this.scenario.structures.push(post);
+            this.keyIfMission(post);
             for (let dz = 0; dz < 4; dz++) for (let dx = 0; dx < 4; dx++) occupied[tileIndex(this.scenario.width, tx + dx, tz + dz)] = 1;
             break;
           }
@@ -1619,7 +2382,9 @@ export class Editor {
         const tx = Math.floor(this.scenario.width * 0.35 + (attempt * 7) % Math.max(4, Math.floor(this.scenario.width * 0.3)));
         const tz = Math.floor(this.scenario.height * 0.25 + (attempt * 5) % Math.max(4, Math.floor(this.scenario.height * 0.5)));
         if (checkPlacement(this.scenario, 'relay', tx, tz, occupied).ok) {
-          this.scenario.structures.push({ defId: 'relay', owner: -1, x: tx, z: tz });
+          const relay: ScenarioStructure = { defId: 'relay', owner: -1, x: tx, z: tz };
+          this.scenario.structures.push(relay);
+          this.keyIfMission(relay);
           placed.push(`${tx},${tz}`);
           occupied[tileIndex(this.scenario.width, tx, tz)] = 1;
           occupied[tileIndex(this.scenario.width, tx + 1, tz)] = 1;
@@ -1634,7 +2399,9 @@ export class Editor {
         for (let i = 0; i < 3; i++) {
           const x = Math.max(0, Math.min(this.scenario.width - 1, p.startX + (i % 2 === 0 ? 2 : -2)));
           const z = Math.max(0, Math.min(this.scenario.height - 1, p.startZ + i));
-          this.scenario.units.push({ defId: i === 0 ? 'engineer' : 'rifle', owner: p.id, x, z });
+          const unit: ScenarioUnit = { defId: i === 0 ? 'engineer' : 'rifle', owner: p.id, x, z };
+          this.scenario.units.push(unit);
+          this.keyIfMission(unit);
         }
       }
       this.app.notify('Starter engineer and riflemen added.', 'success');
@@ -1682,6 +2449,15 @@ export class Editor {
   }
 
   toolHint(): string {
+    if (this.entityPick) {
+      return 'PICK AUTHORED ENTITY · click a keyed placement · empty ground cancels · Esc cancels';
+    }
+    if (this.regionTool === 'draw') {
+      return 'DRAW REGION · drag anywhere to create · drag inside the selected region to move it · drag a grip to resize · Esc cancels';
+    }
+    if (this.regionTool === 'select') {
+      return 'SELECT REGION · click to select · drag to move · grips resize · Esc leaves the tool';
+    }
     switch (this.tool) {
       case 'paint':
         return `PAINT ${TERRAIN[this.terrain].name.toUpperCase()} · brush ${this.brush * 2 + 1}${this.symmetryTag()} · L-drag paint · R-drag pan`;

@@ -85,6 +85,7 @@
         <canvas id="overlay" aria-hidden="true"></canvas>
         <div id="hud-root"></div>
       </div>
+      <canvas id="cursor-layer" aria-hidden="true"></canvas>
 
       <aside
         id="tutorial-panel"
@@ -176,7 +177,31 @@
               </span>
             </h1>
           </div>
-          <p class="game-tagline">COMBINED-ARMS COMMAND · 2037</p>
+          <!--
+            Account chip. This replaces the tagline that used to sit on the far
+            right: identity is the one thing worth that position. Standing comes
+            first so rank and level read before the name, then the provider
+            avatar, then identity. The chip is a route, not a popover: it opens
+            the account screen in the deck like Settings does.
+          -->
+          <div class="menu-account" id="menu-account" data-state="offline">
+            <button type="button" class="menu-account-trigger" id="menu-account-trigger"
+              aria-controls="menu-view-account">
+              <span class="menu-account-standing" id="menu-account-standing" hidden>
+                <span class="menu-account-insignia" id="menu-account-insignia" aria-hidden="true"></span>
+                <span class="menu-account-rank">
+                  <b id="menu-account-rank">—</b>
+                  <small id="menu-account-level">LV —</small>
+                </span>
+              </span>
+              <span class="menu-account-avatar" id="menu-account-avatar" aria-hidden="true">?</span>
+              <span class="menu-account-text">
+                <b id="menu-account-name">Guest</b>
+                <small id="menu-account-detail">Local guest profile</small>
+              </span>
+              <span class="menu-account-go" aria-hidden="true">›</span>
+            </button>
+          </div>
         </header>
 
         <div class="menu-grid">
@@ -220,7 +245,7 @@
               </button>
               <button type="button" class="menu-nav-item" data-menu-view="campaign">
                 <span class="menu-nav-index">02</span>
-                <span class="menu-nav-text"><b>Campaign</b><small>Opening operations · fixed commands</small></span>
+                <span class="menu-nav-text"><b>Campaign</b><small>Twelve operations · fixed commands</small></span>
                 <span class="menu-nav-go" aria-hidden="true">›</span>
               </button>
               <button type="button" class="menu-nav-item" data-menu-view="skirmish">
@@ -233,6 +258,33 @@
                 <span class="menu-nav-text"><b>Load Battle</b><small>Saved deployments</small></span>
                 <span class="menu-nav-go" aria-hidden="true">›</span>
               </button>
+            </div>
+
+            <!--
+              The account level mirrors the other pages: a crumb out, then the
+              sections of the account as tabs. The stage beside it is the single
+              account surface, so the service record is a tab rather than a
+              second dialog.
+            -->
+            <div class="menu-nav-level menu-nav-account" data-menu-level="account" hidden>
+              <button type="button" class="menu-crumb" data-menu-back="top">
+                <span aria-hidden="true">‹</span> Main menu
+              </button>
+              <p class="menu-nav-head" aria-hidden="true">ACCOUNT</p>
+              <div class="account-tabs" role="tablist" aria-orientation="vertical" aria-label="Account sections">
+                <button type="button" role="tab" class="menu-nav-item account-tab" id="account-tab-account"
+                  data-account-tab="account" aria-selected="true" aria-controls="menu-account-body">
+                  <span class="menu-nav-index">01</span>
+                  <span class="menu-nav-text"><b>Identity</b><small>Sign-in methods · guest profile</small></span>
+                  <span class="menu-nav-go" aria-hidden="true">›</span>
+                </button>
+                <button type="button" role="tab" class="menu-nav-item account-tab" id="account-tab-record"
+                  data-account-tab="record" aria-selected="false" aria-controls="menu-account-body">
+                  <span class="menu-nav-index">02</span>
+                  <span class="menu-nav-text"><b>Service Record</b><small>Rank · career XP · matches</small></span>
+                  <span class="menu-nav-go" aria-hidden="true">›</span>
+                </button>
+              </div>
             </div>
 
             <div class="menu-nav-level menu-nav-campaign" data-menu-level="campaign" hidden>
@@ -307,6 +359,13 @@
                 <div class="rail-block">
                   <span class="rail-row-label" id="weather-label">WEATHER</span>
                   <div class="weather-grid" id="weather-options" role="group" aria-labelledby="weather-label"></div>
+                </div>
+                <div class="rail-row">
+                  <span class="rail-row-label" id="superweapon-label">STRAT OPS</span>
+                  <div class="difficulty-options" role="group" aria-labelledby="superweapon-label">
+                    <button type="button" class="difficulty-btn" data-superweapons="on" aria-pressed="true" title="National strategic superweapons may be built, researched and called in">ENABLED</button>
+                    <button type="button" class="difficulty-btn" data-superweapons="off" aria-pressed="false" title="No commander can build a Strategic Operations Centre or call in a national capability">OFF</button>
+                  </div>
                 </div>
               </div>
 
@@ -398,8 +457,36 @@
                         Coalition forces hold the western beachhead while the expeditionary corps
                         controls the ridge above Kestrel Bay.
                       </p>
+                      <p class="campaign-context hidden" id="campaign-context"></p>
+                      <p class="campaign-commander-line" id="campaign-commander-line">COMMANDER <b>NOT SET</b></p>
+                      <p class="menu-difficulty-label campaign-objectives-label">COMMANDER</p>
+                      <div class="campaign-commander">
+                        <label class="rail-row">
+                          <span class="rail-row-label">NAME</span>
+                          <input id="campaign-commander-name" class="menu-select" type="text" maxlength="32" autocomplete="off" placeholder="Commander name">
+                        </label>
+                        <label class="rail-row">
+                          <span class="rail-row-label">CALLSIGN</span>
+                          <input id="campaign-commander-callsign" class="menu-select" type="text" maxlength="12" autocomplete="off" placeholder="Kestrel">
+                        </label>
+                        <label class="rail-row">
+                          <span class="rail-row-label">PRONOUNS</span>
+                          <select id="campaign-commander-pronouns" class="menu-select">
+                            <option value="">—</option>
+                            <option value="she/her">She/her</option>
+                            <option value="he/him">He/him</option>
+                            <option value="they/them">They/them</option>
+                          </select>
+                        </label>
+                        <label class="rail-row campaign-background">
+                          <span class="rail-row-label">BACKGROUND</span>
+                          <textarea id="campaign-commander-background" class="menu-select" maxlength="280" rows="2" placeholder="Where the commander came from"></textarea>
+                        </label>
+                        <p class="campaign-commander-status" id="campaign-commander-status"></p>
+                      </div>
                       <p class="menu-difficulty-label campaign-objectives-label">OBJECTIVES</p>
                       <ol class="campaign-objectives" id="campaign-objectives"></ol>
+                      <p class="campaign-note-line hidden" id="campaign-commander-note"></p>
                       <p class="campaign-footnote">
                         Fixed command · campaign sides are alliance blue versus red.
                       </p>
@@ -422,6 +509,24 @@
                     <div><span>THEATRE</span><b id="campaign-size">96 × 72 tiles</b></div>
                     <div><span>DOMAINS</span><b id="campaign-domains">Ground · Air · Naval</b></div>
                     <div><span>THREAT</span><b id="campaign-threat">Entrenched armour and coastal missiles.</b></div>
+                  </div>
+                  <div class="campaign-brief-copy">
+                    <div>
+                      <span>FRIENDLY FORCES</span>
+                      <p id="campaign-friendly">Alliance task force holding the western approach.</p>
+                    </div>
+                    <div>
+                      <span>NAMED PERSONNEL</span>
+                      <ul id="campaign-personnel"></ul>
+                    </div>
+                    <div>
+                      <span>ENEMY INTENT</span>
+                      <p id="campaign-enemy-intent">Entrenched armour and coastal missiles.</p>
+                    </div>
+                    <div>
+                      <span>INSTRUCTIONS</span>
+                      <ol id="campaign-instructions"></ol>
+                    </div>
                   </div>
                 </aside>
               </div>
@@ -449,6 +554,12 @@
               </div>
             </section>
 
+            <section class="menu-view account-view" id="menu-view-account" data-menu-panel="account" aria-label="Account">
+              <div class="account-view-head" id="account-view-head"></div>
+              <div class="account-view-body" id="menu-account-body" role="tabpanel"
+                aria-labelledby="account-tab-account"></div>
+            </section>
+
             <section class="menu-view" data-menu-panel="settings" aria-label="Settings">
               <div class="menu-view-head">
                 <p class="eyebrow">SYSTEM</p>
@@ -465,7 +576,7 @@
 
         <footer class="menu-footer">
           <span>© 2026 MCA PROJECT · HORSEMEN INTERACTIVE</span>
-          <span class="menu-footer-mid" id="menu-build">v0.4.1 BETA · BUILD 0 · IRONTIDE ENGINE</span>
+          <span class="menu-footer-mid" id="menu-build">v0.5.0 BETA · BUILD 0 · IRONTIDE ENGINE</span>
           <div class="menu-footer-links">
             <button id="btn-changelog" class="menu-footer-link" type="button">Changelog</button>
             <button id="btn-briefing" class="menu-footer-link" type="button">Briefing &amp; Controls</button>

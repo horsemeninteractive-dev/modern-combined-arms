@@ -10,6 +10,19 @@
 export type GraphicsQuality = 'low' | 'medium' | 'high';
 export type EscBehavior = 'pause' | 'menu';
 
+/**
+ * Shadow fidelity. Basic is the long-standing projected-quad pass; detailed
+ * renders a real depth map from the sun every frame, so structures, vehicles,
+ * terrain and props cast and receive shadows with their own silhouettes.
+ */
+export type ShadowDetail = 'off' | 'basic' | 'detailed';
+export const SHADOW_DETAILS: ShadowDetail[] = ['off', 'basic', 'detailed'];
+export const SHADOW_DETAIL_LABELS: Record<ShadowDetail, string> = {
+  off: 'Off',
+  basic: 'Basic',
+  detailed: 'Detailed',
+};
+
 /** Interface scale is a multiplier, not a percentage, throughout the code. */
 export const UI_SCALE_MIN = 0.8;
 export const UI_SCALE_MAX = 1.5;
@@ -37,8 +50,8 @@ export interface GraphicsPreset {
   renderScale: number;
   /** Live particle ceiling; older particles are shed first. */
   maxParticles: number;
-  /** Flat projected shadows for units, structures and props. */
-  shadows: boolean;
+  /** Shadow fidelity: none, the flat projected pass, or a real shadow map. */
+  shadowDetail: ShadowDetail;
   /** Animated water normals; off keeps the sea surface but freezes ripples. */
   waterDetail: boolean;
 }
@@ -48,9 +61,9 @@ export interface GraphicsPreset {
  * low are for integrated GPUs and phones, where fill rate is the bottleneck.
  */
 export const GRAPHICS_PRESETS: Record<GraphicsQuality, GraphicsPreset> = {
-  low: { renderScale: 0.7, maxParticles: 900, shadows: false, waterDetail: false },
-  medium: { renderScale: 0.85, maxParticles: 1800, shadows: true, waterDetail: false },
-  high: { renderScale: 1, maxParticles: 2800, shadows: true, waterDetail: true },
+  low: { renderScale: 0.7, maxParticles: 900, shadowDetail: 'off', waterDetail: false },
+  medium: { renderScale: 0.85, maxParticles: 1800, shadowDetail: 'basic', waterDetail: false },
+  high: { renderScale: 1, maxParticles: 2800, shadowDetail: 'detailed', waterDetail: true },
 };
 
 export const GRAPHICS_QUALITIES: GraphicsQuality[] = ['low', 'medium', 'high'];
@@ -93,6 +106,11 @@ export function normaliseGraphicsQuality(value: unknown): GraphicsQuality {
 
 export function normaliseEscBehavior(value: unknown): EscBehavior {
   return value === 'menu' ? 'menu' : 'pause';
+}
+
+/** An unknown or stale shadow level falls back to the authored default. */
+export function normaliseShadowDetail(value: unknown): ShadowDetail {
+  return SHADOW_DETAILS.includes(value as ShadowDetail) ? (value as ShadowDetail) : 'detailed';
 }
 
 /**

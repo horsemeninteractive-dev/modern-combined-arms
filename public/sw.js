@@ -6,7 +6,7 @@
  * first so a new deployment is picked up, and fall back to the cached document
  * when the player is offline or the host is unreachable.
  */
-const VERSION = 'mca-v4';
+const VERSION = 'mca-v5';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -20,7 +20,7 @@ const SHELL_ASSETS = [
   '/insignia.svg',
   '/irontide-mark.svg',
   '/studio-logo.mp4',
-  '/audio/menu-theme.mp3',
+  '/audio/music/menu-theme.mp3',
   '/flags/lithuania.png',
   '/flags/poland.png',
   '/flags/uk.png',

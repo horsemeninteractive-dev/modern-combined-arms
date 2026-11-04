@@ -24,6 +24,7 @@ import {
   normaliseEscBehavior,
   normaliseGraphicsQuality,
   normaliseRenderScale,
+  normaliseShadowDetail,
   normaliseUiScale,
 } from '../src/settings';
 import { SELECTION_GROUP_THRESHOLD, selectionChips } from '../src/ui/hudLayout';
@@ -58,10 +59,21 @@ describe('graphics presets', () => {
     expect(medium.maxParticles).toBeLessThan(high.maxParticles);
     expect(low.renderScale).toBeLessThan(medium.renderScale);
     expect(medium.renderScale).toBeLessThanOrEqual(high.renderScale);
-    expect(low.shadows).toBe(false);
-    expect(medium.shadows).toBe(true);
+    expect(low.shadowDetail).toBe('off');
+    expect(medium.shadowDetail).toBe('basic');
+    // High is the authored look: realtime shadows are part of it, not a hidden
+    // upgrade the player has to discover in a submenu.
+    expect(high.shadowDetail).toBe('detailed');
     expect(low.waterDetail).toBe(false);
     expect(high.waterDetail).toBe(true);
+  });
+
+  it('normalises the three shadow levels and rejects unknown ones', () => {
+    expect(normaliseShadowDetail('off')).toBe('off');
+    expect(normaliseShadowDetail('basic')).toBe('basic');
+    expect(normaliseShadowDetail('detailed')).toBe('detailed');
+    expect(normaliseShadowDetail('raytraced')).toBe('detailed');
+    expect(normaliseShadowDetail(undefined)).toBe('detailed');
   });
 
   it('clamps the explicit render scale to half..full device density', () => {
@@ -130,31 +142,34 @@ describe('idle unit cycling', () => {
 });
 
 describe('settings tabs', () => {
-  /** The three row groups, sliced out of the shared settings markup builder. */
-  function settingsGroups(): Record<'display' | 'input' | 'audio', string> {
+  /** The row groups, sliced out of the shared settings markup builder. */
+  function settingsGroups(): Record<'display' | 'input' | 'audio' | 'music', string> {
     const start = app.indexOf('const displayRows');
     const end = app.indexOf('const tabs:', start);
     expect(start).toBeGreaterThan(-1);
     const body = app.slice(start, end);
     const inputAt = body.indexOf('const inputRows');
     const audioAt = body.indexOf('const audioRows');
+    const musicAt = body.indexOf('const musicRows');
     return {
       display: body.slice(0, inputAt),
       input: body.slice(inputAt, audioAt),
-      audio: body.slice(audioAt),
+      audio: body.slice(audioAt, musicAt),
+      music: body.slice(musicAt),
     };
   }
 
   const keys = (markup: string) =>
     [...markup.matchAll(/data-(?:set|choice|toggle)="([^"]+)"/g)].map((match) => match[1]).sort();
 
-  it('splits the sheet into display, controls and audio tabs without losing a control', () => {
+  it('splits the sheet into display, controls, audio and playlist tabs without losing a control', () => {
     const groups = settingsGroups();
     expect(groups.display).not.toBe(groups.input);
     // Tabs and panels are generated from one id list, so the ids are the source of truth.
     expect(app).toContain(`{ id: 'display', label: 'Display' }`);
     expect(app).toContain(`{ id: 'input', label: 'Controls' }`);
     expect(app).toContain(`{ id: 'audio', label: 'Audio' }`);
+    expect(app).toContain(`{ id: 'music', label: 'Playlist' }`);
     expect(app).toContain('data-settings-tab="${tab.id}"');
     expect(app).toContain('data-settings-panel="${id}"');
     // Every settings key sits in exactly one tab, so nothing is hidden or duplicated.
@@ -164,6 +179,7 @@ describe('settings tabs', () => {
       ...keys(groups.display),
       ...keys(groups.input),
       ...keys(groups.audio),
+      ...keys(groups.music),
     ].sort();
     expect(regrouped).toEqual(all);
   });
@@ -172,6 +188,7 @@ describe('settings tabs', () => {
     const groups = settingsGroups();
     expect(keys(groups.display)).toEqual(
       [
+        'cinematics',
         'effects',
         'fogVisual',
         'fpsReadout',
@@ -180,6 +197,7 @@ describe('settings tabs', () => {
         'lightBloom',
         'nightLights',
         'renderScale',
+        'shadowDetail',
         'shake',
         'silhouettes',
         'uiScale',

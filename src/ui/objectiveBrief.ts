@@ -3,6 +3,7 @@ import { BUILDINGS } from '../data/buildings';
 import { CAMPAIGNS } from '../data/campaign';
 import { TUTORIAL_SCENARIO_ID } from '../data/tutorial';
 import { tryIdentityDef } from '../data/factions';
+import { missionObjectiveView } from './missionObjectiveView';
 
 /**
  * The primary objective and the live objective tally.
@@ -21,6 +22,10 @@ export function campaignMissionObjectives(game: Game): readonly string[] {
 
 export function primaryObjective(game: Game): string {
   if (game.state.scenario.meta.id === TUTORIAL_SCENARIO_ID) return 'Complete the training lanes.';
+  // A mission-bearing scenario names its own primary objective; the skirmish
+  // command-post line below is not a substitute for authored objectives.
+  const mission = missionObjectiveView(game);
+  if (mission) return mission.headline;
   // Campaign operations bring an authored first objective. Skirmish keeps the
   // dynamic command-post line below; only a campaign marker opts into the
   // operation brief, so an editor map's objective text is not commandeered.
@@ -66,6 +71,13 @@ export function objectiveProgress(game: Game): ObjectiveProgress {
   const parts = [`Relays ${owned(relays)}/${relays.length}`];
   if (depots.length > 0) parts.push(`Depots ${owned(depots)}/${depots.length}`);
   if (stations.length > 0) parts.push(`Radar ${owned(stations)}/${stations.length}`);
+  // Mission scenarios report objective progress, not the relay tally: relays
+  // are one map feature, while the mission's tree is what decides the battle.
+  const mission = missionObjectiveView(game);
+  if (mission) {
+    return { primary: mission.headline, summary: mission.summary, commandPostLost: !hq };
+  }
+
   const passive = game.passiveMatsRate(playerId);
   if (passive > 0) parts.push(`+${passive.toFixed(2)} M/s`);
   if (!hq) parts.push('Command Post lost');

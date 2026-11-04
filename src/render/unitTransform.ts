@@ -25,6 +25,27 @@ export function unitBodyHeading(
 }
 
 /**
+ * Heading the hull mesh is actually drawn on, including the travel correction.
+ *
+ * A driving vehicle is drawn on the direction it is moving rather than the
+ * simulated heading it is still easing toward. Every pass that draws the hull —
+ * the lit model and its shadow — must ask this same question, or one of them
+ * turns early and the shadow slides out from under the vehicle.
+ */
+export function unitDrawnBodyHeading(
+  hasTurret: boolean,
+  isAirframe: boolean,
+  moveClass: string | undefined,
+  facing: number,
+  turretFacing: number,
+  motion: number,
+  moving: boolean,
+): number {
+  if (!isAirframe && moving && moveClass !== 'foot') return motion;
+  return unitBodyHeading(hasTurret, isAirframe, facing, turretFacing);
+}
+
+/**
  * Model matrix for a turret sitting on a unit body.
  *
  * The body mesh is drawn with `modelFor(x, y, z, -facing, …)`, which is exactly

@@ -6,6 +6,7 @@ declare module 'node:fs' {
   export function readFileSync(path: string | URL, encoding: 'utf8'): string;
   export function readFileSync(path: string | URL): Uint8Array;
   export function existsSync(path: string | URL): boolean;
+  export function readdirSync(path: string | URL): string[];
 }
 
 declare module 'node:vm' {

@@ -14,7 +14,6 @@ import {
   symmetryTiles,
 } from '../src/ui/editorSymmetry';
 import {
-  RAIL_PEEK,
   railOffset,
   railRestOffset,
   railSettlesCollapsed,
@@ -158,24 +157,23 @@ describe('authoring symmetry', () => {
 });
 
 describe('sliding sidebars', () => {
-  it('travels by its own width and keeps a handle on screen', () => {
-    expect(railTravel('left', 288)).toBe(-(288 - RAIL_PEEK));
-    expect(railTravel('right', 330)).toBe(330 - RAIL_PEEK);
-    expect(RAIL_PEEK).toBeGreaterThan(0);
+  it('stows the panel entirely, because the handle sits outside it', () => {
+    expect(railTravel('left', 288)).toBe(-288);
+    expect(railTravel('right', 330)).toBe(330);
   });
 
   it('clamps a drag between the open and stowed stops', () => {
     expect(railOffset('left', 288, 40)).toBe(0);
-    expect(railOffset('left', 288, -900)).toBe(-270);
+    expect(railOffset('left', 288, -900)).toBe(-288);
     expect(railOffset('right', 330, -50)).toBe(0);
-    expect(railOffset('right', 330, 900)).toBe(312);
-    expect(railRestOffset('left', 288, true)).toBe(-270);
+    expect(railOffset('right', 330, 900)).toBe(330);
+    expect(railRestOffset('left', 288, true)).toBe(-288);
     expect(railRestOffset('right', 330, false)).toBe(0);
   });
 
   it('settles shut only past the halfway point', () => {
     expect(railSettlesCollapsed('left', 288, -80)).toBe(false);
-    expect(railSettlesCollapsed('left', 288, -140)).toBe(true);
+    expect(railSettlesCollapsed('left', 288, -150)).toBe(true);
     expect(railSettlesCollapsed('right', 330, 120)).toBe(false);
     expect(railSettlesCollapsed('right', 330, 170)).toBe(true);
   });

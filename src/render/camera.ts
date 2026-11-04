@@ -105,6 +105,20 @@ export class Camera {
   }
 
   /**
+   * Restore an exact framing without re-applying the HUD lift.
+   *
+   * `centerOn` adds the screen-lift offsets, so a saved `cx/cz` fed back
+   * through it would drift by one lift every time a cinematic ended. This is
+   * the symmetric restore used by presentation code.
+   */
+  setFraming(cx: number, cz: number, zoom: number): void {
+    this.cx = cx;
+    this.cz = cz;
+    this.zoom = clamp(zoom, CLOSE_ZOOM, 110);
+    this.update();
+  }
+
+  /**
    * Battlefield framing at start: keep the reference cell size on wide
    * screens, but widen the view on narrow ones so the opening base stays in
    * frame instead of being cropped by the HUD edges.

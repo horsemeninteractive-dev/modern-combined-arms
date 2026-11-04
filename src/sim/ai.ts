@@ -1,5 +1,5 @@
 import type { Game } from './game';
-import { BUILDINGS, buildingFamily } from '../data/buildings';
+import { BUILDINGS, buildingFamily, isIndestructibleStructure } from '../data/buildings';
 import { UNITS, unitFamily } from '../data/units';
 import {
   RESEARCH_BRANCHES,
@@ -383,6 +383,12 @@ export interface ResearchSignals {
    * reads as "no strain", which is the conservative answer.
    */
   gridStrain?: boolean;
+  /**
+   * Technologies that gate this commander's national strategic capability.
+   * Empty for a nation with none, and for a battle that forbids them, so this
+   * never becomes a reason to study a node the match has switched off.
+   */
+  superweaponTechs?: readonly string[];
 }
 
 export interface ResearchOption {
@@ -645,6 +651,19 @@ export function researchOptionScore(
     } else {
       unusable++;
     }
+  }
+  // The four nodes behind a national strategic capability publish no unlock of
+  // their own, so their value is the capability they unlock together. This is
+  // read before the zero check below, because a node with no effects would
+  // otherwise look worthless. The demand is real but modest: a commander still
+  // wants an army before it wants an authority chain, and the last node is what
+  // actually earns the call-in.
+  if ((signals.superweaponTechs ?? []).includes(tech.id)) {
+    const remaining = (signals.superweaponTechs ?? []).filter(
+      (id) => !signals.completed.includes(id),
+    ).length;
+    demand += remaining <= 1 ? 0.9 : 0.5;
+    reasons.push('strategic authority');
   }
   if (demand <= 0) {
     return {
@@ -952,6 +971,9 @@ export class AIController {
     // Spent before the assault tasking claims hulls, so a recon troop that is
     // breaking contact still gets its screen away.
     this.useAbilities(ctx);
+    // A national capability is spent before the assault tasking, so a strike
+    // that is already ready can shape the ground the army is about to cross.
+    this.manageSuperweapon(ctx);
     this.offensive(ctx);
     // Scheduled after the think so the decision sees the same clock state that
     // the old fixed-cadence loop exposed.
@@ -997,6 +1019,128 @@ export class AIController {
         break;
       }
     }
+  }
+
+  /**
+   * Spend a ready national capability on something worth its price.
+   *
+   * The gates, the cost and the cooldown are the simulation's answer, not a
+   * second copy: if `superweaponStatus` says no, nothing is queued. The target
+   * is chosen from what the commander can actually see, and only a target the
+   * simulation would also accept is sent, so a refused order never burns a
+   * national reload.
+   */
+  private manageSuperweapon(ctx: AIContext): void {
+    const status = ctx.game.superweaponStatus(ctx.aiId);
+    const family = status.family;
+    if (!status.ok || !family) return;
+    // An army comes first. A commander that cannot hold the field has no use
+    // for an expensive strike, and spending the bank on one leaves it naked.
+    if (ctx.combat.length < Math.max(4, Math.round(ctx.st.desiredArmy * 0.5))) return;
+    const reserve = Math.min(this.researchReserve(ctx).mats, 400);
+    if (ctx.player.mats - family.cost.mats < reserve) return;
+    const aim = this.superweaponAim(ctx, family.targeting, family.effect.kind === 'ew' || family.effect.kind === 'dew' ? family.effect.radiusTiles : family.effect.kind === 'saturation' || family.effect.kind === 'drone' ? family.effect.spreadTiles : 3);
+    if (!aim) return;
+    if (
+      !ctx.game.superweaponTargetStatus(ctx.aiId, family.id, aim.x, aim.z, aim.targetId || undefined)
+        .ok
+    ) {
+      return;
+    }
+    ctx.game.enqueueCommand({
+      type: 'superweapon',
+      team: ctx.team,
+      familyId: family.id,
+      x: aim.x,
+      z: aim.z,
+      ...(aim.targetId ? { targetId: aim.targetId } : {}),
+    });
+    ctx.st.lastDecision = `strategic operation — ${family.id}`;
+  }
+
+  /**
+   * A worthwile aim point for one targeting mode, or null.
+   *
+   * Precision strikes look for one exposed high-value structure. Area attacks
+   * look for the densest seen cluster of hostiles, because that is what a
+   * barrage or a swarm is for. An electronic attack wants a fielded network, and
+   * a defensive field is laid over the commander's own concentration instead.
+   */
+  private superweaponAim(
+    ctx: AIContext,
+    targeting: string,
+    radiusTiles: number,
+  ): { x: number; z: number; targetId: number } | null {
+    const reach = Math.max(2, radiusTiles) * TILE_SIZE;
+    const hostiles = ctx.visible.filter(
+      (e) => e.hp > 0 && e.owner >= 0 && ctx.game.isHostile(ctx.aiId, e.owner),
+    );
+    if (targeting === 'enemyStructure') {
+      const structures = hostiles
+        .filter(
+          (e) =>
+            e.kind === 'building' &&
+            !e.construction &&
+            !isIndestructibleStructure(e.defId),
+        )
+        .sort(
+          (a, b) =>
+            (BUILDINGS[b.defId]?.cost.mats ?? 0) - (BUILDINGS[a.defId]?.cost.mats ?? 0) ||
+            b.hp - a.hp ||
+            a.id - b.id,
+        );
+      const best = structures[0];
+      // A relay or a lone truck is not a strategic target: the round costs more
+      // than the thing it lands on.
+      if (!best || (BUILDINGS[best.defId]?.cost.mats ?? 0) < 400) return null;
+      return { x: best.x, z: best.z, targetId: best.id };
+    }
+    if (targeting === 'friendlyArea') {
+      const own = ctx.combat.filter((e) => e.hp > 0);
+      if (own.length < 3) return null;
+      let cx = 0;
+      let cz = 0;
+      for (const unit of own) {
+        cx += unit.x;
+        cz += unit.z;
+      }
+      return { x: cx / own.length, z: cz / own.length, targetId: 0 };
+    }
+    if (hostiles.length === 0) return null;
+    if (targeting === 'enemyNetwork') {
+      // Only a position that still holds a fielded network is worth jamming: a
+      // patch of ground with a single lorry on it is not a network.
+      const networks = hostiles.filter((e) => {
+        if (e.kind === 'building') {
+          const def = BUILDINGS[e.defId];
+          return !!def?.radar || !!def?.scanRadius || (def?.weapons?.length ?? 0) > 0;
+        }
+        // An aircraft or a scout hull is a node in the picture the attack is
+        // aimed at, so its sight radius stands in for 'fielded network'.
+        const unit = UNITS[e.defId];
+        return !!unit && (unit.vision ?? 0) >= 11;
+      });
+      if (networks.length === 0) return null;
+      const seed = networks[0];
+      return { x: seed.x, z: seed.z, targetId: 0 };
+    }
+    // Area attack: the densest seen cluster, averaged over the rounds it would
+    // catch. A single distant unit is not worth a salvo.
+    let best: { x: number; z: number; count: number } | null = null;
+    for (const anchor of hostiles) {
+      let count = 0;
+      let cx = 0;
+      let cz = 0;
+      for (const other of hostiles) {
+        if (dist(other.x, other.z, anchor.x, anchor.z) > reach) continue;
+        count++;
+        cx += other.x;
+        cz += other.z;
+      }
+      if (count < 3) continue;
+      if (!best || count > best.count) best = { x: cx / count, z: cz / count, count };
+    }
+    return best ? { x: best.x, z: best.z, targetId: 0 } : null;
   }
 
   /* ---------------------------------------------------------------------- */
@@ -1604,6 +1748,40 @@ export class AIController {
       }
     }
 
+    // The Strategic Operations Centre is the last piece of infrastructure, not
+    // an early one: it is considered once a Research Centre stands and the
+    // authority chain is at least under way. A commander that has finished all
+    // four technologies wants it now; one still studying wants it shortly.
+    const family = ctx.game.superweaponEnabled()
+      ? ctx.game.superweaponFamilyFor(ctx.aiId)
+      : null;
+    const opsUnderConstruction = ctx.buildings.some(
+      (b) => buildingFamily(b.defId) === 'strategicOps',
+    );
+    const opsId = family ? ctx.game.buildingIdFor(ctx.aiId, 'strategicOps') : undefined;
+    if (
+      family &&
+      opsId &&
+      !opsUnderConstruction &&
+      (counts.get('strategicOps') ?? 0) === 0 &&
+      (counts.get('researchCentre') ?? 0) > 0 &&
+      // Same late-war rule as the research planner: the centre follows the
+      // branches it coordinates, never displaces them.
+      (counts.get('airfield') ?? 0) > 0 &&
+      (!ctx.hasWater || (counts.get('shipyard') ?? 0) > 0) &&
+      !ctx.game.buildingRestrictedByOperation(ctx.aiId, opsId)
+    ) {
+      const done = new Set(ctx.game.completedTechnologies(ctx.aiId));
+      const remaining = family.requires.filter((id) => !done.has(id)).length;
+      const cost = BUILDINGS[opsId]?.cost.mats ?? 1200;
+      if (remaining === 0) {
+        if (bank >= cost) add('strategicOps', 128 + jitter(), 'national strategic call-in', false, true);
+        else add('strategicOps', 96 + jitter(), 'national strategic call-in', false, true);
+      } else if (remaining <= 2 && bank >= cost) {
+        add('strategicOps', 44 + jitter(), 'strategic infrastructure', false, true);
+      }
+    }
+
     return options.sort((a, b) => b.score - a.score || a.defId.localeCompare(b.defId));
   }
 
@@ -2125,7 +2303,30 @@ export class AIController {
       // same condition the installer uses. Read from the commander's own supply
       // and demand, never from anything it has not built.
       gridStrain: ctx.power.brownout || ctx.power.demand > ctx.power.supply * 0.8,
+      // The capability's own gate list, read from the catalogue rather than
+      // copied here, so a new family needs no AI change to be studied towards.
+      superweaponTechs: this.superweaponTechs(ctx),
     };
+  }
+
+  /**
+   * The authority chain behind this commander's national capability.
+   *
+   * Read from the catalogue and the match rule, so a nation without one, or a
+   * battle that forbids them, simply returns nothing and the research planner
+   * never learns a preference it cannot act on.
+   */
+  private superweaponTechs(ctx: AIContext): readonly string[] {
+    if (!ctx.game.superweaponEnabled()) return [];
+    const family = ctx.game.superweaponFamilyFor(ctx.aiId);
+    if (!family) return [];
+    // A strategic call-in is a late-war investment. A commander establishes its
+    // air branch first and, on a coastal map, its fleet: studying the authority
+    // chain before the field army and its support exist is how a base loses to
+    // hulls it never built. The chain is offered once those branches stand.
+    if ((ctx.counts.get('airfield') ?? 0) === 0) return [];
+    if (ctx.hasWater && (ctx.counts.get('shipyard') ?? 0) === 0) return [];
+    return family.requires;
   }
 
   /**

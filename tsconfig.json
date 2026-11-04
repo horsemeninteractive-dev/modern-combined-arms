@@ -17,5 +17,13 @@
     "types": ["vitest/globals", "vite/client"],
     "noEmit": true
   },
-  "include": ["src", "tests", "vite.config.ts", "mp-room-vite.config.ts", "node-builtins.d.ts"]
+  "include": [
+    "src",
+    "tests",
+    "functions",
+    "vite.config.ts",
+    "mp-room-vite.config.ts",
+    "account-vite.config.ts",
+    "node-builtins.d.ts"
+  ]
 }

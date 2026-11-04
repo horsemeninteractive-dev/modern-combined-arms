@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
   NATIVE_CURSORS,
+  UI_CURSOR_TARGETS,
   battleCursor,
   cursorProperty,
   drawBattleCursor,
+  editorCursor,
   drawOrderGhostGlyph,
+  uiCursorFor,
   type BattleCursor,
 } from '../src/ui/cursors';
 import {
@@ -62,6 +65,72 @@ describe('battle cursor mapping', () => {
     // Input only starts a box while no order is armed, so this pairing is a
     // guard rather than a reachable state: the live rectangle always wins.
     expect(battleCursor('garrison', { draggingBox: true })).toBe('box');
+  });
+});
+
+describe('editor pointer states', () => {
+  const base = {
+    overMap: true,
+    overControl: false,
+    panning: false,
+    panMode: false,
+    placing: false,
+    placementOk: false,
+  };
+
+  it('keeps a camera drag on the pan reticle across the editor chrome', () => {
+    expect(editorCursor({ ...base, panning: true })).toBe('pan');
+    // The drag started on the map, so it stays a pan even over a rail.
+    expect(editorCursor({ ...base, panning: true, overMap: false })).toBe('pan');
+    // PAN mode only becomes a camera gesture once the pointer is on the map.
+    expect(editorCursor({ ...base, panMode: true })).toBe('pan');
+    expect(editorCursor({ ...base, panMode: true, overMap: false })).toBeNull();
+  });
+
+  it('shows placement and refusal on the map, and refusal over the panels', () => {
+    expect(editorCursor({ ...base, placing: true, placementOk: true })).toBe('place');
+    expect(editorCursor({ ...base, placing: true, placementOk: false })).toBe('placeBlocked');
+    // Inert chrome cannot receive an authored placement.
+    expect(editorCursor({ ...base, overMap: false, placing: true, placementOk: true })).toBe('placeBlocked');
+    // A clickable control in that chrome keeps its own action/blocked state, so
+    // the armed tool does not disguise a working button as a refused build site.
+    expect(
+      editorCursor({ ...base, overMap: false, overControl: true, placing: true, placementOk: true }),
+    ).toBeNull();
+    // Painting keeps the ordinary UI resolution; only placement tools are
+    // contextual map cursors.
+    expect(editorCursor({ ...base, placing: false })).toBeNull();
+  });
+});
+
+describe('UI pointer states', () => {
+  const control = (options: { disabled?: boolean; id?: string; static?: boolean } = {}) =>
+    ({
+      id: options.id ?? '',
+      classList: { contains: (name: string) => options.static === true && name === 'static' },
+      matches: (selector: string) =>
+        selector.includes(':disabled') ? options.disabled === true : false,
+      closest: () => null,
+    }) as unknown as Element;
+  const hit = (target: Element | null) =>
+    ({ closest: () => target }) as unknown as Element;
+
+  it('marks native and app-specific controls as actionable', () => {
+    expect(UI_CURSOR_TARGETS).toContain('button');
+    expect(UI_CURSOR_TARGETS).toContain('[role="button"]');
+    expect(UI_CURSOR_TARGETS).toContain('[data-act]');
+    expect(UI_CURSOR_TARGETS).toContain('.rail-power');
+    // A chip inside a button still resolves to the control that owns the click.
+    expect(uiCursorFor(hit(control()))).toBe('action');
+    // Empty ground and ordinary text stay on the resting arrow.
+    expect(uiCursorFor(null)).toBe('select');
+    expect(uiCursorFor(hit(null))).toBe('select');
+  });
+
+  it('shows a blocked pointer on disabled controls and an offline map', () => {
+    expect(uiCursorFor(hit(control({ disabled: true })))).toBe('blocked');
+    expect(uiCursorFor(hit(control({ id: 'minimap', static: true })))).toBe('select');
+    expect(uiCursorFor(hit(control({ id: 'minimap' })))).toBe('action');
   });
 });
 
@@ -134,31 +203,60 @@ describe('order ghosts', () => {
 });
 
 describe('cursor integration', () => {
-  it('draws the pointer and accepted-order ghosts on the overlay only', () => {
+  it('draws the pointer on a layer above every screen, with ghosts on the overlay', () => {
     const app = readFileSync(new URL('../src/app.ts', import.meta.url), 'utf8');
     expect(app).toContain('pointerCursor = {');
     expect(app).toContain('orderGhosts');
     expect(app).toContain('markOrderGhost(');
+    expect(app).toContain('this.cursorLayer.draw(');
+    expect(app).toContain("classList.toggle('custom-cursors'");
     // A refused order must not leave a mark.
     expect(app).toContain('if (target && this.commandAttack(target.id))');
     expect(app).toContain('if (p && this.commandMove(p.x, p.z, attackMove))');
 
     const input = readFileSync(new URL('../src/ui/input.ts', import.meta.url), 'utf8');
     expect(input).toContain('markOrderGhost(press.startX, press.startY, order)');
-    expect(input).toContain('cursorProperty(cursor, custom)');
-    expect(input).toContain('pointerCursor.visible = custom && app.pointer.over');
+    expect(input).toContain('cursorProperty(fieldCursor, false)');
+    // The pointer position is tracked from the window, not only the canvas, and
+    // it falls back to the arrow away from the battlefield or over a text field.
+    expect(input).toContain('this.app.pointer.x = event.clientX');
+    expect(input).toContain('wantsNativeCursor(hit)');
+    expect(input).toContain('uiCursorFor(hit)');
+    expect(input).toContain('pointerCursor.visible = custom && this.edgePointer.inside && !native');
+
+    expect(input).toContain('editorCursor({');
+    expect(input).toContain('overControl: uiCursor !== \'select\'');
+    expect(input).toContain('hit === this.canvas');
+    expect(input).toContain("app.mode === 'place' && !modalOpen");
+    // The battle rail keeps action/blocked on its controls while a build tool is
+    // armed, and only its inert surface reports the placement as refused.
+    expect(input).toContain("uiCursor === 'select' ? 'placeBlocked' : uiCursor");
+
+    const editor = readFileSync(new URL('../src/ui/editor.ts', import.meta.url), 'utf8');
+    expect(editor).toContain('get panning()');
+    expect(editor).toContain('get placementToolActive()');
+    expect(editor).toContain('get placementOk()');
+
+    const cursors = readFileSync(new URL('../src/ui/cursors.ts', import.meta.url), 'utf8');
+    expect(cursors).toContain('export class CursorLayer');
+    expect(cursors).toContain('export function editorCursor(');
+    expect(cursors).toContain('export function wantsNativeCursor(');
+    expect(cursors).toContain('export function uiCursorFor(');
+    expect(cursors).toContain('function drawActionHand(');
 
     const overlay = readFileSync(new URL('../src/ui/overlay.ts', import.meta.url), 'utf8');
-    expect(overlay).toContain('drawBattleCursor(');
     expect(overlay).toContain('drawOrderGhosts(');
     expect(overlay).toContain('pruneOrderGhosts(app.orderGhosts, now)');
-    // The drawn pointer is painted last so nothing covers the click point.
-    expect(overlay.indexOf('drawOrderGhosts(app')).toBeLessThan(
-      overlay.indexOf('drawBattleCursor('),
-    );
+    // The pointer belongs to the app-wide layer now, not the battlefield canvas.
+    expect(overlay).not.toContain('drawBattleCursor(');
 
     const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
     expect(html).toContain('id="overlay"');
+    expect(html).toContain('id="cursor-layer"');
+
+    const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+    expect(css).toContain('#cursor-layer');
+    expect(css).toContain('html.custom-cursors');
   });
 
   it('offers a settings switch for the native pointers', () => {

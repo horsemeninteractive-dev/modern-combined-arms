@@ -35,15 +35,14 @@ export function dismissEditorSheet(dy: number, height: number): boolean {
 export type RailSide = 'left' | 'right';
 
 /**
- * How much of a slid-away side panel stays on screen. The handle lives in that
- * strip, so a panel pushed off the edge can still be pulled back: a rail that
- * disappears completely is a panel you cannot reopen without hunting a menu.
+ * Horizontal travel between fully open and fully stowed, in pixels.
+ *
+ * Stowing takes the panel's whole width: the grab handle is a strip that sits
+ * outside the panel's edge, so it stays on screen at the edge while the panel
+ * itself leaves. Nothing of the panel has to be kept back for the handle.
  */
-export const RAIL_PEEK = 18;
-
-/** Horizontal travel between fully open and fully stowed, in pixels. */
 export function railTravel(side: RailSide, width: number): number {
-  return Math.max(0, width - RAIL_PEEK) * (side === 'left' ? -1 : 1);
+  return Math.max(0, width) * (side === 'left' ? -1 : 1);
 }
 
 /** Where a drag from `dragged` should leave the panel, clamped to its stops. */

@@ -120,6 +120,11 @@ export interface OreGlowInstance {
   y: number;
   z: number;
   scale?: number;
+  /**
+   * Ground-glow weight. A seam of five nodes pays for one pool, so all but its
+   * anchor node carry 0; anything without a weight is treated as one pool.
+   */
+  glow?: number;
 }
 
 /**
@@ -142,6 +147,8 @@ export function oreGlowLights(
   const rangeSq = range * range;
   for (const ore of instances) {
     if (out.length >= limit) break;
+    const weight = ore.glow ?? 1;
+    if (weight <= 0) continue;
     const dx = ore.x - eye[0];
     const dz = ore.z - eye[2];
     if (dx * dx + dz * dz > rangeSq) continue;
@@ -150,7 +157,7 @@ export function oreGlowLights(
       x: ore.x,
       y: ore.y + 0.06,
       z: ore.z,
-      radius: ORE_POOL_RADIUS * (ore.scale ?? 1),
+      radius: ORE_POOL_RADIUS * (ore.scale ?? 1) * weight,
       rotation: 0,
       stretch: 1,
       glow: 0,

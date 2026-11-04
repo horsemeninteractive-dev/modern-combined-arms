@@ -78,11 +78,20 @@ export function sameProjectedEntity(a: ProjectedEntity, b: ProjectedEntity): boo
     a.rallyZ === b.rallyZ &&
     a.targetId === b.targetId &&
     a.garrisonId === b.garrisonId &&
+    sameDeconstruct(a.deconstruct, b.deconstruct) &&
     sameIds(a.upgrades, b.upgrades) &&
     sameIds(a.modules, b.modules) &&
     sameCooldowns(a.cooldowns, b.cooldowns) &&
     sameQueue(a.queue, b.queue)
   );
+}
+
+function sameDeconstruct(
+  a: ProjectedEntity['deconstruct'],
+  b: ProjectedEntity['deconstruct'],
+): boolean {
+  if (!a || !b) return a === b;
+  return a.remaining === b.remaining && a.total === b.total;
 }
 
 /** Reload clocks change continuously, so compare them by value. */

@@ -30,6 +30,7 @@ import {
   requiredTechnologiesForBuilding,
   requiredTechnologiesForUnit,
   techDef,
+  techDisplayName,
   unitDefinitionAvailable,
   unitUpgradeDef,
   upgradesForSlot,
@@ -61,6 +62,7 @@ import {
   checkPlacement,
   waterFacingFor,
   type Scenario,
+  type ScenarioRestrictions,
   type ScenarioStructure,
 } from './scenario';
 import { createRuntimeMap, footprintCenter, stampFootprint } from './map';
@@ -85,6 +87,15 @@ import {
   visionFactor,
 } from './sensors';
 import { awardCombatXp, rankOf } from './veterancy';
+import {
+  MissionRuntime,
+  buildMissionResult,
+  evaluateMissionTriggers,
+  type MissionObjectiveChange,
+  type MissionOutcome,
+  type MissionResult,
+  type MissionTransitionResult,
+} from '../mission';
 
 /**
  * What one replacement drop-off costs. A base with no refinery and less than
@@ -117,8 +128,26 @@ import {
   rosterIncludes,
   unitSlotId,
 } from '../data/roster';
-import { tryIdentityDef } from '../data/factions';
+import { tryIdentityDef, NATIONS } from '../data/factions';
 import { abilityForUpgrade } from '../data/abilities';
+import {
+  SUPERWEAPON_FAMILIES,
+  isSuperweaponFamilyId,
+  superweaponPresentation,
+  type SuperweaponFamilyDef,
+  type SuperweaponFamilyId,
+} from '../data/superweapons';
+import {
+  cooldownSeconds,
+  createSuperweaponState,
+  ewRangeFactor,
+  ewScanFactor,
+  ewVisionFactor,
+  operationCountdown,
+  operationPhase,
+  salvoPoints,
+  type SuperweaponStatus,
+} from './superweapons';
 import { AIController, initialAIState } from './ai';
 import { structureBenefit } from './infrastructure';
 import {
@@ -133,6 +162,7 @@ import type {
   GameState,
   ImpactSurface,
   PlayerState,
+  PlayerSuperweaponState,
   PowerStatus,
   Projectile,
   SimEvent,
@@ -191,6 +221,10 @@ export class SaveFormatError extends Error {
 }
 
 const AIRCRAFT_ALTITUDE = 13;
+
+/** Electronic-attack sight and range penalties, from the family catalogue. */
+const EW_EFFECT =
+  SUPERWEAPON_FAMILIES.ew.effect.kind === 'ew' ? SUPERWEAPON_FAMILIES.ew.effect : undefined;
 /** An assigned engineer has to be this close to the site to advance it. */
 const ENGINEER_WORK_RANGE = 5 * TILE_SIZE;
 /** Fraction of a structure's maximum HP restored per engineer per second. */
@@ -246,6 +280,11 @@ export class Game {
   localPlayerId: number;
   pending: Command[] = [];
   ai: AIController | null = null;
+  /**
+   * Mission runtime for a mission-bearing scenario; null for skirmish and
+   * multiplayer. It is inert in this stage: it owns state, not behaviour.
+   */
+  mission: MissionRuntime | null = null;
   private byId = new Map<number, Entity>();
   /** Fast lookup over `state.charted`, keyed "team:entityId". */
   private chartedIndex = new Set<string>();
@@ -310,8 +349,15 @@ export class Game {
       commandCount: 0,
       smoke: [],
       nextSmokeId: 1,
+      mission: null,
       ready: false,
     };
+    // The scenario already parsed and validated its mission, so the simulation
+    // never sees raw JSON. Skirmishes stay on the old path with no runtime.
+    if (scenario.mission) {
+      this.mission = MissionRuntime.fromDoc(scenario.mission);
+      this.state.mission = this.mission.state;
+    }
     this.rng = new Rng(this.state.seed);
     this.blocked = new Uint8Array(scenario.width * scenario.height);
     this.visible = [[], []].map(() => new Set<number>());
@@ -385,6 +431,7 @@ export class Game {
         defeated: false,
         relayCount: 0,
         research: { completed: [], project: null },
+        superweapon: createSuperweaponState(),
       };
       this.state.players.push(player);
     }
@@ -395,7 +442,10 @@ export class Game {
     for (const u of scenario.units) {
       const x = (u.x + 0.5) * TILE_SIZE;
       const z = (u.z + 0.5) * TILE_SIZE;
-      this.spawnUnit(u.owner, u.defId, x, z, { starting: true });
+      this.spawnUnit(u.owner, u.defId, x, z, {
+        starting: true,
+        ...(u.key ? { authoredKey: u.key } : {}),
+      });
     }
     this.grantScenarioResearch();
     this.blocked.fill(0);
@@ -494,11 +544,12 @@ export class Game {
     defId: string,
     x: number,
     z: number,
-    opts: { starting?: boolean; free?: boolean } = {},
+    opts: { starting?: boolean; free?: boolean; authoredKey?: string } = {},
   ): Entity {
     const def = unitDef(defId);
     const hp = def.hp;
     const e = this.baseEntity('unit', defId, owner, x, z, hp);
+    if (opts.authoredKey) e.authoredKey = opts.authoredKey;
     e.facing = Math.atan2(this.state.map.height * TILE_SIZE * 0.5 - z, this.state.map.width * TILE_SIZE * 0.5 - x);
     e.turretFacing = e.facing;
     e.destX = x;
@@ -569,6 +620,7 @@ export class Game {
     const center = footprintCenter(s.defId, s.x, s.z);
     const hp = construction ? Math.round(def.hp * 0.2) : def.hp;
     const e = this.baseEntity('building', s.defId, s.owner, center.x, center.z, hp);
+    if (s.key) e.authoredKey = s.key;
     // A yard turns its slipway toward its harbour so the gate, the berth and
     // the hulls all agree. Authored facing wins; otherwise it is read off the
     // coastline, which is deterministic for a given map and position.
@@ -751,7 +803,630 @@ export class Game {
    */
   unitDefinitionUnlocked(owner: number, defId: string): boolean {
     if (!this.player(owner)) return false;
+    if (this.unitRestrictedByOperation(owner, defId)) return false;
     return unitDefinitionAvailable(this.completedTechnologies(owner), defId, this.research);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Operation roster limits                                             */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Roster limits the scenario's author set for one commander.
+   *
+   * A campaign operation is fought with the force that was landed: the same
+   * simulation runs, with a trimmed technology tree and a few platforms the
+   * theatre cannot support. A scenario without limits returns undefined, so
+   * skirmish, multiplayer and every existing save behave exactly as before.
+   */
+  operationRestrictions(owner: number): ScenarioRestrictions | undefined {
+    return this.state.scenario.players.find((p) => p.id === owner)?.restrictions;
+  }
+
+  /**
+   * A unit this operation refuses. The list may name a concrete definition or a
+   * canonical slot, so a national replacement is refused with its family.
+   */
+  unitRestrictedByOperation(owner: number, defId: string): boolean {
+    const units = this.operationRestrictions(owner)?.units;
+    if (!units || units.length === 0) return false;
+    return units.includes(defId) || units.includes(unitFamily(defId));
+  }
+
+  /** A structure this operation refuses, by concrete id or canonical family. */
+  buildingRestrictedByOperation(owner: number, defId: string): boolean {
+    const buildings = this.operationRestrictions(owner)?.buildings;
+    if (!buildings || buildings.length === 0) return false;
+    return buildings.includes(defId) || buildings.includes(buildingFamily(defId));
+  }
+
+  /** A technology this operation refuses, whatever the commander has studied. */
+  techRestrictedByOperation(owner: number, techId: string): boolean {
+    return (this.operationRestrictions(owner)?.technologies ?? []).includes(techId);
+  }
+
+  /** Technology ids the research panel should present as outside this operation. */
+  operationLockedTechnologies(owner: number): readonly string[] {
+    return this.operationRestrictions(owner)?.technologies ?? [];
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Strategic superweapons                                             */
+  /* ------------------------------------------------------------------ */
+
+  /** Whether this battle permits national strategic capabilities at all. */
+  superweaponEnabled(): boolean {
+    return this.state.scenario.settings.superweapons !== false;
+  }
+
+  /**
+   * The national capability this commander can field, or null.
+   *
+   * The nation catalogue is the only authority: there is no list of nation
+   * names in this file, so a new nation or faction only has to set its
+   * `superweapon` id in data. A nation without one is a fully supported state.
+   */
+  superweaponFamilyFor(owner: number): SuperweaponFamilyDef | null {
+    const p = this.player(owner);
+    if (!p) return null;
+    const nation = NATIONS[p.factionId];
+    return nation?.superweapon && isSuperweaponFamilyId(nation.superweapon)
+      ? SUPERWEAPON_FAMILIES[nation.superweapon]
+      : null;
+  }
+
+  /** The commander's operational Strategic Operations Centre, if any. */
+  strategicOpsCentre(owner: number): Entity | undefined {
+    const defId = this.buildingIdFor(owner, 'strategicOps');
+    if (!defId) return undefined;
+    return this.state.entities.find(
+      (e) =>
+        e.kind === 'building' &&
+        e.owner === owner &&
+        buildingFamily(e.defId) === 'strategicOps' &&
+        e.hp > 0 &&
+        !e.construction,
+    );
+  }
+
+  /**
+   * The whole authoritative availability answer.
+   *
+   * Every gate is checked here, in one order, so the command, the HUD chip and
+   * the panel cannot disagree about whether a call-in is legal. A missing
+   * structure, missing research, active operation, national cooldown and an
+   * empty bank each produce their own actionable reason.
+   */
+  superweaponStatus(owner: number): SuperweaponStatus {
+    const p = this.player(owner);
+    const family = this.superweaponFamilyFor(owner);
+    const enabled = this.superweaponEnabled();
+    const centre = !!this.strategicOpsCentre(owner);
+    const completed = new Set(this.completedTechnologies(owner));
+    // The chain is named the way this commander's alliance names it, so an
+    // eastern player does not read a coalition doctrine label on its own tree.
+    const allianceId = p ? tryIdentityDef(p.factionId)?.allianceId : undefined;
+    const techName = (id: string): string => {
+      const tech = techDef(id, this.research);
+      return tech ? techDisplayName(tech, allianceId) : id;
+    };
+    const requires = family ? family.requires.map((id) => ({ id, name: techName(id), ready: completed.has(id) })) : [];
+    const missingTechs = family
+      ? family.requires
+          .filter((id) => !completed.has(id))
+          .map((id) => {
+            return { id, name: techName(id) };
+          })
+      : [];
+    const sw = p?.superweapon;
+    const cooldown = family && sw ? cooldownSeconds(sw, this.state.tick, family.id) : 0;
+    const operation = sw?.active ?? null;
+    const affordable = !!p && !!family && p.mats >= family.cost.mats && p.req >= family.cost.req;
+    let reason = '';
+    if (!enabled) reason = 'Strategic superweapons are disabled for this battle.';
+    else if (!family) reason = 'This nation fields no strategic superweapon.';
+    else if (!centre) reason = 'Build a Strategic Operations Centre to authorise a call-in.';
+    else if (missingTechs.length > 0) {
+      reason = `Complete the authority chain first: ${missingTechs.map((t) => t.name).join(', ')}.`;
+    } else if (operation) {
+      reason = `An operation is already committed (${operation.family}).`;
+    } else if (cooldown > 0) {
+      reason = `National reload: ${Math.ceil(cooldown)}s remaining.`;
+    } else if (!affordable) {
+      reason = `Not enough resources: ${family.cost.mats} mats and ${family.cost.req} req required.`;
+    }
+    return {
+      ok: enabled && !!family && centre && missingTechs.length === 0 && !operation && cooldown <= 0 && affordable,
+      reason,
+      family,
+      targeting: family?.targeting ?? null,
+      cost: family?.cost ?? null,
+      enabled,
+      hasCentre: centre,
+      requires,
+      missingTechs,
+      cooldown,
+      operation,
+      phase: operationPhase(operation, this.state.tick),
+      countdown: operationCountdown(operation, this.state.tick),
+      affordable,
+      ewActive: !!sw && sw.ewUntilTick > this.state.tick,
+      defenceActive: !!sw?.defence && sw.defence.untilTick > this.state.tick,
+    };
+  }
+
+  /** Radius in tiles a family's aim area covers; zero for a single target. */
+  private superweaponRadius(family: SuperweaponFamilyDef): number {
+    const effect = family.effect;
+    if (effect.kind === 'ew' || effect.kind === 'dew') return effect.radiusTiles;
+    if (effect.kind === 'saturation' || effect.kind === 'drone') return effect.spreadTiles;
+    return 0;
+  }
+
+  /**
+   * Validate and canonicalise one aim point. A rejected target never reaches
+   * the charge step, which is what keeps an invalid order from spending a
+   * national cooldown.
+   */
+  private resolveSuperweaponTarget(
+    owner: number,
+    family: SuperweaponFamilyDef,
+    x: number,
+    z: number,
+    targetId: number | undefined,
+  ): { ok: true; x: number; z: number; targetId: number } | { ok: false; reason: string } {
+    const map = this.state.map;
+    const tx = Math.floor(x / TILE_SIZE);
+    const tz = Math.floor(z / TILE_SIZE);
+    if (!inBounds(map.width, map.height, tx, tz)) {
+      return { ok: false, reason: 'That aim point is outside the battlefield.' };
+    }
+    const team = this.teamOf(owner);
+    if (family.targeting === 'enemyStructure') {
+      const target = targetId ? this.getEntity(targetId) : undefined;
+      if (!target || target.hp <= 0 || target.kind !== 'building') {
+        return { ok: false, reason: 'A hypersonic strike needs one hostile structure.' };
+      }
+      if (!this.isHostile(owner, target.owner)) {
+        return { ok: false, reason: 'That structure is not hostile.' };
+      }
+      if (!this.isVisibleTo(team, target.id)) {
+        return { ok: false, reason: 'No current sighting of that structure.' };
+      }
+      if (isIndestructibleStructure(target.defId)) {
+        return { ok: false, reason: 'That objective cannot be damaged by a strike.' };
+      }
+      return { ok: true, x: target.x, z: target.z, targetId: target.id };
+    }
+    if (family.targeting === 'friendlyArea') {
+      const radius = this.superweaponRadius(family) * TILE_SIZE;
+      const own = this.state.entities.some(
+        (e) =>
+          e.hp > 0 &&
+          e.owner === owner &&
+          dist(e.x, e.z, (tx + 0.5) * TILE_SIZE, (tz + 0.5) * TILE_SIZE) <= radius,
+      );
+      if (!own) {
+        return { ok: false, reason: 'The defensive field must cover your own forces.' };
+      }
+      return { ok: true, x: (tx + 0.5) * TILE_SIZE, z: (tz + 0.5) * TILE_SIZE, targetId: 0 };
+    }
+    // Area attacks need a current sighting: a commander cannot aim a strategic
+    // barrage at ground it has never seen.
+    if (this.fogAt(team, tx, tz) !== 2) {
+      return { ok: false, reason: 'No current sighting of that area.' };
+    }
+    if (family.targeting === 'enemyNetwork') {
+      const radius = this.superweaponRadius(family) * TILE_SIZE;
+      const present = this.state.entities.some(
+        (e) =>
+          e.hp > 0 &&
+          this.isHostile(owner, e.owner) &&
+          dist(e.x, e.z, (tx + 0.5) * TILE_SIZE, (tz + 0.5) * TILE_SIZE) <= radius,
+      );
+      if (!present) {
+        return { ok: false, reason: 'No hostile network is inside that area.' };
+      }
+    }
+    return { ok: true, x: (tx + 0.5) * TILE_SIZE, z: (tz + 0.5) * TILE_SIZE, targetId: 0 };
+  }
+
+  /**
+   * Public target check for the command gate.
+   *
+   * The gate must be able to refuse an illegal aim point before queueing it, so
+   * a multiplayer client cannot occupy the authoritative queue with a target
+   * the simulation will reject. The command repeats the same check at the tick;
+   * one helper keeps both answers identical.
+   */
+  superweaponTargetStatus(
+    owner: number,
+    familyId: string,
+    x: number,
+    z: number,
+    targetId?: number,
+  ): { ok: boolean; reason: string } {
+    const family = this.superweaponFamilyFor(owner);
+    if (!family || family.id !== familyId) {
+      return { ok: false, reason: 'That is not this nation\'s strategic capability.' };
+    }
+    const target = this.resolveSuperweaponTarget(owner, family, x, z, targetId);
+    return target.ok ? { ok: true, reason: '' } : target;
+  }
+
+  /**
+   * Authorise one strategic operation.
+   *
+   * The whole transaction is authoritative and ordered: validate, charge once,
+   * start the national cooldown, commit the operation. A duplicate command is
+   * refused by the already-committed operation, so a repeated input or a
+   * replayed network command cannot buy two strikes.
+   */
+  commandSuperweapon(
+    owner: number,
+    familyId: string,
+    x: number,
+    z: number,
+    targetId?: number,
+  ): void {
+    const p = this.player(owner);
+    const family = this.superweaponFamilyFor(owner);
+    const status = this.superweaponStatus(owner);
+    if (!p || !family) {
+      this.emit('orderFailed', { team: owner, x, z, text: status.reason || 'No strategic capability.' });
+      return;
+    }
+    if (family.id !== familyId) {
+      this.emit('orderFailed', { team: owner, x, z, text: 'That is not this nation\'s strategic capability.' });
+      return;
+    }
+    // Availability gates describe the structure, research and national reload.
+    if (!status.ok) {
+      this.emit('orderFailed', { team: owner, x, z, text: status.reason });
+      return;
+    }
+    const target = this.resolveSuperweaponTarget(owner, family, x, z, targetId);
+    if (!target.ok) {
+      this.emit('orderFailed', { team: owner, x, z, text: target.reason });
+      return;
+    }
+    p.mats -= family.cost.mats;
+    p.req -= family.cost.req;
+    const tick = this.state.tick;
+    p.superweapon.cooldowns[family.id] = tick + Math.round(family.cooldownSeconds * TICK_RATE);
+    const executeTick = tick + Math.max(1, Math.round(family.warningSeconds * TICK_RATE));
+    const effect = family.effect;
+    let endTick = executeTick + 8 * TICK_RATE;
+    if (effect.kind === 'ew' || effect.kind === 'dew') {
+      endTick = executeTick + Math.round(effect.durationSeconds * TICK_RATE);
+    } else if (effect.kind === 'saturation') {
+      endTick = executeTick + Math.round((effect.munitions * effect.intervalSeconds + 8) * TICK_RATE);
+    } else if (effect.kind === 'drone') {
+      endTick = executeTick + Math.round((effect.drones * effect.intervalSeconds + 10) * TICK_RATE);
+    }
+    p.superweapon.active = {
+      id: tick * 8 + owner,
+      family: family.id,
+      phase: 'warning',
+      startTick: tick,
+      executeTick,
+      endTick,
+      targetX: target.x,
+      targetZ: target.z,
+      targetId: target.targetId,
+      launched: 0,
+    };
+    const presentation = this.superweaponPresentationFor(owner, family);
+    this.emit('notice', {
+      team: owner,
+      x: target.x,
+      z: target.z,
+      text: `${presentation.name} authorised. ${family.warningSeconds}s to execution.`,
+      code: 'superweaponAuthorised',
+      level: 'warning',
+      sound: 'alert',
+    });
+    for (const defender of this.superweaponAffectedOwners(owner, target.x, target.z, family)) {
+      this.emit('notice', {
+        team: defender,
+        x: target.x,
+        z: target.z,
+        text: `Incoming strategic operation: ${presentation.name}.`,
+        code: 'superweaponWarning',
+        level: 'warning',
+        sound: 'alert',
+      });
+    }
+  }
+
+  /** Local name of a capability for this commander's alliance. */
+  private superweaponPresentationFor(
+    owner: number,
+    family: SuperweaponFamilyDef,
+  ): { name: string; description: string } {
+    const p = this.player(owner);
+    const allianceId = p ? tryIdentityDef(p.factionId)?.allianceId : undefined;
+    return superweaponPresentation(family, allianceId);
+  }
+
+  /** Hostile commanders with anything inside the aim area. */
+  private superweaponAffectedOwners(
+    owner: number,
+    x: number,
+    z: number,
+    family: SuperweaponFamilyDef,
+  ): number[] {
+    const radius = Math.max(this.superweaponRadius(family), family.effect.kind === 'hypersonic' ? 3 : 0) * TILE_SIZE;
+    const affected: number[] = [];
+    for (const q of this.state.players) {
+      if (q.defeated || !this.isHostile(owner, q.id)) continue;
+      if (
+        this.state.entities.some(
+          (e) => e.hp > 0 && e.owner === q.id && dist(e.x, e.z, x, z) <= radius,
+        )
+      ) {
+        affected.push(q.id);
+      }
+    }
+    return affected;
+  }
+
+  /** One command's committed operation, for the HUD and the panel. */
+  superweaponOperation(owner: number): PlayerSuperweaponState['active'] {
+    return this.player(owner)?.superweapon.active ?? null;
+  }
+
+  /**
+   * Repair saved strategic state.
+   *
+   * Saves written before this layer have no field at all, which must load as a
+   * ready commander rather than a broken one. A malformed operation is dropped
+   * instead of being allowed to spawn effects from a hand-edited file, and an
+   * expired cooldown is kept as a past tick so the national reload is never
+   * silently reset by opening an old save.
+   */
+  private normalizeSuperweaponStates(): void {
+    for (const p of this.state.players) {
+      const raw = p.superweapon as Partial<PlayerSuperweaponState> | undefined;
+      const cooldowns: Record<string, number> = {};
+      for (const [id, until] of Object.entries(raw?.cooldowns ?? {})) {
+        if (!isSuperweaponFamilyId(id)) continue;
+        if (typeof until === 'number' && Number.isFinite(until)) cooldowns[id] = until;
+      }
+      const activeRaw = raw?.active;
+      let active: PlayerSuperweaponState['active'] = null;
+      if (
+        activeRaw &&
+        isSuperweaponFamilyId(activeRaw.family) &&
+        (activeRaw.phase === 'warning' || activeRaw.phase === 'executing') &&
+        Number.isFinite(activeRaw.executeTick) &&
+        Number.isFinite(activeRaw.endTick) &&
+        activeRaw.endTick > this.state.tick
+      ) {
+        active = {
+          id: Number.isFinite(activeRaw.id) ? activeRaw.id : 0,
+          family: activeRaw.family,
+          phase: activeRaw.phase,
+          startTick: Number.isFinite(activeRaw.startTick) ? activeRaw.startTick : this.state.tick,
+          executeTick: activeRaw.executeTick,
+          endTick: activeRaw.endTick,
+          targetX: Number.isFinite(activeRaw.targetX) ? activeRaw.targetX : 0,
+          targetZ: Number.isFinite(activeRaw.targetZ) ? activeRaw.targetZ : 0,
+          targetId: Number.isFinite(activeRaw.targetId) ? activeRaw.targetId : 0,
+          launched: Number.isFinite(activeRaw.launched) ? Math.max(0, activeRaw.launched) : 0,
+        };
+      }
+      const defenceRaw = raw?.defence;
+      const defence =
+        defenceRaw &&
+        Number.isFinite(defenceRaw.x) &&
+        Number.isFinite(defenceRaw.z) &&
+        Number.isFinite(defenceRaw.radiusTiles) &&
+        Number.isFinite(defenceRaw.untilTick) &&
+        defenceRaw.untilTick > this.state.tick
+          ? {
+              x: defenceRaw.x,
+              z: defenceRaw.z,
+              radiusTiles: defenceRaw.radiusTiles,
+              untilTick: defenceRaw.untilTick,
+              spentThisSecond: 0,
+              secondMark: Math.floor(this.state.tick / TICK_RATE),
+            }
+          : null;
+      p.superweapon = {
+        cooldowns,
+        active,
+        ewUntilTick:
+          typeof raw?.ewUntilTick === 'number' && Number.isFinite(raw.ewUntilTick)
+            ? raw.ewUntilTick
+            : 0,
+        defence,
+      };
+    }
+  }
+
+  /**
+   * Advance every committed operation on the authoritative clock.
+   *
+   * Warning and execution are phases of one state machine: the effect starts
+   * exactly once when the warning elapses, and the operation clears exactly once
+   * at its end. Nothing here depends on a render frame.
+   */
+  private updateSuperweapons(): void {
+    const tick = this.state.tick;
+    for (const p of this.state.players) {
+      const sw = p.superweapon;
+      if (sw.defence && tick >= sw.defence.untilTick) sw.defence = null;
+      const op = sw.active;
+      if (!op) continue;
+      if (op.phase === 'warning' && tick >= op.executeTick) {
+        op.phase = 'executing';
+        this.beginSuperweaponEffect(p, op);
+      }
+      if (op.phase === 'executing' && (op.family === 'saturation' || op.family === 'drone')) {
+        this.launchSuperweaponBatch(p, op);
+      }
+      if (tick >= op.endTick) {
+        sw.active = null;
+        const family = SUPERWEAPON_FAMILIES[op.family as SuperweaponFamilyId];
+        const name = family ? this.superweaponPresentationFor(p.id, family).name : 'Strategic operation';
+        this.emit('notice', {
+          team: p.id,
+          x: op.targetX,
+          z: op.targetZ,
+          text: `${name} complete.`,
+          code: 'superweaponComplete',
+          level: 'info',
+        });
+      }
+    }
+  }
+
+  /** Begin an operation's effect exactly once, at its authoritative resolve tick. */
+  private beginSuperweaponEffect(p: PlayerState, op: NonNullable<PlayerSuperweaponState['active']>): void {
+    const family = SUPERWEAPON_FAMILIES[op.family as SuperweaponFamilyId];
+    if (!family) return;
+    const effect = family.effect;
+    if (effect.kind === 'hypersonic') {
+      this.spawnStrategicProjectile(p.id, op, 0, 'stormMissile', effect.damage, effect.splash, effect.flightSpeed, true);
+      op.launched = 1;
+    } else if (effect.kind === 'saturation' || effect.kind === 'drone') {
+      // The batch launcher starts the volley; later rounds are released by the
+      // update loop at the authored interval, so the defence has time to work.
+      this.launchSuperweaponBatch(p, op);
+    } else if (effect.kind === 'ew') {
+      const until = this.state.tick + Math.round(effect.durationSeconds * TICK_RATE);
+      for (const q of this.state.players) {
+        if (q.defeated || !this.isHostile(p.id, q.id)) continue;
+        const inArea = this.state.entities.some(
+          (e) =>
+            e.hp > 0 &&
+            e.owner === q.id &&
+            dist(e.x, e.z, op.targetX, op.targetZ) <= effect.radiusTiles * TILE_SIZE,
+        );
+        if (!inArea) continue;
+        q.superweapon.ewUntilTick = Math.max(q.superweapon.ewUntilTick, until);
+        this.emit('notice', {
+          team: q.id,
+          x: op.targetX,
+          z: op.targetZ,
+          text: 'Electronic attack is degrading our sensor and datalink picture.',
+          code: 'superweaponWarning',
+          level: 'warning',
+          sound: 'alert',
+        });
+      }
+    } else if (effect.kind === 'dew') {
+      p.superweapon.defence = {
+        x: op.targetX,
+        z: op.targetZ,
+        radiusTiles: effect.radiusTiles,
+        untilTick: this.state.tick + Math.round(effect.durationSeconds * TICK_RATE),
+        spentThisSecond: 0,
+        secondMark: Math.floor(this.state.tick / TICK_RATE),
+      };
+      this.emit('notice', {
+        team: p.id,
+        x: op.targetX,
+        z: op.targetZ,
+        text: 'Directed-energy defence net is active over the sector.',
+        code: 'superweaponImpact',
+        level: 'success',
+        sound: 'ui',
+      });
+    }
+  }
+
+  /** Release the next batch of a saturation or drone operation. */
+  private launchSuperweaponBatch(
+    p: PlayerState,
+    op: NonNullable<PlayerSuperweaponState['active']>,
+  ): void {
+    const family = SUPERWEAPON_FAMILIES[op.family as SuperweaponFamilyId];
+    if (!family) return;
+    const effect = family.effect;
+    if (effect.kind !== 'saturation' && effect.kind !== 'drone') return;
+    const total = effect.kind === 'saturation' ? effect.munitions : effect.drones;
+    const intervalTicks = Math.max(1, Math.round(effect.intervalSeconds * TICK_RATE));
+    const elapsed = Math.max(0, this.state.tick - op.executeTick);
+    const expected = Math.min(total, 1 + Math.floor(elapsed / intervalTicks));
+    if (expected <= op.launched) return;
+    const points = salvoPoints(op.id, total, effect.spreadTiles * TILE_SIZE);
+    const targets =
+      effect.kind === 'drone'
+        ? this.state.entities.filter(
+            (e) =>
+              e.hp > 0 &&
+              this.isHostile(p.id, e.owner) &&
+              dist(e.x, e.z, op.targetX, op.targetZ) <= effect.spreadTiles * TILE_SIZE,
+          )
+        : [];
+    for (let index = op.launched; index < expected; index++) {
+      const point = points[index] ?? { x: 0, z: 0 };
+      const tx = Math.max(TILE_SIZE, Math.min((this.state.map.width - 1) * TILE_SIZE, op.targetX + point.x));
+      const tz = Math.max(TILE_SIZE, Math.min((this.state.map.height - 1) * TILE_SIZE, op.targetZ + point.z));
+      const target = effect.kind === 'drone' && targets.length > 0 ? targets[index % targets.length] : undefined;
+      this.spawnStrategicProjectile(
+        p.id,
+        op,
+        index,
+        effect.kind === 'drone' ? 'strikeMissile' : 'heavyRocketSalvo',
+        effect.damage,
+        effect.splash,
+        effect.kind === 'drone' ? 22 : 34,
+        !!target,
+        target?.id ?? 0,
+        tx,
+        tz,
+      );
+    }
+    op.launched = expected;
+  }
+
+  /** One off-map munition, entering from the map edge nearest its aim point. */
+  private spawnStrategicProjectile(
+    owner: number,
+    op: NonNullable<PlayerSuperweaponState['active']>,
+    index: number,
+    weaponId: string,
+    damage: number,
+    splash: number,
+    speed: number,
+    homing: boolean,
+    targetId = 0,
+    tx = op.targetX,
+    tz = op.targetZ,
+  ): void {
+    const weapon = WEAPONS[weaponId];
+    if (!weapon) return;
+    const fromNorth = tz >= this.state.map.height * TILE_SIZE * 0.5;
+    const startX = tx;
+    const startZ = fromNorth
+      ? Math.max(0, tz - 22 * TILE_SIZE)
+      : Math.min(this.state.map.height * TILE_SIZE, tz + 22 * TILE_SIZE);
+    const ty = this.heightAt(tx, tz) + 1.3;
+    this.state.projectiles.push({
+      id: this.state.nextProjectileId++,
+      owner,
+      shooterId: this.strategicOpsCentre(owner)?.id ?? 0,
+      weaponId,
+      x: startX,
+      y: 24,
+      z: startZ,
+      tx,
+      ty,
+      tz,
+      targetId,
+      speed,
+      splash,
+      kind: weapon.projectile,
+      homing,
+      damage,
+      armourMul: {},
+      suppression: weapon.suppression ?? 0.6,
+      seed: op.id + index,
+      strategic: { family: op.family, operationId: op.id },
+    });
   }
 
   /** Actual roster unit ids the player may produce with its current research. */
@@ -761,8 +1436,10 @@ export class Game {
 
   /** Actual roster structure ids the player may construct with its research. */
   availableBuildings(owner: number): string[] {
-    return this.rosterFor(owner).buildings.filter((id) =>
-      this.buildingSlotUnlocked(owner, buildingFamily(id)),
+    return this.rosterFor(owner).buildings.filter(
+      (id) =>
+        this.buildingSlotUnlocked(owner, buildingFamily(id)) &&
+        !this.buildingRestrictedByOperation(owner, id),
     );
   }
 
@@ -930,6 +1607,9 @@ export class Game {
         case 'placeBuilding':
           this.commandPlaceBuilding(cmd.team, cmd.builderId, cmd.defId, cmd.tileX, cmd.tileZ);
           break;
+        case 'sellBuilding':
+          this.commandSellBuilding(cmd.team, cmd.buildingId);
+          break;
         case 'research':
           this.commandResearch(cmd.team, cmd.buildingId, cmd.techId);
           break;
@@ -944,6 +1624,9 @@ export class Game {
           break;
         case 'useAbility':
           this.commandUseAbility(cmd.team, cmd.unitId, cmd.abilityId);
+          break;
+        case 'superweapon':
+          this.commandSuperweapon(cmd.team, cmd.familyId, cmd.x, cmd.z, cmd.targetId);
           break;
         case 'setRally': {
           const b = this.getEntity(cmd.buildingId);
@@ -2479,6 +3162,22 @@ export class Game {
     if (tech.nations && !tech.nations.includes(p.factionId)) {
       return { ok: false, reason: `${tech.name} is not available to this nation.` };
     }
+    // The operation's own limits outrank the catalogue: a theatre with no air
+    // support cannot be given an airfield by studying one.
+    if (this.techRestrictedByOperation(owner, tech.id)) {
+      return { ok: false, reason: `${tech.name} is not available in this operation.` };
+    }
+    // An authority node is only worth studying where the capability it unlocks
+    // can actually be called in, so a battle without superweapons (or a nation
+    // without one) must not offer the chain as a research option.
+    if (tech.strategic && (!this.superweaponEnabled() || !this.superweaponFamilyFor(owner))) {
+      return {
+        ok: false,
+        reason: this.superweaponEnabled()
+          ? 'This nation fields no strategic superweapon.'
+          : 'Strategic superweapons are disabled for this battle.',
+      };
+    }
     return { ok: true, reason: '' };
   }
 
@@ -2501,6 +3200,7 @@ export class Game {
       centre.owner !== owner ||
       centre.hp <= 0 ||
       centre.construction ||
+      !!centre.deconstruct ||
       buildingFamily(centre.defId) !== 'researchCentre'
     ) {
       return { ok: false, reason: 'An operational Research Centre is required.' };
@@ -2535,6 +3235,7 @@ export class Game {
       centre.owner !== owner ||
       centre.hp <= 0 ||
       centre.construction ||
+      !!centre.deconstruct ||
       buildingFamily(centre.defId) !== 'researchCentre'
     ) {
       return { ok: false, reason: 'An operational Research Centre is required.' };
@@ -2653,7 +3354,8 @@ export class Game {
       building.kind !== 'building' ||
       building.owner !== owner ||
       building.hp <= 0 ||
-      building.construction
+      building.construction ||
+      !!building.deconstruct
     ) {
       return { ok: false, reason: 'An operational structure is required.' };
     }
@@ -2823,7 +3525,15 @@ export class Game {
     const reach = weapon.indirect
       ? weapon.range
       : weapon.range * engagementFactor(sensorFor(e), this.dayNight) * this.weather.acquisition;
-    return reach * TILE_SIZE;
+    // An electronic attack degrades the datalink that turns a sighting into a
+    // firing solution; the physical gun is unchanged, which is why the penalty
+    // is modest and expires.
+    const ew = ewRangeFactor(
+      this.player(e.owner)?.superweapon,
+      this.state.tick,
+      EW_EFFECT,
+    );
+    return reach * ew * TILE_SIZE;
   }
 
   /**
@@ -2935,11 +3645,15 @@ export class Game {
       return { ok: false, reason: 'Facility unavailable.' };
     }
     if (b.construction) return { ok: false, reason: 'Facility still under construction.' };
+    if (b.deconstruct) return { ok: false, reason: 'Facility is being dismantled for sale.' };
     const bdef = BUILDINGS[b.defId];
     if (!bdef?.produces) return { ok: false, reason: 'This facility does not produce units.' };
     if (!def) return { ok: false, reason: 'Unknown unit type.' };
     if (!this.canProduce(owner, defId)) {
       return { ok: false, reason: `${def.name} is not in ${p.name}'s roster.` };
+    }
+    if (this.unitRestrictedByOperation(owner, defId)) {
+      return { ok: false, reason: `${def.name} is not available in this operation.` };
     }
     // Resolve the facility's baseline slots through the roster so a national
     // variant keeps its family's production slot without a parallel list.
@@ -3048,6 +3762,123 @@ export class Game {
     });
   }
 
+  /**
+   * Whether a structure can be sold right now, and why not. Shared by the
+   * command handler and the selection panel so the button and the rejection
+   * always agree. Selling starts a deconstruction clock; the refund only pays
+   * on completion, so a structure shelled apart mid-sale pays nothing.
+   */
+  sellStatus(owner: number, buildingId: number): { ok: boolean; reason: string } {
+    const b = this.getEntity(buildingId);
+    if (!b || b.kind !== 'building' || b.owner !== owner || b.hp <= 0) {
+      return { ok: false, reason: 'Select one of your own structures.' };
+    }
+    if (b.construction) return { ok: false, reason: 'Finish construction before selling.' };
+    if (b.deconstruct) return { ok: false, reason: 'This structure is already being dismantled.' };
+    if (isIndestructibleStructure(b.defId)) {
+      return { ok: false, reason: 'Objective structures cannot be sold.' };
+    }
+    const def = BUILDINGS[b.defId];
+    if (def?.walkable) {
+      return { ok: false, reason: 'Engineered spans cannot be sold — the crossing would stay blocked.' };
+    }
+    if (this.state.entities.some((e) => e.kind === 'unit' && e.hp > 0 && e.garrisonId === b.id)) {
+      return { ok: false, reason: 'Evacuate the garrison before selling.' };
+    }
+    return { ok: true, reason: '' };
+  }
+
+  /** Seconds a sale takes: half the original build time, never under three. */
+  static sellSeconds(defId: string): number {
+    return Math.max(3, buildingDef(defId).buildTime * 0.5);
+  }
+
+  /** 75% of the structure cost, in the same two currencies the player paid. */
+  static sellRefund(defId: string): { mats: number; req: number } {
+    const def = buildingDef(defId);
+    return { mats: Math.floor(def.cost.mats * 0.75), req: Math.floor(def.cost.req * 0.75) };
+  }
+
+  /** The quote the selection panel prints, from the same rules the command uses. */
+  sellQuote(buildingId: number): { mats: number; req: number; seconds: number } | null {
+    const b = this.getEntity(buildingId);
+    if (!b || b.kind !== 'building') return null;
+    const refund = Game.sellRefund(b.defId);
+    return { ...refund, seconds: Game.sellSeconds(b.defId) };
+  }
+
+  private commandSellBuilding(owner: number, buildingId: number): void {
+    const status = this.sellStatus(owner, buildingId);
+    const b = this.getEntity(buildingId);
+    if (!status.ok) {
+      this.emit('orderFailed', {
+        team: owner,
+        x: b?.x ?? 0,
+        z: b?.z ?? 0,
+        text: status.reason,
+        entityId: b?.id,
+        level: 'warning',
+        sound: 'denied',
+      });
+      return;
+    }
+    const p = this.player(owner);
+    // Queued production was already paid for; cashing it out at the moment the
+    // sale starts is the only honest refund, because the queue is cleared here.
+    if (p) {
+      for (const item of b!.queue) {
+        const unit = unitDef(item.defId);
+        p.mats += unit.cost.mats;
+        p.req += unit.cost.req;
+      }
+    }
+    b!.queue = [];
+    const total = Game.sellSeconds(b!.defId);
+    b!.deconstruct = { remaining: total, total };
+    b!.state = 'selling';
+    b!.rallyX = b!.x;
+    b!.rallyZ = b!.z;
+    const def = buildingDef(b!.defId);
+    const refund = Game.sellRefund(b!.defId);
+    this.emit('orderAck', {
+      team: owner,
+      x: b!.x,
+      z: b!.z,
+      text: `${def.name} dismantling — ${refund.mats}M/${refund.req}R on completion`,
+      entityId: b!.id,
+      defId: b!.defId,
+      level: 'info',
+      sound: 'build',
+      code: 'buildingSold',
+    });
+  }
+
+  /** Pay a completed sale and let cleanup remove the structure this tick. */
+  private completeSale(b: Entity): void {
+    const def = buildingDef(b.defId);
+    const refund = Game.sellRefund(b.defId);
+    const p = this.player(b.owner);
+    if (p) {
+      p.mats += refund.mats;
+      p.req += refund.req;
+    }
+    this.emit('buildingSold', {
+      team: b.owner,
+      x: b.x,
+      z: b.z,
+      text: `${def.name} sold — ${refund.mats}M/${refund.req}R recovered`,
+      entityId: b.id,
+      defId: b.defId,
+      level: 'success',
+      sound: 'complete',
+      code: 'buildingSold',
+    });
+    delete b.deconstruct;
+    b.queue = [];
+    b.path = [];
+    b.hp = 0;
+  }
+
   private commandCancelProduction(owner: number, buildingId: number, queueIndex: number): void {
     const b = this.getEntity(buildingId);
     if (!b || b.owner !== owner || b.kind !== 'building') return;
@@ -3133,6 +3964,13 @@ export class Game {
         ok: false,
         code: 'roster',
         reason: `${def.name} is not in ${p.name}'s roster.`,
+      };
+    }
+    if (this.buildingRestrictedByOperation(owner, defId)) {
+      return {
+        ok: false,
+        code: 'operation',
+        reason: `${def.name} is not available in this operation.`,
       };
     }
     const missingResearch = this.missingResearchForBuilding(owner, defId);
@@ -3468,6 +4306,9 @@ export class Game {
     this.updatePassiveIncome(dt);
     this.updateBuildingSystems(dt);
     this.updateResearch(dt);
+    // Strategic operations advance on the same clock: warnings resolve, volleys
+    // release and defensive fields expire before this tick's projectiles move.
+    this.updateSuperweapons();
     // Clouds expire on the authoritative clock and must be gone before vision
     // is refreshed, so an expired cloud cannot hide a unit for one extra beat.
     this.updateSmoke();
@@ -3482,11 +4323,163 @@ export class Game {
       this.refreshVision(false);
       this.updateIncomeHistory();
     }
+    // Authored triggers read this tick's authoritative state and run before the
+    // verdict, so a trigger can still complete a bonus objective on the same
+    // tick the last primary objective is secured.
+    this.updateMissionTriggers();
     this.evaluateVictory();
   }
 
   advance(ticks: number): void {
     for (let i = 0; i < ticks; i++) this.tick();
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Mission objectives                                                 */
+  /* ------------------------------------------------------------------ */
+
+  /** The captured result of a finished mission, or null while it is running. */
+  get missionResult(): MissionResult | null {
+    return this.mission?.result ?? null;
+  }
+
+  /**
+   * Objective transitions requested from gameplay.
+   *
+   * S3's trigger actions will call exactly these methods, so the authoritative
+   * validation (known id, valid transition, prerequisites, terminal mission)
+   * lives in one place. A refused request changes nothing and emits nothing.
+   */
+  activateObjective(id: string): boolean {
+    return this.applyMissionTransition(this.mission?.activateObjective(id));
+  }
+
+  completeObjective(id: string): boolean {
+    return this.applyMissionTransition(this.mission?.completeObjective(id));
+  }
+
+  failObjective(id: string): boolean {
+    return this.applyMissionTransition(this.mission?.failObjective(id));
+  }
+
+  private applyMissionTransition(result: MissionTransitionResult | undefined): boolean {
+    if (!result?.ok) return false;
+    for (const change of result.changes) this.announceObjectiveChange(change);
+    return true;
+  }
+
+  /**
+   * Relay one objective transition as an ordinary simulation event. Mission
+   * state is not a second event system: the HUD, log and announcer read this
+   * like any other notice.
+   */
+  private announceObjectiveChange(change: MissionObjectiveChange): void {
+    const mission = this.mission;
+    if (!mission) return;
+    const title = mission.objectiveTitle(change.id) ?? change.id;
+    const code: SimEventCode =
+      change.to === 'complete'
+        ? 'objectiveComplete'
+        : change.to === 'failed'
+          ? 'objectiveFailed'
+          : 'objectiveActivated';
+    const text =
+      change.to === 'complete'
+        ? `Objective complete — ${title}.`
+        : change.to === 'failed'
+          ? `Objective failed — ${title}.`
+          : `Objective active — ${title}.`;
+    this.emit('notice', {
+      team: this.localPlayerId,
+      x: 0,
+      z: 0,
+      text,
+      level: change.to === 'failed' ? 'critical' : change.to === 'complete' ? 'success' : 'info',
+      code,
+    });
+  }
+
+  /**
+   * Build and store the mission result once, from the authoritative state the
+   * outcome was decided on. A second call is a no-op, and a save taken after
+   * this point restores the same result rather than recapturing it.
+   */
+  private captureMissionResult(outcome: MissionOutcome): void {
+    const mission = this.mission;
+    if (!mission || mission.result) return;
+    if (mission.outcome !== 'playing' && mission.outcome !== outcome) return;
+    const result = buildMissionResult({
+      doc: mission.doc,
+      state: mission.state,
+      outcome,
+      tick: this.state.tick,
+      elapsedSeconds: Math.max(0, this.state.tick - this.state.startedAtTick) / TICK_RATE,
+      localPlayerId: this.localPlayerId,
+      players: this.state.players.map((player) => ({ id: player.id, stats: player.stats })),
+      entities: this.state.entities.map((entity) => ({
+        defId: entity.defId,
+        hp: entity.hp,
+        ...(entity.authoredKey ? { authoredKey: entity.authoredKey } : {}),
+      })),
+    });
+    mission.finalizeResult(outcome, result);
+  }
+
+  /**
+   * One tick of authored mission triggers.
+   *
+   * The world snapshot is built from live simulation state only: live units for
+   * occupancy, and authored keys whose entity still exists with hit points for
+   * `entityAlive`. The whole tick runs inside one action batch, so objective
+   * changes accumulate before the outcome is committed at the tick's evaluation
+   * point.
+   */
+  private updateMissionTriggers(): void {
+    const mission = this.mission;
+    if (!mission || mission.isTerminal) return;
+    if (mission.doc.triggers.length === 0) return;
+    const units = this.state.entities
+      .filter((entity) => entity.kind === 'unit' && entity.hp > 0)
+      .map((entity) => ({
+        team: this.player(entity.owner)?.team ?? entity.owner,
+        x: entity.x,
+        z: entity.z,
+      }));
+    const aliveAuthored = new Set<string>();
+    for (const entity of this.state.entities) {
+      if (entity.authoredKey && entity.hp > 0) aliveAuthored.add(entity.authoredKey);
+    }
+    mission.beginActionBatch();
+    try {
+      evaluateMissionTriggers(
+        mission,
+        {
+          tick: this.state.tick,
+          startedAtTick: this.state.startedAtTick,
+          units,
+          aliveAuthored,
+        },
+        {
+          message: (text) => this.announceMissionMessage(text),
+          objectiveChanged: (changes) => {
+            for (const change of changes) this.announceObjectiveChange(change);
+          },
+        },
+      );
+    } finally {
+      mission.endActionBatch();
+    }
+  }
+
+  private announceMissionMessage(text: string): void {
+    this.emit('notice', {
+      team: this.localPlayerId,
+      x: 0,
+      z: 0,
+      text,
+      level: 'info',
+      code: 'missionMessage',
+    });
   }
 
   syncRng(): void {
@@ -3633,7 +4626,7 @@ export class Game {
     let radius = 0;
     for (const e of this.state.entities) {
       if (e.owner !== playerId || e.kind !== 'building' || e.construction || e.hp <= 0) continue;
-      const scan = BUILDINGS[e.defId]?.scanRadius ?? 0;
+      const scan = (BUILDINGS[e.defId]?.scanRadius ?? 0) * ewScanFactor(this.player(playerId)?.superweapon, this.state.tick);
       if (scan <= 0) continue;
       stations++;
       radius = Math.max(radius, scan);
@@ -3645,7 +4638,9 @@ export class Game {
         if (!this.isVisibleTo(this.teamOf(playerId), enemy.id)) continue;
         for (const e of this.state.entities) {
           if (e.owner !== playerId || e.kind !== 'building' || e.construction || e.hp <= 0) continue;
-          const scan = BUILDINGS[e.defId]?.scanRadius ?? 0;
+          const scan =
+            (BUILDINGS[e.defId]?.scanRadius ?? 0) *
+            ewScanFactor(this.player(e.owner)?.superweapon, this.state.tick);
           if (scan > 0 && dist(e.x, e.z, enemy.x, enemy.z) <= scan * TILE_SIZE) {
             contacts++;
             break;
@@ -3673,6 +4668,23 @@ export class Game {
     };
     for (const e of [...this.state.entities].sort((a, b) => a.id - b.id)) {
       if (e.kind !== 'building' || e.hp <= 0) continue;
+      // Static defences keep their own reload clock too, which is what lets a
+      // SAM site engage strategic munitions without firing every tick.
+      if (e.cooldowns) {
+        for (const id of Object.keys(e.cooldowns)) {
+          const next = e.cooldowns[id] - dt;
+          if (next <= 0) delete e.cooldowns[id];
+          else e.cooldowns[id] = next;
+        }
+        if (Object.keys(e.cooldowns).length === 0) delete e.cooldowns;
+      }
+      // A sold structure is dead weight from the first tick: no vision, no
+      // weapons, no production, no power. The clock is the only thing left.
+      if (e.deconstruct) {
+        e.deconstruct.remaining = Math.max(0, e.deconstruct.remaining - dt);
+        if (e.deconstruct.remaining <= 0) this.completeSale(e);
+        continue;
+      }
       if (e.construction) {
         const def = buildingDef(e.defId);
         // Construction only advances while the assigned engineer is on site.
@@ -3957,7 +4969,14 @@ export class Game {
           entityVision(e) *
           visionFactor(sensorFor(e), dayNight) *
           this.weather.visibility *
-          seaReach;
+          seaReach *
+          ewVisionFactor(
+            this.player(e.owner)?.superweapon,
+            this.state.tick,
+            UNITS[e.defId]?.domain,
+            EW_EFFECT,
+            e.kind === 'building',
+          );
         this.stampVision(fog, e.x, e.z, vision);
       }
       // A team's own lights reveal their own yard to that team. This is why a
@@ -4016,7 +5035,14 @@ export class Game {
         entityVision(source) *
         visionFactor(sensorFor(source), dayNight) *
         this.weather.visibility *
-        (1 + ILLUMINATED_TARGET_BONUS);
+        (1 + ILLUMINATED_TARGET_BONUS) *
+        ewVisionFactor(
+          this.player(source.owner)?.superweapon,
+          this.state.tick,
+          UNITS[source.defId]?.domain,
+          EW_EFFECT,
+          source.kind === 'building',
+        );
       if (dist(source.x, source.z, target.x, target.z) > reach * TILE_SIZE) continue;
       if (!hasLineOfSight(this.state.map, source.x, source.z, target.x, target.z)) continue;
       return true;
@@ -4050,7 +5076,9 @@ export class Game {
     for (const e of this.state.entities) {
       if (e.hp <= 0 || e.kind !== 'building' || e.construction) continue;
       if (this.teamOf(e.owner) !== team) continue;
-      const scan = BUILDINGS[e.defId]?.scanRadius ?? 0;
+      const scan =
+        (BUILDINGS[e.defId]?.scanRadius ?? 0) *
+        ewScanFactor(this.player(e.owner)?.superweapon, this.state.tick);
       if (scan <= 0) continue;
       let brownout = gridBrownout.get(e.owner);
       if (brownout === undefined) {
@@ -5160,6 +6188,9 @@ export class Game {
             this.isHostile(e.owner, previousOwner);
           target.owner = e.owner;
           target.aiRole = 'captured';
+          // A captured structure is the new owner's, not a half-sold wreck:
+          // the previous owner's sale dies with the flag, so nobody is paid.
+          delete target.deconstruct;
           e.captureProgress = 0;
           e.captureTargetId = 0;
           e.order = null;
@@ -6601,6 +7632,10 @@ export class Game {
     if (this.state.projectiles.length === 0) return;
     const remaining: Projectile[] = [];
     for (const p of this.state.projectiles) {
+      // Strategic munitions can be engaged before they reach the aim point.
+      // Ordinary fire is untouched: this is the counterplay layer, not a new
+      // universal interception rule.
+      if (p.strategic && this.interceptStrategicProjectile(p)) continue;
       const target = p.homing && p.targetId ? this.getEntity(p.targetId) : undefined;
       if (target && target.hp > 0) {
         p.tx = target.x;
@@ -6645,9 +7680,70 @@ export class Game {
     this.state.projectiles = remaining;
   }
 
+  /**
+   * Try to stop one strategic munition with a defensive field or local air
+   * defence. Returns true when the round is destroyed before impact.
+   *
+   * The field is checked first because it is the dedicated counter, then the
+   * nearest eligible air-defence weapon. Each defender has its own reload, so a
+   * layered net stops more of a salvo than a single battery, and a saturation
+   * attack can still overwhelm it.
+   */
+  private interceptStrategicProjectile(p: Projectile): boolean {
+    const tick = this.state.tick;
+    const second = Math.floor(tick / TICK_RATE);
+    for (const q of this.state.players) {
+      if (q.defeated || !this.isHostile(p.owner, q.id)) continue;
+      const field = q.superweapon.defence;
+      if (!field || tick >= field.untilTick) continue;
+      if (dist(p.x, p.z, field.x, field.z) > field.radiusTiles * TILE_SIZE) continue;
+      if (field.secondMark !== second) {
+        field.secondMark = second;
+        field.spentThisSecond = 0;
+      }
+      const effect = SUPERWEAPON_FAMILIES.dew.effect;
+      const capacity = effect.kind === 'dew' ? effect.capacityPerSecond : 0;
+      if (field.spentThisSecond >= capacity) continue;
+      field.spentThisSecond++;
+      this.emit('notice', {
+        team: q.id,
+        x: p.x,
+        y: p.y,
+        z: p.z,
+        text: 'Directed-energy defence burnt down an incoming strategic munition.',
+        code: 'superweaponIntercept',
+        level: 'success',
+        sound: 'impact',
+      });
+      return true;
+    }
+    for (const e of this.state.entities) {
+      if (e.hp <= 0 || e.construction || !this.isHostile(p.owner, e.owner)) continue;
+      if ((e.cooldowns?.intercept ?? 0) > 0) continue;
+      const weapon = entityWeapons(e).find((w) => w.antiAir);
+      if (!weapon) continue;
+      if (dist(e.x, e.z, p.x, p.z) > this.engagementReach(e, weapon) + 1.5 * TILE_SIZE) continue;
+      e.cooldowns = { ...(e.cooldowns ?? {}), intercept: 1.6 };
+      this.emit('notice', {
+        team: e.owner,
+        x: p.x,
+        y: p.y,
+        z: p.z,
+        text: `${entityName(e)} intercepted an incoming strategic munition.`,
+        code: 'superweaponIntercept',
+        level: 'success',
+        sound: 'impact',
+      });
+      return true;
+    }
+    return false;
+  }
+
   private impact(p: Projectile): void {
     const weapon = WEAPONS[p.weaponId];
-    if (!weapon) return;
+    if (!weapon && !p.strategic) return;
+    const targets = weapon?.targets ?? ['ground', 'structure', 'naval'];
+    const multipliers = weapon?.multipliers ?? {};
     const radius = Math.max(1.4, (p.splash > 0 ? p.splash * TILE_SIZE : 1.6));
     const direct = p.targetId ? this.getEntity(p.targetId) : undefined;
     let hitCount = 0;
@@ -6660,22 +7756,22 @@ export class Game {
       // A dived boat is immune to ordinary fire until its launch datum exposes
       // it; depth charges are the only weapon that can reach it while hidden.
       const submerged = !!e.submarine?.dived;
-      if (weapon.asw) {
+      if (weapon?.asw) {
         if (!submerged) continue;
       } else if (submerged && !e.submarine?.revealed) {
         continue;
       }
       const targetClass = entityTargetClass(e);
-      if (!weapon.targets.includes(targetClass)) continue;
+      if (!targets.includes(targetClass)) continue;
       const d = dist(p.x, p.z, e.x, e.z);
       const effectiveRadius = radius + (e.kind === 'building' ? 4 : unitDef(e.defId).radius * 0.7);
       if (d > effectiveRadius) continue;
       if (direct && e.id !== direct.id && d > radius) continue;
       const falloff = p.splash > 0 ? 1 - 0.55 * Math.min(1, d / radius) : 1;
-      const damage = computeDamage(p.damage * falloff, weapon.multipliers, entityArmour(e));
+      const damage = computeDamage(p.damage * falloff, multipliers, entityArmour(e));
       if (damage <= 0) continue;
       this.damageEntity(e, damage, p.owner, p.shooterId, p.weaponId);
-      if (e.kind === 'building' && BUILDINGS[e.defId]?.garrison) {
+      if (weapon && e.kind === 'building' && BUILDINGS[e.defId]?.garrison) {
         this.damageGarrison(e, weapon, p.damage * falloff, p.id, p.owner, p.shooterId, e.id === direct?.id);
       }
       e.suppression = Math.min(1, e.suppression + p.suppression * falloff);
@@ -6972,7 +8068,10 @@ export class Game {
       }
       if (defeated) p.defeated = true;
     }
-    if (scenario.settings.timeLimitSec !== null) {
+    // A mission's clock is its objective tree, not a skirmish score. Time
+    // pressure belongs to authored triggers, which S3 will provide; silently
+    // scoring a mission on residual hit points would invent a rule.
+    if (scenario.settings.timeLimitSec !== null && !this.mission) {
       const elapsed = (this.state.tick - this.state.startedAtTick) / TICK_RATE;
       if (elapsed >= scenario.settings.timeLimitSec) {
         const score = (id: number) =>
@@ -6987,6 +8086,21 @@ export class Game {
     }
     const local = this.player(this.localPlayerId);
     if (!local) return;
+    if (this.mission) {
+      // Mission outcomes are decided by the objective tree. The existing
+      // force-destruction rule still counts: losing the field is a defeat even
+      // if every primary objective happened to be complete.
+      this.mission.evaluateOutcome(local.defeated);
+      if (this.mission.outcome === 'victory') {
+        this.finish('victory');
+        return;
+      }
+      if (this.mission.outcome === 'defeat') {
+        this.finish('defeat');
+        return;
+      }
+      return;
+    }
     if (local.defeated) {
       this.finish('defeat');
       return;
@@ -7006,16 +8120,34 @@ export class Game {
       if (result === 'victory' && this.isHostile(p.id, this.localPlayerId)) p.defeated = true;
       if (result === 'defeat' && p.id === this.localPlayerId) p.defeated = true;
     }
+    // The result is captured before the end event, from exactly the state the
+    // verdict was decided on. Nothing in the UI recounts it.
+    const mission = this.mission;
+    if (mission && (result === 'victory' || result === 'defeat')) {
+      this.captureMissionResult(result);
+    }
+    const failedPrimary = mission?.doc.objectives.some(
+      (objective) =>
+        objective.kind === 'primary' && mission.objectiveState(objective.id) === 'failed',
+    );
+    const text = mission
+      ? result === 'victory'
+        ? 'All primary objectives secured. Mission complete.'
+        : result === 'defeat'
+          ? failedPrimary
+            ? 'A primary objective was lost. Mission failed.'
+            : 'Your force was destroyed before the mission could be completed.'
+          : 'Mission ended.'
+      : result === 'victory'
+        ? 'Island secured. Enemy command eliminated.'
+        : result === 'defeat'
+          ? 'Command Post lost. Operation failed.'
+          : 'Operation ended in a draw.';
     this.emit(result === 'victory' ? 'victory' : result === 'defeat' ? 'defeat' : 'notice', {
       team: this.localPlayerId,
       x: 0,
       z: 0,
-      text:
-        result === 'victory'
-          ? 'Island secured. Enemy command eliminated.'
-          : result === 'defeat'
-            ? 'Command Post lost. Operation failed.'
-            : 'Operation ended in a draw.',
+      text,
       level: result === 'victory' ? 'success' : 'critical',
       sound: result === 'victory' ? 'victory' : 'defeat',
     });
@@ -7167,6 +8299,8 @@ export class Game {
         // taken inside a cloud has to restore the same obstruction.
         smoke: rest.smoke.map((cloud) => ({ ...cloud })),
         nextSmokeId: rest.nextSmokeId,
+        // The canonical runtime snapshot, so a save never aliases live state.
+        mission: this.mission ? this.mission.snapshot() : null,
       },
       localPlayerId: this.localPlayerId,
     };
@@ -7212,6 +8346,13 @@ export class Game {
     }
     const game = new Game(savedScenario, { ...opts, skipInit: true });
     game.localPlayerId = data.localPlayerId ?? opts.localPlayerId ?? PLAYER;
+    // The mission document travels inside the scenario, so the runtime is
+    // rebuilt from validated authored data plus the saved state. A save with no
+    // mission state (every pre-mission save, and every skirmish) restores fresh
+    // defaults only when the scenario actually carries a mission.
+    const missionRuntime = savedScenario.mission
+      ? MissionRuntime.fromState(savedScenario.mission, state.mission)
+      : null;
     const map = savedState.map as unknown as GameState['map'];
     // A v1 file may predate the ore arrays or lose them in serialisation;
     // rebuild the runtime map from the embedded scenario rather than crash.
@@ -7253,9 +8394,18 @@ export class Game {
           : 1,
         ...loadedSmoke.map((cloud) => cloud.id + 1),
       ),
+      mission: missionRuntime ? missionRuntime.state : null,
       ready: true,
     };
+    game.mission = missionRuntime;
+    // A save taken at the moment of a terminal outcome normally carries the
+    // result. If it does not, capturing it from the restored end state is
+    // deterministic: the tick no longer advances once the battle is over.
+    if (missionRuntime && missionRuntime.outcome !== 'playing' && !missionRuntime.result) {
+      game.captureMissionResult(missionRuntime.outcome);
+    }
     game.normalizeResearchState();
+    game.normalizeSuperweaponStates();
     game.rng = new Rng(game.state.seed);
     game.rng.setState(game.state.rngState);
     game.blocked = new Uint8Array(savedScenario.width * savedScenario.height);
@@ -7265,6 +8415,9 @@ export class Game {
       e.hp = Number(e.hp);
       e.buildTargetId = Number(e.buildTargetId ?? 0);
       e.healTargetId = Number(e.healTargetId ?? 0);
+      // Authored identity is optional and must stay a non-empty string; a
+      // hand-edited value is dropped rather than becoming a dangling reference.
+      if (typeof e.authoredKey !== 'string' || e.authoredKey.length === 0) delete e.authoredKey;
       // Saves written before the submarine phase have no dive state. Rebuild it
       // rather than treating the boat as a permanent surface ship.
       const subDef = UNITS[e.defId]?.submarine;
@@ -7411,11 +8564,31 @@ export class Game {
     parts.push(`t=${this.state.tick}`, `r=${this.state.rngState}`, `v=${this.state.victory}`);
     for (const p of this.state.players) {
       const project = p.research.project;
+      // Strategic state is hashed only once a commander has any: a battle that
+      // has never called in a capability hashes exactly as it did before this
+      // layer existed, which keeps every pre-existing determinism baseline
+      // meaningful instead of merely re-recorded.
+      const sw = p.superweapon;
+      const swCooldowns = Object.entries(sw.cooldowns)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([id, until]) => `${id}@${until}`)
+        .join('+');
+      const swPart =
+        swCooldowns || sw.active || sw.ewUntilTick > 0 || sw.defence
+          ? `:s${swCooldowns || '-'}` +
+            `:${sw.active ? `${sw.active.family}@${sw.active.phase}@${sw.active.launched}` : '-'}` +
+            `:e${sw.ewUntilTick}:d${
+              sw.defence
+                ? `${sw.defence.x.toFixed(1)},${sw.defence.z.toFixed(1)},${sw.defence.untilTick}`
+                : '-'
+            }`
+          : '';
       parts.push(
         `p${p.id}:${p.mats.toFixed(2)}:${p.req.toFixed(2)}:${p.stats.unitsLost}:${p.stats.kills}` +
           `:r${p.research.completed.join('+') || '-'}:${
             project ? `${project.techId}@${project.remaining.toFixed(3)}` : '-'
-          }`,
+          }` +
+          swPart,
       );
     }
     for (const e of [...this.state.entities].sort((a, b) => a.id - b.id)) {
@@ -7425,6 +8598,10 @@ export class Game {
           e.id,
           e.defId,
           e.owner,
+          // Authored identity is state: two worlds whose named asset differs
+          // must not hash the same. Only keyed entities emit it, so an ordinary
+          // battle hashes exactly as it did before missions existed.
+          ...(e.authoredKey ? [e.authoredKey] : []),
           e.hp.toFixed(1),
           e.x.toFixed(2),
           e.z.toFixed(2),
@@ -7436,6 +8613,10 @@ export class Game {
           e.pathIndex,
           e.queue.length,
           e.buildProgress.toFixed(2),
+          // A dismantling structure is still a structure: two worlds that sold
+          // at different moments must not hash alike. Only a sale emits the
+          // field, so every pre-existing baseline hashes exactly as before.
+          ...(e.deconstruct ? [e.deconstruct.remaining.toFixed(2)] : []),
           e.suppression.toFixed(2),
           // Repair progress now depends on how recently a structure was hit, so
           // the hash has to cover it for save/load comparisons to be faithful.
@@ -7464,11 +8645,23 @@ export class Game {
       );
     }
     for (const pr of [...this.state.projectiles].sort((a, b) => a.id - b.id)) {
-      parts.push(`j${pr.id}:${pr.x.toFixed(1)}:${pr.z.toFixed(1)}:${pr.targetId}`);
+      // Only an off-map strategic round carries a family; an ordinary shell
+      // hashes exactly as it did before this layer existed, so every recorded
+      // combat baseline keeps its meaning.
+      parts.push(
+        `j${pr.id}:${pr.x.toFixed(1)}:${pr.z.toFixed(1)}:${pr.targetId}${
+          pr.strategic ? `:${pr.strategic.family}` : ''
+        }`,
+      );
     }
     for (const cloud of this.state.smoke) {
       parts.push(`k${cloud.id}:${cloud.x.toFixed(1)}:${cloud.z.toFixed(1)}:${cloud.radius}:${cloud.expiresTick}`);
     }
+    // Mission state hashes through its own canonical form, so the digest and the
+    // save file cannot disagree about what the mission contains. A skirmish
+    // contributes nothing at all, which keeps every pre-mission fingerprint
+    // (and the Phase 2A.8 path-equivalence baselines) byte-identical.
+    if (this.mission) parts.push(`m=${this.mission.hash()}`);
     return parts.join('|');
   }
 

@@ -2,6 +2,7 @@ import devClientSource from './devRoomClient.js?raw';
 import assemblerClientSource from 'virtual:mca-assembler';
 import type { MatchRoomEnv } from './roomDurableObject';
 import { originPermitted } from './originPolicy';
+import { withVerifiedIdentity } from './roomIdentity';
 
 export { MatchRoomDurableObject } from './roomDurableObject';
 export { CapacityCoordinatorDurableObject } from './reservationDurableObject';
@@ -70,7 +71,7 @@ function corsHeaders(origin: string): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-MCA-Identity-Ticket',
     'Access-Control-Max-Age': '600',
     Vary: 'Origin',
     // The security headers the room sends assume same-origin reads; a grant we
@@ -277,9 +278,21 @@ export default {
       return json({ ok: false, code: 'method-not-allowed' }, 405);
     }
 
+    // Identity is verified at the edge, before a room action sees the request.
+    // The Durable Object trusts only the header this code sets, and any
+    // client-supplied copy of that header is always stripped.
+    let effective = request;
+    if (action === 'open' || action === 'join') {
+      const identity = await withVerifiedIdentity(request, env.MCA_IDENTITY_TICKET_SECRET);
+      if (!identity.ok) {
+        return json({ ok: false, code: identity.code, message: identity.message }, identity.status);
+      }
+      effective = identity.request;
+    }
+
     let response: Response;
     try {
-      response = await forward(request, env, roomId, action);
+      response = await forward(effective, env, roomId, action);
     } catch {
       response = json(
         { ok: false, code: 'room-unavailable', message: 'Room service is unavailable.' },

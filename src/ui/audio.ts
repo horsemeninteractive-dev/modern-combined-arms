@@ -1,5 +1,7 @@
 import { Announcer, type AnnouncementId } from './announcer';
-import { MatchMusic } from './matchMusic';
+import type { NarratorId } from '../data/narrators';
+import { MAIN_THEME_SRC } from './musicCatalogue';
+import { MatchMusic, type MatchMusicSnapshot } from './matchMusic';
 import { UnitVoice, type UnitVoiceCue } from './unitVoice';
 
 /**
@@ -31,8 +33,12 @@ export class AudioEngine {
   private matchElement: HTMLAudioElement | null = null;
   private matchHandlers: { onEnded: () => void; onError: () => void } | null = null;
   private matchFade: number | null = null;
+  /** Brief fade-out before a manual track change swaps the source. */
+  private matchTransition: ReturnType<typeof setTimeout> | null = null;
   private matchDucked = false;
   private matchRetryHandler: (() => void) | null = null;
+  /** A menu theme was faded out for an in-menu audition and should return. */
+  private menuPausedForMatch = false;
   private readonly matchMusic: MatchMusic;
   readonly announcer: Announcer;
   readonly unitBarks: UnitVoice;
@@ -54,8 +60,10 @@ export class AudioEngine {
       stop: () => this.stopUnitVoiceElement(),
     });
     this.matchMusic = new MatchMusic({
-      playTrack: (src, handlers) => this.playMatchTrack(src, handlers),
+      playTrack: (src, handlers, options) => this.playMatchTrack(src, handlers, options),
       stop: () => this.stopMatchTrack(),
+      pause: () => this.pauseMatchTrack(),
+      resume: () => this.resumeMatchTrack(),
     });
   }
 
@@ -73,6 +81,40 @@ export class AudioEngine {
       clearInterval(this.matchFade);
       this.matchFade = null;
     }
+    if (this.matchTransition !== null) {
+      clearTimeout(this.matchTransition);
+      this.matchTransition = null;
+    }
+  }
+
+  /** Apply a persisted battle playlist without restarting an eligible track. */
+  setMusicPlaylist(preferences: unknown): void {
+    this.matchMusic.setPreferences(preferences);
+  }
+
+  get matchMusicState(): MatchMusicSnapshot {
+    return this.matchMusic.snapshot;
+  }
+
+  onMatchMusicChange(listener: () => void): () => void {
+    return this.matchMusic.onStateChange(listener);
+  }
+
+  /** Audition a track from the settings editor. */
+  previewMatchTrack(id: string): void {
+    this.matchMusic.preview(id);
+  }
+
+  nextMatchTrack(): void {
+    this.matchMusic.next();
+  }
+
+  previousMatchTrack(): void {
+    this.matchMusic.previous();
+  }
+
+  toggleMatchPause(): void {
+    this.matchMusic.togglePause();
   }
 
   get currentMatchTrack(): string | null {
@@ -187,8 +229,9 @@ export class AudioEngine {
     this.applyMatchVolume();
     const el = this.music;
     if (!el) return;
-    // Turning the slider back up after silence should bring the theme back.
-    if (this.musicWanted && el.paused && this.musicVolume > 0.001) {
+    // Turning the slider back up after silence should bring the theme back,
+    // unless a battle/audition is deliberately holding it down.
+    if (this.musicWanted && !this.menuPausedForMatch && el.paused && this.musicVolume > 0.001) {
       this.playMenuMusic();
     } else if (!el.paused) {
       this.fadeMusic(this.musicVolume, 0.25);
@@ -197,7 +240,7 @@ export class AudioEngine {
 
   private createMusic(): HTMLAudioElement | null {
     if (typeof Audio === 'undefined') return null;
-    const el = new Audio('/audio/menu-theme.mp3');
+    const el = new Audio(MAIN_THEME_SRC);
     el.loop = true;
     el.preload = 'none';
     el.volume = 0;
@@ -278,9 +321,21 @@ export class AudioEngine {
       this.fadeMusic(0, 0.15);
     } else {
       this.syncVoiceVolume();
-      if (this.musicWanted) this.playMenuMusic();
+      if (this.musicWanted && !this.menuPausedForMatch) this.playMenuMusic();
     }
     this.applyMatchVolume();
+  }
+
+  /**
+   * Report as the given faction narrator. Presentation only: the choice is
+   * stamped onto the announcer's asset directory and never reaches the game.
+   */
+  setNarrator(id: NarratorId): void {
+    this.announcer.setNarrator(id);
+  }
+
+  get narratorId(): NarratorId {
+    return this.announcer.narratorId;
   }
 
   /** The announcer respects master mute/volume and its own persisted volume. */
@@ -473,19 +528,53 @@ export class AudioEngine {
       if (this.matchFade !== null) clearInterval(this.matchFade);
       this.matchFade = null;
     }, 40);
-  }
-
-  private playMatchTrack(
+  }  private playMatchTrack(
     src: string,
     handlers: { onEnded: () => void; onError: () => void },
+    options: { fade?: boolean } = {},
   ): void {
     if (typeof Audio === 'undefined') {
       handlers.onError();
       return;
     }
     const el = this.matchElement ?? (this.matchElement = new Audio());
+
     this.clearMatchRetry();
     this.matchHandlers = handlers;
+    if (this.matchTransition !== null) {
+      clearTimeout(this.matchTransition);
+      this.matchTransition = null;
+    }
+    // A preview opened from the menu deck shares this channel. Fade the menu
+    // theme out first; stopMatchTrack brings it back when the audition ends.
+    this.pauseMenuForMatch();
+
+    const canFade = options.fade && !!el.src && !el.paused && el.volume > 0.001;
+    if (!canFade) {
+      this.startMatchSource(el, src, handlers, false);
+      return;
+    }
+
+    // Short fade through silence before the source swap. The controller has
+    // already changed its now-playing row; the audio follows 180 ms later.
+    el.onended = null;
+    el.onerror = null;
+    this.matchHandlers = null;
+    this.fadeMatchVolume(0, 0.18);
+    this.matchTransition = setTimeout(() => {
+      this.matchTransition = null;
+      if (!this.matchElement || this.matchElement !== el) return;
+      this.matchHandlers = handlers;
+      this.startMatchSource(el, src, handlers, true);
+    }, 200);
+  }
+
+  private startMatchSource(
+    el: HTMLAudioElement,
+    src: string,
+    handlers: { onEnded: () => void; onError: () => void },
+    fadeIn: boolean,
+  ): void {
     if (this.matchFade !== null) {
       clearInterval(this.matchFade);
       this.matchFade = null;
@@ -496,7 +585,7 @@ export class AudioEngine {
     el.loop = false;
     el.preload = 'auto';
     el.src = src;
-    el.volume = this.matchVolume();
+    el.volume = fadeIn ? 0 : this.matchVolume();
     el.onended = (): void => {
       if (this.matchElement !== el || this.matchHandlers !== handlers) return;
       this.matchHandlers = null;
@@ -510,19 +599,27 @@ export class AudioEngine {
     try {
       const started = el.play();
       if (started && typeof started.catch === 'function') {
-        started.catch((error: unknown) => {
-          if (this.matchHandlers !== handlers) return;
-          const name = (error as { name?: string } | null)?.name;
-          // A policy rejection is recoverable after a gesture and is not a bad
-          // file. Do not skip the track or retry it in a loop.
-          if (name === 'NotAllowedError') {
-            this.armMatchRetry();
-            return;
-          }
-          if (name === 'AbortError') return;
-          this.matchHandlers = null;
-          handlers.onError();
-        });
+        started
+          .then(() => {
+            if (fadeIn && this.matchHandlers === handlers) {
+              this.fadeMatchVolume(this.matchVolume(), 0.4);
+            }
+          })
+          .catch((error: unknown) => {
+            if (this.matchHandlers !== handlers) return;
+            const name = (error as { name?: string } | null)?.name;
+            // A policy rejection is recoverable after a gesture and is not a bad
+            // file. Do not skip the track or retry it in a loop.
+            if (name === 'NotAllowedError') {
+              this.armMatchRetry();
+              return;
+            }
+            if (name === 'AbortError') return;
+            this.matchHandlers = null;
+            handlers.onError();
+          });
+      } else if (fadeIn) {
+        this.fadeMatchVolume(this.matchVolume(), 0.4);
       }
     } catch {
       this.matchHandlers = null;
@@ -530,15 +627,60 @@ export class AudioEngine {
     }
   }
 
+  private pauseMenuForMatch(): void {
+    if (!this.musicWanted || !this.music || this.music.paused) return;
+    this.menuPausedForMatch = true;
+    this.fadeMusic(0, 0.3);
+  }
+
+  private pauseMatchTrack(): void {
+    this.clearMatchRetry();
+    this.matchElement?.pause();
+  }
+
+  private resumeMatchTrack(): boolean {
+    const el = this.matchElement;
+    const handlers = this.matchHandlers;
+    if (!el || !handlers) return false;
+    this.clearMatchRetry();
+    try {
+      const started = el.play();
+      if (started && typeof started.catch === 'function') {
+        started.catch((error: unknown) => {
+          if (this.matchHandlers !== handlers) return;
+          const name = (error as { name?: string } | null)?.name;
+          if (name === 'NotAllowedError') this.armMatchRetry();
+          else if (name !== 'AbortError') {
+            this.matchHandlers = null;
+            handlers.onError();
+          }
+        });
+      }
+    } catch {
+      this.matchHandlers = null;
+      handlers.onError();
+    }
+    return true;
+  }
+
   private stopMatchTrack(): void {
     const el = this.matchElement;
     this.matchHandlers = null;
-    if (!el) return;
-    el.onended = null;
-    el.onerror = null;
-    el.pause();
-    el.removeAttribute('src');
-    el.load();
+    if (this.matchTransition !== null) {
+      clearTimeout(this.matchTransition);
+      this.matchTransition = null;
+    }
+    if (el) {
+      el.onended = null;
+      el.onerror = null;
+      el.pause();
+      el.removeAttribute('src');
+      el.load();
+    }
+    if (this.menuPausedForMatch) {
+      this.menuPausedForMatch = false;
+      if (this.musicWanted) this.playMenuMusic();
+    }
   }
 
   private armMatchRetry(): void {
@@ -763,6 +905,9 @@ export class AudioEngine {
     if (this.musicFade !== null) clearInterval(this.musicFade);
     this.musicFade = null;
     this.music = null;
+    this.clearMatchRetry();
+    this.matchDucked = false;
+    this.stopMatchTrack();
     this.announcer.reset();
     this.stopVoice();
     this.unitBarks.reset();

@@ -1,6 +1,6 @@
 import { Renderer } from './render/renderer';
 import { Game } from './sim/game';
-import { TICK_MS, TILE_SIZE } from './sim/constants';
+import { TICK_MS, TICK_RATE, TILE_SIZE } from './sim/constants';
 import { BUILDINGS } from './data/buildings';
 import { techDef } from './data/research';
 import { UNITS } from './data/units';
@@ -32,15 +32,55 @@ import {
   isMissionCleared,
   isMissionUnlocked,
   missionById,
-  nextMissionId,
   parseCampaignProgress,
-  recordCampaignVictory,
-  rememberCampaignSelection,
   resumeMissionId,
   type CampaignDef,
   type CampaignMission,
   type CampaignProgress,
 } from './data/campaign';
+import {
+  acceptCampaignResult,
+  buildCampaignScenario,
+  CampaignStateError,
+  campaignProgressOf,
+  campaignResultOutlook,
+  campaignScenarioDeployments,
+  createCampaignState,
+  emptyCampaignSave,
+  launchCampaignMission,
+  migrateLegacyCampaignProgress,
+  normaliseCommanderIdentity,
+  parseCampaignSave,
+  retryCampaignMission,
+  serializeCampaignSave,
+  submitCampaignResult,
+  validateCampaignDefinition,
+  validateCampaignState,
+  type CampaignOutlook,
+  type CampaignPendingResult,
+  type CampaignSaveDoc,
+  type CampaignState,
+  type CommanderIdentity,
+  type CommanderPronouns,
+} from './campaign';
+import type {
+  MissionCinematicContext,
+  MissionCinematicDoc,
+  MissionResult,
+} from './mission/types';
+import type { MissionSection } from './mission/authoring';
+import { missionDebriefMarkup } from './ui/missionDebrief';
+import {
+  CinematicPlayer,
+  cinematicPausesSimulation,
+  localiseCinematic,
+} from './ui/cinematics';
+import { CinematicOverlay } from './ui/cinematicOverlay';
+import {
+  briefingObjectiveListMarkup,
+  briefingText,
+  missionBriefingMarkup,
+} from './ui/missionBriefing';
 import {
   cloneScenario,
   canLaunch,
@@ -51,11 +91,25 @@ import type { AIDifficulty, Command, Entity, Stance, VictoryState } from './sim/
 import type { SaveData } from './sim/save';
 import { AudioEngine } from './ui/audio';
 import { combatMix } from './ui/audioSpatial';
+import {
+  defaultMusicPlaylist,
+  moveMusicTrack,
+  normaliseMusicPlaylist,
+  restoreDefaultMusicPlaylist,
+  setMusicRepeat,
+  setMusicShuffle,
+  setMusicTrackEnabled,
+  type MusicPlaylistPreferences,
+  type MusicRepeatMode,
+} from './ui/musicPlaylist';
+import { musicPanelMarkup, syncMusicPanel } from './ui/musicSettings';
 import { unitVoiceForEvent } from './ui/unitVoice';
 import { eventVisibleToLocal } from './render/combatFx';
 import { announcementForEvent } from './ui/announcer';
+import { narratorForFaction } from './data/narrators';
 import { HUD } from './ui/hud';
 import { objectiveProgress } from './ui/objectiveBrief';
+import { missionObjectiveMarkup, missionObjectiveView } from './ui/missionObjectiveView';
 import { InputController } from './ui/input';
 import { Editor } from './ui/editor';
 import { Overlay } from './ui/overlay';
@@ -85,6 +139,8 @@ import {
 import { pickTerrain, terrainVisualHeight, type TerrainHit } from './render/terrainSurface';
 import { constructionGridVisible } from './render/gridVisibility';
 import { contextOrderFor } from './ui/orderIntent';
+import { SUPERWEAPON_TARGET_LABEL } from './ui/superweaponView';
+import type { SuperweaponStatus } from './sim/superweapons';
 import { briefLabelPosition, briefMapLabels, drawBriefMap } from './ui/mapPreview';
 import { flagNationForFaction, flagTextureUrl } from './render/flags';
 import { needsLandscape } from './ui/orientation';
@@ -95,7 +151,13 @@ import { buildLobbyScenario, validateLobbyConfig } from './multiplayer/lobbyConf
 import { NetworkBattle } from './multiplayer/networkBattle';
 import { enterFullscreen, isFullscreen, toggleFullscreen } from './ui/fullscreen';
 import { MenuAttractMatch } from './ui/menuAttract';
-import type { BattleCursor } from './ui/cursors';
+import { AccountPanel } from './ui/accountPanel';
+import { HttpAccountApi, takeAuthOutcome } from './accounts/client';
+import { ensureGuestProfile } from './accounts/guest';
+import { CareerService } from './accounts/careerService';
+import type { CareerMatchInput } from './accounts/career';
+import { endCareerMarkup, type EndCareerState } from './ui/careerView';
+import { CursorLayer, type AppCursor } from './ui/cursors';
 import { addOrderGhost, type OrderGhost, type OrderGhostKind } from './ui/orderGhosts';
 import { TutorialDirector } from './ui/tutorial';
 import {
@@ -112,12 +174,16 @@ import {
   normaliseLightBloom,
   nextIdleIndex,
   normaliseRenderScale,
+  normaliseShadowDetail,
   normaliseUiScale,
   presetNightLights,
+  SHADOW_DETAILS,
+  SHADOW_DETAIL_LABELS,
   UI_SCALE_MAX,
   UI_SCALE_MIN,
   type EscBehavior,
   type GraphicsQuality,
+  type ShadowDetail,
 } from './settings';
 
 import {
@@ -134,9 +200,10 @@ export type MenuView =
   | 'campaign'
   | 'skirmish'
   | 'editor'
-  | 'settings';
+  | 'settings'
+  | 'account';
 /** Sections of the settings sheet; only one panel is visible at a time. */
-export type SettingsTab = 'display' | 'input' | 'audio';
+export type SettingsTab = 'display' | 'input' | 'audio' | 'music';
 
 export type CommandMode =
   | 'none'
@@ -147,7 +214,8 @@ export type CommandMode =
   | 'repair'
   | 'garrison'
   | 'box'
-  | 'place';
+  | 'place'
+  | 'superweapon';
 
 export interface CampaignRun {
   campaign: CampaignDef;
@@ -156,10 +224,21 @@ export interface CampaignRun {
   next: CampaignMission | null;
 }
 
+/** What the end-screen campaign card may offer. */
+export interface CampaignDebriefInfo {
+  missionName: string;
+  nextMissionName: string | null;
+  /** True only after the final result has been accepted. */
+  campaignComplete: boolean;
+  /** True when this is the last operation, accepted or not. */
+  finalOperation: boolean;
+  awaitingAcceptance: boolean;
+}
+
 export interface AppSettings {
   sfx: number;
   ambient: number;
-  /** Menu theme volume. The track streams from /audio/menu-theme.mp3. */
+  /** Menu theme volume. The track streams from /audio/music/menu-theme.mp3. */
   music: number;
   /** Strategic announcer voice volume. */
   voice: number;
@@ -197,24 +276,41 @@ export interface AppSettings {
   uiScale: number;
   /** Render preset; controls render scale, particles, shadows and water. */
   graphicsQuality: GraphicsQuality;
+  /** Shadow fidelity, independent of the preset after the player picks one. */
+  shadowDetail: ShadowDetail;
   /** Fraction of the device pixel ratio (0.5–1), capped at 2x overall. */
   renderScale: number;
   /** Live frame-rate badge in the battle HUD. */
   fpsReadout: boolean;
   /** What Escape does outside a command mode: pause the battle or open a menu. */
   escBehavior: EscBehavior;
+  /**
+   * Battle soundtrack selection, order and playback options. The menu theme is
+   * separate and is not represented here.
+   */
+  musicPlaylist: MusicPlaylistPreferences;
   /** Team-coloured outline where a unit is hidden behind a structure. */
   silhouettes: boolean;
   /** Building and vehicle lights after dark; presentation only. */
   nightLights: boolean;
   /** Additive light intensity multiplier; never touches detection. */
   lightBloom: number;
+  /**
+   * Whether a new skirmish permits national strategic superweapons. Both sides
+   * read the same setting, so the match is symmetric whether it is on or off.
+   */
+  superweapons: boolean;
   /** Start hour for a new skirmish, 0..24. */
   startHour: number;
   /** Weather a new skirmish opens in; the simulation reads the profile. */
   weather: WeatherKind;
   /** Real minutes per in-game day; 0 freezes the clock at the start hour. */
   dayLengthMinutes: number;
+  /**
+   * Play authored mission cinematics. Off is the skip-all preference: campaign
+   * progression and mission outcomes are untouched, only the scenes are.
+   */
+  cinematics: boolean;
 }
 
 /** Skirmish team colours: the alliance defaults, then four distinct picks. */
@@ -239,7 +335,9 @@ export interface DragBox {
 
 const SETTINGS_KEY = 'iron-tide.settings.v1';
 const SAVE_PREFIX = 'iron-tide.save.v1.';
+/** Pre-S4 deck progress, read once and migrated into the campaign save. */
 const CAMPAIGN_PROGRESS_KEY = 'iron-tide.campaign.v1';
+const CAMPAIGN_SAVE_KEY = 'iron-tide.campaign.v2';
 /** The intro sting plays once per browser session, so reloads land in the menu. */
 
 export const SAVE_SLOTS = [1, 2, 3];
@@ -259,10 +357,30 @@ const MENU_VIEWS: MenuView[] = [
   'skirmish',
   'editor',
   'settings',
+  'account',
 ];
 
 /** Seconds a bot battle runs before the menu cuts to the next theatre. */
 const ATTRACT_MATCH_SECONDS = 68;
+
+/**
+ * The menu backdrop runs its own sky. A compressed day cycle means the battle
+ * behind the deck visibly moves through dawn, day, dusk and night while the
+ * player sits in the menus, and each cut to the next theatre opens under a
+ * different weather front. Both are authored scenario settings on a throwaway
+ * bot battle, so nothing about a real match is bent: a skirmish or campaign
+ * operation keeps the time of day and weather it was written with.
+ */
+const ATTRACT_DAY_MINUTES = 6;
+const ATTRACT_START_HOURS = [5.5, 8.5, 12, 16, 19.5, 22] as const;
+const ATTRACT_WEATHER: ReadonlyArray<Scenario['settings']['weather']> = [
+  'clear',
+  'overcast',
+  'rain',
+  'fog',
+  'storm',
+  'clear',
+];
 
 function isMenuView(value: unknown): value is MenuView {
   return MENU_VIEWS.includes(value as MenuView);
@@ -272,6 +390,8 @@ export class App {
   readonly renderer: Renderer;
   readonly audio = new AudioEngine();
   readonly overlay: Overlay;
+  /** Full-window pointer layer, above every screen and modal. */
+  readonly cursorLayer: CursorLayer;
   readonly hud: HUD;
   readonly input: InputController;
   readonly editor: Editor;
@@ -298,11 +418,12 @@ export class App {
   dragBox: DragBox = { active: false, x0: 0, y0: 0, x1: 0, y1: 0 };
   pointer = { x: 0, y: 0, over: false };
   /**
-   * The drawn pointer for the battlefield. `visible` is false outside a battle,
-   * while the pointer is over a HUD panel, or when the player uses native
-   * cursors; the overlay only paints it when true.
+   * The drawn pointer for the whole app. Its name follows the armed order
+   * while the pointer is over the battlefield and switches to the action or
+   * blocked pointer over a HUD or menu control. `visible` is false when the
+   * player uses native cursors, over a text field, or outside the window.
    */
-  pointerCursor = { name: 'select' as BattleCursor, visible: false };
+  pointerCursor = { name: 'select' as AppCursor, visible: false };
   /** Fading impressions left by right-click move and attack orders. */
   orderGhosts: OrderGhost[] = [];
   padCursor = { x: 0, y: 0, active: false };
@@ -341,15 +462,25 @@ export class App {
   /** One-shot downlink fault played when the deck changes. */
   private glitchTimer = 0;
   private menuHandoffStarted = false;
+  /** Account chip in the menu header; null until the menu is installed. */
+  private accountPanel: AccountPanel | null = null;
+  private accountApi: HttpAccountApi | null = null;
+  /** Career reads/writes; a guest and an account share this interface. */
+  private careerService: CareerService | null = null;
   private briefObserver: ResizeObserver | null = null;
   /** Built-in theatres, generated once and shared by the backdrop and thumbnails. */
   private mapCache = new Map<string, Scenario>();
   /** Campaign selection is separate from the skirmish map and nation settings. */
   private campaignId = CAMPAIGNS[0].id;
   private campaignMissionId = CAMPAIGNS[0].missions[0].id;
-  /** Operation clears survive reloads; campaign battles remain standalone. */
+  /**
+   * The deck's view of accepted operations. Derived from `campaignSave`, never
+   * written to storage on its own, so progression has one source of truth.
+   */
   private campaignProgress: CampaignProgress = emptyCampaignProgress();
-  private campaignCache: { campaignId: string; missionId: string; scenario: Scenario } | null = null;
+  /** Authoritative campaign runs and the deck's selection. */
+  private campaignSave: CampaignSaveDoc = emptyCampaignSave();
+  private campaignCache: { key: string; scenario: Scenario } | null = null;
   private campaignBriefObserver: ResizeObserver | null = null;
   /** Set only when this gate paused the battle, so a manual pause survives. */
   private orientationPaused = false;
@@ -358,6 +489,27 @@ export class App {
   /** The sting belongs to the launch, not to the menu: it plays once per page. */
   private introPlayed = false;
   private victoryShown: VictoryState | 'none' = 'none';
+  /**
+   * A mission test run owns a disposable scenario copy. It is never campaign
+   * state and is never written to a battle or campaign save.
+   */
+  private missionTestScenario: Scenario | null = null;
+  /** Workbench section the author launched the test from. */
+  private missionTestSection: MissionSection | null = null;
+  /**
+   * Presentation-only cinematic playback. It is never serialised into a battle
+   * save or a campaign save: recovering a save lands at the briefing or the end
+   * screen, not halfway through a camera move.
+   */
+  private cinematic: CinematicPlayer | null = null;
+  private cinematicContext: MissionCinematicContext | null = null;
+  /** Set while the Forge is previewing a scene, so the backdrop is released. */
+  private cinematicPreview = false;
+  private readonly cinematicOverlay: CinematicOverlay;
+  /** In-mission sequences already shown in this battle run. */
+  private readonly cinematicPlayed = new Set<string>();
+  /** Background surfaces this scene made inert, so they can be restored. */
+  private readonly cinematicBackground = new Set<HTMLElement>();
   private fpsSamples: number[] = [];
   /** Build key whose changelog notes this device has acknowledged. */
   private changelogAck: string | null = null;
@@ -387,14 +539,27 @@ export class App {
   private networkLoadingShownAt = 0;
   private networkLoadingTimer: number | null = null;
 
-  constructor(canvas: HTMLCanvasElement, overlayCanvas: HTMLCanvasElement) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    overlayCanvas: HTMLCanvasElement,
+    cursorCanvas: HTMLCanvasElement,
+  ) {
     this.renderer = new Renderer(canvas);
     this.overlay = new Overlay(overlayCanvas);
+    this.cursorLayer = new CursorLayer(cursorCanvas);
     this.settings = this.loadSettings();
     this.applySettings();
-    this.campaignProgress = this.loadCampaignProgress();
+    // Keep an open settings sheet in step with automatic track changes and
+    // previews without polling or rebuilding the panel.
+    this.audio.onMatchMusicChange(() => this.syncMusicPlaybackUi());
+    this.campaignSave = this.loadCampaignSave();
     this.restoreCampaignSelection();
     this.hud = new HUD(this);
+    this.cinematicOverlay = new CinematicOverlay();
+    this.cinematicOverlay.bind({
+      onSkip: () => this.skipCinematic(),
+      onSkipAll: () => this.skipAllCinematics(),
+    });
     this.renderer.onContextLost = () => this.handleGraphicsContextLost();
     this.renderer.onContextRestored = () => this.handleGraphicsContextRestored();
     this.input = new InputController(this, canvas);
@@ -425,6 +590,7 @@ export class App {
       music: 0.45,
       voice: 0.8,
       unitVoice: 0.7,
+      musicPlaylist: defaultMusicPlaylist(),
       effects: true,
       shake: true,
       fogVisual: true,
@@ -440,6 +606,7 @@ export class App {
       opponentColor: TEAM_COLORS[1].hex,
       uiScale: 1,
       graphicsQuality: 'high',
+      shadowDetail: 'detailed',
       renderScale: 1,
       fpsReadout: false,
       escBehavior: 'pause',
@@ -448,9 +615,11 @@ export class App {
       lightBloom: 1,
       startHour: 18,
       weather: 'clear',
+      superweapons: true,
       // One in-game day is four real hours, so a skirmish lives inside a phase
       // and only a long battle actually crosses into the dark.
       dayLengthMinutes: 240,
+      cinematics: true,
     };
     try {
       const raw = localStorage.getItem(SETTINGS_KEY);
@@ -492,6 +661,13 @@ export class App {
         // the documented default instead of inheriting an unsafe value.
         uiScale: normaliseUiScale(parsed.uiScale ?? defaults.uiScale),
         graphicsQuality: normaliseGraphicsQuality(parsed.graphicsQuality),
+        // A settings file written before shadow levels existed takes the
+        // preset's recommendation: low stays flat, medium keeps basic and high
+        // gets the full realtime map.
+        shadowDetail: normaliseShadowDetail(
+          parsed.shadowDetail ??
+            graphicsPreset(normaliseGraphicsQuality(parsed.graphicsQuality)).shadowDetail,
+        ),
         // A saved game with a quality but no explicit density (or any file
         // written before this setting existed) starts from the preset value.
         renderScale: normaliseRenderScale(
@@ -500,6 +676,10 @@ export class App {
         ),
         edgePanWidth: normaliseEdgePanWidth(parsed.edgePanWidth ?? defaults.edgePanWidth),
         edgePanSpeed: normaliseEdgePanSpeed(parsed.edgePanSpeed ?? defaults.edgePanSpeed),
+        // A settings file written before playlists existed gets the authored
+        // default. An existing custom selection is preserved, and newly shipped
+        // catalogue tracks are appended but not silently enabled.
+        musicPlaylist: normaliseMusicPlaylist(parsed.musicPlaylist ?? defaults.musicPlaylist),
         customCursors:
           typeof parsed.customCursors === 'boolean'
             ? parsed.customCursors
@@ -514,6 +694,10 @@ export class App {
         // rather than a rejected settings file.
         weather: normaliseWeather(parsed.weather),
         dayLengthMinutes: normaliseDayLength(parsed.dayLengthMinutes, defaults.dayLengthMinutes),
+        cinematics: parsed.cinematics !== false,
+        // A settings file written before this rule existed permits strategic
+        // superweapons, which is what a default match already meant.
+        superweapons: parsed.superweapons !== false,
       };
     } catch {
       return defaults;
@@ -528,7 +712,7 @@ export class App {
     // The explicit render scale refines the preset without changing its name.
     const preset = graphicsPreset(this.settings.graphicsQuality);
     this.renderer.settings.renderScale = normaliseRenderScale(this.settings.renderScale);
-    this.renderer.settings.shadows = preset.shadows;
+    this.renderer.settings.shadowDetail = normaliseShadowDetail(this.settings.shadowDetail);
     this.renderer.settings.waterDetail = preset.waterDetail;
     this.renderer.settings.silhouettes = this.settings.silhouettes;
     this.renderer.settings.nightLights = this.settings.nightLights;
@@ -540,11 +724,13 @@ export class App {
     // next window resize to take effect. A live battle also re-frames its
     // camera because the rail and console just changed size.
     this.renderer.resize();
+    document.documentElement.classList.toggle('custom-cursors', this.settings.customCursors);
     if (this.screen === 'battle' && this.hud) this.resize();
     this.audio.setVolumes(1, this.settings.sfx, this.settings.ambient);
     this.audio.setMusicVolume(this.settings.music);
     this.audio.setVoiceVolume(this.settings.voice);
     this.audio.setUnitVoiceVolume(this.settings.unitVoice);
+    this.audio.setMusicPlaylist(this.settings.musicPlaylist);
   }
 
   saveSettings(): void {
@@ -575,7 +761,7 @@ export class App {
       });
     };
     on('btn-deploy', () => void this.startBattle(this.deployScenario()));
-    on('btn-campaign-deploy', () => void this.startBattle(this.campaignScenario()));
+    on('btn-campaign-deploy', () => this.deployCampaignMission());
     on('btn-tutorial', () => void this.startBattle(createTutorialScenario()));
     on('btn-editor', () => this.openEditor());
     on('btn-editor-autosave', () => this.openEditorAutosave());
@@ -618,6 +804,15 @@ export class App {
         this.applyDifficultyUi();
       });
     }
+    document.querySelectorAll<HTMLButtonElement>('[data-superweapons]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.audio.init();
+        this.audio.play('ui');
+        this.settings.superweapons = btn.dataset.superweapons !== 'off';
+        this.saveSettings();
+        this.applySuperweaponUi();
+      });
+    });
     document.querySelectorAll<HTMLButtonElement>('[data-start-time]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const hour = Number(btn.dataset.startTime);
@@ -646,10 +841,47 @@ export class App {
     this.applyDifficultyUi();
     this.applyTimeOfDayUi();
     this.applyWeatherUi();
+    this.applySuperweaponUi();
     this.showMenuView(this.menuView);
     this.renderMenuSettings();
     this.refreshEditorAutosaveButton();
+    this.installAccount();
     this.installIntro();
+  }
+
+  /**
+   * The account chip in the menu header.
+   *
+   * The guest profile is created here rather than at boot so opening the game
+   * writes one small local record and nothing else: no account, no request. A
+   * blocked localStorage still leaves a usable session-only guest identity.
+   */
+  private installAccount(): void {
+    const storage = this.localStore();
+    const guest = storage ? ensureGuestProfile(storage) : null;
+    this.accountApi = new HttpAccountApi();
+    this.careerService = new CareerService(this.accountApi, storage);
+    this.accountPanel = new AccountPanel({
+      api: this.accountApi,
+      guest,
+      storage,
+      career: this.careerService,
+      notify: (text, level) => this.notify(text, level),
+      // The chip is a route like Settings: clicking it opens the account screen,
+      // and clicking it while that screen is open returns to the main menu.
+      navigate: (view) => {
+        if (this.screen !== 'menu') return;
+        this.showMenuView(view && this.menuView === view ? null : view);
+        this.glitchSwitch();
+      },
+    });
+    this.accountPanel.mount();
+    // A sign-in redirect lands back on the menu with `?auth=…`; consuming it
+    // here keeps the address bar clean and reports the outcome in one place.
+    const outcome = takeAuthOutcome(window.location, window.history);
+    if (outcome) {
+      void this.accountPanel.handleAuthOutcome(outcome.outcome, outcome.code);
+    }
   }
 
   /* ------------------------------------------------------------------ */
@@ -907,6 +1139,17 @@ export class App {
       this.multiplayerPanel = new MultiplayerPanel(host, {
         origin: this.multiplayerOrigin(),
         onMatchStart: (client, view) => this.startNetworkBattle(client, view),
+        // A signed-in player's seat is verified by the room Worker; a guest, or
+        // an account service that cannot mint a ticket, simply opens a guest
+        // seat. Matchmaking never waits on identity.
+        identityTicket: async () => {
+          if (!this.accountApi) return null;
+          try {
+            return (await this.accountApi.multiplayerTicket()).ticket;
+          } catch {
+            return null;
+          }
+        },
       });
     }
     return this.multiplayerPanel;
@@ -929,7 +1172,9 @@ export class App {
           ? 'singleplayer'
           : view === 'campaign'
             ? 'campaign'
-            : 'top';
+            : view === 'account'
+              ? 'account'
+              : 'top';
     menu.dataset.level = level;
     menu.querySelectorAll<HTMLElement>('[data-menu-level]').forEach((entry) => {
       entry.hidden = entry.dataset.menuLevel !== level;
@@ -942,6 +1187,9 @@ export class App {
       else btn.removeAttribute('aria-current');
     });
     if (view === 'settings') this.renderMenuSettings();
+    // The account screen reads the session and career on entry, the same way
+    // Settings rebuilds its rows: the deck may be opened long after sign-in.
+    if (view === 'account') this.accountPanel?.show();
     if (view === 'multiplayer') this.ensureMultiplayerPanel()?.show();
     else this.multiplayerPanel?.hide();
     if (view === 'editor') this.refreshEditorAutosaveButton();
@@ -987,6 +1235,16 @@ export class App {
     // The ground behind the shell is a downlink: `.menu-mode` lets CSS tear it.
     this.setMenuMode(true);
     const scenario = cloneScenario(base);
+    // The backdrop is a bot skirmish, not a campaign attempt: its mission tree
+    // must not complete objectives or fire authored triggers behind the deck.
+    delete scenario.mission;
+    delete scenario.meta.campaign;
+    // The backdrop cycles its own conditions: a short in-game day so the light
+    // shifts during a cut, and a front that changes with each theatre.
+    scenario.settings.startHour =
+      ATTRACT_START_HOURS[this.attractIndex % ATTRACT_START_HOURS.length];
+    scenario.settings.dayLengthMinutes = ATTRACT_DAY_MINUTES;
+    scenario.settings.weather = ATTRACT_WEATHER[this.attractIndex % ATTRACT_WEATHER.length];
     const nations = playableNations();
     const friend = nations[this.attractIndex % nations.length];
     const enemy = nations[(this.attractIndex + 2) % nations.length];
@@ -1208,6 +1466,16 @@ export class App {
     });
   }
 
+  /** Two buttons, one match rule: enabled by default, remembered per player. */
+  private applySuperweaponUi(): void {
+    const on = this.settings.superweapons !== false;
+    document.querySelectorAll<HTMLButtonElement>('[data-superweapons]').forEach((btn) => {
+      const selected = (btn.dataset.superweapons === 'on') === on;
+      btn.classList.toggle('on', selected);
+      btn.setAttribute('aria-pressed', selected ? 'true' : 'false');
+    });
+  }
+
   /**
    * Weather picker: one button per authored profile.
    *
@@ -1301,6 +1569,10 @@ export class App {
     // Weather stacks with the clock rather than replacing it: the same dusk in
     // fog is a different battle from the same dusk in a storm.
     scenario.settings.weather = this.settings.weather;
+    // Strategic superweapons are a match rule, not a per-side advantage: both
+    // commanders read the same setting, and a match that turns them off keeps
+    // every other research and construction path exactly as it was.
+    scenario.settings.superweapons = this.settings.superweapons !== false;
     return scenario;
   }
 
@@ -1511,12 +1783,20 @@ export class App {
 
   /** Restore the deck exactly where the player left it, when still legal. */
   private restoreCampaignSelection(): void {
-    const selection = this.campaignProgress.lastSelection;
+    const selection = this.campaignSave.lastSelection;
     const selectedCampaign = selection
       ? CAMPAIGNS.find((campaign) => campaign.id === selection.campaignId)
       : undefined;
     if (selectedCampaign) this.campaignId = selectedCampaign.id;
     const campaign = selectedCampaign ?? this.campaignDef();
+    const state = this.campaignSave.runs[campaign.id];
+    if (state) {
+      // An authoritative run decides what is next; the stored selection is only
+      // the deck's memory of which campaign was open.
+      this.campaignMissionId = state.currentMissionId;
+      this.campaignProgress = campaignProgressOf(state, campaign);
+      return;
+    }
     const mission = selection
       ? campaign.missions.find((entry) => entry.id === selection.missionId)
       : undefined;
@@ -1524,41 +1804,64 @@ export class App {
       this.campaignMissionId = mission.id;
       return;
     }
-    // No usable selection (or an operation that has become locked): resume the
-    // first unfinished operation in the remembered campaign.
     this.campaignMissionId = resumeMissionId(this.campaignProgress, campaign);
   }
 
-  /** Write the current deck selection without touching the cleared set. */
+  /** The authoritative run for the campaign open in the deck, if it has begun. */
+  private campaignState(): CampaignState | null {
+    return this.campaignSave.runs[this.campaignId] ?? null;
+  }
+
+  /** Store a transition and refresh the deck's derived view of it. */
+  private setCampaignState(state: CampaignState): void {
+    this.campaignSave = {
+      ...this.campaignSave,
+      runs: { ...this.campaignSave.runs, [state.campaignId]: state },
+    };
+    this.campaignProgress = campaignProgressOf(state, campaignById(state.campaignId));
+    this.campaignMissionId = state.currentMissionId;
+    this.persistCampaignSelection();
+  }
+
+  /** Write the current deck selection; progression is owned by the run state. */
   private persistCampaignSelection(): void {
-    if (!isMissionUnlocked(this.campaignProgress, this.campaignDef(), this.campaignMissionId)) {
-      return;
-    }
-    const next = rememberCampaignSelection(
-      this.campaignProgress,
-      this.campaignId,
-      this.campaignMissionId,
-    );
-    if (next === this.campaignProgress) return;
-    this.campaignProgress = next;
-    this.saveCampaignProgress();
+    const campaign = this.campaignDef();
+    if (!campaign.missions.some((mission) => mission.id === this.campaignMissionId)) return;
+    this.campaignSave = {
+      ...this.campaignSave,
+      lastSelection: { campaignId: this.campaignId, missionId: this.campaignMissionId },
+    };
+    this.saveCampaignSave();
   }
 
-  private loadCampaignProgress(): CampaignProgress {
+  /**
+   * Read the campaign save, migrating the pre-S4 cleared set once.
+   *
+   * The old deck only knew which operations were cleared, so those become
+   * accepted legacy records. No objective outcome or veteran loss is invented.
+   */
+  private loadCampaignSave(): CampaignSaveDoc {
     try {
-      return parseCampaignProgress(
-        JSON.parse(localStorage.getItem(CAMPAIGN_PROGRESS_KEY) ?? 'null'),
+      const raw = localStorage.getItem(CAMPAIGN_SAVE_KEY);
+      if (raw) return parseCampaignSave(JSON.parse(raw), CAMPAIGNS);
+      const legacy = localStorage.getItem(CAMPAIGN_PROGRESS_KEY);
+      if (!legacy) return emptyCampaignSave();
+      const migrated = migrateLegacyCampaignProgress(
+        parseCampaignProgress(JSON.parse(legacy)),
+        CAMPAIGNS,
       );
+      localStorage.setItem(CAMPAIGN_SAVE_KEY, serializeCampaignSave(migrated));
+      return migrated;
     } catch {
-      // Private browsing can block storage; the campaign still progresses in
-      // memory for this session rather than preventing the menu from opening.
-      return emptyCampaignProgress();
+      // Private browsing or malformed storage must not stop the menu opening;
+      // the run still progresses in memory for this session.
+      return emptyCampaignSave();
     }
   }
 
-  private saveCampaignProgress(): void {
+  private saveCampaignSave(): void {
     try {
-      localStorage.setItem(CAMPAIGN_PROGRESS_KEY, JSON.stringify(this.campaignProgress));
+      localStorage.setItem(CAMPAIGN_SAVE_KEY, serializeCampaignSave(this.campaignSave));
     } catch {
       /* Progress remains available in memory. */
     }
@@ -1580,57 +1883,268 @@ export class App {
     };
   }
 
-  /** Continue from the victory card into the operation just unlocked. */
-  startNextCampaignMission(): void {
+  /**
+   * What the end screen may offer for a campaign operation.
+   *
+   * Progression is never advanced by the fact that a battle ended: the card
+   * offers accept or retry, and only acceptance changes the campaign.
+   */
+  campaignDebrief(): CampaignDebriefInfo | null {
     const run = this.campaignRun();
-    if (!run?.next) return;
-    if (!isMissionCleared(this.campaignProgress, run.campaign.id, run.mission.id)) return;
-    this.campaignId = run.campaign.id;
-    this.campaignMissionId = run.next.id;
-    this.campaignCache = null;
-    this.persistCampaignSelection();
-    void this.startBattle(this.campaignScenario());
+    if (!run) return null;
+    const state = this.campaignState();
+    // A loaded battle can belong to an operation the campaign has already moved
+    // past. Such a save is a skirmish over old ground, not a campaign attempt,
+    // so it gets no accept or retry controls.
+    if (!state || state.currentMissionId !== run.mission.id) return null;
+    return {
+      missionName: run.mission.name,
+      nextMissionName: run.next?.name ?? null,
+      campaignComplete: state.phase === 'complete',
+      finalOperation: run.next === null,
+      awaitingAcceptance: state.phase === 'debrief' && Boolean(state.pending),
+    };
   }
 
   /**
-   * The campaign operation as a real scenario: a copy of the named built-in
-   * theatre with both commands stamped from the operation rather than from the
-   * skirmish settings. Campaign sides always take their alliance colours, so a
-   * skirmish colour pick cannot leak into a campaign battle.
+   * The campaign operation as a real scenario.
+   *
+   * The theatre is a copy of the named built-in map, but the mission document,
+   * command posts and any deployed veterans are authored into it here. The
+   * result is parsed again, so the mission's entity references are checked
+   * against the placements the builder actually created.
    */
   private campaignScenario(): Scenario {
     const campaign = this.campaignDef();
     const mission = this.campaignMission();
+    const state = this.campaignState();
+    const deployments = campaignScenarioDeployments(state, campaign, mission);
+    const cacheKey = `${campaign.id}:${mission.id}:${deployments
+      .map((entry) => `${entry.key}=${entry.veteranId}`)
+      .join(',')}`;
     const cached = this.campaignCache;
-    if (cached && cached.campaignId === campaign.id && cached.missionId === mission.id) {
-      return cached.scenario;
+    if (cached && cached.key === cacheKey) return cached.scenario;
+
+    try {
+      const parsed = buildCampaignScenario({
+        def: campaign,
+        mission,
+        state,
+        base: this.scenarioFor(mission.mapId),
+      });
+      this.campaignCache = { key: cacheKey, scenario: parsed };
+      return parsed;
+    } catch (error) {
+      // The deck preview must still open if an operation cannot be assembled;
+      // deployment runs the same builder again and reports the failure there
+      // instead of silently fighting a plain skirmish.
+      const fallback = cloneScenario(this.scenarioFor(mission.mapId));
+      this.campaignCache = { key: cacheKey, scenario: fallback };
+      if (this.menuView === 'campaign') {
+        const message = error instanceof Error ? error.message : String(error);
+        this.notify(message, 'warning');
+      }
+      return fallback;
     }
-    const scenario = cloneScenario(this.scenarioFor(mission.mapId));
-    const command = identityDef(mission.playerNationId);
-    const opposition = identityDef(mission.opponentNationId);
-    scenario.meta = {
-      ...scenario.meta,
-      name: mission.name,
-      description: mission.situation,
-      campaign: { campaignId: campaign.id, missionId: mission.id },
-    };
-    // The map's objective list is authored for a free skirmish. A campaign
-    // operation carries its own brief into the HUD, briefing and save.
-    scenario.objectives = [...mission.objectives];
-    if (scenario.players[0]) {
-      scenario.players[0].factionId = command.id;
-      scenario.players[0].name = `${command.name} Task Force`;
-      scenario.players[0].color = identityAlliance(command.id).color;
-      scenario.players[0].isAI = false;
+  }
+
+  /** Read the commander form, reporting the first problem instead of guessing. */
+  private readCommanderIdentity(): CommanderIdentity | null {
+    const value = (id: string) =>
+      (document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null)?.value ?? '';
+    const pronounsRaw = (document.getElementById('campaign-commander-pronouns') as
+      | HTMLSelectElement
+      | null)?.value;
+    const pronouns = pronounsRaw ? (pronounsRaw as CommanderPronouns) : undefined;
+    try {
+      return normaliseCommanderIdentity({
+        name: value('campaign-commander-name'),
+        callsign: value('campaign-commander-callsign'),
+        background: value('campaign-commander-background'),
+        ...(pronouns ? { pronouns } : {}),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.notify(message, 'warning');
+      this.audio.play('denied');
+      return null;
     }
-    if (scenario.players[1]) {
-      scenario.players[1].factionId = opposition.id;
-      scenario.players[1].name = `${opposition.name} Task Force`;
-      scenario.players[1].color = identityAlliance(opposition.id).color;
-      scenario.players[1].isAI = true;
+  }
+
+  /**
+   * Open the operation: start the campaign if needed, snapshot it, then deploy.
+   *
+   * The campaign snapshot is taken before the scenario is built so retrying
+   * restores the roster and variables exactly as they were at launch.
+   */
+  private deployCampaignMission(): void {
+    const def = this.campaignDef();
+    const errors = validateCampaignDefinition(def, {
+      knownMapIds: new Set(SCENARIOS.map((entry) => entry.id)),
+    }).filter((entry) => entry.severity === 'error');
+    if (errors.length > 0) {
+      this.notify(`Campaign is not deployable: ${errors[0].message}`, 'critical');
+      this.audio.play('denied');
+      return;
     }
-    this.campaignCache = { campaignId: campaign.id, missionId: mission.id, scenario };
-    return scenario;
+    let state = this.campaignState();
+    if (state?.phase === 'debrief') {
+      this.openCampaignResult();
+      return;
+    }
+    const identity = this.readCommanderIdentity();
+    if (!identity) return;
+    if (!state) {
+      try {
+        state = createCampaignState(def, identity);
+      } catch (error) {
+        this.notify(error instanceof Error ? error.message : String(error), 'warning');
+        return;
+      }
+    } else {
+      state = { ...state, commander: identity };
+    }
+    const stateIssues = validateCampaignState(state, def).filter(
+      (issue) => issue.severity === 'error',
+    );
+    if (stateIssues.length > 0) {
+      this.notify(`Campaign cannot continue: ${stateIssues[0].message}`, 'critical');
+      this.audio.play('denied');
+      return;
+    }
+    try {
+      // A run left in the playing phase has no live battle behind it (the deck
+      // was reopened), so deployment restarts from its own snapshot.
+      if (state.phase === 'playing') state = retryCampaignMission(state);
+      const launched = launchCampaignMission(state, def, state.currentMissionId);
+      this.setCampaignState(launched);
+      this.campaignCache = null;
+      const scenario = this.campaignScenario();
+      if (scenario.mission?.id !== launched.currentMissionId) {
+        // Roll the launch back so the deck is not left in a phantom battle.
+        this.setCampaignState(retryCampaignMission(launched));
+        throw new CampaignStateError(
+          'definition-mismatch',
+          `Operation "${launched.currentMissionId}" could not be assembled on its theatre.`,
+        );
+      }
+      void this.startBattle(scenario);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.notify(`Unable to deploy: ${message}`, 'critical');
+      this.audio.play('denied');
+    }
+  }
+
+  /** Review a result that survived a reload before the player accepted it. */
+  private openCampaignResult(): void {
+    const state = this.campaignState();
+    if (!state?.pending) return;
+    const mission = this.campaignMission();
+    const result = state.pending.result;
+    openModal({
+      title: `${mission.name} — ${result.outcome === 'victory' ? 'Victory' : 'Defeat'}`,
+      wide: true,
+      body: missionDebriefMarkup(result, {
+        mission: mission.mission,
+        outlook: campaignResultOutlook(state, this.campaignDef()),
+      }),
+      actions: [
+        {
+          label: 'Accept and continue',
+          primary: true,
+          onClick: () => this.acceptCampaignResultAction(),
+        },
+        { label: 'Retry operation', onClick: () => this.retryCampaignOperation() },
+        { label: 'Cancel' },
+      ],
+    });
+  }
+
+  /** Accept the pending result: the only transaction that advances a campaign. */
+  acceptCampaignResultAction(): void {
+    const run = this.campaignRun();
+    const state = this.campaignState();
+    const campaign = run?.campaign ?? this.campaignDef();
+    if (!state) return;
+    // Capture the operation being accepted: after acceptance the campaign's
+    // current mission already points at the next briefing.
+    const acceptedMission = missionById(campaign, state.currentMissionId);
+    const pending = state.pending;
+    try {
+      const accepted = acceptCampaignResult(state, campaign);
+      this.setCampaignState(accepted);
+      this.campaignCache = null;
+      // Acceptance is what makes the operation part of the career. The reference
+      // names the campaign and operation, so a second acceptance can never pay
+      // twice even if a retry replays this flow.
+      if (pending) this.recordCampaignCareer(campaign.id, pending);
+      this.audio.play('complete');
+      if (accepted.phase === 'complete') {
+        this.notify('Campaign complete. Every operation has been accepted.', 'success');
+      } else {
+        this.notify(`Operation accepted. ${this.campaignMission().name} is next.`, 'success');
+      }
+      this.toMenu();
+      this.showMenuView('campaign');
+      this.renderCampaignMissions();
+      this.applyCampaignUi();
+      this.setMenuBackdrop(this.campaignScenario());
+      // The intermission or ending scene frames the campaign, not the battle.
+      // The result is already committed before playback starts, so a skipped or
+      // failed scene cannot lose progression.
+      const context: MissionCinematicContext =
+        accepted.phase === 'complete' ? 'ending' : 'intermission';
+      const sequence = acceptedMission.mission.cinematics.find(
+        (entry) => entry.kind === context,
+      );
+      if (sequence) {
+        this.playCinematic(
+          sequence,
+          context,
+          accepted.phase === 'complete' ? 'CAMPAIGN COMPLETE' : 'OPERATION ACCEPTED',
+          accepted.phase === 'complete' ? campaign.name : acceptedMission.name,
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.notify(`Could not accept the result: ${message}`, 'critical');
+    }
+  }
+
+  /** Replay the operation from the snapshot taken before it launched. */
+  retryCampaignOperation(): void {
+    const state = this.campaignState();
+    if (!state) return;
+    try {
+      const retried = retryCampaignMission(state);
+      this.setCampaignState(retried);
+      this.campaignCache = null;
+      void this.startBattle(this.campaignScenario());
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.notify(`Could not restart the operation: ${message}`, 'critical');
+    }
+  }
+
+  /** Record the captured result without touching persistent progress. */
+  private captureCampaignResult(run: CampaignRun, missionResult: MissionResult): void {
+    const state = this.campaignState();
+    if (!state || state.phase !== 'playing') return;
+    try {
+      const submitted = submitCampaignResult(
+        state,
+        run.campaign,
+        run.mission.id,
+        missionResult,
+      );
+      this.setCampaignState(submitted);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!(error instanceof CampaignStateError) || error.code !== 'phase-mismatch') {
+        this.notify(`Campaign result not recorded: ${message}`, 'warning');
+      }
+    }
   }
 
   private buildCampaignScreen(): void {
@@ -1670,18 +2184,22 @@ export class App {
         // An operation is a locked gate until the one before it is cleared.
         const previous = campaign.missions[index - 1];
         const title = locked
-          ? `Clear ${previous?.name ?? 'the previous operation'} to unlock this operation.`
+          ? `Accept ${previous?.name ?? 'the previous operation'} to unlock this operation.`
           : cleared
-            ? `${mission.name} is cleared. Replay the operation.`
+            ? `${mission.name} has been accepted. Replay the battle from Skirmish.`
             : mission.situation;
         const marker = locked
           ? '<span class="menu-nav-badge campaign-lock">LOCKED</span>'
           : cleared
             ? '<span class="menu-nav-badge campaign-cleared">CLEARED</span>'
             : '<span class="menu-nav-go" aria-hidden="true">›</span>';
+        // A completed operation is a record, not a launch target: the campaign
+        // has one next operation, and accepting a replay would duplicate
+        // consequences. Skirmish remains the place to fight any map again.
+        const inactive = locked || cleared;
         return `
-          <button type="button" class="menu-nav-item campaign-mission${locked ? ' locked' : ''}${cleared ? ' cleared' : ''}" data-campaign-mission="${mission.id}" aria-pressed="false" ${locked ? 'disabled aria-disabled="true"' : ''} title="${escapeHtml(title)}">
-            <span class="menu-nav-index">0${index + 1}</span>
+          <button type="button" class="menu-nav-item campaign-mission${locked ? ' locked' : ''}${cleared ? ' cleared' : ''}" data-campaign-mission="${mission.id}" aria-pressed="false" ${inactive ? 'disabled aria-disabled="true"' : ''} title="${escapeHtml(title)}">
+            <span class="menu-nav-index">${String(index + 1).padStart(2, '0')}</span>
             <span class="menu-nav-text"><b>${escapeHtml(mission.name)}</b><small>${escapeHtml(mission.focus)}</small></span>
             ${marker}
           </button>`;
@@ -1705,9 +2223,15 @@ export class App {
       return;
     }
     this.campaignId = campaign.id;
-    // A returning commander lands on the next operation, not the first one
-    // already cleared.
-    this.campaignMissionId = resumeMissionId(this.campaignProgress, campaign);
+    // A returning commander lands on the operation the run says is next; an
+    // unstarted campaign opens on its first operation.
+    const state = this.campaignState();
+    this.campaignMissionId = state
+      ? state.currentMissionId
+      : resumeMissionId(this.campaignProgress, campaign);
+    this.campaignProgress = state
+      ? campaignProgressOf(state, campaign)
+      : emptyCampaignProgress();
     this.campaignCache = null;
     this.persistCampaignSelection();
     this.renderCampaignMissions();
@@ -1721,7 +2245,12 @@ export class App {
     if (!campaign.missions.some((mission) => mission.id === id)) return;
     if (!isMissionUnlocked(this.campaignProgress, campaign, id)) {
       this.audio.play('denied');
-      this.notify('That operation is locked. Clear the previous operation first.', 'warning');
+      this.notify('That operation is locked. Accept the previous operation first.', 'warning');
+      return;
+    }
+    if (isMissionCleared(this.campaignProgress, campaign.id, id)) {
+      this.audio.play('denied');
+      this.notify('That operation has been accepted. Replay the battle from Skirmish.', 'info');
       return;
     }
     if (id === this.campaignMissionId) {
@@ -1765,27 +2294,103 @@ export class App {
     });
 
     const cleared = clearedMissionCount(this.campaignProgress, campaign);
+    const state = this.campaignState();
+    const phaseNote =
+      state?.phase === 'debrief'
+        ? ' · result awaiting acceptance'
+        : state?.phase === 'complete'
+          ? ' · campaign complete'
+          : '';
     text('campaign-eyebrow', `CAMPAIGN · ${campaign.coalition.toUpperCase()}`);
     text('campaign-title', campaign.name);
     text('campaign-lede', campaign.lede);
-    text('campaign-note', `${campaign.note} · ${cleared}/${campaign.missions.length} operations cleared`);
+    text(
+      'campaign-note',
+      `${campaign.note} · ${cleared}/${campaign.missions.length} operations accepted${phaseNote}`,
+    );
     text('campaign-code', mission.code);
     text('campaign-map-code', mission.code);
-    text('campaign-situation', mission.situation);
+    const commander = state?.commander ?? null;
+    const briefing = scenario.mission?.briefing;
+    const briefingCopy = (value: string) => briefingText(value, commander);
+    text('campaign-situation', briefing ? briefingCopy(briefing.summary) : mission.situation);
+    const contextLine = document.getElementById('campaign-context');
+    if (contextLine) {
+      const value = briefing?.context ? briefingCopy(briefing.context) : '';
+      contextLine.textContent = value;
+      contextLine.classList.toggle('hidden', value.length === 0);
+    }
+    const commanderLine = document.getElementById('campaign-commander-line');
+    if (commanderLine) {
+      commanderLine.innerHTML = commander
+        ? `COMMANDER <b>${escapeHtml(commander.name)}</b> · ${escapeHtml(commander.callsign)}`
+        : 'COMMANDER <b>NOT SET</b> · ENTER A PROFILE TO DEPLOY';
+    }
+    const friendlyLine = document.getElementById('campaign-friendly');
+    if (friendlyLine) {
+      friendlyLine.textContent = briefing
+        ? briefingCopy(briefing.friendly)
+        : `${command.name} task force holding the western approach.`;
+    }
+    const personnelList = document.getElementById('campaign-personnel');
+    if (personnelList) {
+      const names = briefing?.personnel ?? [];
+      personnelList.innerHTML = names
+        .map((name) => `<li>${escapeHtml(briefingCopy(name))}</li>`)
+        .join('');
+      personnelList.parentElement?.classList.toggle('hidden', names.length === 0);
+    }
+    const intentLine = document.getElementById('campaign-enemy-intent');
+    if (intentLine) {
+      intentLine.textContent = briefing?.enemyIntent
+        ? briefingCopy(briefing.enemyIntent)
+        : mission.threat;
+    }
+    const instructionList = document.getElementById('campaign-instructions');
+    if (instructionList) {
+      const instructions = briefing?.instructions ?? [];
+      instructionList.innerHTML = instructions
+        .map((line) => `<li>${escapeHtml(briefingCopy(line))}</li>`)
+        .join('');
+      instructionList.parentElement?.classList.toggle('hidden', instructions.length === 0);
+    }
+    const noteLine = document.getElementById('campaign-commander-note');
+    if (noteLine) {
+      // A commander note addresses the player by callsign; until a profile
+      // exists it would render raw tokens, so it waits for identity.
+      const note =
+        briefing?.commanderNote && commander ? briefingCopy(briefing.commanderNote) : '';
+      noteLine.textContent = note;
+      noteLine.classList.toggle('hidden', note.length === 0);
+    }
     text('campaign-command', command.name);
     text('campaign-opposition', opposition.name);
     text('campaign-alliance', alliance.name);
     text('campaign-size', `${scenario.width} × ${scenario.height} tiles`);
     text('campaign-domains', entry.domains);
     text('campaign-threat', mission.threat);
-    text('campaign-deploy-label', mission.name);
+    text(
+      'campaign-deploy-label',
+      state?.phase === 'debrief'
+        ? 'Review operation result'
+        : state?.phase === 'complete'
+          ? 'Campaign complete'
+          : state?.phase === 'playing'
+            ? `Resume ${mission.name}`
+            : mission.name,
+    );
+    const deploy = document.getElementById('btn-campaign-deploy') as HTMLButtonElement | null;
+    if (deploy) deploy.disabled = state?.phase === 'complete';
 
+    // The mission document is the authoritative objective tree; the map's
+    // legacy objective strings remain the fallback for an operation without one.
     const objectives = document.getElementById('campaign-objectives');
     if (objectives) {
-      objectives.innerHTML = scenario.objectives
-        .map((objective) => `<li>${escapeHtml(objective)}</li>`)
-        .join('');
+      objectives.innerHTML = scenario.mission
+        ? briefingObjectiveListMarkup(scenario.mission, commander)
+        : scenario.objectives.map((objective) => `<li>${escapeHtml(objective)}</li>`).join('');
     }
+    this.syncCampaignCommanderUi();
     const friend = document.getElementById('campaign-label-friend');
     if (friend) {
       friend.textContent = command.shortName || command.name;
@@ -1801,6 +2406,31 @@ export class App {
     const canvas = document.getElementById('campaign-map-canvas');
     canvas?.setAttribute('aria-label', `${mission.name} terrain map`);
     this.paintCampaignMap();
+  }
+
+  /** Mirror the persisted commander profile into the deck form. */
+  private syncCampaignCommanderUi(): void {
+    const state = this.campaignState();
+    const identity = state?.commander ?? null;
+    const active = document.activeElement;
+    const set = (id: string, value: string) => {
+      const el = document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null;
+      // Typing must survive a repaint triggered by a map selection.
+      if (el && el !== active) el.value = value;
+    };
+    set('campaign-commander-name', identity?.name ?? '');
+    set('campaign-commander-callsign', identity?.callsign ?? '');
+    set('campaign-commander-background', identity?.background ?? '');
+    const pronouns = document.getElementById('campaign-commander-pronouns') as
+      | HTMLSelectElement
+      | null;
+    if (pronouns && pronouns !== active) pronouns.value = identity?.pronouns ?? '';
+    const status = document.getElementById('campaign-commander-status');
+    if (status) {
+      status.textContent = !state
+        ? 'No campaign started · enter a profile to deploy'
+        : `${state.veterans.length} named personnel · ${state.completed.length} accepted`;
+    }
   }
 
   private paintCampaignMap(): void {
@@ -1827,6 +2457,9 @@ export class App {
   }
 
   private showMenu(): void {
+    this.missionTestScenario = null;
+    this.cinematicPreview = false;
+    if (this.cinematic) this.cinematic.skip(true);
     this.endNetworkBattle();
     this.finishTutorial();
     document.getElementById('menu-screen')?.classList.remove('hidden', 'handoff');
@@ -1845,6 +2478,9 @@ export class App {
     this.applyNationUi();
     this.showMenuView(this.menuView);
     this.refreshEditorAutosaveButton();
+    // Returning from a battle or the editor is a natural moment to re-read the
+    // session: it may have expired, or been ended on another device.
+    void this.accountPanel?.refresh();
     this.revealMenu();
     this.paintBriefMap();
     this.audio.playMenuMusic();
@@ -1957,7 +2593,14 @@ export class App {
   /* Battle lifecycle                                                    */
   /* ------------------------------------------------------------------ */
 
-  async startBattle(scenario: Scenario): Promise<void> {
+  async startBattle(
+    scenario: Scenario,
+    options: { missionTest?: boolean } = {},
+  ): Promise<void> {
+    // A restart or redeploy drops any scene from the previous battle and
+    // restores the camera the player was using before it.
+    if (this.cinematic) this.cinematic.skip(true);
+    this.cinematicPlayed.clear();
     this.finishTutorial();
     // A new battle gets a clean pointer: no ghost from the last engagement.
     this.orderGhosts.length = 0;
@@ -1997,6 +2640,10 @@ export class App {
         aiDifficulty: this.settings.difficulty,
       });
       this.game = game;
+      // The reporting voice belongs to the seat's faction, not to the map. It is
+      // set before the opening line so the first words of a battle are already
+      // in the right voice.
+      this.applyNarrator(game);
       // A fast machine would otherwise flash the briefing for a single frame.
       const elapsed = performance.now() - shownAt;
       if (elapsed < 780) await new Promise((resolve) => window.setTimeout(resolve, 780 - elapsed));
@@ -2021,8 +2668,24 @@ export class App {
       this.hud.mount(game);
       this.lastEventSeq = 0;
       this.frameBattleCamera();
+      // A test run is a disposable copy parsed from the workbench. It carries no
+      // campaign reference, so the campaign layer cannot submit a result from it.
+      this.missionTestScenario = options.missionTest ? cloneScenario(gameScenario) : null;
       this.setLoading(false);
       this.audio.startMatchMusic();
+      // The opening scene belongs to the launch, not to a loaded save. It frames
+      // the battlefield that has just appeared and never advances the mission.
+      const openingCinematic = gameScenario.mission?.cinematics.find(
+        (entry) => entry.kind === 'opening',
+      );
+      if (openingCinematic) {
+        this.playCinematic(
+          openingCinematic,
+          'opening',
+          'OPERATION OPENING',
+          gameScenario.mission?.title ?? gameScenario.meta.name,
+        );
+      }
       // The opening line belongs to the battle, not to the deck: the announcer is
       // reset above, so each engagement establishes its own field once.
       this.audio.announce('battlefieldEstablished');
@@ -2046,6 +2709,20 @@ export class App {
     }
   }
 
+  /**
+   * Point the announcer at the local seat's faction narrator.
+   *
+   * Every battle-entry path calls this immediately after the game is assigned:
+   * a fresh deployment, a networked handoff and a loaded save. One resolution
+   * point keeps faction checks out of the event drain and out of every cue.
+   * An unknown faction resolves to the Defender voice rather than falling
+   * silent, so a malformed save still reports its battlefield.
+   */
+  private applyNarrator(game: Game): void {
+    const factionId = game.player(game.localPlayerId)?.factionId;
+    this.audio.setNarrator(narratorForFaction(factionId).id);
+  }
+
   async restart(): Promise<void> {
     if (!this.game) return;
     // A networked match belongs to its room: there is nothing local to restart,
@@ -2055,7 +2732,7 @@ export class App {
       return;
     }
     const scenario = cloneScenario(this.game.state.scenario);
-    await this.startBattle(scenario);
+    await this.startBattle(scenario, { missionTest: this.missionTestActive });
   }
 
   /**
@@ -2150,6 +2827,7 @@ export class App {
           defeated: false,
           relayCount: 0,
           research: { completed: [], project: null },
+          superweapon: { cooldowns: {}, active: null, ewUntilTick: 0, defence: null },
         })),
         projectiles: [],
         contacts: [],
@@ -2162,6 +2840,9 @@ export class App {
         visibleIds: [],
       });
       this.game = game;
+      // A networked seat reports in its own faction's voice; the room's other
+      // seats never hear it, because each client resolves its own narrator.
+      this.applyNarrator(game);
       this.network = new NetworkBattle({
         game,
         team: seat,
@@ -2333,7 +3014,7 @@ export class App {
         this.reportNetworkStaleness(this.network.status().ageMs);
         this.drainEvents();
         this.perf.simMs = 0;
-      } else if (!this.paused) {
+      } else if (!this.paused && !this.cinematicHoldsSimulation) {
         const simStart = performance.now();
         this.accumulator += Math.min(0.25, dt) * this.speed;
         let steps = 0;
@@ -2347,6 +3028,13 @@ export class App {
       }
     }
 
+    // A sequence owns the camera for the frame, so it is advanced before the
+    // renderer reads the framing. The clock is the render delta, never a timer.
+    if (this.cinematic) {
+      this.cinematic.update(dt);
+      if (this.cinematic) this.cinematicOverlay.render(this.cinematic.frame);
+    }
+
     if (this.loading) {
       // The briefing screen is the picture: drift the wide shot and keep the
       // theatre rendering until the battle replaces it.
@@ -2356,6 +3044,7 @@ export class App {
       const sig = this.hudSignatureOf(this.game);
       this.hud.update(this.game, dt, sig);
       this.tutorial?.update(dt);
+      this.maybeStartInMissionCinematic();
       this.checkVictory();
       this.renderer.setSimulationAlpha(
         this.paused || this.network ? 1 : Math.min(1, this.accumulator / (TICK_MS / 1000)),
@@ -2372,6 +3061,14 @@ export class App {
       this.updateAttract(dt);
       this.renderer.render();
     }
+    // Last, so the pointer is never under a panel, modal or canvas mark.
+    this.cursorLayer.draw(
+      this.pointerCursor.name,
+      this.pointer.x,
+      this.pointer.y,
+      this.pointerCursor.visible && this.settings.customCursors,
+      performance.now(),
+    );
     requestAnimationFrame(this.frame);
   };
 
@@ -2453,46 +3150,299 @@ export class App {
     }
   }
 
+  /* ------------------------------------------------------------------ */
+  /* Cinematic presentation                                              */
+  /* ------------------------------------------------------------------ */
+
+  /** True while a sequence owns input. The input controller checks this. */
+  get cinematicLocked(): boolean {
+    return this.cinematic !== null;
+  }
+
+  /** True while the scene is a framing scene and the simulation must hold. */
+  private get cinematicHoldsSimulation(): boolean {
+    return this.cinematicContext !== null && cinematicPausesSimulation(this.cinematicContext);
+  }
+
+  /** Read-only outlook on the pending result. It never mutates the campaign. */
+  campaignOutlook(): CampaignOutlook | null {
+    const state = this.campaignState();
+    if (!state) return null;
+    return campaignResultOutlook(state, this.campaignDef());
+  }
+
+  skipCinematic(): void {
+    this.cinematic?.skip();
+  }
+
+  /** The persistent skip-all preference: end this scene and suppress future ones. */
+  skipAllCinematics(): void {
+    this.settings.cinematics = false;
+    this.saveSettings();
+    this.renderMenuSettings();
+    this.cinematic?.skip(true);
+    this.toast('Cinematics disabled. Campaign progress is unchanged.', 'info');
+  }
+
+  private prefersReducedMotion(): boolean {
+    return (
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    );
+  }
+
+  /**
+   * Start one authored sequence.
+   *
+   * Presentation state only: the mission document is copied for commander
+   * tokens, the camera is captured by the player and the simulation is held by
+   * the frame loop for framing contexts. Returns false when cinematics are off
+   * or another scene is already running.
+   */
+  private playCinematic(
+    doc: MissionCinematicDoc,
+    context: MissionCinematicContext,
+    eyebrow: string,
+    title: string,
+    force = false,
+  ): boolean {
+    if ((!this.settings.cinematics && !force) || this.cinematic) return false;
+    const commander = this.campaignState()?.commander ?? null;
+    const localised = localiseCinematic(doc, commander);
+    const camera = this.renderer.camera;
+    const player = new CinematicPlayer(
+      localised,
+      {
+        camera,
+        resolveEntity: (key) => this.cinematicPoint(key),
+        restoreCamera: (state) => camera.setFraming(state.cx, state.cz, state.zoom),
+        reducedMotion: this.prefersReducedMotion(),
+      },
+      () => this.endCinematic(),
+    );
+    this.cinematic = player;
+    this.cinematicContext = context;
+    this.hideCinematicBackground(true);
+    this.cinematicOverlay.show({
+      eyebrow,
+      title,
+      skippable: doc.skippable,
+      framing: cinematicPausesSimulation(context),
+    });
+    player.start();
+    this.cinematicOverlay.render(player.frame);
+    return true;
+  }
+
+  private endCinematic(): void {
+    this.cinematic = null;
+    this.cinematicContext = null;
+    if (this.cinematicPreview) {
+      this.cinematicPreview = false;
+      this.menuScenario = null;
+    }
+    this.cinematicOverlay.hide();
+    this.hideCinematicBackground(false);
+  }
+
+  /**
+   * Keep the screen behind a scene out of the accessibility tree and out of the
+   * tab order. Only surfaces this scene hid are restored, so a hidden menu is
+   * not made visible by a cinematic ending.
+   */
+  private hideCinematicBackground(hidden: boolean): void {
+    if (hidden) {
+      for (const id of ['hud-root', 'menu-screen']) {
+        const element = document.getElementById(id);
+        if (!element || this.cinematicBackground.has(element)) continue;
+        element.setAttribute('aria-hidden', 'true');
+        element.setAttribute('inert', '');
+        this.cinematicBackground.add(element);
+      }
+      return;
+    }
+    for (const element of this.cinematicBackground) {
+      element.removeAttribute('aria-hidden');
+      element.removeAttribute('inert');
+    }
+    this.cinematicBackground.clear();
+  }
+
+  /** World position of an authored placement, live or on the deck backdrop. */
+  private cinematicPoint(key: string): { x: number; z: number } | null {
+    const entity = this.game?.state.entities.find(
+      (entry) => entry.authoredKey === key && entry.hp > 0,
+    );
+    if (entity) return { x: entity.x, z: entity.z };
+    const scenario = this.menuScenario ?? this.game?.state.scenario ?? null;
+    if (!scenario) return null;
+    const unit = scenario.units.find((entry) => entry.key === key);
+    if (unit) return { x: (unit.x + 0.5) * TILE_SIZE, z: (unit.z + 0.5) * TILE_SIZE };
+    const structure = scenario.structures.find((entry) => entry.key === key);
+    if (structure) {
+      return { x: (structure.x + 0.5) * TILE_SIZE, z: (structure.z + 0.5) * TILE_SIZE };
+    }
+    return null;
+  }
+
+  /**
+   * Start an in-mission sequence whose authored time has arrived.
+   *
+   * Eligible sequences are presentation state, not trigger actions: the mission
+   * runtime is not told about them and no simulation tick is consumed.
+   */
+  private maybeStartInMissionCinematic(): void {
+    if (this.cinematic || !this.game || this.screen !== 'battle' || this.loading || this.paused) {
+      return;
+    }
+    if (this.game.state.victory !== 'playing') return;
+    const doc = this.game.state.scenario.mission;
+    if (!doc) return;
+    const seconds = Math.max(0, this.game.state.tick - this.game.state.startedAtTick) / TICK_RATE;
+    const next = doc.cinematics
+      .filter(
+        (entry) =>
+          entry.kind === 'inMission' &&
+          !this.cinematicPlayed.has(entry.id) &&
+          (entry.atSeconds ?? Number.POSITIVE_INFINITY) <= seconds,
+      )
+      .sort((a, b) => (a.atSeconds ?? 0) - (b.atSeconds ?? 0) || a.id.localeCompare(b.id))[0];
+    if (!next) return;
+    this.cinematicPlayed.add(next.id);
+    if (!this.settings.cinematics) return;
+    // A scene is not an order mode: leave placement/box selection cleanly.
+    this.mode = 'none';
+    this.placeDefId = null;
+    this.dragBox.active = false;
+    this.playCinematic(next, 'inMission', 'FIELD REPORT', doc.title);
+  }
+
+  /** A loaded battle must not replay scenes it has already passed. */
+  private markElapsedCinematics(): void {
+    const doc = this.game?.state.scenario.mission;
+    if (!doc || !this.game) return;
+    const seconds = Math.max(0, this.game.state.tick - this.game.state.startedAtTick) / TICK_RATE;
+    for (const entry of doc.cinematics) {
+      if (entry.kind === 'inMission' && (entry.atSeconds ?? Number.POSITIVE_INFINITY) <= seconds) {
+        this.cinematicPlayed.add(entry.id);
+      }
+    }
+  }
+
   private checkVictory(): void {
     if (!this.game) return;
     const result = this.game.state.victory;
     if (result === 'playing' || this.victoryShown === result) return;
+    // The result screen outranks a scene still on screen: restore the camera
+    // before the card is built.
+    this.cinematic?.skip(true);
     this.victoryShown = result;
-    // A campaign victory is also a progression event: clear the operation,
-    // persist the cleared set and select the next operation for the deck.
-    if (result === 'victory') {
-      const run = this.campaignRun();
-      if (run) {
-        this.campaignId = run.campaign.id;
-        const advanced = recordCampaignVictory(
-          this.campaignProgress,
-          run.campaign.id,
-          run.mission.id,
-        );
-        const next = nextMissionId(run.campaign, run.mission.id);
-        if (next) {
-          this.campaignMissionId = next;
-          this.campaignCache = null;
-        }
-        // One write covers both the clear and the newly selected operation, so
-        // a reload after victory reopens the deck on the unlocked next mission.
-        const remembered = rememberCampaignSelection(
-          advanced,
-          run.campaign.id,
-          this.campaignMissionId,
-        );
-        if (remembered !== this.campaignProgress) {
-          this.campaignProgress = remembered;
-          this.saveCampaignProgress();
-        }
-        this.renderCampaignMissions();
-      }
+    // A campaign operation ending is not progression. The captured result is
+    // recorded as pending; the player accepts or retries on the end screen, and
+    // only acceptance changes the roster or the campaign's variables.
+    const run = this.campaignRun();
+    if (run) {
+      this.campaignId = run.campaign.id;
+      const missionResult = this.game.missionResult;
+      if (missionResult) this.captureCampaignResult(run, missionResult);
+      this.renderCampaignMissions();
+      this.applyCampaignUi();
     }
     this.finishTutorial();
     this.audio.stopMatchMusic();
     this.selected = [];
     this.mode = 'none';
     this.hud.showEnd(result);
+    void this.recordEndCareer(result);
+  }
+
+  /**
+   * Career line on the end card.
+   *
+   * A campaign result is not career progress until it is accepted, so the card
+   * says so and the award happens in the acceptance transaction. A workbench
+   * test is not a played operation at all. Everything else is recorded once per
+   * finished battle, with a reference that makes a retry or a reload harmless.
+   */
+  private async recordEndCareer(result: VictoryState): Promise<void> {
+    const slot = document.getElementById('end-career');
+    if (!slot || !this.careerService || result === 'playing') return;
+    if (this.missionTestActive) return;
+    if (this.campaignRun()) {
+      this.paintEndCareer(slot, { status: 'pending' });
+      return;
+    }
+    const game = this.game;
+    if (!game) return;
+    const missionResult = game.missionResult;
+    const elapsedSeconds =
+      missionResult?.elapsedSeconds ??
+      Math.max(0, (game.state.tick - game.state.startedAtTick) / TICK_RATE);
+    const player = this.localPlayer;
+    const input: CareerMatchInput = {
+      ref: this.careerRef('skirmish'),
+      mode: 'skirmish',
+      outcome: result,
+      difficulty: this.settings.difficulty,
+      durationSeconds: Math.round(elapsedSeconds),
+      nation: player?.factionId ?? null,
+      kills: player?.stats.kills ?? 0,
+      unitsLost: player?.stats.unitsLost ?? 0,
+    };
+    try {
+      const outcome = await this.careerService.record(input);
+      this.paintEndCareer(slot, {
+        status: 'recorded',
+        xp: outcome.award,
+        snapshot: outcome.snapshot,
+      });
+      void this.accountPanel?.refresh();
+    } catch (error) {
+      this.paintEndCareer(slot, {
+        status: 'failed',
+        message: error instanceof Error ? error.message : 'the account service could not be reached',
+      });
+    }
+  }
+
+  private paintEndCareer(slot: HTMLElement, state: EndCareerState): void {
+    // A restart or a menu return may have replaced the card while the request
+    // was in flight; only paint into the slot that is still on screen.
+    if (document.getElementById('end-career') !== slot) return;
+    slot.innerHTML = endCareerMarkup(state);
+  }
+
+  /** Stable reference for idempotent career writes. */
+  private careerRef(prefix: string): string {
+    const cryptoApi = typeof crypto !== 'undefined' ? crypto : null;
+    const random =
+      cryptoApi && typeof cryptoApi.randomUUID === 'function'
+        ? cryptoApi.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    return `${prefix}:${random}`;
+  }
+
+  /** Campaign XP is awarded by the acceptance transaction, never by the battle. */
+  private recordCampaignCareer(campaignId: string, pending: CampaignPendingResult): void {
+    if (!this.careerService) return;
+    const input: CareerMatchInput = {
+      ref: `campaign:${campaignId}:${pending.missionId}`.slice(0, 96),
+      mode: 'campaign',
+      outcome: pending.result.outcome,
+      difficulty: this.settings.difficulty,
+      durationSeconds: Math.max(0, Math.round(pending.result.elapsedSeconds)),
+      kills: pending.result.friendly.kills,
+      unitsLost: pending.result.friendly.unitsLost,
+    };
+    void this.careerService
+      .record(input)
+      .then(() => this.accountPanel?.refresh())
+      .catch((error: unknown) =>
+        this.notify(
+          `Career record not saved: ${error instanceof Error ? error.message : 'account service unavailable'}`,
+          'warning',
+        ),
+      );
   }
 
   private hudSignatureOf(game: Game): string {
@@ -2764,6 +3714,13 @@ export class App {
     attackMove = false,
   ): OrderGhostKind | null {
     if (!this.game) return null;
+    // A right-click while a footprint is armed is the universal cancel: the
+    // selected force must not be sent walking just because the build cursor
+    // was over the battlefield.
+    if (this.mode === 'place') {
+      this.cancelMode();
+      return null;
+    }
     const target = this.pickAt(clientX, clientY);
     const hostile = !!target && this.game.isHostile(target.owner, this.localPlayerId);
     const occupants =
@@ -3069,6 +4026,89 @@ export class App {
   }
 
   /* ------------------------------------------------------------------ */
+  /* Strategic operations                                                */
+  /* ------------------------------------------------------------------ */
+
+  /** Authoritative strategic status for the local commander, or null. */
+  superweaponStatus(): SuperweaponStatus | null {
+    return this.game ? this.game.superweaponStatus(this.localPlayerId) : null;
+  }
+
+  /**
+   * Arm the national call-in so the next map click picks the target.
+   *
+   * The availability answer comes from the simulation, not from the panel, so a
+   * button left enabled by a stale render still cannot start an illegal
+   * operation. Cancelling the mode leaves the document and the bank untouched.
+   */
+  beginSuperweaponTargeting(): void {
+    const game = this.game;
+    if (!game) return;
+    const status = game.superweaponStatus(this.localPlayerId);
+    if (!status.ok || !status.family) {
+      this.notify(status.reason || 'No strategic capability is available.', 'warning');
+      this.audio.play('denied');
+      return;
+    }
+    this.mode = 'superweapon';
+    this.notify(
+      `${SUPERWEAPON_TARGET_LABEL[status.family.targeting]} Esc cancels.`,
+      'info',
+    );
+    this.audio.play('ui');
+  }
+
+  /**
+   * Resolve one map click as a strategic aim point.
+   *
+   * Only an aim point and an optional concrete target leave this method; the
+   * simulation re-checks the target and charges the cost itself, so a refused
+   * click spends nothing and a repeated click cannot buy two operations.
+   */
+  superweaponAtScreen(clientX: number, clientY: number): void {
+    const game = this.game;
+    if (!game) return;
+    const status = game.superweaponStatus(this.localPlayerId);
+    if (!status.ok || !status.family) {
+      this.notify(status.reason || 'No strategic capability is available.', 'warning');
+      this.audio.play('denied');
+      return;
+    }
+    const point = this.worldAt(clientX, clientY);
+    if (!point) return;
+    // Only a hostile structure is a concrete target. A hostile unit under the
+    // cursor is ignored rather than passed on: the precision strike resolves
+    // the structure itself, and the area calls use the ground point.
+    const pick = this.pickAt(clientX, clientY);
+    const structureId =
+      pick && pick.kind === 'building' && game.isHostile(pick.owner, this.localPlayerId)
+        ? pick.id
+        : 0;
+    const check = game.superweaponTargetStatus(
+      this.localPlayerId,
+      status.family.id,
+      point.x,
+      point.z,
+      structureId || undefined,
+    );
+    if (!check.ok) {
+      this.notify(check.reason, 'warning');
+      this.audio.play('denied');
+      return;
+    }
+    this.dispatchCommand({
+      type: 'superweapon',
+      team: this.localPlayerId,
+      familyId: status.family.id,
+      x: point.x,
+      z: point.z,
+      ...(structureId ? { targetId: structureId } : {}),
+    });
+    this.audio.play('ui');
+    this.mode = 'none';
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Economy, production and construction                                */
   /* ------------------------------------------------------------------ */
 
@@ -3088,6 +4128,30 @@ export class App {
     if (!this.game) return;
     this.dispatchCommand({ type: 'cancelProduction', team: this.localPlayerId, buildingId, index });
     this.audio.play('ui');
+  }
+
+  /**
+   * Confirm a sale. The simulation owns the deconstruction clock and the
+   * refund, so this only checks the same status the panel shows and dispatches.
+   */
+  sellBuilding(buildingId: number): void {
+    if (!this.game) return;
+    const status = this.game.sellStatus(this.localPlayerId, buildingId);
+    if (!status.ok) {
+      this.notify(status.reason, 'warning');
+      this.audio.play('denied');
+      return;
+    }
+    const e = this.game.getEntity(buildingId);
+    const quote = this.game.sellQuote(buildingId);
+    this.dispatchCommand({ type: 'sellBuilding', team: this.localPlayerId, buildingId });
+    this.audio.play('build');
+    if (e && quote) {
+      this.notify(
+        `${BUILDINGS[e.defId]?.name ?? e.defId} dismantling — ${quote.mats}M/${quote.req}R when it comes down.`,
+        'info',
+      );
+    }
   }
 
   reorderProduction(buildingId: number, defId: string, beforeDefId: string): void {
@@ -3323,6 +4387,11 @@ export class App {
     try {
       const game = Game.fromSave(record.data, { localPlayerId: record.data.localPlayerId ?? 0, enableAI: true });
       this.game = game;
+      this.applyNarrator(game);
+      // A save has already passed its authored in-mission scenes; opening it
+      // must not replay dialogue the player has already seen.
+      this.cinematicPlayed.clear();
+      this.markElapsedCinematics();
       this.audio.stopMatchMusic();
       this.audio.resetAnnouncer();
       this.audio.stopMenuMusic();
@@ -3427,15 +4496,21 @@ export class App {
     const opponent = run
       ? identityDef(run.mission.opponentNationId)
       : resolveOpponentNation(this.settings.nationId, this.settings.opponentNationId);
-    const missionCopy = run
-      ? run.mission.situation
-      : `Establish your beachhead, grow an economy, and destroy the ${opponent.name} command post before it overruns you. Capture the neutral signals relays to fund advanced production.`;
-    const objectiveMarkup = run
+    // A mission-bearing scenario is briefed from its own structured document,
+    // not from the deck's legacy one-line summary. A plain skirmish keeps the
+    // original operational copy.
+    const missionDoc = this.game?.state.scenario.mission ?? null;
+    const missionCopy = missionDoc
+      ? null
+      : run
+        ? run.mission.situation
+        : `Establish your beachhead, grow an economy, and destroy the ${opponent.name} command post before it overruns you. Capture the neutral signals relays to fund advanced production.`;
+    const objectiveMarkup = run && !missionDoc
       ? `<h4>OBJECTIVES</h4><ol class="briefing-objectives">${run.mission.objectives
           .map((objective) => `<li>${escapeHtml(objective)}</li>`)
           .join('')}</ol>`
       : '';
-    const threatMarkup = run
+    const threatMarkup = run && !missionDoc
       ? `<h4>THREAT</h4><p>${escapeHtml(run.mission.threat)}</p>`
       : '';
     // The rail's objective button opens this briefing, so the live objective
@@ -3447,14 +4522,34 @@ export class App {
         <p class="briefing-objective">${escapeHtml(liveObjective.primary)}</p>
         <p class="briefing-objective-progress">${escapeHtml(liveObjective.summary)}</p>`
       : '';
+    // A mission's own objective tree, including the states already resolved.
+    // Hidden objectives are excluded by the view, so the briefing cannot reveal
+    // authored content early.
+    const missionView = this.screen === 'battle' && this.game ? missionObjectiveView(this.game) : null;
+    const missionObjectivesMarkup = missionView
+      ? `<h4>MISSION OBJECTIVES</h4><ul class="briefing-objectives mission-objectives">${[
+          ...missionView.primary,
+          ...missionView.supporting,
+          ...missionView.resolved,
+        ]
+          .map((objective) => missionObjectiveMarkup(objective))
+          .join('')}</ul>`
+      : '';
     openModal({
       title: run ? `${run.mission.name} — Briefing & controls` : 'Briefing & controls',
       body: `
         <div class="briefing-grid">
           <div>
-            <h4>MISSION</h4>
-            <p>${escapeHtml(missionCopy)}</p>
+            ${
+              missionDoc
+                ? missionBriefingMarkup(missionDoc, {
+                    commander: this.campaignState()?.commander ?? null,
+                    ...(run?.mission.code ? { code: run.mission.code } : {}),
+                  })
+                : `<h4>MISSION</h4><p>${escapeHtml(missionCopy ?? '')}</p>`
+            }
             ${objectiveBriefMarkup}
+            ${missionObjectivesMarkup}
             ${objectiveMarkup}
             ${threatMarkup}
             <h4>COMBINED ARMS</h4>
@@ -3647,14 +4742,19 @@ export class App {
     const qualityOptions = GRAPHICS_QUALITIES.map(
       (id) => `<option value="${id}" ${s.graphicsQuality === id ? 'selected' : ''}>${id[0].toUpperCase()}${id.slice(1)}</option>`,
     ).join('');
+    const shadowOptions = SHADOW_DETAILS.map(
+      (id) => `<option value="${id}" ${s.shadowDetail === id ? 'selected' : ''}>${SHADOW_DETAIL_LABELS[id]}</option>`,
+    ).join('');
     const displayRows = `
       <div class="setting-row"><div><label>Interface scale</label><small>HUD type, rail and sidebar sizes</small></div><div class="set-inline"><input type="range" min="${Math.round(UI_SCALE_MIN * 100)}" max="${Math.round(UI_SCALE_MAX * 100)}" step="5" value="${Math.round(s.uiScale * 100)}" data-set="uiScale"><output data-value-for="uiScale">${Math.round(s.uiScale * 100)}%</output></div></div>
       <div class="setting-row"><div><label>Graphics quality</label><small>Resolution, particles, shadows and water</small></div><select data-choice="graphicsQuality" aria-label="Graphics quality">${qualityOptions}</select></div>
+      <div class="setting-row"><div><label>Shadow detail</label><small>Basic is the flat projected pass; Detailed renders real sun shadows from a depth map</small></div><select data-choice="shadowDetail" aria-label="Shadow detail">${shadowOptions}</select></div>
       <div class="setting-row"><div><label>Render scale</label><small>Share of the device pixel ratio, capped at 2×</small></div><div class="set-inline"><input type="range" min="50" max="100" step="5" value="${Math.round(s.renderScale * 100)}" data-set="renderScale"><output data-value-for="renderScale">${Math.round(s.renderScale * 100)}%</output></div></div>
       <div class="setting-row"><div><label>Frame rate</label><small>Show the live FPS badge in battle</small></div><button class="switch ${s.fpsReadout ? 'on' : ''}" data-toggle="fpsReadout"></button></div>
       <div class="setting-row"><div><label>Visual effects</label><small>Particles, smoke and tracers</small></div><button class="switch ${s.effects ? 'on' : ''}" data-toggle="effects"></button></div>
       <div class="setting-row"><div><label>Unit silhouettes</label><small>Outline a unit hidden behind a structure</small></div><button class="switch ${s.silhouettes ? 'on' : ''}" data-toggle="silhouettes"></button></div>
       <div class="setting-row"><div><label>Screen shake</label><small>Explosion camera movement</small></div><button class="switch ${s.shake ? 'on' : ''}" data-toggle="shake"></button></div>
+      <div class="setting-row"><div><label>Cinematics</label><small>Authored mission scenes. Off is skip-all; progression is unaffected.</small></div><button class="switch ${s.cinematics ? 'on' : ''}" data-toggle="cinematics"></button></div>
       <div class="setting-row"><div><label>Fog of war</label><small>Visual fog; gameplay detection is unchanged</small></div><button class="switch ${s.fogVisual ? 'on' : ''}" data-toggle="fogVisual"></button></div>
       <div class="setting-row"><div><label>Night lights</label><small>Building and vehicle lights; their detection effect is unchanged</small></div><button class="switch ${s.nightLights ? 'on' : ''}" data-toggle="nightLights"></button></div>
       <div class="setting-row"><div><label>Light glow</label><small>Additive brightness of lamps and beams</small></div><div class="set-inline"><input type="range" min="0" max="150" step="5" value="${Math.round(s.lightBloom * 100)}" data-set="lightBloom"><output data-value-for="lightBloom">${Math.round(s.lightBloom * 100)}%</output></div></div>
@@ -3674,10 +4774,12 @@ export class App {
       <div class="setting-row"><div><label>Ambience volume</label><small>Sea, wind and low drone</small></div><input type="range" min="0" max="1" step="0.05" value="${s.ambient}" data-set="ambient"></div>
       <div class="setting-row"><div><label>Music volume</label><small>Menu and battle soundtracks</small></div><input type="range" min="0" max="1" step="0.05" value="${s.music}" data-set="music"></div>
     `;
+    const musicRows = musicPanelMarkup(s.musicPlaylist, this.audio.matchMusicState);
     const tabs: { id: SettingsTab; label: string }[] = [
       { id: 'display', label: 'Display' },
       { id: 'input', label: 'Controls' },
       { id: 'audio', label: 'Audio' },
+      { id: 'music', label: 'Playlist' },
     ];
     const tabBar = tabs
       .map((tab) => {
@@ -3692,7 +4794,7 @@ export class App {
     return `<div class="settings-tabs" role="group" aria-label="Settings sections">${tabBar}</div>${panel(
       'display',
       displayRows,
-    )}${panel('input', inputRows)}${panel('audio', audioRows)}`;
+    )}${panel('input', inputRows)}${panel('audio', audioRows)}${panel('music', musicRows)}`;
   }
 
   /** Show one settings section and remember it for the next visit. */
@@ -3721,7 +4823,9 @@ export class App {
     root.querySelectorAll<HTMLButtonElement>('[data-settings-tab]').forEach((button) => {
       button.addEventListener('click', () => {
         const tab = button.dataset.settingsTab;
-        if (tab === 'display' || tab === 'input' || tab === 'audio') this.showSettingsTab(tab);
+        if (tab === 'display' || tab === 'input' || tab === 'audio' || tab === 'music') {
+          this.showSettingsTab(tab);
+        }
       });
     });
     root.querySelectorAll<HTMLInputElement>('[data-set]').forEach((input) => {
@@ -3757,10 +4861,17 @@ export class App {
           // Low quality keeps the darkness but drops the additive light pass;
           // the switch can turn it back on, because it is presentation only.
           this.settings.nightLights = presetNightLights(this.settings.graphicsQuality);
+          // Choosing a preset also recommends a shadow level. Detailed is an
+          // explicit upgrade: no preset selects it silently.
+          this.settings.shadowDetail = graphicsPreset(this.settings.graphicsQuality).shadowDetail;
+          const shadowSelect = root.querySelector<HTMLSelectElement>('[data-choice="shadowDetail"]');
+          if (shadowSelect) shadowSelect.value = this.settings.shadowDetail;
           const slider = root.querySelector<HTMLInputElement>('[data-set="renderScale"]');
           if (slider) slider.value = String(Math.round(this.settings.renderScale * 100));
           const out = root.querySelector<HTMLElement>('[data-value-for="renderScale"]');
           if (out) out.textContent = `${Math.round(this.settings.renderScale * 100)}%`;
+        } else if (select.dataset.choice === 'shadowDetail') {
+          this.settings.shadowDetail = normaliseShadowDetail(select.value);
         } else if (select.dataset.choice === 'escBehavior') {
           this.settings.escBehavior = normaliseEscBehavior(select.value);
         } else return;
@@ -3794,7 +4905,8 @@ export class App {
           key !== 'edgePan' &&
           key !== 'customCursors' &&
           key !== 'silhouettes' &&
-          key !== 'nightLights'
+          key !== 'nightLights' &&
+          key !== 'cinematics'
         ) {
           return;
         }
@@ -3819,6 +4931,92 @@ export class App {
       btn.classList.toggle('on', on);
       btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
+    this.bindMusicControls(root);
+  }
+
+  /**
+   * Battle playlist controls. Every change rewrites only the playlist field,
+   * persists the whole settings blob through the existing path, and lets the
+   * controller decide whether the current track may keep playing.
+   */
+  private bindMusicControls(root: HTMLElement): void {
+    root.querySelectorAll<HTMLButtonElement>('[data-music-toggle]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const id = button.dataset.musicToggle;
+        if (!id) return;
+        this.audio.play('ui');
+        const enabled = this.settings.musicPlaylist.enabled.includes(id);
+        this.commitMusicPlaylist(
+          setMusicTrackEnabled(this.settings.musicPlaylist, id, !enabled),
+        );
+      });
+    });
+    root.querySelectorAll<HTMLButtonElement>('[data-music-move]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const id = button.dataset.musicMove;
+        if (!id) return;
+        const direction: -1 | 1 = button.dataset.direction === '1' ? 1 : -1;
+        this.commitMusicPlaylist(moveMusicTrack(this.settings.musicPlaylist, id, direction));
+      });
+    });
+    root.querySelectorAll<HTMLButtonElement>('[data-music-preview]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const id = button.dataset.musicPreview;
+        if (!id) return;
+        this.audio.init();
+        this.audio.play('ui');
+        this.audio.previewMatchTrack(id);
+        this.syncMusicPlaybackUi();
+      });
+    });
+    root.querySelectorAll<HTMLButtonElement>('[data-music-transport]').forEach((button) => {
+      button.addEventListener('click', () => {
+        this.audio.init();
+        this.audio.play('ui');
+        const action = button.dataset.musicTransport;
+        if (action === 'previous') this.audio.previousMatchTrack();
+        else if (action === 'next') this.audio.nextMatchTrack();
+        else if (action === 'toggle') this.audio.toggleMatchPause();
+        this.syncMusicPlaybackUi();
+      });
+    });
+    root.querySelectorAll<HTMLButtonElement>('[data-music-mode]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const shuffle = button.dataset.musicMode === 'shuffle';
+        if (shuffle === this.settings.musicPlaylist.shuffle) return;
+        this.commitMusicPlaylist(setMusicShuffle(this.settings.musicPlaylist, shuffle));
+      });
+    });
+    root.querySelectorAll<HTMLSelectElement>('[data-music-repeat]').forEach((select) => {
+      select.addEventListener('change', () => {
+        this.commitMusicPlaylist(
+          setMusicRepeat(this.settings.musicPlaylist, select.value as MusicRepeatMode),
+        );
+      });
+    });
+    root.querySelectorAll<HTMLButtonElement>('[data-music-defaults]').forEach((button) => {
+      button.addEventListener('click', () => {
+        this.audio.play('ui');
+        this.commitMusicPlaylist(restoreDefaultMusicPlaylist());
+      });
+    });
+    this.syncMusicPlaybackUi();
+  }
+
+  private commitMusicPlaylist(next: MusicPlaylistPreferences): void {
+    this.settings.musicPlaylist = normaliseMusicPlaylist(next);
+    this.audio.setMusicPlaylist(this.settings.musicPlaylist);
+    this.saveSettings();
+    this.syncMusicPlaybackUi();
+  }
+
+  /** Refresh every open settings sheet (menu view and/or battle modal). */
+  private syncMusicPlaybackUi(): void {
+    const preferences = this.settings.musicPlaylist;
+    const state = this.audio.matchMusicState;
+    document
+      .querySelectorAll<HTMLElement>('[data-music-panel]')
+      .forEach((panel) => syncMusicPanel(panel, preferences, state));
   }
 
   /**
@@ -3839,6 +5037,8 @@ export class App {
   /* ------------------------------------------------------------------ */
 
   openEditor(scenario?: Scenario): void {
+    this.missionTestScenario = null;
+    this.victoryShown = 'none';
     this.finishTutorial();
     this.audio.init();
     this.audio.stopMenuMusic();
@@ -3888,6 +5088,71 @@ export class App {
   launchEditorScenario(scenario: Scenario): void {
     this.editor.close();
     void this.startBattle(scenario);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Mission authoring test runs                                         */
+  /* ------------------------------------------------------------------ */
+
+  /** True while the battle on screen is a workbench test, not a campaign run. */
+  get missionTestActive(): boolean {
+    return this.missionTestScenario !== null;
+  }
+
+  /** Commander identity for briefing/dossier previews. */
+  missionCommander(): CommanderIdentity | null {
+    return this.campaignState()?.commander ?? null;
+  }
+
+  /**
+   * Run the working mission through the real simulation without touching the
+   * campaign. The campaign marker is stripped from the copy, which is the same
+   * boundary multiplayer and skirmish use for mission-free scenarios.
+   */
+  async startMissionTest(scenario: Scenario, section?: MissionSection): Promise<void> {
+    const test = cloneScenario(scenario);
+    delete test.meta.campaign;
+    // Callers that close the workbench first pass the section in; otherwise it
+    // is still readable from the open panel.
+    this.missionTestSection = section ?? this.editor.missionWorkbenchSection;
+    this.editor.close();
+    await this.startBattle(test, { missionTest: true });
+    if (this.screen !== 'battle') {
+      // Validation failed before the battle opened: return to the document
+      // rather than leaving the author on a closed Forge.
+      this.missionTestScenario = null;
+      this.openEditor(scenario);
+      this.editor.openMissionWorkbench(this.missionTestSection ?? undefined);
+    }
+  }
+
+  /** Leave the result screen of a test run and restore the authoring document. */
+  returnToMissionWorkbench(): void {
+    const scenario = this.missionTestScenario;
+    if (!scenario) return;
+    this.missionTestScenario = null;
+    this.openEditor(scenario);
+    this.editor.openMissionWorkbench(this.missionTestSection ?? 'validation');
+    this.missionTestSection = null;
+  }
+
+  /** Play an authored sequence inside the Forge without executing mission code. */
+  previewCinematicFromEditor(doc: MissionCinematicDoc): void {
+    if (!this.editor.active) return;
+    this.menuScenario = this.editor.scenario;
+    this.cinematicPreview = true;
+    const played = this.playCinematic(
+      doc,
+      'opening',
+      'CINEMATIC PREVIEW',
+      this.editor.scenario.mission?.title ?? this.editor.scenario.meta.name,
+      true,
+    );
+    if (!played) {
+      this.cinematicPreview = false;
+      this.menuScenario = null;
+      this.notify('A scene is already playing.', 'warning');
+    }
   }
 
   /* ------------------------------------------------------------------ */
@@ -4012,6 +5277,7 @@ export class App {
     this.updateOrientationPrompt();
     if (this.screen === 'menu') this.paintBriefMap();
     this.overlay.resize();
+    this.cursorLayer.resize();
     const maxX = this.overlay.width;
     const maxY = this.overlay.height;
     if (this.padCursor.x === 0 && this.padCursor.y === 0) {

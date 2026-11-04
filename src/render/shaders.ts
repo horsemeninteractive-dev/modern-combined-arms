@@ -90,6 +90,44 @@ vec3 applyHaze(vec3 col, vec3 world) {
 }
 `;
 
+/**
+ * Sun shadow lookup shared by the terrain, mesh and prop passes.
+ *
+ * The detailed pass rasterises casters into a depth map from the sun's point of
+ * view; a lit fragment compares its own light-space depth with the stored one
+ * and is in shadow when something else is nearer the sun. A 3x3 tap keeps the
+ * edge soft without a separate blur pass. The normal offset pushes the sample
+ * off the receiving surface so a facade does not shadow itself; the depth bias
+ * grows at grazing angles, where one texel spans a long stretch of surface.
+ */
+const SHADOW_SAMPLE_GLSL = /* glsl */ `
+uniform sampler2D uShadowMap;
+uniform mat4 uLightVP;
+uniform vec2 uShadowTexel;
+uniform float uShadowStrength;
+uniform float uShadowBias;
+
+float shadowAt(vec3 world, vec3 normal) {
+  if (uShadowStrength < 0.001) return 1.0;
+  vec3 sunDir = normalize(uSun);
+  vec3 lifted = world + normal * 0.075 + sunDir * 0.02;
+  vec4 light = uLightVP * vec4(lifted, 1.0);
+  vec3 coord = light.xyz / light.w * 0.5 + 0.5;
+  if (coord.x <= 0.0 || coord.x >= 1.0 || coord.y <= 0.0 || coord.y >= 1.0 || coord.z >= 1.0) {
+    return 1.0;
+  }
+  float bias = uShadowBias * (1.0 + 2.6 * (1.0 - clamp(dot(normal, sunDir), 0.0, 1.0)));
+  float lit = 0.0;
+  for (int y = -1; y <= 1; y++) {
+    for (int x = -1; x <= 1; x++) {
+      float depth = texture(uShadowMap, coord.xy + vec2(float(x), float(y)) * uShadowTexel).r;
+      lit += coord.z - bias <= depth ? 1.0 : 0.0;
+    }
+  }
+  return lit / 9.0;
+}
+`;
+
 export const MESH_VS = /* glsl */ `#version 300 es
 precision highp float;
 layout(location=0) in vec3 aPos;
@@ -178,6 +216,7 @@ uniform float uUseFog;
 uniform float uSilhouette;
 ${FOG_FIELD}
 ${HAZE_GLSL}
+${SHADOW_SAMPLE_GLSL}
 out vec4 outColor;
 
 float hash21(vec2 p) {
@@ -299,7 +338,11 @@ void main() {
   // collapsing to one value; it is not screen-dependent and applies equally to
   // every mesh material.
   float fill = max(dot(n, normalize(vec3(-0.55, 0.35, 0.5))), 0.0);
-  float shade = uAmbient + (1.0 - uAmbient) * diffuse * 0.9 + 0.11 * hemi + fill * 0.18;
+  // Cast shadows darken only the sun's share: the ambient and sky fill still
+  // reach the ground, which is what keeps a shadow blue-grey rather than black.
+  float shadowed = isFlag ? 1.0 : shadowAt(vWorld, n);
+  float direct = mix(1.0, shadowed, uShadowStrength);
+  float shade = uAmbient + (1.0 - uAmbient) * diffuse * 0.9 * direct + 0.11 * hemi + fill * 0.18;
   // Cloth faces the fixed tactical camera, which is often away from the sun.
   // Keep both flags readable without letting them glow like emissive panels.
   shade = mix(shade, max(shade, 0.78), step(0.001, vWind));
@@ -310,7 +353,7 @@ void main() {
     vec3 halfDir = normalize(sunDir + viewDir);
     float gloss = 1.0 - roughness;
     float highlight = pow(max(dot(n, halfDir), 0.0), mix(6.0, 110.0, gloss));
-    lit += mix(vec3(1.0), base, 0.5) * highlight * specular * (0.08 + metalness * 0.55) * (0.3 + diffuse * 0.7);
+    lit += mix(vec3(1.0), base, 0.5) * highlight * specular * (0.08 + metalness * 0.55) * (0.3 + diffuse * 0.7) * mix(0.2, 1.0, direct);
     float fresnel = pow(1.0 - max(dot(n, viewDir), 0.0), 4.0);
     lit += vec3(0.2, 0.28, 0.3) * fresnel * (0.05 + gloss * 0.16) * (1.0 - metalness * 0.6);
   }
@@ -334,6 +377,42 @@ void main() {
   lit = applyFog(lit, fog);
   outColor = vec4(lit, uAlpha);
 }
+`;
+
+/**
+ * Depth-only caster pass for the detailed shadow map.
+ *
+ * It shares one program between static meshes and instanced props: a static VAO
+ * leaves the instance attributes at their defaults (offset 0, rotation 0, scale
+ * 1), so the same transform works for terrain, a building body, a unit hull and
+ * a batch of trees. uModel carries the per-entity placement.
+ */
+export const SHADOW_DEPTH_VS = /* glsl */ `#version 300 es
+precision highp float;
+layout(location=0) in vec3 aPos;
+layout(location=4) in vec3 iPos;
+layout(location=5) in float iRot;
+layout(location=6) in float iScale;
+uniform mat4 uModel;
+uniform mat4 uLightVP;
+/**
+ * 1 for a static mesh, whose instance attributes are disabled and therefore
+ * default to zero, and 0 for an instanced batch. Without it a static caster
+ * would collapse to a single point at the origin because iScale reads 0.
+ */
+uniform float uStaticScale;
+void main() {
+  float c = cos(iRot);
+  float s = sin(iRot);
+  vec3 p = aPos * (iScale + uStaticScale);
+  vec3 world = vec3(p.x * c - p.z * s, p.y, p.x * s + p.z * c) + iPos;
+  gl_Position = uLightVP * uModel * vec4(world, 1.0);
+}
+`;
+
+export const SHADOW_DEPTH_FS = /* glsl */ `#version 300 es
+precision highp float;
+void main() {}
 `;
 
 export const SHADOW_VS = /* glsl */ `#version 300 es
@@ -549,6 +628,7 @@ uniform float uGrid;
 uniform float uWet;
 ${FOG_FIELD}
 ${HAZE_GLSL}
+${SHADOW_SAMPLE_GLSL}
 out vec4 outColor;
 
 float hash21(vec2 p) {
@@ -696,7 +776,10 @@ void main() {
   }
 
   float diffuse = max(dot(n, normalize(uSun)), 0.0);
-  vec3 lit = base * (uAmbient + (1.0 - uAmbient) * diffuse * 0.88 + 0.06 * n.y);
+  // Terrain casts into the same map it receives from, so a ridge shadows the
+  // valley behind it instead of every slope being lit by the same sun.
+  float direct = mix(1.0, shadowAt(vWorld, n), uShadowStrength);
+  vec3 lit = base * (uAmbient + (1.0 - uAmbient) * diffuse * 0.88 * direct + 0.06 * n.y);
   // Standing water is a mirror: a broad, low-power highlight over the whole
   // soaked field, tightening to a hard sun-glint on the puddles themselves.
   if (uWet > 0.001) {
@@ -707,7 +790,7 @@ void main() {
     // Grazing angles catch far more of the sky than a top-down look does.
     float grazing = 1.0 - abs(viewDir.y);
     vec3 sky = mix(vec3(0.34, 0.40, 0.46), vec3(0.62, 0.68, 0.74), diffuse);
-    lit += (sky * (sheen + glint * 1.4) + vec3(1.0, 0.97, 0.9) * glint * 0.35) * (0.35 + 0.65 * grazing);
+    lit += (sky * (sheen + glint * 1.4) + vec3(1.0, 0.97, 0.9) * glint * 0.35) * (0.35 + 0.65 * grazing) * mix(0.25, 1.0, direct);
     // A wet surface is a darker diffuse body even where the sun does not glint.
     lit *= 1.0 - 0.1 * uWet * (1.0 - grazing);
   }
@@ -964,6 +1047,7 @@ uniform sampler2D uMatLut;
 uniform float uUseFog;
 ${FOG_FIELD}
 ${HAZE_GLSL}
+${SHADOW_SAMPLE_GLSL}
 out vec4 outColor;
 
 float hash21(vec2 p) {
@@ -1017,12 +1101,13 @@ void main() {
     col *= mix(1.0, 0.94 + 0.09 * meso, detail);
   }
 
-  col *= uAmbient + (1.0 - uAmbient) * diffuse * 0.82 + 0.08 * n.y;
+  float direct = mix(1.0, shadowAt(vWorld, n), uShadowStrength);
+  col *= uAmbient + (1.0 - uAmbient) * diffuse * 0.82 * direct + 0.08 * n.y;
   vec3 viewDir = normalize(uEye - vWorld);
   vec3 halfDir = normalize(sunDir + viewDir);
   float gloss = 1.0 - roughness;
   float highlight = pow(max(dot(n, halfDir), 0.0), mix(6.0, 100.0, gloss));
-  col += mix(vec3(1.0), col, 0.5) * highlight * specular * (0.08 + metalness * 0.5);
+  col += mix(vec3(1.0), col, 0.5) * highlight * specular * (0.08 + metalness * 0.5) * mix(0.2, 1.0, direct);
   // uGlow is the self-lit colour a prop adds after the light grade: the crystal
   // seams use it to burn cyan once the sun is down. Scaling it by the facet's
   // own brightness keeps the cut faces readable instead of flooding the shard

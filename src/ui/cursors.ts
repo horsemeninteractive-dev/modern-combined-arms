@@ -1,13 +1,15 @@
 import type { CommandMode } from '../app';
 
 /**
- * The battle cursor set.
+ * The app cursor set.
  *
- * Pointers are drawn on the overlay canvas rather than set as CSS cursor
- * images: browsers snapshot cursor images once, so an animated SVG or GIF
- * freezes, and a canvas reticle can rotate, pulse and react to placement
- * validity without shipping a sprite per state. The OS pointer is hidden over
- * the battlefield only while these are on; HUD panels keep their own cursor.
+ * Pointers are drawn on a dedicated full-window canvas rather than set as CSS
+ * cursor images: browsers snapshot cursor images once, so an animated SVG or
+ * GIF freezes, and a canvas reticle can rotate, pulse and react to placement
+ * validity without shipping a sprite per state. The OS pointer is hidden
+ * app-wide while these are on, so the reticle crosses the deck, HUD panels,
+ * modals and the editor instead of stopping at the battlefield frame. Text
+ * fields are the exception: they keep their native I-beam.
  *
  * The glyphs follow the same 24×24 vocabulary as the HUD icons, drawn with a
  * dark halo so the pointer stays legible over snow, sand and dark water.
@@ -23,7 +25,14 @@ export type BattleCursor =
   | 'place'
   | 'placeBlocked'
   | 'box'
-  | 'pan';
+  | 'pan'
+  | 'strike';
+
+/** Pointer states for the deck, HUD, modals and editor rather than the field. */
+export type UiCursor = 'action' | 'blocked';
+
+/** Everything the cursor layer can paint. */
+export type AppCursor = BattleCursor | UiCursor;
 
 export interface CursorContext {
   /** Placement validity under the pointer; null/undefined while unknown. */
@@ -64,6 +73,10 @@ const GLYPHS = {
   garrison: 'M4 21V9l8-6 8 6v12M9 21v-6h6v6M12 8.6a1.4 1.4 0 1 0 0 2.8a1.4 1.4 0 1 0 0-2.8M9 13h6',
   build: 'M3 21h18M5 21V10l7-5 7 5v11M9 21v-6h6v6M9 10h6',
   box: 'M3 8V3h5M16 3h5v5M21 16v5h-5M8 21H3v-5',
+  // A strategic aim reticle: an outer ring with crosshair ticks, so a
+  // superweapon call-in never reads as an ordinary order cursor.
+  strike:
+    'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18M12 7a5 5 0 1 0 0 10a5 5 0 1 0 0-10M12 1v4M12 19v4M1 12h4M19 12h4',
 } as const;
 
 interface CursorStyle {
@@ -89,7 +102,69 @@ const STYLES: Record<BattleCursor, CursorStyle> = {
   placeBlocked: { glyph: GLYPHS.build, color: CURSOR_RED, spin: 0, accent: BLOCKED_SLASH },
   box: { glyph: GLYPHS.box, color: CURSOR_INK, spin: 0 },
   pan: { glyph: GLYPHS.move, color: CURSOR_AMBER, spin: 0 },
+  strike: { glyph: GLYPHS.strike, color: CURSOR_RED, spin: 0.5 },
 };
+
+/**
+ * Controls that accept a click, tap or drag. Native elements plus the divs and
+ * rows that carry an explicit action attribute or a known clickable class.
+ * The cursor layer reads this selector rather than the CSS `cursor` value,
+ * because the app-wide `cursor: none` rule would otherwise erase the semantic.
+ */
+export const UI_CURSOR_TARGETS = [
+  'button',
+  'a[href]',
+  'summary',
+  'label[for]',
+  'select',
+  'input[type="button"]',
+  'input[type="submit"]',
+  'input[type="reset"]',
+  'input[type="checkbox"]',
+  'input[type="radio"]',
+  'input[type="range"]',
+  'input[type="color"]',
+  'input[type="file"]',
+  '[role="button"]',
+  '[role="tab"]',
+  '[role="option"]',
+  '[role="menuitem"]',
+  '[role="menuitemcheckbox"]',
+  '[role="menuitemradio"]',
+  '[role="checkbox"]',
+  '[role="radio"]',
+  '[role="switch"]',
+  '[role="slider"]',
+  '[data-act]',
+  '[data-toggle]',
+  '[data-menu-view]',
+  '[data-map]',
+  '[data-build]',
+  '[data-produce]',
+  '[data-stance]',
+  '[data-tab]',
+  '[data-choice]',
+  '.rail-power',
+  '.toast.clickable',
+  '.issue',
+  '.u-grip',
+  '.editor-rail',
+  '.editor-sheet-grab',
+  '#minimap',
+].join(', ');
+
+/**
+ * The UI pointer under `target`. A disabled control still reports the blocked
+ * state, so the player can tell a control exists but will not accept the click.
+ */
+export function uiCursorFor(target: Element | null): UiCursor | 'select' {
+  const control = target?.closest(UI_CURSOR_TARGETS);
+  if (!control) return 'select';
+  // The tactical map is clickable while it is live; its offline face is not.
+  if (control.id === 'minimap' && control.classList.contains('static')) return 'select';
+  if (control.matches(':disabled, [aria-disabled="true"], .locked, .disabled')) return 'blocked';
+  return 'action';
+}
 
 /** Native equivalents, used when the player turns custom cursors off. */
 export const NATIVE_CURSORS: Record<BattleCursor, string> = {
@@ -104,6 +179,7 @@ export const NATIVE_CURSORS: Record<BattleCursor, string> = {
   placeBlocked: 'not-allowed',
   box: 'crosshair',
   pan: 'grabbing',
+  strike: 'crosshair',
 };
 
 /**
@@ -131,15 +207,55 @@ export function battleCursor(mode: CommandMode, ctx: CursorContext = {}): Battle
       return 'garrison';
     case 'box':
       return 'box';
+    case 'superweapon':
+      return 'strike';
     default:
       return 'select';
   }
 }
 
 /**
+ * The editor's map surface. Placement and camera drags are contextual the same
+ * way they are in battle: a place tool follows the tile under the pointer and
+ * turns blocked outside the map or over the authoring panels, while a camera
+ * drag keeps its pan reticle even when the pointer crosses a rail.
+ *
+ * `null` means the editor does not own the pointer state here, so the ordinary
+ * UI action/blocked resolution applies instead.
+ */
+export interface EditorCursorContext {
+  /** The pointer is over the map canvas rather than an editor panel. */
+  overMap: boolean;
+  /** The pointer is over a clickable control in the editor chrome. */
+  overControl: boolean;
+  /** A middle/right-button or PAN-mode camera drag is in progress. */
+  panning: boolean;
+  /** The PAN toolbar toggle is armed; left-drag moves the camera. */
+  panMode: boolean;
+  /** A structure, unit or player-start tool is armed. */
+  placing: boolean;
+  /** The highlighted tile accepts the current placement. */
+  placementOk: boolean;
+}
+
+export function editorCursor(ctx: EditorCursorContext): BattleCursor | null {
+  // A camera drag outranks every authoring tool and follows the pointer over
+  // the panels, because the gesture began on the map and is still moving it.
+  if (ctx.panning) return 'pan';
+  if (ctx.panMode && ctx.overMap) return 'pan';
+  if (!ctx.placing) return null;
+  if (ctx.overMap) return ctx.placementOk ? 'place' : 'placeBlocked';
+  // A toolbar button or panel control still accepts its own click while a place
+  // tool is armed, so let the ordinary UI action/blocked resolution own it.
+  // Only inert chrome refuses the tool before it can reach the document.
+  if (ctx.overControl) return null;
+  return 'placeBlocked';
+}
+
+/**
  * CSS `cursor` for a state. Custom cursors hide the OS pointer (`none`) because
- * the overlay paints the reticle; turning them off returns the platform's own
- * pointer with the closest native meaning.
+ * the cursor layer paints the reticle; turning them off returns the platform's
+ * own pointer with the closest native meaning.
  */
 export function cursorProperty(cursor: BattleCursor, custom: boolean): string {
   return custom ? 'none' : NATIVE_CURSORS[cursor];
@@ -184,7 +300,51 @@ function strokeGlyph(
   ctx.restore();
 }
 
-function drawArrow(ctx: CanvasRenderingContext2D, x: number, y: number, time: number): void {
+/**
+ * The pointing hand for an actionable control. The arrow says "this is where
+ * you are"; the gauntlet says "this will take a click", so a player can tell a
+ * button from the panel behind it without the OS pointer.
+ */
+const HAND =
+  'M9 11V4.5a1.5 1.5 0 0 1 3 0V11m0-6.5a1.5 1.5 0 0 1 3 0V11m0-5.5a1.5 1.5 0 0 1 3 0V11m0-4a1.5 1.5 0 0 1 3 0v8.5c0 3-2.5 5.5-5.5 5.5h-2.3c-1.4 0-2.7-.6-3.6-1.7l-4.1-5a1.7 1.7 0 0 1 2.6-2.2L9 14.5z';
+const HAND_TIP = { x: 9, y: 3 };
+
+function drawActionHand(ctx: CanvasRenderingContext2D, x: number, y: number, time: number): void {
+  const path = pathFor(HAND);
+  ctx.save();
+  ctx.translate(x - HAND_TIP.x, y - HAND_TIP.y);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.fillStyle = HALO;
+  ctx.strokeStyle = HALO;
+  ctx.lineWidth = 3;
+  ctx.fill(path);
+  ctx.stroke(path);
+  ctx.fillStyle = CURSOR_INK;
+  ctx.strokeStyle = CURSOR_AMBER;
+  ctx.lineWidth = 1.1;
+  ctx.fill(path);
+  ctx.stroke(path);
+  ctx.restore();
+  // The same slow amber pulse at the fingertip, so the actionable pointer keeps
+  // the resting pointer's heartbeat instead of feeling like a second language.
+  const pulse = 0.5 + 0.5 * Math.sin(time * 3.2);
+  ctx.save();
+  ctx.globalAlpha = 0.1 + 0.16 * pulse;
+  ctx.fillStyle = CURSOR_AMBER;
+  ctx.beginPath();
+  ctx.arc(x, y, 2 + pulse * 2.4, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawArrow(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  time: number,
+  state: 'select' | 'blocked' = 'select',
+): void {
   const path = pathFor(ARROW);
   ctx.save();
   ctx.translate(x - ARROW_TIP.x, y - ARROW_TIP.y);
@@ -194,7 +354,7 @@ function drawArrow(ctx: CanvasRenderingContext2D, x: number, y: number, time: nu
   ctx.lineWidth = 3;
   ctx.fill(path);
   ctx.stroke(path);
-  ctx.fillStyle = CURSOR_INK;
+  ctx.fillStyle = state === 'blocked' ? '#a9b4b0' : CURSOR_INK;
   ctx.strokeStyle = HALO;
   ctx.lineWidth = 1.1;
   ctx.fill(path);
@@ -204,11 +364,24 @@ function drawArrow(ctx: CanvasRenderingContext2D, x: number, y: number, time: nu
   // moving the tip away from the pixel the player is pointing at.
   const pulse = 0.5 + 0.5 * Math.sin(time * 3.2);
   ctx.save();
-  ctx.globalAlpha = 0.1 + 0.16 * pulse;
-  ctx.fillStyle = CURSOR_AMBER;
+  ctx.globalAlpha = state === 'blocked' ? 0.08 : 0.1 + 0.16 * pulse;
+  ctx.fillStyle = state === 'blocked' ? CURSOR_RED : CURSOR_AMBER;
   ctx.beginPath();
   ctx.arc(x, y, 2 + pulse * 2.4, 0, TAU);
   ctx.fill();
+  ctx.restore();
+  if (state !== 'blocked') return;
+  // A red slash across the arrow: this control is visible but will refuse the
+  // click, which is exactly what the native not-allowed pointer said.
+  ctx.save();
+  ctx.globalAlpha = 0.95;
+  ctx.strokeStyle = CURSOR_RED;
+  ctx.lineWidth = 1.5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x + 1, y + 17);
+  ctx.lineTo(x + 17, y + 1);
+  ctx.stroke();
   ctx.restore();
 }
 
@@ -238,13 +411,21 @@ function drawPulseRing(
  */
 export function drawBattleCursor(
   ctx: CanvasRenderingContext2D,
-  cursor: BattleCursor,
+  cursor: AppCursor,
   x: number,
   y: number,
   timeMs: number,
 ): void {
   if (cursor === 'select') {
     drawArrow(ctx, x, y, timeMs / 1000);
+    return;
+  }
+  if (cursor === 'action') {
+    drawActionHand(ctx, x, y, timeMs / 1000);
+    return;
+  }
+  if (cursor === 'blocked') {
+    drawArrow(ctx, x, y, timeMs / 1000, 'blocked');
     return;
   }
   const style = STYLES[cursor];
@@ -324,4 +505,56 @@ export function drawOrderGhostGlyph(
   ctx.translate(-12, -12);
   strokeGlyph(ctx, glyph, color, alpha);
   ctx.restore();
+}
+
+/**
+ * Text-entry controls whose native pointer must survive custom cursors. This
+ * mirrors the `custom-cursors` text-field rules in style.css: the drawn arrow
+ * yields to the I-beam so selection and caret placement stay familiar.
+ */
+export const NATIVE_CURSOR_TARGETS =
+  "input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='color']):not([type='file']):not([type='button']):not([type='submit']):not([type='reset']), textarea, select, [contenteditable='true']";
+
+/** Whether a control under the pointer wants the platform's own cursor. */
+export function wantsNativeCursor(target: Element | null): boolean {
+  return !!target?.closest(NATIVE_CURSOR_TARGETS);
+}
+
+/**
+ * The topmost cursor surface. It is a separate canvas from the battlefield
+ * overlay so the pointer can sit above the deck, modals and editor without
+ * lifting the selection rings and hover labels above the HUD.
+ */
+export class CursorLayer {
+  private canvas: HTMLCanvasElement;
+  private ctx: CanvasRenderingContext2D;
+  width = 1;
+  height = 1;
+  private reducedMotion =
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  constructor(canvas: HTMLCanvasElement) {
+    this.canvas = canvas;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('2D cursor context unavailable.');
+    this.ctx = ctx;
+    this.resize();
+  }
+
+  resize(): void {
+    const rect = this.canvas.getBoundingClientRect();
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    this.width = Math.max(1, Math.floor(rect.width || window.innerWidth));
+    this.height = Math.max(1, Math.floor(rect.height || window.innerHeight));
+    this.canvas.width = Math.floor(this.width * dpr);
+    this.canvas.height = Math.floor(this.height * dpr);
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  draw(cursor: AppCursor, x: number, y: number, visible: boolean, timeMs: number): void {
+    this.ctx.clearRect(0, 0, this.width, this.height);
+    if (!visible) return;
+    drawBattleCursor(this.ctx, cursor, x, y, this.reducedMotion ? 0 : timeMs);
+  }
 }

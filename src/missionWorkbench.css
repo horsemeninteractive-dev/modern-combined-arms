@@ -1,0 +1,291 @@
+/* Mission workbench and library (S6) */
+
+/* The workbench docks into the Forge's authoring column instead of floating over
+   the map: it is the MISSION view of the same sidebar the map tools live in, so
+   the panel rail can slide it away mid-edit and bring it back where it left off. */
+.mission-workbench-root { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; min-height: 0; pointer-events: auto; }
+.mission-workbench-root.hidden { display: none; }
+.wb-panel {
+  position: relative; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+  width: auto; padding: 0; border: 0; border-radius: 0; background: transparent;
+  box-shadow: none; backdrop-filter: none; color: var(--ink);
+}
+/* Only the body scrolls. Without this the panel's flex column squeezes the
+   header, tab strip and footer below their content height on short screens,
+   which silently clips the tab labels instead of scrolling the list. */
+/* Docked, the heading stacks: a title squeezed beside five badges and two
+   buttons reads as two clipped columns, so the document name gets its line. */
+.wb-head { display: flex; flex-direction: column; align-items: stretch; gap: 7px; padding: 10px 12px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+.wb-title { display: grid; gap: 2px; min-width: 0; }
+.wb-title > span { font-family: var(--mono); font-size: 8px; letter-spacing: 0.18em; color: var(--amber); }
+.wb-title > b { font-family: var(--display); font-size: 15px; letter-spacing: 0.04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-title > small { font-family: var(--mono); font-size: 8px; color: var(--ink-faint); letter-spacing: 0.06em; }
+.wb-state { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-start; gap: 5px; }
+.wb-badge { font-family: var(--mono); font-size: 7.5px; letter-spacing: 0.08em; padding: 4px 6px; border: 1px solid var(--line); color: var(--ink-dim); }
+.wb-badge.ok { color: #86c791; border-color: rgba(134, 199, 145, 0.35); }
+.wb-badge.warn, .wb-badge.dirty { color: var(--amber); border-color: rgba(224, 163, 74, 0.4); }
+.wb-badge.bad, .wb-badge.locked { color: #ef6c4d; border-color: rgba(239, 108, 77, 0.45); }
+/* Docked, the section strip is a compact grid: nine entries in one scrolling
+   row is a nested scrollbar in a 560 px column, and two or three short rows read
+   faster than a strip whose last sections are always off-screen. */
+.wb-tabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(84px, 1fr)); gap: 3px; padding: 6px 8px; border-bottom: 1px solid var(--line); background: rgba(4, 8, 10, 0.55); flex: 0 0 auto; }.wb-tab { display: grid; align-content: center; gap: 1px; min-width: 0; min-height: 30px; padding: 5px 6px; cursor: pointer;
+  border: 1px solid transparent; background: transparent; color: var(--ink-faint);
+  font-family: var(--mono); font-size: 8px; line-height: 1.35; letter-spacing: 0.09em; text-align: center;
+}
+.wb-tab small { display: none; }
+.wb-tab:hover { color: var(--ink); background: rgba(167, 190, 184, 0.05); }
+.wb-tab.active { color: var(--amber); border-color: rgba(224, 163, 74, 0.35); background: rgba(224, 163, 74, 0.07); }
+.wb-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 12px 16px; }
+.wb-foot { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 8px; letter-spacing: 0.07em; color: var(--ink-faint); flex: 0 0 auto; }
+.wb-section { display: grid; gap: 12px; }
+.wb-grid { display: grid; gap: 10px; }
+/* Docked column widths: three and four-across field rows are a desktop-overlay
+   layout, so they fold to two columns here rather than squeezing every input. */
+.wb-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.wb-grid.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.wb-grid.four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.wb-card { display: grid; gap: 9px; padding: 11px 12px; border: 1px solid rgba(167, 190, 184, 0.14); background: rgba(167, 190, 184, 0.025); }
+.wb-card > h3, .wb-section-head h3 { margin: 0; font-family: var(--display); font-size: 11px; letter-spacing: 0.12em; color: var(--ink); }
+.wb-card > p, .wb-section-head p { margin: 0; color: var(--ink-dim); font-size: 11px; line-height: 1.55; }
+.wb-card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.wb-card-head > b { font-family: var(--display); font-size: 11.5px; letter-spacing: 0.04em; }
+.wb-card-head .btn { margin-left: auto; padding: 4px 7px; font-size: 8px; }
+.wb-index { font-family: var(--mono); font-size: 8px; color: var(--amber); }
+.wb-chip { font-family: var(--mono); font-size: 7px; letter-spacing: 0.07em; padding: 3px 5px; border: 1px solid rgba(167, 190, 184, 0.2); color: var(--ink-faint); white-space: nowrap; }
+.wb-chip.primary { color: #7fd0e8; border-color: rgba(82, 197, 230, 0.4); }
+.wb-chip.secondary { color: var(--amber); border-color: rgba(224, 163, 74, 0.35); }
+.wb-chip.bonus { color: #86c791; border-color: rgba(134, 199, 145, 0.35); }
+.wb-chip.bad { color: #ef6c4d; border-color: rgba(239, 108, 77, 0.5); }
+.wb-chip.warn { color: var(--amber); border-color: rgba(224, 163, 74, 0.4); }
+.wb-field { display: grid; gap: 4px; align-content: start; min-width: 0; }
+.wb-field > span, .wb-label { font-family: var(--mono); font-size: 7.5px; letter-spacing: 0.1em; color: var(--ink-faint); }
+.wb-field > small { font-family: var(--mono); font-size: 7px; line-height: 1.4; color: rgba(167, 190, 184, 0.5); }
+.wb-field input, .wb-field select, .wb-field textarea, .wb-list-row input, .wb-row input, .wb-row select {
+  width: 100%; min-width: 0; padding: 5px 7px; border: 1px solid rgba(167, 190, 184, 0.22);
+  border-radius: 2px; background: rgba(4, 8, 10, 0.72); color: var(--ink);
+  font-family: var(--mono); font-size: 10px; line-height: 1.4;
+}
+.wb-field textarea { resize: vertical; }
+.wb-field input:focus, .wb-field select:focus, .wb-field textarea:focus, .wb-row input:focus, .wb-row select:focus { outline: 1px solid rgba(224, 163, 74, 0.65); }
+.wb-check { display: flex; align-items: flex-start; gap: 7px; font-size: 10px; color: var(--ink-dim); line-height: 1.5; }
+.wb-check input { width: auto; }
+.wb-inline { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.wb-note { margin: 0; font-size: 10px; line-height: 1.55; color: var(--ink-dim); }
+.wb-note b { color: var(--ink); }
+.wb-warning { margin: 0; padding: 7px 9px; border-left: 2px solid var(--amber); background: rgba(224, 163, 74, 0.08); font-size: 10px; color: var(--ink-dim); }
+.wb-toolbar { display: flex; flex-wrap: wrap; gap: 6px; }
+.wb-toolbar .btn, .wb-actions .btn { padding: 5px 8px; font-size: 8px; }
+.wb-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.wb-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+/* The heading keeps the width; a bare action button keeps its own label on one
+   line instead of being squeezed to "ADD / OBJECTIVE" by the paragraph. */
+.wb-section-head > div { flex: 1 1 auto; min-width: 0; }
+.wb-section-head > .btn { flex: 0 0 auto; white-space: nowrap; }
+.wb-summary-strip { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px; background: rgba(167, 190, 184, 0.14); }
+.wb-summary-strip > div { display: grid; gap: 2px; padding: 9px 10px; background: rgba(6, 11, 13, 0.96); }
+.wb-summary-strip span { font-family: var(--mono); font-size: 7px; color: var(--ink-faint); }
+.wb-summary-strip b { font-family: var(--display); font-size: 18px; }
+.wb-summary-strip small { font-family: var(--mono); font-size: 7px; line-height: 1.4; color: var(--ink-faint); }
+.wb-summary-strip > div.bad b { color: #ef6c4d; }
+.wb-summary-strip > div.warn b { color: var(--amber); }
+.wb-summary-strip > div.ok b { color: #86c791; }
+.wb-checks { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 5px; }
+.wb-checks label { display: flex; align-items: center; gap: 5px; font-family: var(--mono); font-size: 8px; color: var(--ink-dim); }
+.wb-checks input { width: auto; }
+.wb-subhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; padding-top: 8px; border-top: 1px solid rgba(167, 190, 184, 0.12); font-family: var(--mono); font-size: 7.5px; letter-spacing: 0.12em; color: var(--ink-faint); }
+.wb-subhead .btn { padding: 3px 6px; font-size: 7.5px; }
+.wb-stack { display: grid; gap: 7px; }
+.wb-row { display: grid; gap: 7px; padding: 8px 9px; border: 1px solid rgba(167, 190, 184, 0.12); background: rgba(4, 8, 10, 0.35); }
+.wb-row.deferred { border-style: dashed; opacity: 0.82; }
+.wb-row-head { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.wb-row-head select { width: auto; min-width: 130px; }
+.wb-row-actions { display: flex; gap: 3px; margin-left: auto; }
+.wb-row-actions .btn { padding: 2px 6px; font-size: 8px; }
+.wb-summary { flex: 1 1 160px; font-family: var(--mono); font-size: 8px; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; }
+.wb-unavailable { margin: 0; font-family: var(--mono); font-size: 8px; line-height: 1.5; color: var(--amber); }
+.wb-list-row { display: flex; gap: 6px; align-items: center; }
+.wb-list-row .btn { flex: 0 0 auto; padding: 4px 7px; font-size: 7.5px; }
+.wb-empty { padding: 28px 20px; text-align: center; border: 1px dashed var(--line); }
+.wb-empty h3 { margin: 0 0 8px; font-family: var(--display); font-size: 15px; }
+.wb-empty p { margin: 0 auto 16px; max-width: 52ch; color: var(--ink-dim); font-size: 11px; line-height: 1.6; }
+.wb-import { display: grid; gap: 10px; }
+.wb-warning-list { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 10px; color: var(--ink-dim); }
+.wb-warning-list b { font-family: var(--mono); font-size: 8px; color: var(--amber); }
+.issue { display: flex; align-items: flex-start; gap: 8px; width: 100%; padding: 7px 8px; border: 0; border-bottom: 1px solid rgba(167, 190, 184, 0.1); background: transparent; color: var(--ink-dim); text-align: left; cursor: pointer; }
+.issue:hover { background: rgba(167, 190, 184, 0.05); }
+.issue .sev { flex: 0 0 auto; font-family: var(--mono); font-size: 7px; padding: 2px 4px; border: 1px solid currentColor; }
+.issue.error .sev { color: #ef6c4d; }
+.issue.warning .sev { color: var(--amber); }
+.issue.info .sev { color: #7fd0e8; }
+.issue p { margin: 0 0 2px; font-size: 10px; line-height: 1.45; }
+.issue small { font-family: var(--mono); font-size: 7px; color: var(--ink-faint); }
+
+.mission-library { display: grid; gap: 10px; }
+.library-toolbar { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px; }
+.library-search, .library-sort { display: grid; gap: 3px; font-family: var(--mono); font-size: 7.5px; letter-spacing: 0.1em; color: var(--ink-faint); }
+.library-search { flex: 1 1 260px; }
+.library-search input, .library-sort select { padding: 6px 8px; border: 1px solid rgba(167, 190, 184, 0.22); background: rgba(4, 8, 10, 0.72); color: var(--ink); font-family: var(--mono); font-size: 10px; }
+.library-meta { display: flex; flex-wrap: wrap; gap: 12px; padding: 6px 2px; font-family: var(--mono); font-size: 8px; letter-spacing: 0.06em; color: var(--ink-faint); }
+.library-meta .bad { color: #ef6c4d; }
+.library-empty { padding: 26px 16px; border: 1px dashed var(--line); text-align: center; }
+.library-empty h3 { margin: 0 0 6px; font-family: var(--display); font-size: 14px; }
+.library-empty p { margin: 0 auto; max-width: 48ch; color: var(--ink-dim); font-size: 11px; line-height: 1.55; }
+.library-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 11px; border: 1px solid rgba(167, 190, 184, 0.14); background: rgba(167, 190, 184, 0.025); }
+.library-row + .library-row { margin-top: 6px; }
+.library-row-main { display: grid; gap: 5px; min-width: 0; }
+.library-row-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.library-row-title b { font-family: var(--display); font-size: 12px; letter-spacing: 0.03em; }
+.library-row-meta { display: flex; flex-wrap: wrap; gap: 10px; font-family: var(--mono); font-size: 7.5px; color: var(--ink-faint); }
+.library-row-actions { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.library-row-actions .btn { padding: 4px 7px; font-size: 7.5px; }
+.library-error { margin: 0; font-family: var(--mono); font-size: 8px; color: #ef6c4d; }
+
+/* Recovery surfaces (S7).
+   A healthy library shows one quiet strip; damage is stated once, in plain words,
+   next to the actions that resolve it. */
+.library-meta .ok { color: #86c791; }
+.library-health { display: grid; gap: 4px; padding: 9px 11px; border: 1px solid rgba(167, 190, 184, 0.18); border-left-width: 3px; background: rgba(167, 190, 184, 0.03); }
+.library-health.warn { border-left-color: var(--amber); }
+.library-health.bad { border-left-color: #ef6c4d; }
+.library-health b { font-family: var(--mono); font-size: 8px; letter-spacing: 0.1em; }
+.library-health p { margin: 0; font-size: 10px; line-height: 1.5; color: var(--ink-dim); }
+.library-recovery { display: grid; gap: 8px; }
+.library-recovery h3 { margin: 0; font-family: var(--mono); font-size: 8px; letter-spacing: 0.12em; color: var(--ink-faint); text-transform: uppercase; }
+.library-recovery-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; border: 1px solid rgba(239, 108, 77, 0.22); background: rgba(239, 108, 77, 0.03); }
+.library-recovery-row + .library-recovery-row { margin-top: 6px; }
+
+.wb-recovery-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid rgba(167, 190, 184, 0.1); }
+.wb-recovery-row:last-child { border-bottom: 0; }
+.wb-recovery-row > div:first-child { display: grid; gap: 3px; min-width: 0; }
+.wb-recovery-row b { font-family: var(--display); font-size: 12px; letter-spacing: 0.03em; }
+.wb-recovery-row small { font-family: var(--mono); font-size: 7.5px; color: var(--ink-faint); }
+.wb-recovery-row p { margin: 0; max-width: 62ch; font-size: 10px; line-height: 1.5; color: var(--ink-dim); }
+.wb-recovery-row .wb-row-actions { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.wb-recovery-row .btn { padding: 4px 7px; font-size: 7.5px; }
+.wb-note-list { margin: 0; padding-left: 16px; display: grid; gap: 3px; font-family: var(--mono); font-size: 8px; color: var(--ink-faint); }
+
+@media (max-width: 900px) {
+  .wb-grid.two { grid-template-columns: minmax(0, 1fr); }
+  .wb-summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wb-head { flex-direction: column; }
+  .wb-state { justify-content: flex-start; }
+  .library-row { flex-direction: column; align-items: stretch; }
+  .library-row-actions { justify-content: flex-start; }
+  .library-recovery-row, .wb-recovery-row { flex-direction: column; align-items: stretch; }
+  .library-recovery-row .library-row-actions, .wb-recovery-row .wb-row-actions { justify-content: flex-start; }
+}
+@media (max-width: 560px) {
+  .wb-grid.two, .wb-grid.three, .wb-grid.four { grid-template-columns: minmax(0, 1fr); }
+  .wb-section-head { flex-direction: column; }
+  .wb-foot { flex-wrap: wrap; }
+  .wb-foot > span { flex: 1 1 100%; }
+}
+.wb-inline-issues { display: grid; gap: 3px; }
+.wb-inline-issue { margin: 0; padding: 5px 7px; font-family: var(--mono); font-size: 8px; line-height: 1.5; border-left: 2px solid var(--line); color: var(--ink-dim); }
+.wb-inline-issue b { margin-right: 4px; letter-spacing: 0.06em; }
+.wb-inline-issue small { color: var(--ink-faint); }
+.wb-inline-issue.error { border-color: #ef6c4d; }
+.wb-inline-issue.error b { color: #ef6c4d; }
+.wb-inline-issue.warning { border-color: var(--amber); }
+.wb-inline-issue.warning b { color: var(--amber); }
+.wb-inline-issue.info { border-color: #7fd0e8; }
+
+/* Phone landscape: recovery is the one screen an author may need while storage is
+   failing, so it must stay reachable without a taller sheet or horizontal scroll. */
+@media (max-height: 560px) and (orientation: landscape) {
+  .wb-summary-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .library-toolbar { position: sticky; top: 0; z-index: 2; background: rgba(4, 8, 10, 0.94); padding-bottom: 4px; }
+  .wb-recovery-row, .library-recovery-row { padding-top: 6px; padding-bottom: 6px; }
+  .wb-recovery-row p, .library-health p { font-size: 9.5px; line-height: 1.45; }
+}
+
+/* Spatial authoring (S8).
+   The map is the other half of these controls, so the panel states which tool
+   owns the pointer at all times and every reference row reads as one unit:
+   state, identity, then the actions that change it. */
+.wb-tool-state { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 7px 9px; border: 1px solid rgba(167, 190, 184, 0.16); border-left: 3px solid var(--amber); background: rgba(224, 163, 74, 0.05); font-size: 10px; line-height: 1.5; color: var(--ink-dim); }
+.wb-tool-state > span:not(.wb-chip) { flex: 1 1 240px; min-width: 0; }
+.wb-card.region.selected, .wb-card.wb-selected { border-color: rgba(241, 194, 126, 0.45); background: rgba(241, 194, 126, 0.05); }
+.wb-chip.selected { color: #ffe0b2; border-color: rgba(241, 194, 126, 0.65); }
+.wb-chip.ok { color: #86c791; border-color: rgba(134, 199, 145, 0.4); }
+.wb-ref-list { display: grid; gap: 5px; }
+.wb-ref-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 6px 8px; border: 1px solid rgba(167, 190, 184, 0.14); background: rgba(4, 8, 10, 0.35); }
+.wb-ref-row.bad { border-color: rgba(239, 108, 77, 0.42); background: rgba(239, 108, 77, 0.05); }
+.wb-ref-row.active { border-color: rgba(127, 208, 232, 0.6); background: rgba(127, 208, 232, 0.07); }
+.wb-ref-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; flex: 1 1 180px; min-width: 0; }
+.wb-ref-name b { font-family: var(--display); font-size: 11px; letter-spacing: 0.03em; }
+.wb-ref-name small { font-family: var(--mono); font-size: 7.5px; color: var(--ink-faint); }
+.wb-ref-name code, .wb-checks code, .wb-link code { font-family: var(--mono); font-size: 8px; color: var(--amber); }
+.wb-ref-row .wb-row-actions { margin-left: auto; }
+.wb-ref-field { display: grid; gap: 4px; }
+.wb-ref-control { align-items: stretch; }
+.wb-ref-control select { flex: 1 1 150px; width: auto; }
+.wb-ref-control .btn { flex: 0 0 auto; padding: 4px 7px; font-size: 8px; }
+.wb-ref-add { margin-top: 4px; }
+.wb-ref-add select { flex: 1 1 180px; padding: 5px 7px; border: 1px solid rgba(167, 190, 184, 0.22); background: rgba(4, 8, 10, 0.72); color: var(--ink); font-family: var(--mono); font-size: 10px; }
+.wb-ref-warning { margin: 0; padding: 5px 8px; border-left: 2px solid #ef6c4d; background: rgba(239, 108, 77, 0.07); font-family: var(--mono); font-size: 8px; line-height: 1.5; color: var(--ink-dim); }
+.wb-ref-warning b { color: #ef6c4d; margin-right: 4px; }
+.wb-checks label.blocked { opacity: 0.55; }
+.wb-link { padding: 0; border: 0; background: none; color: var(--ink-dim); font-family: var(--mono); font-size: 8px; text-align: left; cursor: pointer; text-decoration: underline dotted; }
+.wb-link:hover, .wb-link:focus-visible { color: var(--amber); }
+.wb-help { padding: 7px 9px; border: 1px solid rgba(167, 190, 184, 0.14); background: rgba(4, 8, 10, 0.3); font-size: 10px; color: var(--ink-dim); }
+.wb-help summary { cursor: pointer; font-family: var(--mono); font-size: 8px; letter-spacing: 0.09em; color: var(--ink-faint); }
+.wb-help summary:focus-visible { outline: 1px solid rgba(224, 163, 74, 0.65); outline-offset: 2px; }
+.wb-help ul { margin: 7px 0 0; padding-left: 16px; display: grid; gap: 3px; line-height: 1.5; }
+.wb-help p { margin: 6px 0 0; color: var(--ink-faint); font-size: 9.5px; }
+.wb-focus { animation: wb-focus-pulse 1.6s ease-out 1; }
+@keyframes wb-focus-pulse {
+  0% { box-shadow: 0 0 0 2px rgba(127, 208, 232, 0.85); }
+  100% { box-shadow: 0 0 0 2px rgba(127, 208, 232, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wb-focus { animation: none; box-shadow: 0 0 0 2px rgba(127, 208, 232, 0.7); }
+}
+.issue { align-items: center; }
+.issue > span:nth-child(2) { flex: 1 1 auto; min-width: 0; }
+.issue-go { flex: 0 0 auto; font-family: var(--mono); font-size: 7px; letter-spacing: 0.08em; color: var(--ink-faint); }
+.issue:hover .issue-go, .issue:focus-visible .issue-go { color: var(--amber); }
+
+@media (max-width: 900px) {
+  /* A map tool needs somewhere to draw: the editor steps the drawer aside for
+     the gesture, so the panel does not try to shrink itself out of the way. */
+  /* Stacked rows must not wrap: a column-wrap flex container turns overflow
+     into extra columns, which is how the status sentence escaped the panel. */
+  .wb-tool-state { flex-direction: column; align-items: flex-start; flex-wrap: nowrap; }
+  .wb-tool-state > span:not(.wb-chip) { flex: 0 1 auto; width: 100%; min-width: 0; }
+  /* Tabs keep their labels on one compact line at this size: nine scrolling
+     entries 200px wide each is a nested scroll nobody wants to use. */
+  .wb-tabs { padding: 4px 6px; }
+  .wb-tab { padding: 5px 6px; font-size: 9px; min-height: 28px; }
+  /* The heading and its actions read top-to-bottom here, so the actions get the
+     full width and wrap two or three to a row instead of one. */
+  .wb-section-head { flex-direction: column; align-items: stretch; }
+  .wb-ref-row { flex-direction: column; align-items: stretch; flex-wrap: nowrap; }
+  .wb-ref-row .wb-row-actions { margin-left: 0; justify-content: flex-start; flex-wrap: wrap; }
+  .wb-ref-control { flex-wrap: wrap; }
+}
+/* Short landscape: the drawer is only ~334 px tall, so the workbench chrome has
+   to give the document the room. Kickers, the scenario subtitle and the panel
+   heading are repeated elsewhere or optional; the section strip, badges and the
+   test button are not. */
+@media (max-height: 560px) {
+  .wb-head { padding: 6px 10px; gap: 5px; }
+  .wb-title { gap: 1px; }
+  .wb-title > span { display: none; }
+  .wb-title > small { display: none; }
+  .wb-title > b { font-size: 13px; }
+  .wb-badge { padding: 2px 5px; font-size: 7px; }
+  .wb-state .btn { padding: 3px 6px; font-size: 8px; }
+  .wb-tabs { padding: 4px 6px; gap: 2px; }
+  .wb-tab { min-height: 24px; padding: 3px 5px; font-size: 7.5px; }
+  .wb-body { padding: 8px 10px 12px; }
+  .wb-foot { padding: 6px 10px; font-size: 7.5px; }
+  .wb-foot .btn { padding: 4px 7px; font-size: 8px; }
+}
+
+@media (max-height: 560px) and (orientation: landscape) {
+  .wb-tool-state { font-size: 9px; line-height: 1.4; padding: 5px 8px; }
+  .wb-tool-state > span:not(.wb-chip) { flex: 1 1 100%; }
+  .wb-ref-row { padding: 5px 7px; }
+  .wb-section-head .wb-actions .btn { padding: 4px 6px; font-size: 7.5px; }
+}

@@ -96,10 +96,10 @@ describe('announcer manifest', () => {
     for (const id of ANNOUNCEMENT_IDS) {
       const cue = VOICE_MANIFEST[id];
       const path = voicePath(id);
-      expect(path).toBe(`/audio/battlesys/${cue.file}`);
+      expect(path).toBe(`/audio/narrator/defender/${cue.file}`);
       expect(paths.has(path)).toBe(false);
       paths.add(path);
-      expect(existsSync(new URL(`../public/audio/battlesys/${cue.file}`, import.meta.url))).toBe(true);
+      expect(existsSync(new URL(`../public/audio/narrator/defender/${cue.file}`, import.meta.url))).toBe(true);
     }
     expect(paths.size).toBe(23);
   });
@@ -164,7 +164,7 @@ describe('announcer playback', () => {
     const playback = new RecordingPlayback();
     const { announcer } = announcerWith(playback);
     expect(announcer.announce('constructionComplete')).toBe(true);
-    expect(playback.played).toEqual(['/audio/battlesys/constructioncomplete.mp3']);
+    expect(playback.played).toEqual(['/audio/narrator/defender/constructioncomplete.mp3']);
   });
 
   it('suppresses repeated deliveries and honours the per-line cooldown', () => {
@@ -371,7 +371,7 @@ describe('audio settings gating', () => {
     audio.setVoiceVolume(0.8);
     audio.announce('unitReady');
     expect(created).toHaveLength(1);
-    expect(created[0].src).toBe('/audio/battlesys/unitready.mp3');
+    expect(created[0].src).toBe('/audio/narrator/defender/unitready.mp3');
   });
 
   it('stays silent when the game is muted or the announcer volume is zero', () => {

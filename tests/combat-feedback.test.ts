@@ -242,6 +242,57 @@ describe('destruction feedback', () => {
     expect(block).toContain('this.particles.wreckFlame');
   });
 
+  it('draws the cutting beam from the drum to the seam face', () => {
+    const particles = new ParticleSystem();
+    particles.cutBeam(0, 1, 0, 3, 1, 4, 0.12);
+    // One beam quad plus the contact flare at the cut.
+    expect(particles.particles).toHaveLength(2);
+    const beam = particles.particles[0];
+    expect(beam.additive).toBe(true);
+    expect(beam.dir![0]).toBeCloseTo(0.6, 5);
+    expect(beam.dir![1]).toBeCloseTo(0, 5);
+    expect(beam.dir![2]).toBeCloseTo(0.8, 5);
+    // The stretched quad spans the whole cut, not a fixed streak.
+    expect(beam.stretch! * beam.size0 * 2).toBeCloseTo(5, 1);
+    expect(beam.gravity).toBe(0);
+    const flare = particles.particles[1];
+    expect(flare.x).toBe(3);
+    expect(flare.z).toBe(4);
+    expect(flare.additive).toBe(true);
+    expect(flare.alpha).toBeGreaterThan(0.5);
+  });
+
+  it('throws the chips off the seam face toward the intake', () => {
+    const particles = new ParticleSystem();
+    particles.oreChips(2, 1, 0, 0, 1, 0);
+    expect(particles.particles).toHaveLength(2);
+    for (const chip of particles.particles) {
+      expect(chip.additive).toBe(true);
+      // Gold, and moving back toward the drum rather than into the ground.
+      expect(chip.r).toBeGreaterThan(chip.b);
+      expect(chip.vx).toBeLessThan(0);
+      expect(chip.life).toBeLessThan(0.35);
+    }
+  });
+
+  it('ties the harvester cut to the shrinking node and to visible hulls', () => {
+    const renderer = readFileSync(new URL('../src/render/renderer.ts', import.meta.url), 'utf8');
+    const start = renderer.indexOf('private updateMiningBeams');
+    const end = renderer.indexOf('private updateProjectileTrails', start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const block = renderer.slice(start, end);
+    expect(block).toContain("e.harvester.phase !== 'mining'");
+    expect(block).toContain('game.isVisibleTo(team, e.id)');
+    // The target is the same node list the seam is drawn from, and its last
+    // entry is the shrinking fifth.
+    expect(block).toContain('oreNodesInTile(');
+    expect(block).toContain('nodes[nodes.length - 1]');
+    expect(block).toContain('this.particles.cutBeam');
+    expect(block).toContain('this.particles.oreChips');
+    expect(block).toContain('this.settings.effects');
+  });
+
   it('does not reveal projectiles when the fog texture is turned off', () => {
     const renderer = readFileSync(new URL('../src/render/renderer.ts', import.meta.url), 'utf8');
     const start = renderer.indexOf('for (const pr of this.game.state.projectiles)');

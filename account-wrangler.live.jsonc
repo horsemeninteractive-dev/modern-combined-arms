@@ -1,0 +1,38 @@
+{
+  // Production account Worker.
+  //
+  // Deploy with `npm run accounts:deploy`, after:
+  //   1. `npx wrangler d1 create mca-accounts` and pasting the real
+  //      `database_id` below,
+  //   2. `npx wrangler d1 migrations apply mca-accounts --remote
+  //      --config account-wrangler.live.jsonc`,
+  //   3. setting GOOGLE_CLIENT_ID / DISCORD_CLIENT_ID as vars and
+  //      GOOGLE_CLIENT_SECRET / DISCORD_CLIENT_SECRET /
+  //      MCA_IDENTITY_TICKET_SECRET as secrets on this Worker,
+  //   4. adding the `MCA_ACCOUNT` service binding in the Pages project so
+  //      `/api/account/*` reaches this Worker.
+  //
+  // Never put a client secret in this file.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mca-accounts",
+  "main": "dist-account/accountWorker.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "APP_ORIGIN": "https://moderncombinedarms.pages.dev",
+    "ALLOWED_ORIGINS": "https://moderncombinedarms.pages.dev",
+    "SESSION_TTL_DAYS": "30"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "mca-accounts",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

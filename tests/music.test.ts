@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AudioEngine } from '../src/ui/audio';
+import { MAIN_THEME_SRC } from '../src/ui/musicCatalogue';
 
 /**
  * The theme is a streamed audio element, not synthesis, so it can be exercised
@@ -52,7 +53,7 @@ describe('menu music', () => {
     audio.playMenuMusic();
 
     expect(created).toHaveLength(1);
-    expect(created[0].src).toContain('/audio/menu-theme.mp3');
+    expect(created[0].src).toBe(MAIN_THEME_SRC);
     expect(created[0].loop).toBe(true);
     expect(created[0].playCalls).toBe(1);
 

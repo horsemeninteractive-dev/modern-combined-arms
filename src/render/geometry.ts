@@ -752,9 +752,14 @@ function crystalShard(
 }
 
 /**
- * A gold crystal seam: one tall central spire with shorter shards leaning out
- * of the ground around it. The renderer adds the cyan night glow, so this is
- * plain mineral geometry.
+ * One crystal node: a single cut shard standing out of a broken collar.
+ *
+ * A seam is five of these to a tile, each holding a fifth of the deposit, so
+ * the node has to read at prop scale. The old single spire was six shards tall
+ * enough to pass for a tree; this is one shard with two chips at its foot, and
+ * it is deliberately a little wider than it is tall so five of them fill a tile
+ * as a crystal bed rather than a spike field. The renderer adds the cyan night
+ * glow, so this is plain mineral geometry.
  */
 export function buildOreMesh(): MeshBuffers {
   const b = new MeshBuilder();
@@ -762,11 +767,10 @@ export function buildOreMesh(): MeshBuffers {
   const gold: Color = [1.0, 0.84, 0.36];
   const deepGold: Color = [0.9, 0.68, 0.22];
   const paleGold: Color = [1.0, 0.93, 0.62];
-  crystalShard(b, [0, -0.06, 0.04], [0.06, 2.3, -0.04], 0.44, 6, gold, 1);
-  crystalShard(b, [0.5, -0.06, 0.2], [1.05, 1.45, 0.52], 0.3, 6, deepGold, 2);
-  crystalShard(b, [-0.45, -0.06, 0.35], [-0.95, 1.2, 0.72], 0.26, 6, gold, 3);
-  crystalShard(b, [0.12, -0.06, -0.5], [0.35, 1.55, -1.1], 0.28, 6, paleGold, 4);
-  crystalShard(b, [-0.3, -0.06, -0.35], [-0.55, 0.9, -0.75], 0.22, 6, deepGold, 5);
-  crystalShard(b, [0.75, -0.06, -0.45], [1.1, 0.7, -0.6], 0.18, 6, gold, 6);
+  crystalShard(b, [0, -0.05, 0], [0.06, 1.05, -0.03], 0.26, 6, gold, 1);
+  // Two chips at the foot keep the node reading as a broken seam rather than a
+  // lone standing cone.
+  crystalShard(b, [0.17, -0.05, 0.08], [0.36, 0.34, 0.17], 0.12, 5, paleGold, 2);
+  crystalShard(b, [-0.16, -0.05, -0.06], [-0.32, 0.27, -0.13], 0.1, 5, deepGold, 3);
   return b.build();
 }

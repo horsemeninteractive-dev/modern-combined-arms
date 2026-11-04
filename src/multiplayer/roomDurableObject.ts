@@ -94,6 +94,12 @@ export interface MatchRoomEnv {
   MP_ABANDON_AFTER_MS?: string;
   MP_HEARTBEAT_MS?: string;
   MP_DEV_MODE?: string;
+  /**
+   * Shared secret for verifying MCA account identity tickets. Optional: with no
+   * secret the room is guest-only, exactly as it was before accounts existed.
+   * The ticket is verified in the Worker, never in this Durable Object.
+   */
+  MCA_IDENTITY_TICKET_SECRET?: string;
   ROOMS: DurableObjectNamespace;
 }
 
@@ -212,6 +218,13 @@ export function validatePersistedMeta(meta: unknown, roomId: string): string | n
       seat.token.length > 128
     ) {
       return 'metadata seat identity is invalid';
+    }
+    if (
+      seat.accountId !== undefined &&
+      seat.accountId !== null &&
+      (typeof seat.accountId !== 'string' || !/^[A-Za-z0-9_-]{16,64}$/.test(seat.accountId))
+    ) {
+      return 'metadata seat account is invalid';
     }
     seatIds.add(seat.seatId);
     playerIds.add(seat.playerId);
@@ -614,6 +627,17 @@ export class MatchRoomDurableObject {
     }
     const lobby = this.lobby;
     if (!lobby) return failure('room-not-found', 'That room does not exist.', 404);
+    // Joining is the only moment seat 1's identity can be established, so the
+    // verified account is recorded before the token is handed out.
+    const joinerAccount = this.verifiedAccount(request);
+    if (joinerAccount && this.meta.seats[1].accountId !== joinerAccount) {
+      this.meta.seats[1] = { ...this.meta.seats[1], accountId: joinerAccount };
+      try {
+        await this.persistMeta();
+      } catch {
+        return failure('room-state-unavailable', 'Seat identity could not be recorded.', 503);
+      }
+    }
     return json({
       ok: true,
       roomId: this.meta.roomId,
@@ -694,8 +718,14 @@ export class MatchRoomDurableObject {
         async (activeLease) => {
           lease = activeLease;
           const seats: RoomSeatDefinition[] = [
-            { seatId: 0, playerId: 0, team: 0, token: this.seatToken() },
-            { seatId: 1, playerId: 1, team: 1, token: this.seatToken() },
+            {
+              seatId: 0,
+              playerId: 0,
+              team: 0,
+              token: this.seatToken(),
+              accountId: this.verifiedAccount(request),
+            },
+            { seatId: 1, playerId: 1, team: 1, token: this.seatToken(), accountId: null },
           ];
           // Creation makes a lobby, not a match: no scenario, no Game and no
           // snapshot. The authoritative world is built only by an accepted
@@ -804,12 +834,29 @@ export class MatchRoomDurableObject {
         playerId: seat.playerId,
         team: seat.team,
         token: seat.token,
+        // Both seats read this document, so it reports only whether the seat is
+        // a verified account. The account id stays server-side until Stage 2's
+        // profile presentation decides what is public.
+        verified: Boolean(seat.accountId),
       })),
     };
   }
 
   private seatToken(): string {
     return crypto.randomUUID().replace(/-/g, '');
+  }
+
+  /**
+   * The account this request was verified as, if any.
+   *
+   * This header is set by the room Worker after it has verified a signed
+   * identity ticket. The Durable Object never reads a ticket itself and never
+   * accepts an account id from a request body, so an unverified caller cannot
+   * name itself. A guest simply has no header.
+   */
+  private verifiedAccount(request: Request): string | null {
+    const value = request.headers.get('X-MCA-Verified-Account');
+    return value && /^[A-Za-z0-9_-]{16,64}$/.test(value) ? value : null;
   }
 
   /** Human-shareable secret for the guest seat. Ambiguous characters are out. */

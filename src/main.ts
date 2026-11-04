@@ -1,4 +1,5 @@
 import './style.css';
+import './missionWorkbench.css';
 import { App } from './app';
 import { escapeHtml } from './ui/modal';
 
@@ -40,8 +41,11 @@ function fail(message: string): void {
 try {
   const canvas = document.getElementById('gl') as HTMLCanvasElement | null;
   const overlay = document.getElementById('overlay') as HTMLCanvasElement | null;
-  if (!canvas || !overlay) throw new Error('The battlefield canvas is missing from the document.');
-  const app = new App(canvas, overlay);
+  const cursorLayer = document.getElementById('cursor-layer') as HTMLCanvasElement | null;
+  if (!canvas || !overlay || !cursorLayer) {
+    throw new Error('The battlefield canvas is missing from the document.');
+  }
+  const app = new App(canvas, overlay, cursorLayer);
   (window as unknown as { ironTide?: App }).ironTide = app;
 } catch (error) {
   const message = error instanceof Error ? error.message : String(error);

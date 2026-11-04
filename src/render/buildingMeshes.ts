@@ -2216,6 +2216,27 @@ function entrenchedAtGunDressing(): MeshBuffers {
   return b.build();
 }
 
+/** Strategic-operations dressing: antenna farm and a hardened signals annex. */
+function strategicOpsDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  // Mast farm on the roof corners, each with a small dish yoke.
+  for (const x of [-5.2, 0.6]) {
+    for (const z of [-3.2, 3.4]) {
+      b.box(x, 5.6, z, 0.26, 4.4, 0.26, PALETTE.metal);
+      b.box(x, 7.8, z, 1.15, 0.16, 0.42, PALETTE.hullDark);
+      b.box(x, 7.8, z, 0.16, 0.9, 1.05, PALETTE.hullDark);
+    }
+  }
+  // Armoured signals annex and its cable trunk into the main hall.
+  b.box(5.6, 1.3, -3.0, 2.6, 2.6, 3.0, PALETTE.concreteDark);
+  b.box(5.6, 2.66, -3.0, 2.8, 0.2, 3.2, PALETTE.concrete);
+  b.box(4.1, 0.55, -3.0, 1.2, 0.28, 0.34, PALETTE.metal);
+  // Satellite uplink drum on the annex roof.
+  b.box(5.6, 3.35, -3.0, 1.5, 1.2, 1.5, PALETTE.olive);
+  b.box(5.6, 3.98, -3.0, 1.62, 0.18, 1.62, PALETTE.oliveDark);
+  return b.build();
+}
+
 const STYLES: Record<string, BuildingStyle> = {
   commandPost: {
     body: buildCommandPost(),
@@ -2237,6 +2258,10 @@ const STYLES: Record<string, BuildingStyle> = {
   },
   shipyard: { body: buildShipyard() },
   researchCentre: { body: buildResearchCentre() },
+  strategicOps: {
+    body: mergeMeshes(buildResearchCentre(), strategicOpsDressing()),
+    rotor: { mesh: buildRadarStationDish(), offset: [0.6, 8.15, -3.2], rate: 0.55 },
+  },
   // The shipyard has no shutter: its corvettes launch from the open slipway
   // basin, not through a door in a wall it does not have.
   samBattery: {

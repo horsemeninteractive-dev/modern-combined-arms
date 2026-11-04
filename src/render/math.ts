@@ -93,6 +93,46 @@ export function modelMatrix(
   return m;
 }
 
+/** Column-major orthographic projection; the shadow pass uses its own box. */
+export function orthographic(
+  left: number,
+  right: number,
+  bottom: number,
+  top: number,
+  near: number,
+  far: number,
+): Float32Array {
+  const m = identity();
+  m[0] = 2 / (right - left);
+  m[5] = 2 / (top - bottom);
+  m[10] = -2 / (far - near);
+  m[12] = -(right + left) / (right - left);
+  m[13] = -(top + bottom) / (top - bottom);
+  m[14] = -(far + near) / (far - near);
+  return m;
+}
+
+/** Column-major view matrix looking from `eye` at `target`. */
+export function lookAt(eye: Vec3, target: Vec3, up: Vec3): Float32Array {
+  const z = normalize([eye[0] - target[0], eye[1] - target[1], eye[2] - target[2]]);
+  const x = normalize(cross(up, z));
+  const y = cross(z, x);
+  const m = identity();
+  m[0] = x[0];
+  m[4] = x[1];
+  m[8] = x[2];
+  m[1] = y[0];
+  m[5] = y[1];
+  m[9] = y[2];
+  m[2] = z[0];
+  m[6] = z[1];
+  m[10] = z[2];
+  m[12] = -dot(x, eye);
+  m[13] = -dot(y, eye);
+  m[14] = -dot(z, eye);
+  return m;
+}
+
 export function dot(a: Vec3, b: Vec3): number {
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }

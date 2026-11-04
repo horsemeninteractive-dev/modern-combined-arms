@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { gridReport, powerBreakdownLines } from '../src/ui/powerReport';
+import {
+  GRID_LOAD_LABEL,
+  gridLoadState,
+  gridReport,
+  powerBreakdownLines,
+  powerReadout,
+} from '../src/ui/powerReport';
 import { Game } from '../src/sim/game';
 import { createIslandAssault } from '../src/data/scenarios';
 import { BUILDINGS } from '../src/data/buildings';
@@ -56,6 +62,42 @@ describe('power report grouping', () => {
     expect(lines[0]).toContain('BROWNOUT');
     expect(lines[0]).toContain('50 supply / 100 demand');
     expect(lines[0]).toContain('50%');
+  });
+
+  it('names the grid state the meter and the readout share', () => {
+    expect(gridLoadState(50, 0, false)).toBe('idle');
+    expect(gridLoadState(100, 50, false)).toBe('stable');
+    expect(gridLoadState(100, 84, false)).toBe('stable');
+    expect(gridLoadState(100, 85, false)).toBe('strained');
+    expect(gridLoadState(50, 100, true)).toBe('brownout');
+    expect(GRID_LOAD_LABEL.idle).toBe('NO LOAD');
+    expect(GRID_LOAD_LABEL.strained).toBe('STRAINED');
+  });
+
+  it('builds the gauge readout from the largest lines and counts the rest', () => {
+    const report = gridReport([
+      { defId: 'commandPost', hp: 3300 },
+      { defId: 'powerPlant', hp: 1200 },
+      { defId: 'samBattery', hp: 1200 },
+      { defId: 'samBattery', hp: 1200 },
+      { defId: 'samBattery', hp: 1200 },
+      { defId: 'factory', hp: 1800 },
+      { defId: 'barracks', hp: 1350 },
+    ]);
+    const view = powerReadout(report, 2);
+    expect(view.state).toBe('stable');
+    expect(view.supply).toBe(110);
+    expect(view.demand).toBeGreaterThan(0);
+    expect(view.sources.map((line) => line.id)).toEqual(['powerPlant', 'commandPost']);
+    expect(view.sources[0].share).toBe(1);
+    expect(view.sources[1].share).toBeCloseTo(50 / 60);
+    expect(view.consumers.map((line) => line.id)).toEqual(['samBattery', 'factory']);
+    expect(view.consumers[0].count).toBe(3);
+    expect(view.hiddenSources).toBe(0);
+    expect(view.hiddenConsumers).toBe(1);
+    // A limit below one still leaves a readable single line.
+    expect(powerReadout(report, 0).sources).toHaveLength(1);
+    expect(powerReadout(report, 0).hiddenConsumers).toBe(2);
   });
 
   it('lists the same totals the card chip will read', () => {

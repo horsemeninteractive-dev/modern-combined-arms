@@ -1,5 +1,6 @@
 import { BUILDINGS, buildingFamily } from './buildings';
 import { ALLIANCES, NATIONS } from './factions';
+import { SUPERWEAPON_FAMILY_LIST } from './superweapons';
 import { UNITS, unitFamily } from './units';
 import type { Cost } from '../sim/types';
 
@@ -55,6 +56,9 @@ export const TIER_ZERO_BUILDINGS: readonly string[] = Object.freeze([
   'atTurret',
   'radar',
   'researchCentre',
+  // Strategic coordination is gated by its structure prerequisites and by the
+  // four-research authority chain, not by a technology that unlocks the slot.
+  'strategicOps',
   // The design table omits these two, but both were buildable before research
   // and no technology claims them. Tier 0 means "unchanged from today", so they
   // stay available rather than becoming permanently unreachable.
@@ -127,6 +131,16 @@ export interface TechDef {
   /** Technology ids that must be complete first. */
   requires: readonly string[];
   effects: readonly ResearchEffect[];
+  /**
+   * A strategic authority node.
+   *
+   * These publish no unlock of their own: four of them together authorise a
+   * national superweapon, coordinated from the Strategic Operations Centre. The
+   * marker exists so the catalogue validator can tell a deliberate authority
+   * node from a technology somebody forgot to give an effect, and so it can
+   * check that every one of them belongs to exactly one capability chain.
+   */
+  strategic?: boolean;
   /** Alliance ids that may research it; absent means both alliances. */
   alliances?: readonly string[];
   /** Nation ids that may research it; absent means every nation in the alliance. */
@@ -316,6 +330,165 @@ const TECH_LIST: readonly TechDef[] = Object.freeze([
     ],
     description: 'Ocean-going frigates, submarines and offshore support for a fleet that can hold open water.',
     icon: 'frigate',
+  },
+  /* ------------------------------------------------------------------ */
+  /* Strategic prerequisites                                             */
+  /*                                                                     */
+  /* Two nodes per superweapon family. They unlock nothing on their own: */
+  /* the capability is coordinated from the Strategic Operations Centre  */
+  /* and these four completed technologies are its authority chain. The  */
+  /* nation gate keeps a shared branch node from advertising a national   */
+  /* capability the player cannot field.                                  */
+  /* ------------------------------------------------------------------ */
+  {
+    id: 'hypersonicGlide',
+    name: 'Hypersonic Glide Vehicle',
+    easternName: 'Hypersonic Glide Vehicle',
+    branch: 'fires',
+    tier: 2,
+    cost: { mats: 950, req: 130 },
+    seconds: 80,
+    requires: ['fires1'],
+    effects: [],
+    strategic: true,
+    nations: ['sweden', 'russia'],
+    description: 'A manoeuvring glide body and its carrier release: the vehicle half of a theatre hypersonic strike.',
+    icon: 'target',
+  },
+  {
+    id: 'terminalSeeker',
+    name: 'Terminal Seeker Suite',
+    easternName: 'Terminal Seeker Suite',
+    branch: 'air',
+    tier: 2,
+    cost: { mats: 850, req: 120 },
+    seconds: 75,
+    requires: ['air1'],
+    effects: [],
+    strategic: true,
+    nations: ['sweden', 'russia'],
+    description: 'Millimetre-wave and imaging seekers that can pick one hardened aim point out of a cluttered picture.',
+    icon: 'scope',
+  },
+  {
+    id: 'salvoControl',
+    name: 'Salvo Coordination',
+    easternName: 'Battery Coordination',
+    branch: 'fires',
+    tier: 2,
+    cost: { mats: 700, req: 90 },
+    seconds: 55,
+    requires: ['fires1'],
+    effects: [],
+    strategic: true,
+    nations: ['uk', 'northKorea'],
+    description: 'Time-on-target scheduling that lets separate batteries arrive together as one barrage.',
+    icon: 'mrl',
+  },
+  {
+    id: 'penetrationAids',
+    name: 'Penetration Aids',
+    easternName: 'Penetration Aids',
+    branch: 'air',
+    tier: 2,
+    cost: { mats: 650, req: 85 },
+    seconds: 50,
+    requires: ['air1'],
+    effects: [],
+    strategic: true,
+    nations: ['uk', 'northKorea'],
+    description: 'Decoys and route shaping that make a missile salvo harder to sort out and intercept.',
+    icon: 'target',
+  },
+  {
+    id: 'spectrumDenial',
+    name: 'Spectrum Denial',
+    easternName: 'Spectrum Denial',
+    branch: 'air',
+    tier: 2,
+    cost: { mats: 600, req: 80 },
+    seconds: 50,
+    requires: ['air1'],
+    effects: [],
+    strategic: true,
+    nations: ['lithuania', 'belarus'],
+    description: 'Wideband jamming and false-target injection against a theatre command net.',
+    icon: 'radarstation',
+  },
+  {
+    id: 'emitterMapping',
+    name: 'Emitter Mapping',
+    easternName: 'Emitter Mapping',
+    branch: 'manoeuvre',
+    tier: 2,
+    cost: { mats: 550, req: 75 },
+    seconds: 45,
+    requires: ['manoeuvre1'],
+    effects: [],
+    strategic: true,
+    nations: ['lithuania', 'belarus'],
+    description: 'Finding and fixing the emitters a jamming operation has to suppress first.',
+    icon: 'recon',
+  },
+  {
+    id: 'swarmControl',
+    name: 'Swarm Control',
+    easternName: 'Swarm Control',
+    branch: 'air',
+    tier: 2,
+    cost: { mats: 700, req: 95 },
+    seconds: 55,
+    requires: ['air1'],
+    effects: [],
+    strategic: true,
+    nations: ['poland', 'iran'],
+    description: 'Datalinks and formation logic that keep a package of loitering munitions coordinated without a pilot.',
+    icon: 'uav',
+  },
+  {
+    id: 'autonomousStrike',
+    name: 'Autonomous Strike Logic',
+    easternName: 'Autonomous Strike Logic',
+    branch: 'manoeuvre',
+    tier: 2,
+    cost: { mats: 800, req: 110 },
+    seconds: 65,
+    requires: ['manoeuvre1'],
+    effects: [],
+    strategic: true,
+    nations: ['poland', 'iran'],
+    description: 'Target classification and terminal autonomy that let a drone select a vehicle rather than a patch of ground.',
+    icon: 'uav',
+  },
+  {
+    id: 'directedEnergyPower',
+    name: 'Directed-Energy Power',
+    easternName: 'Directed-Energy Power',
+    branch: 'manoeuvre',
+    tier: 2,
+    cost: { mats: 750, req: 100 },
+    seconds: 60,
+    requires: ['manoeuvre1'],
+    effects: [],
+    strategic: true,
+    nations: ['finland', 'hungary'],
+    description: 'Compact generation and cooling for a ground-based beam emitter that has to fire repeatedly.',
+    icon: 'power',
+  },
+  {
+    id: 'beamTargeting',
+    name: 'Beam Targeting',
+    easternName: 'Beam Targeting',
+    branch: 'air',
+    tier: 2,
+    cost: { mats: 850, req: 120 },
+    seconds: 70,
+    requires: ['air1'],
+    effects: [],
+    strategic: true,
+    nations: ['finland', 'hungary'],
+    description: 'Fast tracking and atmospheric compensation for a directed-energy defence network.',
+    icon: 'scope',
   },
 ]);
 
@@ -652,8 +825,17 @@ export function validateResearchCatalog(catalog: ResearchCatalog = RESEARCH): Re
     if (!Number.isFinite(tech.seconds) || tech.seconds <= 0) {
       issues.push({ code: 'duration', message: `Technology "${tech.id}" has invalid duration.`, techId: tech.id });
     }
-    if (tech.effects.length === 0) {
+    if (tech.effects.length === 0 && !tech.strategic) {
       issues.push({ code: 'effect', message: `Technology "${tech.id}" grants no effect.`, techId: tech.id });
+    }
+    // An authority node that also unlocks something would be counted twice: once
+    // as an ordinary branch tier and once as part of a capability chain.
+    if (tech.strategic && tech.effects.length > 0) {
+      issues.push({
+        code: 'strategic-effect',
+        message: `Strategic authority node "${tech.id}" also grants an unlock.`,
+        techId: tech.id,
+      });
     }
     for (const allianceId of tech.alliances ?? []) {
       if (!Object.hasOwn(ALLIANCES, allianceId)) {
@@ -838,6 +1020,70 @@ export function validateResearchCatalog(catalog: ResearchCatalog = RESEARCH): Re
       const next: string | undefined = current.requires[0];
       current = next ? techs.get(next) : undefined;
       depth++;
+    }
+  }
+
+  // Strategic authority chains. A capability names exactly four completed
+  // technologies, and every authority node belongs to exactly one chain: a node
+  // no capability claims is a dead end somebody meant to wire up, and a node
+  // claimed twice would make two capabilities share part of a chain.
+  const strategicNodeIds = new Set(
+    catalog.techs.filter((tech) => tech.strategic).map((tech) => tech.id),
+  );
+  if (strategicNodeIds.size > 0) {
+    const claimed = new Map<string, string>();
+    for (const family of SUPERWEAPON_FAMILY_LIST) {
+      if (family.requires.length !== 4) {
+        issues.push({
+          code: 'strategic-chain',
+          message: `Capability "${family.id}" names ${family.requires.length} prerequisites; exactly four are required.`,
+        });
+      }
+      let authorityNodes = 0;
+      for (const id of family.requires) {
+        const tech = techs.get(id);
+        if (!tech) {
+          issues.push({
+            code: 'missing-prerequisite',
+            message: `Capability "${family.id}" requires unknown technology "${id}".`,
+            techId: id,
+          });
+          continue;
+        }
+        // Shared branch work may appear in several chains: a commander who has
+        // studied the strike tier has studied it for every capability that
+        // rides on it. A dedicated authority node belongs to one chain only.
+        if (!tech.strategic) continue;
+        authorityNodes++;
+        const owner = claimed.get(id);
+        if (owner) {
+          issues.push({
+            code: 'strategic-chain',
+            message: `Authority node "${id}" is claimed by both "${owner}" and "${family.id}".`,
+            techId: id,
+          });
+          continue;
+        }
+        claimed.set(id, family.id);
+      }
+      // Two dedicated nodes beside two branch tiers is the documented shape of
+      // a four-research chain; a family with a different split is an authoring
+      // slip rather than a design choice.
+      if (authorityNodes !== 2) {
+        issues.push({
+          code: 'strategic-chain',
+          message: `Capability "${family.id}" names ${authorityNodes} dedicated authority nodes; exactly two are required beside two branch tiers.`,
+        });
+      }
+    }
+    for (const id of strategicNodeIds) {
+      if (!claimed.has(id)) {
+        issues.push({
+          code: 'strategic-unused',
+          message: `Strategic authority node "${id}" belongs to no capability chain.`,
+          techId: id,
+        });
+      }
     }
   }
 

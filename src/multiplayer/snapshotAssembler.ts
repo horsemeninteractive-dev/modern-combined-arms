@@ -168,6 +168,7 @@ function validateEntity(value: unknown, worldWidth: number, worldHeight: number)
       'id', 'kind', 'defId', 'owner', 'team', 'x', 'z', 'facing', 'turretFacing', 'hp', 'maxHp',
       'state', 'stance', 'buildProgress', 'construction', 'remembered', 'queue', 'rallyX',
       'rallyZ', 'targetId', 'garrisonId', 'xp', 'upgrades', 'modules', 'cooldowns',
+      'deconstruct',
     ],
     'Entity',
   );
@@ -189,6 +190,17 @@ function validateEntity(value: unknown, worldWidth: number, worldHeight: number)
   );
   assert(value.buildProgress === null || isNum(value.buildProgress), 'Entity buildProgress is invalid.');
   assert(value.construction === null || typeof value.construction === 'boolean', 'Entity construction is invalid.');
+  if (value.deconstruct !== undefined) {
+    assert(isRecord(value.deconstruct), 'Entity deconstruct is invalid.');
+    checkKeys(value.deconstruct, ['remaining', 'total'], 'Entity deconstruct');
+    assert(
+      isNum(value.deconstruct.remaining) &&
+        value.deconstruct.remaining >= 0 &&
+        isNum(value.deconstruct.total) &&
+        value.deconstruct.total > 0,
+      'Entity deconstruct timing is invalid.',
+    );
+  }
   assert(value.remembered === undefined || value.remembered === true, 'Entity remembered flag is invalid.');
   if (value.queue !== undefined) {
     assert(value.remembered === undefined, 'A remembered entity must not carry a queue.');
@@ -223,6 +235,7 @@ function validateEntity(value: unknown, worldWidth: number, worldHeight: number)
   if (value.remembered === true) {
     assert(value.hp === null && value.maxHp === null, 'A remembered entity must not carry live hp.');
     assert(value.state === null && value.buildProgress === null, 'A remembered entity must not carry live state.');
+    assert(value.deconstruct === undefined, 'A remembered entity must not carry a sale.');
   }
   return value as unknown as ProjectedEntity;
 }
@@ -283,10 +296,25 @@ function validatePlayer(value: unknown): ProjectedPlayer {
   assert(isRecord(value), 'Player must be an object.');
   checkKeys(
     value,
-    ['id', 'name', 'factionId', 'team', 'mats', 'req', 'stats', 'defeated', 'relayCount', 'research'],
+    [
+      'id',
+      'name',
+      'factionId',
+      'team',
+      'mats',
+      'req',
+      'stats',
+      'defeated',
+      'relayCount',
+      'research',
+      'superweapon',
+    ],
     'Player',
   );
   if (value.research !== undefined) validateResearch(value.research);
+  if (value.superweapon !== undefined) {
+    assert(isRecord(value.superweapon), 'Player superweapon state is invalid.');
+  }
   assert(isInt(value.id, 0), 'Player id is invalid.');
   assert(isText(value.name, 80), 'Player name is invalid.');
   assert(isText(value.factionId, 64), 'Player faction is invalid.');

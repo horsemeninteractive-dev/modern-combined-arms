@@ -15,7 +15,7 @@ ready for that review.
 The 62 definitions are the 22 canonical slots, the 18 Eastern alliance platforms,
 the 10 national replacements, the 10 national exclusives and the 2 national naval
 hulls (`visby`, `ghadir`) — the launch six plus Finland, Sweden, Iran and North
-Korea. The existing strategic announcer in `public/audio/battlesys/` is untouched.
+Korea. The existing strategic announcer in `public/audio/narrator/defender/` is untouched.
 
 ## 1. Cue set
 

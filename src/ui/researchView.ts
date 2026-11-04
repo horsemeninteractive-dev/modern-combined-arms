@@ -24,6 +24,7 @@ export type ResearchNodeStatus =
   | 'available'
   | 'prerequisite'
   | 'faction'
+  | 'mission'
   | 'busy'
   | 'resources'
   | 'no-centre';
@@ -38,6 +39,12 @@ export interface ResearchNodeInput {
   allianceId?: string;
   /** Nation/faction id used by nation-restricted technologies. */
   factionId?: string;
+  /**
+   * Technologies the current operation refuses. A campaign theatre trims the
+   * tree to what the landed force could actually study, so a node can be
+   * outside the operation while remaining inside the alliance's catalogue.
+   */
+  restricted?: readonly string[];
 }
 
 export interface ResearchNodeView {
@@ -57,6 +64,7 @@ const STATUS_LABELS: Record<ResearchNodeStatus, string> = {
   available: 'READY',
   prerequisite: 'LOCKED',
   faction: 'RESTRICTED',
+  mission: 'OUT OF THEATRE',
   busy: 'PROJECT ACTIVE',
   resources: 'NEED RESOURCES',
   'no-centre': 'NO CENTRE',
@@ -119,6 +127,16 @@ export function researchNodeState(
       status: 'faction',
       label: STATUS_LABELS.faction,
       reason: 'Not available to this nation.',
+      canStart: false,
+    };
+  }
+  if (input.restricted?.includes(tech.id)) {
+    return {
+      tech,
+      name,
+      status: 'mission',
+      label: STATUS_LABELS.mission,
+      reason: 'Not available in this operation.',
       canStart: false,
     };
   }
@@ -190,10 +208,30 @@ export function researchBranchGroups(
     branch,
     label: BRANCH_NAMES[branch],
     nodes: catalog.techs
-      .filter((tech) => tech.branch === branch)
+      // The branch tree is the eight-node core. Authority nodes ride on their
+      // branch's entry tier but are presented with the capability they unlock,
+      // so they never turn a two-tier branch into a six-node pile.
+      .filter((tech) => tech.branch === branch && !tech.strategic)
       .slice()
       .sort((a, b) => a.tier - b.tier),
   }));
+}
+
+/**
+ * The authority chain of one capability, in authored order.
+ *
+ * A commander only ever sees the chain it can actually use, which is why this
+ * takes the ids from the capability definition instead of listing every
+ * authority node in the catalogue. Missing ids are dropped rather than shown as
+ * a broken node: the catalogue validator already reports them.
+ */
+export function researchAuthorityNodes(
+  requires: readonly string[],
+  catalog: ResearchCatalog = RESEARCH,
+): TechDef[] {
+  return requires
+    .map((id) => catalog.techs.find((tech) => tech.id === id))
+    .filter((tech): tech is TechDef => !!tech);
 }
 
 export interface ActiveResearchView {

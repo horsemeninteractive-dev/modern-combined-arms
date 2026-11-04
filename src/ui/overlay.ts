@@ -9,8 +9,24 @@ import { AIR_UNIT_ALTITUDE, unitBannerHeight } from '../render/unitMeshes';
 import { buildingBannerAnchor, buildingBannerPoints, buildingTopHeight } from '../render/buildingMeshes';
 import { buildingWireframe } from '../render/buildingWireframe';
 import { relayMeterState } from './relayMeter';
+import {
+  HEALTH_COLORS,
+  HEALTH_SEGMENTS,
+  HEALTH_SOFT_COLORS,
+  SERVICE_ROW_HEIGHT,
+  ammoPips,
+  clampFraction,
+  fuelFraction,
+  hasServiceStrip,
+  healthPercent,
+  healthPulse,
+  healthSegments,
+  healthTone,
+  serviceStripLayout,
+  supplyTone,
+} from './bars';
 import { experienceOf, rankForXp } from '../sim/veterancy';
-import { drawBattleCursor, drawOrderGhostGlyph } from './cursors';
+import { drawOrderGhostGlyph } from './cursors';
 import {
   GHOST_ECHOES,
   GHOST_ECHO_STAGGER_MS,
@@ -214,17 +230,6 @@ export class Overlay {
     }
     const now = performance.now();
     this.drawOrderGhosts(app, now, rect.left, rect.top);
-    // The drawn pointer is the topmost mark: it must never be hidden behind a
-    // selection ring, a ghost or a hover label.
-    if (app.pointerCursor.visible && app.settings.customCursors) {
-      drawBattleCursor(
-        ctx,
-        app.pointerCursor.name,
-        app.pointer.x - rect.left,
-        app.pointer.y - rect.top,
-        this.reducedMotion ? 0 : now,
-      );
-    }
     ctx.restore();
   }
 
@@ -664,31 +669,89 @@ export class Overlay {
       );
     }
     if (!p.visible) return;
-    const width = e.kind === 'building' ? Math.min(58, 16 + (BUILDINGS[e.defId]?.footprint.w ?? 2) * 7) : selected ? 30 : 24;
-    const frac = Math.max(0, Math.min(1, e.hp / e.maxHp));
-    const color = frac > 0.6 ? '#86c791' : frac > 0.3 ? '#e0a34a' : '#ef6c4d';
-    const x = p.x - width / 2;
-    const y = p.y - 8;
-    ctx.fillStyle = 'rgba(4,8,9,0.72)';
-    ctx.fillRect(x - 1, y - 1, width + 2, 6);
-    ctx.fillStyle = color;
-    ctx.fillRect(x, y, width * frac, 4);
+    const isBuilding = e.kind === 'building';
+    const width = isBuilding ? Math.min(58, 16 + (BUILDINGS[e.defId]?.footprint.w ?? 2) * 7) : selected ? 30 : 24;
+    const height = 5;
+    const frac = clampFraction(e.hp / e.maxHp);
+    const tone = healthTone(frac);
+    const color = HEALTH_COLORS[tone];
+    const x = Math.round(p.x - width / 2);
+    const y = Math.round(p.y - 9);
     const team =
       e.owner === -1
         ? NEUTRAL
         : game.teamOf(e.owner) === game.teamOf(app.localPlayerId)
           ? BLUE
           : RED;
+    const pulse = healthPulse(frac, performance.now(), this.reducedMotion);
+
+    // A notched dark plate frames the bar, so health reads as an instrument on
+    // the battlefield rather than a floating colour stripe. The notch matches
+    // the command rail's clipped corners; the team rule uses the plate's full
+    // height so ownership is legible even at 10% health.
+    const plateX = x - 3;
+    const plateY = y - 3;
+    const plateW = width + 6;
+    const plateH = height + 6;
+    const notch = 3;
+    ctx.beginPath();
+    ctx.moveTo(plateX, plateY + notch);
+    ctx.lineTo(plateX + notch, plateY);
+    ctx.lineTo(plateX + plateW, plateY);
+    ctx.lineTo(plateX + plateW, plateY + plateH);
+    ctx.lineTo(plateX, plateY + plateH);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(4,8,9,0.82)';
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle =
+      tone === 'critical'
+        ? `rgba(239,108,77,${0.45 + 0.35 * pulse})`
+        : 'rgba(167,190,184,0.3)';
+    ctx.stroke();
+
+    // The empty channel keeps its scale visible: a hull at 10% still shows the
+    // ten cells it used to fill, hatched red so the loss reads as damage rather
+    // than as a bar that was always that short.
+    ctx.fillStyle = 'rgba(255,255,255,0.07)';
+    ctx.fillRect(x, y, width, height);
+    if (tone === 'critical') {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x, y, width, height);
+      ctx.clip();
+      ctx.strokeStyle = 'rgba(239,108,77,0.32)';
+      ctx.lineWidth = 1;
+      for (let hx = -height; hx < width + height; hx += 4) {
+        ctx.beginPath();
+        ctx.moveTo(x + hx, y + height);
+        ctx.lineTo(x + hx + height, y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    // Fill snaps to the drawn cells so the bar reads as counted segments, not a
+    // continuous smear: ten cells, each one a tenth of the hull's condition.
+    const lit = (healthSegments(frac, HEALTH_SEGMENTS) / HEALTH_SEGMENTS) * width;
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, lit, height);
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.fillRect(x, y, lit, 1);
+    ctx.fillStyle = 'rgba(4,8,9,0.6)';
+    for (let i = 1; i < HEALTH_SEGMENTS; i++) {
+      ctx.fillRect(x + Math.round((width * i) / HEALTH_SEGMENTS), y, 1, height);
+    }
     ctx.fillStyle = team;
-    ctx.fillRect(x - 1, y - 1, 2, 6);
-    // Rank chevrons ride above the bar: one for a Veteran crew, two for Elite.
-    // They are the only battlefield cue that a hull is worth more than its
-    // armour, and they read at the same glance as the health it sits above.
+    ctx.fillRect(plateX, plateY + notch, 2, plateH - notch);
+
+    // Rank chevrons ride above the plate: one for a Veteran crew, two for
+    // Elite. They are the only battlefield cue that a hull is worth more than
+    // its armour, and they read at the same glance as the health below them.
     const rank = e.kind === 'unit' ? rankForXp(experienceOf(e)) : 0;
     if (rank > 0) {
       ctx.fillStyle = 'rgba(240,196,110,0.95)';
       for (let i = 0; i < rank; i++) {
-        const cy = y - 4 - i * 3;
+        const cy = plateY - 2 - i * 3.5;
         ctx.beginPath();
         ctx.moveTo(x + 1, cy);
         ctx.lineTo(x + 4, cy - 2.5);
@@ -700,11 +763,75 @@ export class Overlay {
         ctx.fill();
       }
     }
+
+    let bottom = plateY + plateH;
+    if (selected) {
+      // The exact percentage is a decision aid, not battle noise: it only
+      // appears on the hull the player is actually looking at.
+      ctx.font = '700 9px SFMono-Regular, Consolas, monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = HEALTH_SOFT_COLORS[tone];
+      ctx.fillText(`${healthPercent(frac)}%`, plateX + plateW + 4, y + height);
+    }
+    if (selected && e.kind === 'unit' && hasServiceStrip(UNITS[e.defId]?.domain)) {
+      bottom += this.drawServiceStrip(e, plateX, bottom + 5, plateW) + 4;
+    }
     if (selected && e.suppression > 0.2) {
       ctx.fillStyle = 'rgba(224,163,74,0.8)';
-      ctx.fillRect(x, y + 5, width * Math.min(1, e.suppression), 2);
+      ctx.fillRect(x, bottom + 2, width * Math.min(1, e.suppression), 2);
     }
     void state;
+  }
+
+  /**
+   * Fuel and ammunition beneath a selected aircraft's or ship's health bar.
+   *
+   * These are the two consumables that force an aircraft home or a ship to a
+   * yard, so they belong beside the hull's condition rather than behind a panel:
+   * a blue rail that turns amber then red as endurance runs out, and one pale
+   * pip per remaining round. The selection panel carries the labelled figures.
+   */
+  private drawServiceStrip(e: Entity, x: number, y: number, width: number): number {
+    const ctx = this.ctx;
+    const fuel = e.maxFuel > 0 ? fuelFraction(e.fuel, e.maxFuel) : null;
+    const pips = ammoPips(e.ammo, e.maxAmmo);
+    const layout = serviceStripLayout(e.ammo, e.maxAmmo, e.maxFuel, width);
+    const rowH = SERVICE_ROW_HEIGHT;
+    const contentH = layout.contentHeight;
+    if (contentH <= 0) return 0;
+    const top = Math.round(y);
+
+    // The backing is exactly the plate's width, so the strip reads as a second
+    // instrument hung below the hull bar instead of a wider panel under it.
+    ctx.fillStyle = 'rgba(4,8,9,0.8)';
+    ctx.fillRect(x, top - 1, width, contentH + 2);
+    ctx.strokeStyle = 'rgba(167,190,184,0.2)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 0.5, top - 0.5, width - 1, contentH + 1);
+
+    let rowY = top;
+    if (fuel !== null) {
+      const tone = supplyTone(fuel);
+      const colour =
+        tone === 'ok' ? '#52c5e6' : tone === 'low' ? '#e0a34a' : '#ef6c4d';
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fillRect(x, rowY, width, layout.fuelRow);
+      ctx.fillStyle = colour;
+      ctx.fillRect(x, rowY, Math.max(fuel > 0 ? 1 : 0, width * fuel), layout.fuelRow);
+      // Six ticks give the rail a scale; the DOM meter repeats the same cadence.
+      ctx.fillStyle = 'rgba(4,8,9,0.55)';
+      for (let i = 1; i < 6; i++) {
+        ctx.fillRect(x + Math.round((width * i) / 6), rowY, 1, layout.fuelRow);
+      }
+      rowY += layout.fuelRow + layout.rowGap;
+    }
+    const pipX = Math.round(x + (width - layout.ammoWidth) / 2);
+    for (let i = 0; i < pips.length; i++) {
+      ctx.fillStyle = pips[i] ? '#f1c27e' : 'rgba(255,255,255,0.12)';
+      ctx.fillRect(pipX + i * (layout.pipWidth + layout.pipGap), rowY, layout.pipWidth, rowH);
+    }
+    return contentH + 2;
   }
 
   private drawHoverLabel(app: App, e: Entity, rect: DOMRect): void {

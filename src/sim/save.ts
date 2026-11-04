@@ -1,5 +1,6 @@
 import { SAVE_FORMAT, SAVE_FORMAT_VERSION } from './constants';
 import type { Scenario } from './scenario';
+import type { MissionRuntimeState } from '../mission';
 import type {
   AIControlState,
   ChartedStructure,
@@ -52,6 +53,12 @@ export interface SerializedGameState {
    */
   smoke?: SmokeCloud[];
   nextSmokeId?: number;
+  /**
+   * Mission runtime state. Optional: skirmish saves and every file written
+   * before missions existed have no field, and load with a null mission rather
+   * than a fabricated one.
+   */
+  mission?: MissionRuntimeState | null;
 }
 
 /**

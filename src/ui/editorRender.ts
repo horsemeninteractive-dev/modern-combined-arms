@@ -13,6 +13,7 @@ import {
   type TerrainId,
 } from '../sim/terrain';
 import { terrainVisualHeight } from '../render/terrainSurface';
+import { REGION_HANDLES, type RegionHandle, type TileRect } from '../mission/regions';
 
 export function drawEditorOverlay(editor: Editor): void {
   const ctx = editor.ctx;
@@ -77,6 +78,54 @@ export function drawEditorOverlay(editor: Editor): void {
   ctx.closePath();
   ctx.stroke();
 
+  // Mission regions. The workbench toggles this layer; it uses the same tile
+  // projection as every other authoring marker, so bounds cannot drift from the
+  // rectangle the mission document stores.
+  if (editor.showRegions && scenario.mission) {
+    const dragTarget = editor.regionEditTargetId;
+    scenario.mission.regions.forEach((region) => {
+      const selected = region.id === editor.selectedRegionId;
+      // The region being dragged is drawn from the draft, not the document:
+      // until the gesture commits, the document still holds the old bounds.
+      const rect = dragTarget === region.id && editor.regionDraft ? editor.regionDraft : region;
+      drawRegionRect(ctx, project, rect, selected);
+    });
+    // A brand-new rectangle has no document entry yet.
+    if (editor.regionDraft && !dragTarget) {
+      drawRegionRect(ctx, project, editor.regionDraft, true, true);
+    }
+    const selected = scenario.mission.regions.find((entry) => entry.id === editor.selectedRegionId);
+    if (selected) {
+      const points = regionHandleScreenPoints(editor, selected);
+      for (const handle of REGION_HANDLES) {
+        const point = points[handle];
+        ctx.fillStyle = 'rgba(8,13,15,0.9)';
+        ctx.strokeStyle = 'rgba(241,194,126,0.95)';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.rect(point.x - 3.5, point.y - 3.5, 7, 7);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+  }
+
+  // The authored placement a reference field points at. Drawn above regions so
+  // an entity inside a region is never hidden by it.
+  if (editor.highlightEntityKey) {
+    const point = entityScreenPoint(editor, editor.highlightEntityKey);
+    if (point) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(127,208,232,0.95)';
+      ctx.lineWidth = 1.8;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 15, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   // Player starts.
   scenario.players.forEach((player, index) => {
     const color = tryIdentityDef(player.factionId)?.color ?? '#d8e2dd';
@@ -121,8 +170,10 @@ export function drawEditorOverlay(editor: Editor): void {
     ctx.fillText(num, p.x - ctx.measureText(num).width / 2, p.y + 2.5);
   });
 
-  // Hover brush / placement preview.
-  if (editor.hover) {
+  // Hover brush / placement preview. Region and entity modes replace it: a
+  // brush silhouette under a drawing cursor would promise terrain edits the
+  // author has not asked for.
+  if (editor.hover && !editor.mapToolActive) {
     const { x: hx, z: hz } = editor.hover;
     if (editor.tool === 'structure' && editor.structureDef) {
       const def = BUILDINGS[editor.structureDef];
@@ -184,6 +235,109 @@ export function drawEditorOverlay(editor: Editor): void {
   ctx.strokeRect(16.5, height - 41.5, ctx.measureText(hint).width + 20, 26);
   ctx.fillStyle = '#8d9d98';
   ctx.fillText(hint, 26, height - 24);
+}
+
+/** Screen position of one tile corner, using the same projection as the map. */
+function projectTile(
+  editor: Editor,
+  x: number,
+  z: number,
+): { x: number; y: number; visible: boolean } {
+  const scenario = editor.scenario;
+  return editor.app.renderer.camera.worldToScreen(
+    x * TILE_SIZE,
+    terrainVisualHeight(scenario, x * TILE_SIZE, z * TILE_SIZE) + 0.15,
+    z * TILE_SIZE,
+  );
+}
+
+/** The eight drag grips of a rectangle, in authoring-overlay pixels. */
+export function regionHandleScreenPoints(
+  editor: Editor,
+  rect: TileRect,
+): Record<RegionHandle, { x: number; y: number }> {
+  const left = rect.x;
+  const top = rect.z;
+  const right = rect.x + Math.max(1, rect.width);
+  const bottom = rect.z + Math.max(1, rect.height);
+  const midX = left + (right - left) / 2;
+  const midZ = top + (bottom - top) / 2;
+  const at = (x: number, z: number) => {
+    const point = projectTile(editor, x, z);
+    return { x: point.x, y: point.y };
+  };
+  return {
+    nw: at(left, top),
+    n: at(midX, top),
+    ne: at(right, top),
+    e: at(right, midZ),
+    se: at(right, bottom),
+    s: at(midX, bottom),
+    sw: at(left, bottom),
+    w: at(left, midZ),
+  };
+}
+
+/** Centre of an authored placement: footprint centre, or unit tile centre. */
+function entityScreenPoint(editor: Editor, key: string): { x: number; y: number } | null {
+  const scenario = editor.scenario;
+  const structure = scenario.structures.find((entry) => entry.key === key);
+  if (structure) {
+    const def = BUILDINGS[structure.defId];
+    if (!def) return null;
+    return projectTile(
+      editor,
+      structure.x + def.footprint.w / 2,
+      structure.z + def.footprint.h / 2,
+    );
+  }
+  const unit = scenario.units.find((entry) => entry.key === key);
+  if (!unit) return null;
+  return projectTile(editor, unit.x + 0.5, unit.z + 0.5);
+}
+
+/** One mission rectangle, with its id and bounds labelled at the top-left. */
+function drawRegionRect(
+  ctx: CanvasRenderingContext2D,
+  project: (x: number, z: number) => { x: number; y: number; visible: boolean },
+  rect: TileRect,
+  selected: boolean,
+  pending = false,
+): void {
+  const a = project(rect.x, rect.z);
+  const b = project(rect.x + rect.width, rect.z);
+  const c = project(rect.x + rect.width, rect.z + rect.height);
+  const d = project(rect.x, rect.z + rect.height);
+  ctx.save();
+  ctx.setLineDash(pending ? [3, 3] : selected ? [] : [6, 4]);
+  ctx.strokeStyle = selected
+    ? 'rgba(241,194,126,0.98)'
+    : pending
+      ? 'rgba(127,208,232,0.95)'
+      : 'rgba(224,163,74,0.75)';
+  ctx.fillStyle = selected
+    ? 'rgba(241,194,126,0.16)'
+    : pending
+      ? 'rgba(127,208,232,0.14)'
+      : 'rgba(224,163,74,0.07)';
+  ctx.lineWidth = selected ? 2.2 : 1.6;
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.lineTo(c.x, c.y);
+  ctx.lineTo(d.x, d.y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.setLineDash([]);
+  const label = `${rect.width}×${rect.height} @ ${rect.x},${rect.z}`;
+  ctx.font = '600 8px SFMono-Regular, Consolas, monospace';
+  const width = ctx.measureText(label).width;
+  ctx.fillStyle = 'rgba(8,13,15,0.86)';
+  ctx.fillRect(a.x, a.y - 14, width + 8, 13);
+  ctx.fillStyle = selected ? 'rgba(255,224,178,0.98)' : 'rgba(241,194,126,0.9)';
+  ctx.fillText(label, a.x + 4, a.y - 4);
+  ctx.restore();
 }
 
 function drawCell(

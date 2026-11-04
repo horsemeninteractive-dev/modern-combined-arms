@@ -22,6 +22,8 @@ import {
   createSiltDelta,
 } from './expansionMaps';
 import { createCormorantIsle } from './islandMap';
+import { BALTIC_THEATRES } from './campaign/mapsBaltic';
+import { EASTERN_THEATRES } from './campaign/mapsEastern';
 import type { Scenario, ScenarioSlot } from '../sim/scenario';
 
 /**
@@ -131,6 +133,291 @@ const CAMPAIGN_SCENARIOS: ScenarioEntry[] = [
     modes: CAMPAIGN_ONLY,
     create: createFoundryDistrict,
   },
+];
+
+/**
+ * One entry for a campaign operation's own theatre.
+ *
+ * Campaign theatres are authored per operation and are never offered to
+ * skirmish or multiplayer, so the metadata that matters is the id the mission
+ * document names, the ground it deploys on, and the description the dossier
+ * shows. Target size is derived from the footprint rather than authored twice.
+ */
+function campaignTheatre(
+  id: string,
+  name: string,
+  description: string,
+  focus: string,
+  width: number,
+  height: number,
+  domains: string,
+  create: () => Scenario,
+): ScenarioEntry {
+  return {
+    id,
+    name,
+    description,
+    focus,
+    tags: ['campaign', 'authored', focus.toLowerCase()],
+    domains,
+    targetSize: width > 90 ? 'large' : width > 76 ? 'medium' : 'small',
+    width,
+    height,
+    playerCounts: [2],
+    modes: CAMPAIGN_ONLY,
+    create,
+  };
+}
+
+/**
+ * The twelve Baltic Line theatres and the twelve Eastern Corridor theatres.
+ *
+ * Each map is authored for exactly one operation (see `campaign/mapsBaltic.ts`
+ * and `campaign/mapsEastern.ts`). They are catalogued here so the campaign
+ * loader, the mission workbench and the map audit all resolve a mission's
+ * `mapId` through the one scenario catalogue.
+ */
+const OPERATION_SCENARIOS: ScenarioEntry[] = [
+  campaignTheatre(
+    'kestrel-beach',
+    'Kestrel Bay — Beachhead',
+    'The coalition landing ground: sea to the west, the village at the pass mouth and the corps plateau beyond.',
+    'Beachhead',
+    96,
+    72,
+    'Ground · Air · Naval',
+    BALTIC_THEATRES['kestrel-beach'],
+  ),
+  campaignTheatre(
+    'rust-pass',
+    'Rust Valley — Two Passes',
+    'A broken central massif split by the two armoured passes between the coast and the eastern plain.',
+    'Armour',
+    88,
+    64,
+    'Ground · Air',
+    BALTIC_THEATRES['rust-pass'],
+  ),
+  campaignTheatre(
+    'strait-denial',
+    'Kestrel Straits — Channel Denial',
+    'An island chain, a deep channel and two yards. Ground lodgements around a naval fight.',
+    'Naval',
+    96,
+    64,
+    'Ground · Air · Naval',
+    BALTIC_THEATRES['strait-denial'],
+  ),
+  campaignTheatre(
+    'lapland-watch',
+    'Lapland — Night Watch',
+    'Winter forest at night: one road, one ice crossing and a corps column moving under the trees.',
+    'Recon',
+    80,
+    72,
+    'Ground · Air',
+    BALTIC_THEATRES['lapland-watch'],
+  ),
+  campaignTheatre(
+    'foundry-relief',
+    'Foundry District — Relief Column',
+    'A dense industrial city approached from the west, with the works, the rail yard and the old town.',
+    'Urban',
+    88,
+    64,
+    'Ground · Air',
+    BALTIC_THEATRES['foundry-relief'],
+  ),
+  campaignTheatre(
+    'granite-terraces',
+    'Granite Steps — Terraces',
+    'Three terraces of broken granite, each with one worn pass between the steps.',
+    'Uplands',
+    84,
+    68,
+    'Ground · Air',
+    BALTIC_THEATRES['granite-steps'],
+  ),
+  campaignTheatre(
+    'amber-coast',
+    'Amber Coast — The Harbour',
+    'A sand coast, a dune belt and a shore road, with two yards and a coastal battery.',
+    'Coastal',
+    96,
+    64,
+    'Ground · Air · Naval',
+    BALTIC_THEATRES['amber-coast'],
+  ),
+  campaignTheatre(
+    'signal-hill',
+    'Signal Hill — Air War',
+    'A radar crown on one hill, two forward strips and the valley road that reaches it.',
+    'Air',
+    88,
+    64,
+    'Ground · Air',
+    BALTIC_THEATRES['signal-hill'],
+  ),
+  campaignTheatre(
+    'convoy-lane',
+    'Convoy Lane — Northern Passage',
+    'A coastal sea lane, a landing beach and one anchorage under a coastal battery.',
+    'Escort',
+    96,
+    64,
+    'Ground · Air · Naval',
+    BALTIC_THEATRES['convoy-lane'],
+  ),
+  campaignTheatre(
+    'rail-junction',
+    'Rail Junction — Freight War',
+    'A junction, freight yards and a supply depot in open farmland crossed by two rail lines.',
+    'Logistics',
+    88,
+    64,
+    'Ground · Air',
+    BALTIC_THEATRES['rail-junction'],
+  ),
+  campaignTheatre(
+    'corridor-break',
+    'The Corridor — Breakthrough',
+    'A wide corridor between two ridge systems, with a relay at the centre and the corps rear beyond.',
+    'Breakthrough',
+    92,
+    68,
+    'Ground · Air',
+    BALTIC_THEATRES['corridor-break'],
+  ),
+  campaignTheatre(
+    'straits-final',
+    'Kestrel Straits — Finale',
+    'Two island groups, a wide strait, two navy yards and a fortified corps naval base.',
+    'Finale',
+    100,
+    68,
+    'Ground · Air · Naval',
+    BALTIC_THEATRES['straits-final'],
+  ),
+  campaignTheatre(
+    'red-beach',
+    'Red Beach — The Landing',
+    'The corps landing on the eastern plateau, looking west across the pass to the coalition beachhead.',
+    'Landing',
+    96,
+    72,
+    'Ground · Air · Naval',
+    EASTERN_THEATRES['red-beach'],
+  ),
+  campaignTheatre(
+    'foundry-pocket',
+    'Foundry District — The Pocket',
+    'Tenement blocks, a rail link and a fortified foundry core, approached from the east.',
+    'Urban',
+    88,
+    64,
+    'Ground · Air',
+    EASTERN_THEATRES['foundry-pocket'],
+  ),
+  campaignTheatre(
+    'strait-blockade',
+    'Kestrel Straits — Blockade',
+    'A blockade line, a radar isle and the coalition yard that keeps the channel open.',
+    'Blockade',
+    96,
+    64,
+    'Ground · Air · Naval',
+    EASTERN_THEATRES['strait-blockade'],
+  ),
+  campaignTheatre(
+    'iron-column',
+    'Iron Column — The Breach',
+    'A prepared coalition line, two trench belts and one armoured breach at dusk.',
+    'Armour',
+    88,
+    64,
+    'Ground · Air',
+    EASTERN_THEATRES['iron-column'],
+  ),
+  campaignTheatre(
+    'drone-line',
+    'The Dry Belt — Drone Line',
+    'Open farmland, one coalition radar station and a stacked air-defence net.',
+    'Air',
+    84,
+    64,
+    'Ground · Air',
+    EASTERN_THEATRES['drone-line'],
+  ),
+  campaignTheatre(
+    'kestrel-reach',
+    'Kestrel Reach — The Crossing',
+    'One river, a road bridge, a mill crossing and a fortified far bank.',
+    'River',
+    88,
+    68,
+    'Ground · Air',
+    EASTERN_THEATRES['kestrel-reach'],
+  ),
+  campaignTheatre(
+    'coast-road',
+    'Coast Road — Shore Push',
+    'A shore road under naval gunfire, a headland above it and two yards at the water.',
+    'Coastal',
+    92,
+    64,
+    'Ground · Air · Naval',
+    EASTERN_THEATRES['coast-road'],
+  ),
+  campaignTheatre(
+    'gun-line',
+    'The Gun Line — Siege',
+    'A fortified grid of hardpoints and revetments in front of a coalition depot.',
+    'Siege',
+    88,
+    64,
+    'Ground · Air',
+    EASTERN_THEATRES['gun-line'],
+  ),
+  campaignTheatre(
+    'winter-road',
+    'Winter Road — Frozen Corridor',
+    'One road through deep forest, frozen marsh either side and a forward depot at the end.',
+    'Winter',
+    84,
+    68,
+    'Ground · Air',
+    EASTERN_THEATRES['winter-road'],
+  ),
+  campaignTheatre(
+    'depot-war',
+    'Depot War — Supply Lines',
+    'Two depots, a grain silo and open farmland where supply matters more than ground.',
+    'Logistics',
+    88,
+    64,
+    'Ground · Air',
+    EASTERN_THEATRES['depot-war'],
+  ),
+  campaignTheatre(
+    'foundry-falls',
+    'Foundry District — The City Falls',
+    'A full city grid with the foundry core, the north yards and the rail station in play.',
+    'Urban',
+    88,
+    64,
+    'Ground · Air',
+    EASTERN_THEATRES['foundry-falls'],
+  ),
+  campaignTheatre(
+    'straits-terms',
+    'Kestrel Straits — Terms',
+    'The last strait: two naval bases, a signal island and a full air and sea battle.',
+    'Finale',
+    100,
+    68,
+    'Ground · Air · Naval',
+    EASTERN_THEATRES['straits-terms'],
+  ),
 ];
 
 /**
@@ -420,7 +707,11 @@ const COMPETITIVE_SCENARIOS: ScenarioEntry[] = [
 ];
 
 /** Every authored battlefield, campaign first, then the competitive roster. */
-export const SCENARIOS: readonly ScenarioEntry[] = [...CAMPAIGN_SCENARIOS, ...COMPETITIVE_SCENARIOS];
+export const SCENARIOS: readonly ScenarioEntry[] = [
+  ...CAMPAIGN_SCENARIOS,
+  ...OPERATION_SCENARIOS,
+  ...COMPETITIVE_SCENARIOS,
+];
 
 export const CAMPAIGN_SCENARIO_IDS: readonly string[] = CAMPAIGN_SCENARIOS.map((entry) => entry.id);
 export const COMPETITIVE_SCENARIO_IDS: readonly string[] = COMPETITIVE_SCENARIOS.map((entry) => entry.id);

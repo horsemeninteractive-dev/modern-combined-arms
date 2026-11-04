@@ -8,7 +8,8 @@ export type GridMode =
   | 'repair'
   | 'garrison'
   | 'box'
-  | 'place';
+  | 'place'
+  | 'superweapon';
 
 /**
  * The terrain shader grid is construction guidance, not a permanent map

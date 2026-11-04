@@ -16,7 +16,7 @@
 # contract, not a replacement for it.
 
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self' https://mca-multiplayer-staging.horsemeninteractive.workers.dev wss://mca-multiplayer-staging.horsemeninteractive.workers.dev https://*.moderncombinedarms.pages.dev wss://moderncombinedarms.pages.dev wss://*.moderncombinedarms.pages.dev; manifest-src 'self'; worker-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://cdn.discordapp.com https://lh3.googleusercontent.com; media-src 'self' blob:; font-src 'self'; connect-src 'self' https://mca-multiplayer-staging.horsemeninteractive.workers.dev wss://mca-multiplayer-staging.horsemeninteractive.workers.dev https://*.moderncombinedarms.pages.dev wss://moderncombinedarms.pages.dev wss://*.moderncombinedarms.pages.dev; manifest-src 'self'; worker-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests
   Strict-Transport-Security: max-age=31536000
   X-Frame-Options: DENY
   X-Content-Type-Options: nosniff

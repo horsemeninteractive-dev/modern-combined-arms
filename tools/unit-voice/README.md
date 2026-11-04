@@ -5,7 +5,7 @@ Generates the selection / move / attack / unable-to-comply radio bark set for al
 national exclusives and the two national naval hulls — with local
 [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) ONNX speech. Each cue has
 three takes, so 744 clips in total, and every unit's twelve lines are unique.
-The existing strategic announcer clips in `public/audio/battlesys/` are **not**
+The existing strategic announcer clips in `public/audio/narrator/defender/` are **not**
 touched.
 
 ## Setup

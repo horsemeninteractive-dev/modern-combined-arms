@@ -17,10 +17,13 @@ import {
   UNIT_UPGRADES,
   type TechDef,
 } from '../data/research';
+import { superweaponPresentation } from '../data/superweapons';
+import { superweaponView, SUPERWEAPON_TARGET_LABEL } from './superweaponView';
 import { abilityActions } from './abilityView';
 import { moduleActions } from './moduleView';
 import {
   activeResearchView,
+  researchAuthorityNodes,
   researchBranchGroups,
   researchNames,
   researchNodeState,
@@ -54,12 +57,23 @@ import {
   type SelectionChipView,
   type ThumbnailArtState,
 } from './hudLayout';
-import { gridReport, powerBreakdownLines, type GridReport } from './powerReport';
+import {
+  GRID_LOAD_LABEL,
+  gridLoadState,
+  gridReport,
+  powerBreakdownLines,
+  powerReadout,
+  type GridReport,
+  type PowerReadout,
+} from './powerReport';
 import { ThumbnailRenderer } from '../render/thumbnails';
 import { flagNationForFaction, flagTextureUrl } from '../render/flags';
 import type { ThumbnailKind, ThumbnailRequest, ThumbnailShape } from '../render/thumbnailFrame';
 import { objectiveMeterState } from './relayMeter';
+import { ammoPips, fuelFraction, fuelPercent, supplyTone } from './bars';
 import { campaignMissionObjectives, objectiveProgress } from './objectiveBrief';
+import { missionObjectiveMarkup, missionObjectiveView } from './missionObjectiveView';
+import { missionClock, missionDebriefMarkup, missionOutcomeCopy } from './missionDebrief';
 import { structureBenefit } from '../sim/infrastructure';
 import { contactAlpha, contactIsHollow, contactStateOf } from '../sim/contacts';
 import { BUILD_COMMIT, VERSION_LINE } from '../version';
@@ -137,6 +151,9 @@ function hpClass(frac: number): string {
 
 function stateLabel(e: Entity): string {
   if (e.construction) return `CONSTRUCTING ${Math.round(e.buildProgress * 100)}%`;
+  // Selling is a visible countdown, not a silent disappearance: the structure
+  // stays on the field until the clock runs out.
+  if (e.deconstruct) return `DISMANTLING ${Math.ceil(e.deconstruct.remaining)}s`;
   if (e.garrisonId) return 'GARRISONED';
   if (e.kind === 'building') {
     if (e.queue.length > 0) return 'PRODUCING';
@@ -212,12 +229,22 @@ export class HUD {
   /** The sidebar currently shows the research tree rather than production. */
   private researchOpen = false;
   private selectedResearchTech: string | null = null;
+  /** The sidebar currently shows strategic operations rather than production. */
+  private strategicOpen = false;
   private hudEl: HTMLElement | null = null;
   /** HUD chrome hidden for a clean battlefield capture; the toggle stays. */
   private hudHidden = false;
+  /** Pending timer that takes the chrome out once the exit has played. */
+  private hudAnimTimer = 0;
   private thumbnails: ThumbnailRenderer | null | undefined;
   /** Roster chip chosen for the detail card; cleared when it leaves the selection. */
   private inspectedId = 0;
+  /** The rail gauge's styled hover readout is open; desktop only. */
+  private powerReadoutOpen = false;
+  /** Until this timestamp, BASE cards that sit on the grid are called out. */
+  private gridFocusUntil = 0;
+  /** Last readout markup, so a hover does not rebuild six rows ten times a second. */
+  private lastPowerReadoutKey = '';
 
   constructor(app: App) {
     this.app = app;
@@ -234,6 +261,7 @@ export class HUD {
     this.inspectedId = 0;
     this.panel = 'none';
     this.researchOpen = false;
+    this.strategicOpen = false;
     this.selectedResearchTech = null;
     this.app.additiveSelection = false;
     this.lastProductionKey = '';
@@ -246,11 +274,16 @@ export class HUD {
     this.pausedCache = null;
     this.modeCache = '';
     this.hudHidden = false;
+    this.powerReadoutOpen = false;
+    this.gridFocusUntil = 0;
+    this.lastPowerReadoutKey = '';
     const root = document.getElementById('hud-root');
     if (!root) return;
     this.root = root;
     this.layout = this.detectLayout();
     this.warmBattleArt();
+    // `renderShell` applies visibility, which is also what starts the entrance:
+    // the shell is assembled from the edges the moment it exists.
     this.renderShell();
   }
 
@@ -261,6 +294,8 @@ export class HUD {
     this.hudEl = null;
     this.game = null;
     this.endShown = false;
+    this.powerReadoutOpen = false;
+    this.lastPowerReadoutKey = '';
   }
 
   /** Rebuild the active composition when the viewport crosses the layout point. */
@@ -270,12 +305,15 @@ export class HUD {
     this.layout = next;
     this.panel = 'none';
     this.researchOpen = false;
+    this.strategicOpen = false;
     this.hoverPanel = null;
     this.hoverArmed = true;
     this.hoverNode = null;
     this.pendingProductionKey = '';
     this.pendingSelection = false;
     this.app.additiveSelection = false;
+    this.powerReadoutOpen = false;
+    this.lastPowerReadoutKey = '';
     if (this.root && this.game) this.renderShell();
     return true;
   }
@@ -293,6 +331,9 @@ export class HUD {
     if (!root || !game) return;
     root.innerHTML = this.markup(game);
     this.hudEl = root.querySelector<HTMLElement>('.hud');
+    // The rebuilt readout starts hidden, so the open flag has to follow it.
+    this.powerReadoutOpen = false;
+    this.lastPowerReadoutKey = '';
     this.bind();
     // A layout refresh rebuilds the shell; keep the player's capture state.
     this.applyHudVisibility();
@@ -322,60 +363,91 @@ export class HUD {
   private railMarkup(game: Game): string {
     const p = game.player(game.localPlayerId);
     const faction = p ? tryIdentityDef(p.factionId) : undefined;
-    // Registry-backed identity: the rail names the nation the player commands,
-    // and the title carries the alliance so the short label can stay compact.
-    const railName = faction?.shortName || faction?.name || 'TASK FORCE';
+    // Two identities, in the order the rail reads them: the coalition the
+    // command belongs to heads the rail, and the nation under its flag is the
+    // country actually flying it. The title carries all three, so neither short
+    // label has to.
+    const front = faction ? ALLIANCES[faction.allianceId] : undefined;
+    const frontLabel = front?.shortName || front?.name || 'TASK FORCE';
+    const nationLabel = faction?.shortName || faction?.name || 'TASK FORCE';
     const railTitle = faction
-      ? `${faction.name} · ${ALLIANCES[faction.allianceId]?.name ?? faction.allianceId}${
+      ? `${front?.name ?? faction.allianceId} · ${faction.name}${
           faction.doctrine ? ` · ${faction.doctrine}` : ''
         }`
       : 'Task force';
-    // The nation's real flag sits between the brand and the resources: the rail
-    // already names the command, so the plate carries the identity a player
-    // checks first — whose flag is flying over this base.
+    // The nation's real flag sits between the brand and the resources, with the
+    // country named under it: whose flag is flying over this base.
     const nation = p ? flagNationForFaction(p.factionId) : undefined;
-    const alliance = faction ? ALLIANCES[faction.allianceId] : undefined;
     return `
       <aside class="hud-rail" aria-label="Command rail">
-        <div class="rail-brand">
-          <img class="brand-mark" src="/insignia.svg" alt="" aria-hidden="true" width="30" height="30" />
-          <span class="rail-theatre" title="${escapeHtml(railTitle)}">${escapeHtml(railName)}</span>
-        </div>
-        ${nation ? `<div class="rail-identity" title="${escapeHtml(railTitle)}">
-          <img class="rail-flag" src="${flagTextureUrl(nation)}" alt="${escapeHtml(railName)} flag" />
-          ${alliance ? `<span class="rail-alliance"><i style="background:${alliance.color}"></i>${escapeHtml(alliance.shortName)}</span>` : ''}
-        </div>` : ''}
-        <div class="rail-stats">
-          <div class="rail-stat"><span class="rail-label"><i class="resource-swatch"></i>MATS</span><b id="res-mats">0</b><span class="rail-rate" id="res-mats-rate">+0/m</span></div>
-          <div class="rail-stat req"><span class="rail-label"><i class="resource-swatch blue"></i>REQ</span><b id="res-req">0</b><span class="rail-rate" id="res-req-rate">+0.0/s</span></div>
-        </div>
-        <div class="rail-grid" id="rail-power" data-power-meter role="meter" aria-label="Power grid load" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" title="Grid power — structures draw on the grid; a deficit browns out production">
-          <span class="rail-label">POWER</span>
-          <div class="power-bar"><i data-power-fill></i></div>
-          <span class="rail-rate" data-power-state>NO LOAD</span>
-        </div>
-        <div class="rail-bottom">
-          <!-- Force size and the briefing button sit at the foot of the rail,
-               directly above the control-group strip. The strip itself is the
-               anchor: the block is bottom-aligned, so adding these two moved
-               the strip not at all. -->
-          <div class="rail-tail">
-            <div class="rail-stat rail-stat-army"><span class="rail-label">ARMY</span><b id="res-force">0</b><span class="rail-rate" id="res-force-sub">0 STRUCTURES</span></div>
-            <button class="rail-objective" id="rail-objective-btn" data-act="objective" title="Primary objective — open the briefing" aria-haspopup="dialog">
-              <span class="rail-label">OBJECTIVE</span>
-              <b>BRIEFING</b>
-            </button>
+        <!-- The rail scrolls as one column; the power gauge is bolted to its
+             outer edge and does not scroll with it. -->
+        <div class="rail-body">
+          <div class="rail-brand">
+            <img class="brand-mark" src="/insignia.svg" alt="" aria-hidden="true" width="30" height="30" />
+            <span class="rail-theatre" title="${escapeHtml(railTitle)}">${escapeHtml(frontLabel)}</span>
           </div>
-          <div class="rail-groups" aria-label="Control groups">${this.groupStripMarkup()}</div>
-          <div class="rail-clock" title="Battlefield time of day — darkness shortens detection and engagement range"><span>MISSION</span><b id="clock">0:00</b><span class="clock-phase" id="clock-phase">DUSK</span></div>
-          <div class="rail-actions">
-            <button class="rail-btn" data-act="save" title="Save battle" aria-label="Save battle">${icon('save')}</button>
-            <button class="rail-btn" data-act="pause" id="btn-pause-top" title="Pause (P)" aria-label="Pause battle">${icon('pause')}</button>
-            <button class="rail-btn" data-act="settings" title="Settings" aria-label="Settings">${icon('settings')}</button>
-            <button class="rail-btn" data-act="menu" title="Menu" aria-label="Menu">${icon('menu')}</button>
+          ${nation ? `<div class="rail-identity" title="${escapeHtml(railTitle)}">
+            <img class="rail-flag" src="${flagTextureUrl(nation)}" alt="${escapeHtml(nationLabel)} flag" />
+            <span class="rail-nation">${front ? `<i style="background:${front.color}"></i>` : ''}${escapeHtml(nationLabel)}</span>
+          </div>` : ''}
+          <div class="rail-stats">
+            <div class="rail-stat"><span class="rail-label"><i class="resource-swatch"></i>MATS</span><b id="res-mats">0</b><span class="rail-rate" id="res-mats-rate">+0/m</span></div>
+            <div class="rail-stat req"><span class="rail-label"><i class="resource-swatch blue"></i>REQ</span><b id="res-req">0</b><span class="rail-rate" id="res-req-rate">+0.0/s</span></div>
+          </div>
+          <div class="rail-bottom">
+            <div class="rail-tail">
+              <div class="rail-stat rail-stat-army"><span class="rail-label">ARMY</span><b id="res-force">0</b><span class="rail-rate" id="res-force-sub">0 STRUCTURES</span></div>
+            </div>
+            <div class="rail-groups" aria-label="Control groups">${this.groupStripMarkup()}</div>
+            <div class="rail-clock" title="Battlefield time of day — darkness shortens detection and engagement range"><span>MISSION</span><b id="clock">0:00</b><span class="clock-phase" id="clock-phase">DUSK</span></div>
+            <!-- A 2x3 pad: the four battle controls, then the briefing across
+                 the bottom row. The objective is an icon like its neighbours. -->
+            <div class="rail-actions" aria-label="Mission controls">
+              <button class="rail-btn" data-act="save" title="Save battle" aria-label="Save battle">${icon('save')}</button>
+              <button class="rail-btn" data-act="pause" id="btn-pause-top" title="Pause (P)" aria-label="Pause battle">${icon('pause')}</button>
+              <button class="rail-btn" data-act="settings" title="Settings" aria-label="Settings">${icon('settings')}</button>
+              <button class="rail-btn" data-act="menu" title="Menu" aria-label="Menu">${icon('menu')}</button>
+              <button class="rail-btn rail-objective" id="rail-objective-btn" data-act="objective" title="Primary objective — open the briefing" aria-haspopup="dialog">
+                ${icon('target')}<span class="rail-label">BRIEF</span>
+              </button>
+            </div>
           </div>
         </div>
-      </aside>`;
+        <!-- Power is a gauge, not a fourth currency: a full-height column with
+             the draw rising from the floor and the supply line marked. -->
+        <div class="rail-power" id="rail-power" data-power-meter data-power-open data-act="power" role="meter" tabindex="0" aria-controls="prod-body" aria-describedby="power-readout" aria-label="Power grid load — activate to open BASE power structures" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div class="rail-power-track" aria-hidden="true">
+            <i data-power-fill="v"></i>
+            <span class="rail-power-cap hidden" data-power-cap></span>
+          </div>
+          <div class="rail-power-tags" aria-hidden="true">
+            <span class="rail-power-state" data-power-state>NO LOAD</span>
+            <span class="rail-power-caption">POWER</span>
+            <span class="rail-power-read" data-power-read>0/0</span>
+          </div>
+        </div>
+      </aside>
+      ${this.powerReadoutMarkup()}`;
+  }
+
+  /**
+   * The gauge's hover readout. It lives outside the rail because the rail clips
+   * its own contents; it opens over the battlefield beside the gauge and never
+   * takes the pointer, so the readout cannot flicker as it tracks the grid.
+   */
+  private powerReadoutMarkup(): string {
+    return `<div class="power-readout hidden" id="power-readout" aria-hidden="true">
+      <div class="pr-head">
+        <span class="pr-state" data-pr-state>NO LOAD</span>
+        <b class="pr-totals" data-pr-totals>0 DRAW / 0 SUPPLY</b>
+      </div>
+      <div class="pr-cols">
+        <div class="pr-col source"><span class="pr-title">GENERATORS</span><ul data-pr-sources></ul></div>
+        <div class="pr-col draw"><span class="pr-title">DRAW</span><ul data-pr-consumers></ul></div>
+      </div>
+      <div class="pr-foot"><span><b>CLICK</b> OPEN BASE · POWER STRUCTURES</span></div>
+    </div>`;
   }
 
   /** Mobile keeps a thin top strip: touch screens need the vertical pixels. */
@@ -516,10 +588,15 @@ export class HUD {
     // control elsewhere: it belongs to the same panel it opens, and its bar
     // keeps an active project visible while the tree is closed.
     const researchTab = `<button class="prod-tab research-tab" id="rail-research" data-act="research" aria-label="Research" aria-haspopup="dialog" aria-expanded="false" title="Research tree">${icon('research', 'tab-icon')}<span class="rail-label">RESEARCH</span><span class="tab-research-bar"><i data-research-rail-fill></i></span></button>`;
+    // The strategic tab exists only for a nation that actually fields a
+    // capability in a battle that permits one, so no nation is shown an empty
+    // slot it can never fill.
+    const strategicTab = `<button class="prod-tab strategic-tab hidden" id="rail-strategic" data-act="strategic" aria-label="Strategic operations" aria-haspopup="dialog" aria-expanded="false" title="Strategic operations">${icon('strategic', 'tab-icon')}<span class="rail-label">STRAT</span><span class="tab-strategic-bar"><i data-strategic-pip></i></span></button>`;
     return `<aside class="production-sidebar" aria-label="Production">
       <nav class="prod-tabs" id="prod-tabs" aria-label="Production categories">
         ${tabs}
         ${researchTab}
+        ${strategicTab}
       </nav>
       <div class="sidebar-content">
         <div class="sidebar-head"><button class="sheet-close" data-act="close-sheets" aria-label="Close production">×</button></div>
@@ -644,6 +721,28 @@ export class HUD {
         this.flushHover(this.hoverPanel);
       }
     };
+    // The rail gauge is the grid's own control: hovering (or focusing) it opens
+    // the breakdown, and activating it turns the sidebar to the structures on
+    // the grid. The gauge is rebuilt with the shell, so these listeners are
+    // re-attached with it rather than delegated from the document.
+    const gauge = root.querySelector<HTMLElement>('[data-power-open]');
+    if (gauge) {
+      gauge.addEventListener('pointerenter', () => this.setPowerReadout(true));
+      gauge.addEventListener('pointerleave', () => this.setPowerReadout(false));
+      gauge.addEventListener('focus', () => this.setPowerReadout(true));
+      gauge.addEventListener('blur', () => this.setPowerReadout(false));
+      gauge.addEventListener('keydown', (event: KeyboardEvent) => {
+        if (event.key === 'Escape') {
+          this.setPowerReadout(false);
+          gauge.blur();
+          return;
+        }
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          this.focusGridStructures();
+        }
+      });
+    }
     this.bindMinimap();
   }
 
@@ -676,10 +775,13 @@ export class HUD {
         this.layout === 'mobile' &&
         this.panel === 'production' &&
         this.tab === next &&
-        !this.researchOpen;
+        !this.researchOpen &&
+        !this.strategicOpen;
       this.researchOpen = false;
+      this.strategicOpen = false;
       this.tab = next;
       root.querySelector('.hud')?.classList.remove('research-open');
+      root.querySelector('.hud')?.classList.remove('strategic-open');
       root.querySelectorAll('.prod-tab').forEach((b) => b.classList.toggle('active', b === tabEl));
       this.renderProduction(true);
       this.updateResearchRail();
@@ -730,7 +832,7 @@ export class HUD {
    */
   private setHudHidden(hidden: boolean): void {
     this.hudHidden = hidden;
-    this.applyHudVisibility();
+    this.applyHudVisibility(true);
   }
 
   /** U — the same toggle the pill offers, for a keyboard capture. */
@@ -738,17 +840,50 @@ export class HUD {
     this.setHudHidden(!this.hudHidden);
   }
 
-  private applyHudVisibility(): void {
+  /**
+   * Both directions are staged. Leaving plays the entry choreography backwards
+   * and only then takes the panels out of the document, so the capture is clean
+   * and the chrome cannot hold focus while it is gone; arriving plays the same
+   * choreography forwards again. `animate` is false on mount — a fresh shell is
+   * already entering — and on the layout refresh that preserves the state.
+   */
+  private applyHudVisibility(animate = false): void {
     const hud = this.hudEl;
     if (!hud) return;
-    hud.classList.toggle('hud-hidden', this.hudHidden);
     const button = hud.querySelector<HTMLButtonElement>('.hud-toggle');
-    if (!button) return;
-    button.setAttribute('aria-pressed', String(this.hudHidden));
-    button.classList.toggle('is-off', this.hudHidden);
-    button.title = this.hudHidden ? 'Show HUD (U)' : 'Hide HUD (U) — clean battlefield for screenshots';
-    button.setAttribute('aria-label', this.hudHidden ? 'Show HUD' : 'Hide HUD');
-    button.innerHTML = `${icon(this.hudHidden ? 'eye' : 'eyeOff')}<span>HUD</span>`;
+    if (button) {
+      button.setAttribute('aria-pressed', String(this.hudHidden));
+      button.classList.toggle('is-off', this.hudHidden);
+      button.title = this.hudHidden ? 'Show HUD (U)' : 'Hide HUD (U) — clean battlefield for screenshots';
+      button.setAttribute('aria-label', this.hudHidden ? 'Show HUD' : 'Hide HUD');
+      button.innerHTML = `${icon(this.hudHidden ? 'eye' : 'eyeOff')}<span>HUD</span>`;
+    }
+    window.clearTimeout(this.hudAnimTimer);
+    if (this.hudHidden) {
+      hud.classList.remove('hud-enter');
+      if (!animate) {
+        hud.classList.remove('hud-exit');
+        hud.classList.add('hud-hidden');
+        return;
+      }
+      hud.classList.remove('hud-hidden');
+      hud.classList.add('hud-exit');
+      this.hudAnimTimer = window.setTimeout(() => {
+        hud.classList.remove('hud-exit');
+        hud.classList.add('hud-hidden');
+      }, 300);
+      return;
+    }
+    hud.classList.remove('hud-hidden', 'hud-exit');
+    if (!animate) {
+      hud.classList.add('hud-enter');
+      return;
+    }
+    // The class has to be absent for a frame before it is re-applied, or the
+    // browser sees no change and skips the entrance.
+    hud.classList.remove('hud-enter');
+    void hud.offsetWidth;
+    hud.classList.add('hud-enter');
   }
 
   private action(act: string): void {
@@ -804,6 +939,9 @@ export class HUD {
       case 'dive':
         this.app.commandDive();
         break;
+      case 'power':
+        this.focusGridStructures();
+        break;
       case 'grid-fix':
         this.setResearchOpen(false);
         this.selectTab('base');
@@ -818,6 +956,15 @@ export class HUD {
         break;
       case 'research':
         this.toggleResearch();
+        break;
+      case 'strategic':
+        this.toggleStrategic();
+        break;
+      case 'strategic-close':
+        this.setStrategicOpen(false);
+        break;
+      case 'strategic-fire':
+        this.app.beginSuperweaponTargeting();
         break;
       case 'research-close':
         this.setResearchOpen(false);
@@ -889,6 +1036,7 @@ export class HUD {
       this.lastUpdate = now;
       this.renderResources();
       this.updateResearchRail();
+      this.updateStrategicRail();
       // A hovered panel keeps its DOM: rebuilding it under the pointer is what
       // made the research nodes' tooltips flash instead of opening.
       if (this.hoverPanel === 'selection' && this.hoverArmed) this.pendingSelection = true;
@@ -909,7 +1057,12 @@ export class HUD {
       }
       const project = game.researchState(this.app.localPlayerId)?.project;
       const researchKey = `${this.researchOpen ? 1 : 0}|${this.selectedResearchTech ?? ''}|${game.completedTechnologies(this.app.localPlayerId).join(',')}|${project?.techId ?? ''}|${game.hasResearchCentre(this.app.localPlayerId) ? 1 : 0}`;
-      const key = `${signature}|${this.tab}|${this.selectedKey()}|${Math.floor((this.app.localPlayer?.mats ?? 0) / 40)}|${Math.floor((this.app.localPlayer?.req ?? 0) / 20)}|${researchKey}`;
+      // The strategic panel is a status display, so its key carries the state
+      // words and the rounded clocks: the panel re-renders when a gate opens or
+      // a countdown crosses a second, and never on an idle frame.
+      const sw = game.superweaponStatus(this.app.localPlayerId);
+      const swKey = `${this.strategicOpen ? 1 : 0}|${sw.ok ? 1 : 0}|${sw.hasCentre ? 1 : 0}|${sw.missingTechs.length}|${sw.phase}|${Math.ceil(sw.cooldown)}|${Math.ceil(sw.countdown)}|${sw.operation ? 1 : 0}|${sw.affordable ? 1 : 0}`;
+      const key = `${signature}|${this.tab}|${this.selectedKey()}|${Math.floor((this.app.localPlayer?.mats ?? 0) / 40)}|${Math.floor((this.app.localPlayer?.req ?? 0) / 20)}|${researchKey}|${swKey}`;
       if (key !== this.lastProductionKey) {
         if (this.hoverPanel === 'prod' && this.hoverArmed) {
           this.pendingProductionKey = key;
@@ -1031,9 +1184,13 @@ export class HUD {
     // The tree is the one sidebar view that needs more than a card column: two
     // tier nodes side by side plus a detail block do not fit the production
     // width, so the shell widens only while it is open.
+    if (open) this.closeStrategicPanel();
     this.root?.querySelector('.hud')?.classList.toggle('research-open', open);
     this.root?.querySelectorAll<HTMLElement>('.prod-tab').forEach((tab) => {
-      tab.classList.toggle('active', !this.researchOpen && tab.dataset.tab === this.tab);
+      tab.classList.toggle(
+        'active',
+        !this.researchOpen && !this.strategicOpen && tab.dataset.tab === this.tab,
+      );
     });
     this.lastProductionKey = '';
     this.renderProduction(true);
@@ -1055,6 +1212,148 @@ export class HUD {
     // Never mark the node active here. The next authoritative update changes
     // the project and the normal keyed render picks it up.
     this.lastProductionKey = '';
+  }
+
+  /* Strategic operations                                                  */
+
+  private toggleStrategic(): void {
+    this.setStrategicOpen(!this.strategicOpen);
+  }
+
+  /**
+   * Open or close the strategic panel.
+   *
+   * Only one sidebar view is ever open, so opening this closes research and the
+   * production tabs. The shell widens for it exactly as it does for the tree:
+   * a requirement list and a status block need more than a card column.
+   */
+  private setStrategicOpen(open: boolean): void {
+    this.strategicOpen = open;
+    if (open) {
+      this.researchOpen = false;
+      this.root?.querySelector('.hud')?.classList.remove('research-open');
+    }
+    if (this.layout === 'mobile') {
+      if (open) this.panel = 'production';
+      else if (this.panel === 'production') this.panel = 'none';
+      this.syncPanelState();
+    }
+    this.root?.querySelector('.hud')?.classList.toggle('strategic-open', open);
+    this.root?.querySelectorAll<HTMLElement>('.prod-tab').forEach((tab) => {
+      tab.classList.toggle(
+        'active',
+        !this.researchOpen && !this.strategicOpen && tab.dataset.tab === this.tab,
+      );
+    });
+    this.lastProductionKey = '';
+    this.renderProduction(true);
+    this.updateStrategicRail();
+  }
+
+  /** Closing this view never touches the draft, the mission or the selection. */
+  private closeStrategicPanel(): void {
+    if (!this.strategicOpen) return;
+    this.strategicOpen = false;
+    this.root?.querySelector('.hud')?.classList.remove('strategic-open');
+  }
+
+  /**
+   * One national capability, its four gates and its clock.
+   *
+   * Everything shown here is read from the authoritative status, so the panel
+   * cannot claim a call-in is ready while the command would refuse it. A nation
+   * with no capability, or a battle that forbids one, still renders a coherent
+   * explanation rather than a broken shell.
+   */
+  private superweaponMarkup(): string {
+    const game = this.game;
+    const p = this.app.localPlayer;
+    if (!game || !p) return '<div class="prod-empty">Strategic operations are unavailable.</div>';
+    const owner = this.app.localPlayerId;
+    const status = game.superweaponStatus(owner);
+    const family = status.family;
+    const identity = tryIdentityDef(p.factionId);
+    const presentation = family
+      ? superweaponPresentation(family, identity?.allianceId)
+      : null;
+    const view = superweaponView(status, presentation);
+    const centreRow = `<li class="sw-req ${status.hasCentre ? 'done' : 'pending'}">
+      <span class="sw-req-mark" aria-hidden="true">${status.hasCentre ? '✓' : '○'}</span>
+      <span class="sw-req-name">Strategic Operations Centre</span>
+      <span class="sw-req-state">${status.hasCentre ? 'OPERATIONAL' : 'MISSING'}</span>
+    </li>`;
+    const techRows = view.requirements
+      .map(
+        (row) => `<li class="sw-req ${row.ready ? 'done' : 'pending'}">
+        <span class="sw-req-mark" aria-hidden="true">${row.ready ? '✓' : '○'}</span>
+        <span class="sw-req-name">${escapeHtml(row.name)}</span>
+        <span class="sw-req-state">${row.ready ? 'COMPLETE' : 'REQUIRED'}</span>
+      </li>`,
+      )
+      .join('');
+    const operationRow = status.operation
+      ? `<div class="sw-operation" role="status">
+          <span class="sw-operation-phase">${escapeHtml(view.label)}</span>
+          <span class="sw-operation-clock" data-sw-clock>${escapeHtml(view.clock)}</span>
+        </div>`
+      : '';
+    const costBlock = view.cost
+      ? `<div class="sw-cost">${costChips(view.cost.mats, view.cost.req, view.warningSeconds)}<span class="sw-cost-note">${view.cooldownSeconds}s NATIONAL RELOAD</span></div>`
+      : '';
+    const targetBlock = view.targeting
+      ? `<div class="sw-target"><span>TARGETING</span><b>${escapeHtml(view.targetLabel)}</b><p>${escapeHtml(view.canFire ? SUPERWEAPON_TARGET_LABEL[view.targeting] : 'Available once the capability is ready.')}</p></div>`
+      : '';
+    return `<div class="strategic-panel" data-sw-tone="${view.tone}">
+      <header class="strategic-head">
+        <div><span class="eyebrow">STRATEGIC OPERATIONS</span><h3>${escapeHtml(view.name)}</h3><p class="strategic-role">${escapeHtml(view.role)}</p></div>
+        <button class="research-close" data-act="strategic-close" aria-label="Close strategic operations">×</button>
+      </header>
+      <section class="strategic-state sw-${view.tone}" aria-live="polite">
+        <div class="sw-state-head"><span class="sw-state-label">${escapeHtml(view.label)}</span>${view.clock && !status.operation ? `<span class="sw-state-clock" data-sw-clock>${escapeHtml(view.clock)}</span>` : ''}</div>
+        <p class="sw-state-detail">${escapeHtml(view.detail)}</p>
+        ${operationRow}
+        ${costBlock}
+        <button class="strategic-fire" data-act="strategic-fire" ${view.canFire ? '' : 'disabled'} title="${escapeHtml(view.canFire ? 'Choose a target on the map' : view.detail)}">${view.canFire ? 'AUTHORISE OPERATION' : 'UNAVAILABLE'}</button>
+      </section>
+      ${view.description ? `<p class="strategic-desc">${escapeHtml(view.description)}</p>` : ''}
+      <section class="sw-reqs" aria-label="Authorisation requirements">
+        <div class="sw-reqs-head"><span>AUTHORITY CHAIN</span><span>${status.missingTechs.length === 0 && status.hasCentre ? 'COMPLETE' : `${4 - status.missingTechs.length + (status.hasCentre ? 1 : 0)}/5`}</span></div>
+        <ul>${centreRow}${techRows}</ul>
+      </section>
+      ${targetBlock}
+      <p class="strategic-foot">Losing the centre blocks new authorisations but never cancels a committed operation or resets its reload.</p>
+    </div>`;
+  }
+
+  /**
+   * Rail state for the strategic tab.
+   *
+   * The tab is hidden entirely for a nation without a capability, and for a
+   * battle that forbids one, so the rail never advertises a dead end.
+   */
+  private updateStrategicRail(): void {
+    const rail = this.root?.querySelector<HTMLElement>('#rail-strategic');
+    const game = this.game;
+    if (!rail || !game) return;
+    const owner = this.app.localPlayerId;
+    const status = game.superweaponStatus(owner);
+    const present = status.enabled && !!status.family;
+    rail.classList.toggle('hidden', !present);
+    rail.classList.toggle('active', this.strategicOpen);
+    rail.setAttribute('aria-expanded', String(this.strategicOpen));
+    const identity = this.app.localPlayer ? tryIdentityDef(this.app.localPlayer.factionId) : undefined;
+    const view = superweaponView(
+      status,
+      status.family ? superweaponPresentation(status.family, identity?.allianceId) : null,
+    );
+    rail.dataset.state = view.tone;
+    const pip = rail.querySelector<HTMLElement>('[data-strategic-pip]');
+    if (pip) pip.dataset.state = view.tone;
+    // The tooltip names the state and its clock only; a ticking number is
+    // rounded so hovering does not restart the browser tooltip every second.
+    const clock = view.clock ? ` · ${view.clock}` : '';
+    const title = present ? `${view.name} — ${view.label}${clock}` : 'Strategic operations';
+    if (rail.title !== title) rail.title = title;
   }
 
   private selectTab(tab: ProductionTab): void {
@@ -1138,22 +1437,14 @@ export class HUD {
         : power.supply <= 0
           ? 1
           : Math.min(1, power.demand / power.supply);
-    const loadState = power.brownout
-      ? 'BROWNOUT'
-      : power.demand === 0
-        ? 'NO LOAD'
-        : power.demand / power.supply >= 0.85
-          ? 'STRAINED'
-          : 'STABLE';
-    // Hovering the meter explains the whole grid, not just the totals: the
-    // same grouped snapshot the structure cards carry, so a deficit can be
-    // traced to the structures causing it without opening a panel.
-    const grid = this.currentGridReport();
-    const gridTitle = grid
-      ? powerBreakdownLines(grid).join('\n')
-      : power.brownout
-        ? `Grid deficit: ${power.supply} supply for ${power.demand} demand — production and construction at ${Math.round(power.ratio * 100)}%`
-        : `Grid: ${power.supply} supply, ${power.demand} demand`;
+    const loadState = GRID_LOAD_LABEL[gridLoadState(power.supply, power.demand, power.brownout)];
+    // The desktop gauge opens a styled readout carrying the same grouped
+    // snapshot the structure cards use, so a deficit can be traced to the
+    // structures causing it without reading a native tooltip. The touch meter
+    // keeps the native title: a phone has no hover to open a panel with.
+    const grid =
+      this.powerReadoutOpen || this.layout === 'mobile' ? this.currentGridReport() : null;
+    const gridTitle = grid ? powerBreakdownLines(grid).join('\n') : '';
     this.root.querySelectorAll<HTMLElement>('[data-power-meter]').forEach((meter) => {
       meter.classList.toggle('brownout', power.brownout);
       meter.classList.toggle('strained', !power.brownout && loadState === 'STRAINED');
@@ -1162,14 +1453,39 @@ export class HUD {
         'aria-valuetext',
         `${loadState.toLowerCase()} — ${power.supply} supply for ${power.demand} demand`,
       );
-      if (meter.title !== gridTitle) meter.setAttribute('title', gridTitle);
+      if (
+        !meter.hasAttribute('data-power-open') &&
+        gridTitle &&
+        meter.title !== gridTitle
+      ) {
+        meter.setAttribute('title', gridTitle);
+      }
     });
+    // The gauge scales to whichever is larger, supply or demand, so a deficit
+    // is visible as height as well as colour: the column fills to the brim and
+    // the amber supply line drops below it, marking exactly how short the grid
+    // is. In a healthy grid the supply line sits at the top of the column.
+    const scale = Math.max(power.supply, power.demand, 1);
+    const drawRatio = power.demand / scale;
+    const supplyRatio = power.supply / scale;
     this.root.querySelectorAll<HTMLElement>('[data-power-fill]').forEach((fill) => {
+      if (fill.dataset.powerFill === 'v') {
+        fill.style.height = `${Math.round(drawRatio * 100)}%`;
+        return;
+      }
       fill.style.width = `${Math.round(load * 100)}%`;
+    });
+    this.root.querySelectorAll<HTMLElement>('[data-power-cap]').forEach((cap) => {
+      cap.style.bottom = `${Math.round(supplyRatio * 100)}%`;
+      cap.classList.toggle('hidden', !power.brownout);
+    });
+    this.root.querySelectorAll<HTMLElement>('[data-power-read]').forEach((read) => {
+      read.textContent = `${power.demand}/${power.supply}`;
     });
     this.root
       .querySelectorAll<HTMLElement>('[data-power-state]')
       .forEach((label) => (label.textContent = loadState));
+    if (this.powerReadoutOpen && grid) this.renderPowerReadout(grid);
     const alert = this.root.querySelector<HTMLElement>('#grid-alert');
     const alertCopy = this.root.querySelector('#grid-alert-copy');
     if (alert) {
@@ -1215,41 +1531,150 @@ export class HUD {
     }
   }
 
+  /** Open or close the gauge's styled readout; opening fills it at once. */
+  private setPowerReadout(open: boolean): void {
+    const el = this.root?.querySelector<HTMLElement>('#power-readout');
+    // No readout on touch: there is no hover to open one, and the mobile meter
+    // keeps its native tooltip.
+    if (!el) return;
+    this.powerReadoutOpen = open;
+    this.lastPowerReadoutKey = '';
+    el.classList.toggle('hidden', !open);
+    el.setAttribute('aria-hidden', String(!open));
+    this.root?.querySelector('[data-power-open]')?.classList.toggle('reading', open);
+    if (open) this.renderResources();
+  }
+
+  /**
+   * The gauge readout: state, totals, and the largest generators and draws with
+   * a bar scaled to the biggest line in its own column. Built as one string so
+   * an unchanged frame never tears down the rows under the pointer.
+   */
+  private renderPowerReadout(grid: GridReport): void {
+    const el = this.root?.querySelector<HTMLElement>('#power-readout');
+    if (!el) return;
+    const view = powerReadout(grid);
+    const column = (
+      list: PowerReadout['sources'],
+      hidden: number,
+      empty: string,
+    ): string =>
+      list.length === 0
+        ? `<li class="pr-empty">${empty}</li>`
+        : `${list
+            .map(
+              (row) => `<li>
+                <div class="pr-line">
+                  <span class="pr-name">${escapeHtml(row.name)}${
+                    row.count > 1 ? `<em>×${row.count}</em>` : ''
+                  }</span>
+                  <span class="pr-val">${row.total > 0 ? '+' : ''}${row.total}</span>
+                </div>
+                <span class="pr-track"><i style="width:${Math.round(row.share * 100)}%"></i></span>
+              </li>`,
+            )
+            .join('')}${hidden > 0 ? `<li class="pr-more">+${hidden} more</li>` : ''}`;
+    const sources = column(view.sources, view.hiddenSources, 'No generation standing');
+    const consumers = column(view.consumers, view.hiddenConsumers, 'No structures drawing');
+    const key = `${view.state}|${view.demand}|${view.supply}|${sources}|${consumers}`;
+    if (key === this.lastPowerReadoutKey) return;
+    this.lastPowerReadoutKey = key;
+    el.classList.toggle('idle', view.state === 'idle');
+    el.classList.toggle('stable', view.state === 'stable');
+    el.classList.toggle('strained', view.state === 'strained');
+    el.classList.toggle('brownout', view.state === 'brownout');
+    const state = el.querySelector('[data-pr-state]');
+    if (state) state.textContent = view.label;
+    const totals = el.querySelector('[data-pr-totals]');
+    if (totals) totals.textContent = `${view.demand} DRAW / ${view.supply} SUPPLY`;
+    const sourceList = el.querySelector('[data-pr-sources]');
+    if (sourceList) sourceList.innerHTML = sources;
+    const consumerList = el.querySelector('[data-pr-consumers]');
+    if (consumerList) consumerList.innerHTML = consumers;
+  }
+
+  /**
+   * Activating the gauge: the BASE tab, with the structures the readout lists
+   * called out and the turbine plant brought into view. The sidebar is a single
+   * card column, so "focused on power" means the grid's contributors are
+   * marked and reachable, not that every other structure disappears.
+   */
+  private focusGridStructures(): void {
+    if (!this.game) return;
+    this.setPowerReadout(false);
+    this.gridFocusUntil = performance.now() + 2800;
+    if (this.strategicOpen) this.setStrategicOpen(false);
+    this.setResearchOpen(false);
+    this.selectTab('base');
+    if (this.layout === 'mobile') this.setPanel('production');
+    requestAnimationFrame(() => this.revealGridCard());
+    window.setTimeout(() => {
+      this.root
+        ?.querySelectorAll('.build-card.grid-focus')
+        .forEach((card) => card.classList.remove('grid-focus'));
+    }, 2900);
+  }
+
+  /** Centre the power plant card in the BASE column and hand it focus. */
+  private revealGridCard(): void {
+    const body = this.root?.querySelector<HTMLElement>('#prod-body');
+    if (!body) return;
+    const card =
+      body.querySelector<HTMLButtonElement>('[data-build="powerPlant"]') ??
+      body.querySelector<HTMLButtonElement>('.build-card.grid-focus');
+    if (!card) return;
+    const bodyRect = body.getBoundingClientRect();
+    const cardRect = card.getBoundingClientRect();
+    if (cardRect.top < bodyRect.top || cardRect.bottom > bodyRect.bottom) {
+      body.scrollTop +=
+        cardRect.top - bodyRect.top - Math.max(0, (bodyRect.height - cardRect.height) / 2);
+    }
+    if (!card.disabled) card.focus({ preventScroll: true });
+  }
+
   private renderObjective(): void {
     if (!this.game || !this.root) return;
     const game = this.game;
     const progress = objectiveProgress(game);
+    // A mission reads its own authoritative objective tree. Skirmish keeps the
+    // command-post copy and relay tally it has always shown.
+    const mission = missionObjectiveView(game);
+    const headline = mission ? mission.headline : progress.primary;
+    const summary = mission ? mission.summary : progress.summary;
+    const flagged = progress.commandPostLost || (mission?.failedCount ?? 0) > 0;
     this.root.querySelectorAll<HTMLElement>('[data-objective-sub]').forEach((sub) => {
-      sub.textContent = progress.summary;
-      sub.classList.toggle('bad', progress.commandPostLost);
+      sub.textContent = summary;
+      sub.classList.toggle('bad', flagged);
     });
     this.root.querySelectorAll<HTMLElement>('[data-objective-primary]').forEach((primary) => {
-      primary.textContent = progress.primary;
+      primary.textContent = headline;
     });
     // The rail is only a button now: the hint carries the objective copy on
-    // hover, and a lost command post flags the button itself.
+    // hover, and a lost command post or failed objective flags the button.
     const railObjective = this.root.querySelector<HTMLElement>('#rail-objective-btn');
     if (railObjective) {
-      railObjective.classList.toggle('bad', progress.commandPostLost);
-      railObjective.setAttribute('title', `${progress.primary} — open the briefing`);
+      railObjective.classList.toggle('bad', flagged);
+      railObjective.setAttribute('title', `${headline} — open the briefing`);
     }
-    // The touch sheet has room for the supporting objectives; the desktop rail
-    // shows the primary alone and opens the fuller briefing on click. Resolve
-    // the operation from campaign content so a save written before objective
-    // authoring still shows the operation brief, not the map's generic list.
-    const operationObjectives = campaignMissionObjectives(game).filter(
-      (objective) => objective.trim().length > 0,
-    );
+    // The touch sheet and the briefing have room for the full list; the rail
+    // shows the primary alone. Campaign content is resolved from campaign data
+    // so a save written before objective authoring still shows the brief.
     const list = this.root.querySelector<HTMLElement>('[data-objective-list]');
     if (list) {
+      const lines = mission ? [...mission.supporting, ...mission.resolved] : [];
+      const operationObjectives = campaignMissionObjectives(game).filter(
+        (objective) => objective.trim().length > 0,
+      );
       const supporting = operationObjectives.slice(1);
-      list.innerHTML = supporting
-        .map((objective) => `<li>${escapeHtml(objective)}</li>`)
-        .join('');
-      list.hidden = supporting.length === 0;
+      list.innerHTML = mission
+        ? lines.map((line) => missionObjectiveMarkup(line)).join('')
+        : supporting.map((objective) => `<li>${escapeHtml(objective)}</li>`).join('');
+      list.hidden = mission ? lines.length === 0 : supporting.length === 0;
     }
     const note = this.root.querySelector<HTMLElement>('[data-objective-note]');
-    if (note) note.hidden = operationObjectives.length > 0;
+    if (note) {
+      note.hidden = mission ? true : campaignMissionObjectives(game).some((o) => o.trim().length > 0);
+    }
   }
 
   /* ------------------------------------------------------------------ */
@@ -1493,10 +1918,18 @@ export class HUD {
     const vitalBlock = `${controlBlock}${integrityBlock}`;
     let stats = '';
     if (e.kind === 'unit' && def && 'speed' in def) {
-      const ammo = e.maxAmmo > 0
-        ? `<div class="ammo-dots">${Array.from({ length: e.maxAmmo }, (_, i) => `<i class="${i >= e.ammo ? 'empty' : ''}"></i>`).join('')}</div><b>${e.ammo}/${e.maxAmmo}</b>`
-        : `<b>—</b>`;
-      const fuel = e.maxFuel > 0 ? `<b>${Math.max(0, Math.round((e.fuel / e.maxFuel) * 100))}%</b>` : `<b>—</b>`;
+      // A round is a cartridge, not a dot: spent rounds stay on the rail as
+      // empty slots, so the rack's capacity is legible after it is drained.
+      const pips = ammoPips(e.ammo, e.maxAmmo);
+      const ammo =
+        pips.length > 0
+          ? `<div class="supply-row"><div class="supply-pips" aria-hidden="true">${pips.map((live) => `<i class="${live ? '' : 'spent'}"></i>`).join('')}</div><b>${e.ammo}/${e.maxAmmo}</b></div>`
+          : `<b>—</b>`;
+      const fuelFrac = e.maxFuel > 0 ? fuelFraction(e.fuel, e.maxFuel) : 0;
+      const fuel =
+        e.maxFuel > 0
+          ? `<div class="supply-row"><div class="supply-meter ${supplyTone(fuelFrac)}" aria-hidden="true"><i style="width:${fuelPercent(e.fuel, e.maxFuel)}%"></i></div><b>${fuelPercent(e.fuel, e.maxFuel)}%</b></div>`
+          : `<b>—</b>`;
       // Rank is the crew's own record, so it sits beside the state rather than
       // buried under the hull figures: a Veteran crew is a reason to keep the
       // unit alive and a reason to expect more from it.
@@ -1532,7 +1965,9 @@ export class HUD {
         : '';
       const compactState = e.construction
         ? `BUILDING ${Math.round(e.buildProgress * 100)}%`
-        : objective
+        : e.deconstruct
+          ? `DISMANTLING ${Math.ceil(e.deconstruct.remaining)}s`
+          : objective
           ? objective.progress > 0
             ? `CAPTURING ${Math.round(objective.progress * 100)}%`
             : objective.owner >= 0
@@ -1562,6 +1997,10 @@ export class HUD {
             ? 'HOSTILE'
             : 'OCCUPIED';
       statusLines += `<div class="sel-line"><span>GARRISON ${occupancy}/${garrisonDef.capacity} · ${ownerBreakdown}</span><b>${Math.round(garrisonDef.protection * 100)}% PROT · ${garrisonDef.firingSlots} SLOTS</b></div>`;
+    }
+    if (e.deconstruct) {
+      const quote = game.sellQuote(e.id);
+      statusLines += `<div class="sel-line"><span>DISMANTLING</span><b>${Math.ceil(e.deconstruct.remaining)}s · ${quote?.mats ?? 0}M/${quote?.req ?? 0}R REFUND</b></div>`;
     }
     if (objective) {
       const radar = BUILDINGS[e.defId]?.scanRadius ?? 0;
@@ -1604,12 +2043,14 @@ export class HUD {
       </div>
       <div class="sel-actions">
         ${isOwn ? this.abilityButtons([e]) : ''}
+        ${isOwn ? this.sellButton(e) : ''}
         ${isOwn ? this.moduleButtons([e]) : ''}
         ${isOwn ? this.stanceButtons([e]) : ''}
         ${this.garrisonOrderButtons([e])}
         ${isOwn ? this.groupChips([e]) : ''}
       </div>`;
     this.bindAbilityButtons();
+    this.bindSellButtons();
     this.bindModuleButtons();
     this.bindStanceButtons();
     this.bindGarrisonButtons();
@@ -1794,6 +2235,42 @@ export class HUD {
     </div>`;
   }
 
+  /**
+   * The one sell control: only on a finished, owned, sellable structure. The
+   * quote is the simulation's own 75% figure, so the panel and the payout can
+   * never disagree; while dismantling it becomes a plain countdown.
+   */
+  private sellButton(e: Entity): string {
+    const game = this.game;
+    if (!game || e.kind !== 'building' || e.construction || isIndestructibleStructure(e.defId)) {
+      return '';
+    }
+    if (e.deconstruct) {
+      const quote = game.sellQuote(e.id);
+      return `<div class="sel-orders sell-orders"><span class="sell-note">DISMANTLING · ${Math.ceil(e.deconstruct.remaining)}s · ${quote?.mats ?? 0}M/${quote?.req ?? 0}R</span></div>`;
+    }
+    const status = game.sellStatus(this.app.localPlayerId, e.id);
+    const quote = game.sellQuote(e.id);
+    if (!quote) return '';
+    const title = status.ok
+      ? `Sell for ${quote.mats}M/${quote.req}R after ${quote.seconds}s of deconstruction`
+      : status.reason;
+    return `<div class="sel-orders sell-orders">
+      <button class="mini-btn danger" data-sell="${e.id}" title="${escapeHtml(title)}" ${status.ok ? '' : 'disabled'}>SELL · ${quote.mats}M/${quote.req}R</button>
+    </div>`;
+  }
+
+  private bindSellButtons(): void {
+    this.root?.querySelectorAll<HTMLElement>('[data-sell]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = Number(btn.dataset.sell);
+        if (!Number.isFinite(id) || id <= 0) return;
+        this.app.sellBuilding(id);
+        this.renderSelection(true);
+      });
+    });
+  }
+
   private bindStanceButtons(): void {
     this.root?.querySelectorAll<HTMLElement>('[data-stance]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -1896,6 +2373,11 @@ export class HUD {
     const game = this.game;
     const body = this.root.querySelector('#prod-body');
     if (!body) return;
+    if (this.strategicOpen) {
+      body.innerHTML = this.superweaponMarkup();
+      this.decorateThumbnails();
+      return;
+    }
     if (this.researchOpen) {
       body.innerHTML = this.researchMarkup();
       this.bindResearch();
@@ -1966,7 +2448,7 @@ export class HUD {
           block ? `blocked-${block.tone}` : '',
           reorderable ? 'reorderable' : '',
         ].filter(Boolean).join(' ');
-        return `<div class="unit-slot">
+        return `<div class="unit-slot" data-slot-for="${f.id}:${id}" data-queued="${queued.queued}">
           <button class="${cardClass}" data-produce="${f.id}:${id}" data-queued="${queued.queued}" ${status.ok ? '' : 'aria-disabled="true"'} ${disabled} title="${escapeHtml(title)}">
             <span class="u-hot">${udef.hotkey ?? ''}</span>
             <span class="u-art">
@@ -1998,6 +2480,23 @@ export class HUD {
     });
     body.querySelectorAll<HTMLElement>('.unit-card.reorderable').forEach((card) => {
       card.addEventListener('pointerdown', (event) => this.beginQueueDrag(event, card));
+    });
+    // Right-click on a cameo cancels one queued copy: the same edit as the
+    // count button, and the fast path a player expects while the sheet is open.
+    body.querySelectorAll<HTMLElement>('.unit-slot').forEach((slot) => {
+      slot.addEventListener('contextmenu', (event) => {
+        // The sheet owns this gesture: a right-click never opens the browser
+        // menu over a cameo, whether or not anything is queued.
+        event.preventDefault();
+        const queued = Number(slot.dataset.queued ?? '0');
+        if (queued <= 0) return;
+        const [bid, defId] = (slot.dataset.slotFor ?? '').split(':');
+        const facility = game.getEntity(Number(bid));
+        const index = facility?.queue.map((item) => item.defId).lastIndexOf(defId) ?? -1;
+        if (index < 0) return;
+        this.app.cancelProduction(Number(bid), index);
+        this.renderProduction(true);
+      });
     });
     body.querySelectorAll<HTMLButtonElement>('[data-cancel-def]').forEach((btn) => {
       btn.addEventListener('click', (event) => {
@@ -2250,6 +2749,17 @@ export class HUD {
     // One grid snapshot for the whole panel: every card's hover copy answers
     // "why am I browning out?" with the same numbers the meter is showing.
     const grid = this.currentGridReport();
+    // The gauge's activation calls out the structures the readout just listed —
+    // the largest generators and draws — plus the turbine plant, which is the
+    // answer when there is no generation at all. Marking every card with a grid
+    // value would mark the whole panel and say nothing.
+    const gridFocus = performance.now() < this.gridFocusUntil;
+    const focusIds = gridFocus && grid
+      ? new Set([
+          ...powerReadout(grid).sources,
+          ...powerReadout(grid).consumers,
+        ].map((line) => line.id))
+      : null;
     const engineer = this.game?.entitiesOf(this.app.localPlayerId, 'unit').find((e) => UNITS[e.defId]?.canBuild);
     const roster = this.game?.rosterFor(this.app.localPlayerId);
     const allianceId = p ? tryIdentityDef(p.factionId)?.allianceId : undefined;
@@ -2312,7 +2822,7 @@ export class HUD {
             : !engineer
               ? 'NEEDS ENGINEER'
               : affordable ? '' : shortfall.toUpperCase();
-        return `<button class="build-card${affordable ? '' : ' unavailable'}${locked ? ' locked' : ''}" data-build="${def.id}" ${engineer && !locked ? '' : 'disabled'} title="${escapeHtml(title)}">
+        return `<button class="build-card${affordable ? '' : ' unavailable'}${locked ? ' locked' : ''}${focusIds && (def.id === 'powerPlant' || focusIds.has(def.id)) ? ' grid-focus' : ''}" data-build="${def.id}" ${engineer && !locked ? '' : 'disabled'} title="${escapeHtml(title)}">
           ${def.id === 'powerPlant' ? '<span class="b-flag">GRID FIX</span>' : def.id === 'radar' ? '<span class="b-flag">RADAR</span>' : ''}
           ${this.thumbMarkup('building', def.id, this.teamColor(), 'card', def.icon, 'b-thumb', 0, cardArtState(!locked, affordable))}
           <span class="b-copy">
@@ -2386,6 +2896,7 @@ export class HUD {
       hasCentre,
       allianceId,
       factionId: p.factionId,
+      restricted: game.operationLockedTechnologies(owner),
     };
     const selectedTech = this.selectedResearchTech ? TECHS[this.selectedResearchTech] : undefined;
     const selectedView = selectedTech ? researchNodeState(selectedTech, input, game.research) : null;
@@ -2423,6 +2934,28 @@ export class HUD {
       </section>`;
     }).join('');
 
+    // The nation's authority chain, when it has one. It is shown beside the
+    // branch tree because these four nodes are the only route to the strategic
+    // call-in, and a commander that cannot see them cannot plan for it.
+    const family = game.superweaponFamilyFor(owner);
+    const authorityTechs = family ? researchAuthorityNodes(family.requires, game.research) : [];
+    const authority = authorityTechs.length === 0
+      ? ''
+      : `<section class="research-branch research-authority" data-branch="authority">
+        <div class="research-branch-head"><span>STRATEGIC AUTHORITY</span><span>${authorityTechs.filter((tech) => completedSet.has(tech.id)).length}/${authorityTechs.length}</span></div>
+        <div class="research-tier-row">${authorityTechs
+          .map((tech) => {
+            const view = researchNodeState(tech, input, game.research);
+            const selected = tech.id === selectedTech?.id;
+            return `<button class="research-node state-${view.status}${selected ? ' selected' : ''}" data-act="research-select" data-tech="${escapeHtml(tech.id)}" aria-pressed="${selected}" aria-label="${escapeHtml(view.name)} — ${escapeHtml(view.label)}. ${escapeHtml(view.reason)}" title="${escapeHtml(`${view.name} — ${view.reason}`)}">
+              <span class="research-node-top"><span class="research-node-icon">${icon(tech.icon)}</span><span class="research-node-state">${escapeHtml(view.label)}</span></span>
+              <b class="research-node-name">${escapeHtml(view.name)}</b>
+              <span class="research-node-cost">${tech.cost.mats}M · ${tech.cost.req}R · ${tech.seconds}s</span>
+            </button>`;
+          })
+          .join('')}</div>
+      </section>`;
+
     const detail = selectedTech && selectedView
       ? `<section class="research-detail" aria-live="polite">
           <div class="research-detail-head"><span>${BRANCH_NAMES[selectedTech.branch].toUpperCase()} · TIER ${selectedTech.tier}</span><h4>${escapeHtml(selectedView.name)}</h4></div>
@@ -2438,7 +2971,7 @@ export class HUD {
     return `<div class="research-panel">
       <header class="research-head"><div><span class="eyebrow">RESEARCH</span><h3>${completed.length}/${game.research.techs.length} TECHNOLOGIES</h3></div><button class="research-close" data-act="research-close" aria-label="Close research">×</button></header>
       ${activeMarkup}
-      <div class="research-branches">${branches}</div>
+      <div class="research-branches">${branches}${authority}</div>
       ${detail}
     </div>`;
   }
@@ -2557,6 +3090,7 @@ export class HUD {
       repair: 'REPAIR — select a damaged structure or your own building site',
       garrison: 'GARRISON — select a building',
       box: 'BOX SELECT — drag across units',
+      superweapon: 'STRATEGIC OPERATION — choose a target on the map [ESC cancels]',
       place: this.app.placeDefId ? `PLACE ${BUILDINGS[this.app.placeDefId]?.name.toUpperCase() ?? 'STRUCTURE'}` : 'PLACEMENT',
     };
     const next = labels[this.app.mode] ?? '';
@@ -2943,39 +3477,68 @@ export class HUD {
     // reads as this commander's result.
     const nation = p ? flagNationForFaction(p.factionId) : undefined;
     const flagStyle = nation ? ` style="background-image:url(${flagTextureUrl(nation)})"` : '';
-    const campaign = this.app.campaignRun();
-    const campaignVictory = victory ? campaign : null;
-    const nextMission = campaignVictory?.next ?? null;
-    const verdictSub =
-      result === 'draw'
+    const campaignRun = this.app.campaignRun();
+    const testRun = this.app.missionTestActive;
+    const campaignDebrief = campaignRun ? this.app.campaignDebrief() : null;
+    const campaignVictory = victory ? campaignRun : null;
+    const awaitingAcceptance = campaignDebrief?.awaitingAcceptance ?? false;
+    const verdictSub = testRun
+      ? 'Test run · not a campaign operation'
+      : result === 'draw'
         ? 'Operation ended'
         : victory
           ? campaignVictory
             ? 'Operation complete'
             : 'Island secured'
           : 'Beachhead lost';
-    const heading =
-      result === 'draw'
+    // A mission debrief reports the captured authoritative result; its copy is
+    // derived from that result, so it cannot claim an outcome the mission did
+    // not record.
+    const missionResult = game.missionResult;
+    const missionDoc = campaignRun?.mission.mission ?? game.state.scenario.mission ?? null;
+    const missionCopy = missionResult ? missionOutcomeCopy(missionResult, missionDoc ?? undefined) : null;
+    const campaignOutlook = awaitingAcceptance ? this.app.campaignOutlook() : null;
+    const heading = missionCopy
+      ? missionCopy.heading
+      : result === 'draw'
         ? 'Stalemate'
         : victory
           ? campaignVictory
             ? 'Operation Complete'
             : 'Island Secured'
           : 'Beachhead Lost';
-    const copy = victory
-      ? campaignVictory
-        ? `${escapeHtml(campaignVictory.mission.name)} is secured. ${enemyName}'s command post is destroyed${nextMission ? `; ${escapeHtml(nextMission.name)} is now unlocked.` : '; the campaign line is complete.'}`
-        : `${enemyName}'s command post is destroyed. ${victorName} holds the island — land, air and sea were brought to bear as one force.`
-      : `Your command post has fallen. ${enemyName} holds the island; a new plan and a new landing are required.`;
-    const campaignNote = campaignVictory
-      ? nextMission
-        ? `<div class="end-campaign-note"><span>NEXT OPERATION UNLOCKED</span><b>${escapeHtml(nextMission.name)}</b></div>`
-        : '<div class="end-campaign-note complete"><span>CAMPAIGN COMPLETE</span><b>All operations cleared</b></div>'
+    const copy = missionCopy
+      ? missionCopy.copy
+      : victory
+        ? campaignVictory
+          ? `${escapeHtml(campaignVictory.mission.name)} is secured. ${enemyName}'s command post is destroyed.`
+          : `${enemyName}'s command post is destroyed. ${victorName} holds the island — land, air and sea were brought to bear as one force.`
+        : `Your command post has fallen. ${enemyName} holds the island; a new plan and a new landing are required.`;
+    // A campaign result is only a record until the player accepts it. The card
+    // therefore offers acceptance and retry; it never claims the next operation
+    // has unlocked merely because a mission ended.
+    // A pending result's outlook already names the next operation and the
+    // consequences, so the card only adds the campaign-complete state.
+    const campaignNote = campaignDebrief?.campaignComplete
+      ? '<div class="end-campaign-note complete"><span>CAMPAIGN COMPLETE</span><b>Every operation accepted</b></div>'
       : '';
-    const primaryAction =
-      campaignVictory && nextMission
-        ? '<button class="btn btn-primary" data-end="next">NEXT OPERATION</button>'
-        : '<button class="btn btn-primary" data-end="restart">RESTART SCENARIO</button>';
+    const primaryAction = testRun
+      ? '<button class="btn btn-primary" data-end="workbench">RETURN TO MISSION WORKBENCH</button>'
+      : awaitingAcceptance
+        ? '<button class="btn btn-primary" data-end="accept">ACCEPT AND CONTINUE</button>'
+        : campaignDebrief?.campaignComplete
+          ? '<button class="btn btn-primary" data-end="menu">RETURN TO COMMAND DECK</button>'
+          : campaignDebrief
+            ? '<button class="btn btn-primary" data-end="retry">RETRY OPERATION</button>'
+            : '<button class="btn btn-primary" data-end="restart">RESTART SCENARIO</button>';
+    const secondaryAction = testRun
+      ? '<button class="btn btn-ghost" data-end="restart">RESTART TEST</button>'
+      : awaitingAcceptance
+        ? '<button class="btn btn-ghost" data-end="retry">RETRY OPERATION</button>'
+        : '';
+    const testNote = testRun
+      ? '<div class="end-campaign-note"><span>TEST RUN</span><b>No campaign progress, consequence or veteran change is committed</b></div>'
+      : '';
     root.innerHTML = `
       <div class="end-screen ${victory ? 'victory' : result === 'draw' ? 'draw' : 'defeat'}">
         <div class="end-flag"${flagStyle} aria-hidden="true"></div>
@@ -2988,9 +3551,18 @@ export class HUD {
           <span class="result">${result === 'draw' ? 'OPERATION ENDED' : victory ? 'OPERATION COMPLETE' : 'OPERATION FAILED'}</span>
           <h2 class="${victory ? '' : 'defeat'}">${heading}</h2>
           <p>${copy}</p>
+          ${
+            missionResult
+              ? missionDebriefMarkup(missionResult, {
+                  ...(missionDoc ? { mission: missionDoc } : {}),
+                  outlook: campaignOutlook,
+                })
+              : ''
+          }
           ${campaignNote}
+          ${testNote}
           <div class="end-stats">
-            <div><span>MISSION TIME</span><b>${fmtTime(game.state.tick)}</b></div>
+            <div><span>MISSION TIME</span><b>${missionResult ? missionClock(missionResult.elapsedSeconds) : fmtTime(game.state.tick)}</b></div>
             <div><span>UNITS BUILT</span><b>${stats?.unitsBuilt ?? 0}</b></div>
             <div><span>UNITS LOST</span><b>${stats?.unitsLost ?? 0}</b></div>
             <div><span>KILLS</span><b>${stats?.kills ?? 0}</b></div>
@@ -2999,8 +3571,10 @@ export class HUD {
             <div><span>ENEMY LOSSES</span><b>${enemyStats?.unitsLost ?? 0}</b></div>
             <div><span>RELAYS</span><b>${p?.relayCount ?? 0}</b></div>
           </div>
+          <div class="end-career-slot" id="end-career"></div>
           <div class="end-actions">
             ${primaryAction}
+            ${secondaryAction}
             <button class="btn btn-ghost" data-end="save">SAVE BATTLE</button>
             <button class="btn btn-ghost" data-end="editor">SCENARIO EDITOR</button>
             <button class="btn btn-ghost" data-end="menu">RETURN TO MENU</button>
@@ -3011,7 +3585,9 @@ export class HUD {
       btn.addEventListener('click', () => {
         const act = btn.dataset.end;
         if (act === 'restart') void this.app.restart();
-        if (act === 'next') this.app.startNextCampaignMission();
+        if (act === 'workbench') this.app.returnToMissionWorkbench();
+        if (act === 'accept') this.app.acceptCampaignResultAction();
+        if (act === 'retry') this.app.retryCampaignOperation();
         if (act === 'save') this.app.openSaveMenu(false);
         if (act === 'editor') this.app.openEditor(game.state.scenario);
         if (act === 'menu') this.app.toMenu();
@@ -3020,4 +3596,3 @@ export class HUD {
     this.app.audio.play(victory ? 'victory' : 'defeat');
   }
 }
-
