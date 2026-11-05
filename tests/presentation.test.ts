@@ -17,6 +17,8 @@ import {
   MESH_MATERIAL_TEXTURE_UNIT,
 } from '../src/render/gl';
 import { readFileSync } from 'node:fs';
+import { buildLightView } from '../src/render/lightView';
+import { dayNightAt } from '../src/sim/dayNight';
 
 const styleCss = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
 
@@ -622,5 +624,44 @@ describe('occlusion and cast shadows', () => {
     expect(strength).toContain("tod === 'night' ? 0.3");
     expect(strength).toContain("tod === 'day' ? 1");
     expect(strength).toContain('this.weather.shadow');
+  });
+});
+
+describe('night light pass', () => {
+  const renderer = () => readFileSync(new URL('../src/render/renderer.ts', import.meta.url), 'utf8');
+
+  it('lights nothing while the battlefield is still fought in daylight', () => {
+    const game = new Game(createIslandAssault(), { enableAI: false });
+    const state = dayNightAt(0, { startHour: 13, dayLengthMinutes: 0 });
+    expect(state.darkness).toBe(0);
+    const lights = buildLightView({
+      entities: game.state.entities,
+      dayNight: state,
+      bloom: 1,
+      effects: true,
+      powered: () => true,
+      eye: [0, 0, 0],
+      groundY: () => 0,
+      visible: () => true,
+    });
+    // Dusk keeps the lamps off: a dim grade is not a lit battlefield.
+    expect(lights).toHaveLength(0);
+  });
+
+  it('owns no lights in a frame that skips the night build', () => {
+    const source = renderer();
+    // Both halves of the pass share one gate: the pools before the models and
+    // the wall-lamp glows after them.
+    expect(source).toContain(
+      'const lightsOn = !!this.game && this.settings.nightLights && this.dayNight.darkness > 0;',
+    );
+    const frame = source.slice(source.indexOf('const lightsOn'), source.indexOf('this.drawParticles();'));
+    expect(frame).toContain('this.buildLightInstances();');
+    // A daylight frame must empty the list. Leaving the last night frame's
+    // entries in place painted its corner lamps over the day, at the positions
+    // of whichever scene was lit last.
+    expect(frame).toContain('this.lightPools.length = 0;');
+    expect(frame).toContain('this.lightGlows.length = 0;');
+    expect(frame).toContain('if (this.lightGlows.length > 0)');
   });
 });

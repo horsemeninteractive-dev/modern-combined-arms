@@ -8,6 +8,34 @@ The release version and stage come from `package.json`; the build number shown
 in the menu is the repository commit count at build time. The same file is
 rendered in game from **Changelog** in the main-menu footer.
 
+## [0.5.3 BETA] — 2026-11-05
+
+A rendering fix: no battlefield opens holding another scene's structure lamps.
+
+### Lighting
+
+- **Corner lamps and window glows exist only at night again.** The night pass
+  filled its light list inside the darkness gate, but drew the wall-lamp layer
+  outside it, so a frame with the lights off kept repainting whichever lit frame
+  came last — the menu's AI-vs-AI backdrop on its own battlefield, a previous
+  night match, or the opening tick before a scenario's clock settled. The visible
+  result was a scatter of warm dots over daylight and dusk maps, showing through
+  the fog of war and often where no structure stood. Both layers now share one
+  gate, and a frame that skips the night build empties the list instead of
+  inheriting it. Dusk still keeps the lamps off: a dim grade is not a lit
+  battlefield, which is why the stale list was drawn at 18:00 in the first place.
+- **A new match starts with no lamps.** Handing the renderer a game now clears the
+  light batches alongside the other per-match caches (wrecks, decals, particles),
+  so a skirmish cannot inherit lights built for a different map.
+
+### Verification
+
+- The frame rule is guarded by tests: the light builder yields nothing while the
+  battlefield is still fought in daylight, and a frame that skips the night build
+  owns no lights. The night path still builds its pools and lens glows.
+- Reproduced and fixed in the running build: a dusk skirmish held 91 ground pools
+  and 91 lamp glows drawn every frame before the fix, and none after it.
+
 ## [0.5.2 BETA] — 2026-11-05
 
 A playtest patch: the economy no longer dies with the last deposit, every

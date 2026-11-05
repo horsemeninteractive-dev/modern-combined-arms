@@ -843,6 +843,11 @@ export class Renderer {
     this.miningTimers.clear();
     this.projectileViews.clear();
     this.particles.clear();
+    // Lights belong to the match that built them. The menu backdrop runs its own
+    // battle on another map, so a new game must not inherit that battle's lamps
+    // while its own clock still has them switched off.
+    this.lightPools.length = 0;
+    this.lightGlows.length = 0;
     if (game) {
       this.dayNight = game.dayNight;
       this.applyLighting();
@@ -2093,9 +2098,18 @@ export class Renderer {
     this.drawGroundDecals();
     this.drawShadows();
     this.drawProps();
-    if (this.game && this.settings.nightLights && this.dayNight.darkness > 0) {
+    // A frame with the lights off owns no lights at all. The list is rebuilt
+    // only for a night frame, so leaving the previous frame's entries in place
+    // would let a match that opens in daylight keep painting the lamps of
+    // whatever was lit last — the menu's attract battle, a dusk briefing or the
+    // previous match — as stray glows at those older positions.
+    const lightsOn = !!this.game && this.settings.nightLights && this.dayNight.darkness > 0;
+    if (lightsOn) {
       this.buildLightInstances();
       this.lightGpu.draw(this.camera, this.lightPools);
+    } else {
+      this.lightPools.length = 0;
+      this.lightGlows.length = 0;
     }
     if (this.game) {
       // Silhouettes go down before the units themselves. The depth buffer then
