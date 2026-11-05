@@ -5,6 +5,7 @@ import {
   AMBIENCE_AUDIO_ROOT,
   LOOP_SEAM_SECONDS,
   MAX_LOOP_SECONDS,
+  RECORDED_AMBIENCE_ENABLED,
   loopRate,
   parseAmbienceManifest,
   type AmbienceStepsSpec,
@@ -130,6 +131,17 @@ type BedVoice = SynthBedVoice | RecordedBedVoice;
 /** Lowpass a recorded voice starts from before motion and distance shape it. */
 const SAMPLE_FILTER_HZ = 2400;
 
+/**
+ * Construction options.
+ *
+ * `recordedAmbience` selects the recorded bed over the synthesised one. It
+ * defaults to {@link RECORDED_AMBIENCE_ENABLED}, which is off; the option exists
+ * so the recorded plumbing stays testable while the shipped files are replaced.
+ */
+export interface AudioEngineOptions {
+  recordedAmbience?: boolean;
+}
+
 /** A decoded recording, ready to be claimed by a bed slot. */
 interface AmbienceSample {
   buffer: AudioBuffer;
@@ -162,6 +174,8 @@ export class AudioEngine {
   private noiseBuffer: AudioBuffer | null = null;
   /** Recorded loops by family; a family absent here stays synthesised. */
   private ambienceSamples = new Map<AmbienceKind, AmbienceSample>();
+  /** Whether this engine may play (and fetch) the recorded beds at all. */
+  private readonly recordedAmbience: boolean;
   private ambienceLoading = false;
   private ambienceLoaded = false;
   private started = false;
@@ -195,7 +209,8 @@ export class AudioEngine {
   unitVoiceVolume = 0.7;
   muted = false;
 
-  constructor() {
+  constructor(options: AudioEngineOptions = {}) {
+    this.recordedAmbience = options.recordedAmbience ?? RECORDED_AMBIENCE_ENABLED;
     this.announcer = new Announcer({
       play: (src, done) => this.playVoice(src, done),
       stop: () => this.stopVoice(),
@@ -300,8 +315,9 @@ export class AudioEngine {
       this.startAmbience();
       // Recordings arrive in the background: the bed is already playing, and a
       // family whose file is slow, missing or undecodable simply keeps its
-      // synthesised voice.
-      void this.loadAmbienceSamples();
+      // synthesised voice. While the switch is off nothing is even fetched, so
+      // every family builds the recipe it had before the recordings existed.
+      if (this.recordedAmbience) void this.loadAmbienceSamples();
     } catch {
       this.started = false;
     }
@@ -543,7 +559,8 @@ export class AudioEngine {
 
   /** Whether this voice's machinery already matches the family's current source. */
   private sampleVoice(voice: BedVoice, kind: AmbienceKind): boolean {
-    return (voice.sample !== null) === this.ambienceSamples.has(kind);
+    const recorded = this.recordedAmbience && this.ambienceSamples.has(kind);
+    return (voice.sample !== null) === recorded;
   }
 
   /** Swap a slot onto the other kind of graph, keeping its place in the pool. */
@@ -593,7 +610,7 @@ export class AudioEngine {
         lastSpoolDown: 0,
         fresh: true,
       };
-      const sample = this.ambienceSamples.get(kind);
+      const sample = this.recordedAmbience ? this.ambienceSamples.get(kind) : undefined;
       if (sample) {
         // A recording is the machinery. The filter after it is the air: motion
         // opens it, distance closes it, and nothing else is needed.

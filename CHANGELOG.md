@@ -8,6 +8,70 @@ The release version and stage come from `package.json`; the build number shown
 in the menu is the repository commit count at build time. The same file is
 rendered in game from **Changelog** in the main-menu footer.
 
+## [0.5.2 BETA] — 2026-11-05
+
+A playtest patch: the economy no longer dies with the last deposit, every
+skirmish battlefield stocks forward supply, a relay can actually be reached, and
+crossings stop being shelled by passing crews.
+
+### Economy
+
+- **A drained map is no longer a dead end.** The headquarters' one-material
+  trickle used to key off having a hauler hull and a drop-off, so a side whose
+  last seam had been worked out sat at zero income with harvesters still parked
+  on the map — the only way out was to suicide a crew into the enemy. Hauling
+  now counts as working only while there is material left to gather, so a worked
+  out battlefield reopens the trickle automatically. The bank test is unchanged,
+  so an ordinary opening or a well-funded rebuild is still never subsidised, and
+  a map authored with no deposits at all (an empty test arena) is not treated as
+  drained.
+- **Every competitive and expansion battlefield holds forward supply.** Ironworks,
+  High Ground, Contact Zone, Granite Steps and Ashcross Sprawl each gain a
+  neutral supply depot within Combat Engineer reach of every seat, stamped at all
+  four rotations so no side starts nearer one than another.
+- **Deposits are half again as deep.** Authored ore is scaled at the field, so the
+  thinnest tile on the shipped roster now holds a full hopper and a field lasts
+  past the opening minutes instead of forcing both sides onto the lifeline.
+
+### Capture and crossings
+
+- **Engineers reach tight objectives.** They now plan to an approach point beside
+  a structure's footprint rather than its blocked centre, and re-plan when
+  separation, a closed crossing or a reroute empties the path short of the site.
+  Previously an engineer could stand next to a relay for the rest of the match
+  without ever taking it.
+- **Units no longer shell bridges they are merely passing.** Automatic target
+  acquisition skips walkable span structures, so a crew holds fire rather than
+  levelling the crossing it may have to drive over. A deliberate attack order
+  still brings a span down.
+
+### Sound
+
+- **The recorded ambience is off again, with its plumbing intact.** The shipped
+  recordings did not play in the live build, so every family is synthesised as it
+  was in 0.5.0. The manifest parser, loop preparation, stride builder, credits and
+  the engine's recorded voice graph all stay, and nothing is even fetched while
+  the switch is off; `RECORDED_AMBIENCE_ENABLED` (or the engine's
+  `recordedAmbience` option) turns them back on once replacement files land.
+
+### Verification
+
+- `npm run typecheck` clean, and the release check confirms that `package.json`,
+  this file and the menu footer agree on `v0.5.2 BETA`.
+- Full `vitest` run: 160 files and 2,377 tests, 2,374 passing. None of the
+  three failures is a regression in this patch. The tracked difficulty-ladder
+  baseline in `tests/ai-matchups.test.ts` scores `recruitVsVeteran.margin`
+  −22,825 against its < −30,000 bar, against −16,547 on the 0.5.1 commit, so this
+  patch moves it toward the bar rather than away. The AI air-and-naval branch test
+  hit its 30 s limit inside the 160-worker parallel run and finishes alone in
+  18.7 s, and the stress probe in `tests/perf.test.ts` measured 45.2 ms/tick
+  against its 40 ms provisional ceiling under the same load but 11.2 ms/tick run
+  on its own. The ladder, arena, AI and perf ceiling were not retuned to make the
+  suite green.
+- New focused coverage for the drained-map trickle, the depot and deposit-depth
+  rules on every skirmish battlefield, capture re-approach, and automatic fire on
+  crossings.
+
 ## [0.5.1 BETA] — 2026-11-05
 
 A patch for the battlefield's sound, the sale of a structure, and the panels that

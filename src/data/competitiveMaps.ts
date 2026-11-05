@@ -47,6 +47,16 @@ import { BUILDINGS } from './buildings';
 type Rotation = 0 | 1 | 2 | 3;
 const ROTATIONS: readonly Rotation[] = [0, 1, 2, 3];
 
+/**
+ * How much a tile of authored deposit actually holds.
+ *
+ * One tile is one hopper at 1.0, and a field of five tiles then pays for five
+ * loads before it is gone — which emptied the competitive maps long before a
+ * match was decided. Half again as much per tile keeps expansion worth taking
+ * without turning the opening into a sprint.
+ */
+export const ORE_YIELD_SCALE = 1.5;
+
 /** Rotate a tile coordinate 90 degrees clockwise about the map centre. */
 export function rotatePoint(size: number, k: Rotation, x: number, z: number): { x: number; z: number } {
   let px = x;
@@ -321,7 +331,14 @@ export class Field {
     }
   }
 
-  /** Ore disc, stamped at all four rotations, only on ground that can hold it. */
+  /**
+   * Ore disc, stamped at all four rotations, only on ground that can hold it.
+   *
+   * The authored amount is a per-tile capacity. It is scaled here rather than in
+   * every map because the whole competitive roster is played with the same
+   * economy: a field that paid for one hopper per tile drained in the middle of
+   * a match and left the sides on the headquarters trickle.
+   */
   ore(cx: number, cz: number, radius: number, amount: number): void {
     const r2 = radius * radius + radius;
     for (const k of ROTATIONS) {
@@ -332,7 +349,7 @@ export class Field {
           const tile = this.tile(c.x + dx, c.z + dz);
           if (!tile) continue;
           if (!TERRAIN[tile.t as TerrainId].oreAllowed) continue;
-          tile.o = amount;
+          tile.o = Math.round(amount * ORE_YIELD_SCALE);
         }
       }
     }
@@ -963,6 +980,9 @@ export function createIronworks(): Scenario {
   field.neutral('ruin', 15, 30);
   field.neutral('ruin', 34, 26);
   field.neutral('relay', q - 10, q - 7);
+  // Forward stocks in the hardstanding behind the inner yards: the depot is a
+  // contested walk from either base, and it keeps paying once the ore is gone.
+  field.neutral('supplyDepot', 22, 32);
   field.centreBlock(Terrain.Urban);
   field.centreStructure('relay');
 
@@ -1158,6 +1178,9 @@ export function createHighGround(): Scenario {
 
   field.neutral('radarStation', 36, 44);
   field.neutral('relay', q - 16, q - 12);
+  // The depot sits on the upper terrace beside the crest: taking the hill and
+  // then holding the stocks on it is the same decision, not two.
+  field.neutral('supplyDepot', 44, 44);
   // The centre block sits on the crest, at the crest's elevation: a 2×2 dip to
   // sea level would be a step vehicles cannot climb out of.
   field.centreBlock(Terrain.Road, 3);
@@ -1339,6 +1362,9 @@ export function createContactZone(): Scenario {
 
   field.neutral('ruin', 24, 24);
   field.neutral('relay', q - 5, q - 5);
+  // A stockpile in the street south of the core: close enough to be fought over
+  // on this short map, far enough that taking it is not a free walk from base.
+  field.neutral('supplyDepot', 21, 29);
   field.centreBlock(Terrain.Urban);
   field.centreStructure('relay');
 

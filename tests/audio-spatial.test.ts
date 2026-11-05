@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AudioEngine } from '../src/ui/audio';
+import { RECORDED_AMBIENCE_ENABLED } from '../src/ui/ambienceSamples';
 import { combatMix, panForOffset, type ListenerGroundFrame } from '../src/ui/audioSpatial';
 
 const listener: ListenerGroundFrame = {
@@ -398,7 +399,9 @@ describe('recorded ambience', () => {
     internals: EngineInternals;
   } {
     installAudioContext(FakeContext);
-    const audio = new AudioEngine();
+    // The shipped switch is off; this suite opts in so the recorded plumbing
+    // stays exercised while the replacement files are authored.
+    const audio = new AudioEngine({ recordedAmbience: true });
     audio.init();
     const internals = audio as unknown as EngineInternals;
     for (const [kind, rates] of Object.entries(samples)) {
@@ -453,7 +456,7 @@ describe('recorded ambience', () => {
 
   it('folds the loop seam forward instead of jumping back a window', () => {
     installAudioContext(FakeContext);
-    const audio = new AudioEngine();
+    const audio = new AudioEngine({ recordedAmbience: true });
     audio.init();
     const internals = audio as unknown as { ctx: FakeContext; prepareAmbienceLoop: (ctx: FakeContext, b: unknown) => { getChannelData: (n: number) => Float32Array } };
     const frames = 8000;
@@ -508,9 +511,28 @@ describe('recorded ambience', () => {
     expect(internals.bedVoices).toHaveLength(1);
   });
 
+  it('ships with the recordings switched off and synthesises every family', () => {
+    // The live build played no recorded bed, so the shipped default is the
+    // synthesised voice for every kind, and nothing is fetched.
+    expect(RECORDED_AMBIENCE_ENABLED).toBe(false);
+    installAudioContext(FakeContext);
+    const fetchSpy = vi.fn(() => Promise.reject(new Error('no files in a unit test')));
+    vi.stubGlobal('fetch', fetchSpy);
+    const audio = new AudioEngine();
+    audio.init();
+    const internals = audio as unknown as EngineInternals;
+    expect(internals.ambienceSamples.size).toBe(0);
+    const before = oscillators.length;
+    for (const kind of ['foot', 'buggy', 'truck', 'trackedLight', 'trackedHeavy', 'rotor', 'jet', 'naval', 'facility'] as const) {
+      audio.updateAmbience([{ id: 3, kind, gain: 0.6, pan: 0, pitch: 1, muffle: 0, motion: 0.4 }]);
+    }
+    expect(oscillators.length).toBeGreaterThan(before);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it('rebuilds a slot that is already sounding when its recording arrives', () => {
     installAudioContext(FakeContext);
-    const audio = new AudioEngine();
+    const audio = new AudioEngine({ recordedAmbience: true });
     audio.init();
     // The hull starts while the files are still on the wire.
     audio.updateAmbience(hull('trackedHeavy', 0.7));

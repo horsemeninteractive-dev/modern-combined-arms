@@ -18,6 +18,18 @@ import type { AmbienceKind } from './ambience';
 export const AMBIENCE_AUDIO_ROOT = '/audio/ambience/';
 
 /**
+ * Whether the recorded beds are played.
+ *
+ * Off: the shipped recordings did not play in the live build, so every family
+ * is synthesised again. The parser, the loop preparation, the stride builder
+ * and the credits all stay in place, and the engine still accepts a recorded
+ * sample when it is handed one; flipping this to `true` (or constructing an
+ * engine with `recordedAmbience: true`) puts the recordings back once the
+ * replacement files land.
+ */
+export const RECORDED_AMBIENCE_ENABLED = false;
+
+/**
  * Longest loop the game keeps in memory.
  *
  * A field recording can run for minutes; the bed only needs a few stretches of

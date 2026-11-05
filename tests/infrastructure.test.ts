@@ -330,6 +330,48 @@ describe('capture-only objectives are not targets', () => {
   });
 });
 
+describe('crossings and capture approach', () => {
+  it('does not level a bridge without a deliberate order', () => {
+    const g = game(
+      [{ defId: 'bridge', owner: 1, x: 20, z: 14 }],
+      [{ defId: 'tank', owner: 0, x: 14, z: 16 }],
+    );
+    const bridge = at(g, 'bridge');
+    const tank = g.entitiesOf(0, 'unit').find((e) => e.defId === 'tank')!;
+    tank.order = null;
+    g.advance(20 * 10);
+
+    // Crossing infrastructure is not a target of opportunity: the crew would
+    // rather hold fire than drop the span it may have to drive across.
+    expect(BUILDINGS.bridge.walkable).toBe(true);
+    expect(bridge.hp).toBe(bridge.maxHp);
+    expect(tank.targetId).not.toBe(bridge.id);
+
+    // An explicit order still brings it down.
+    g.enqueueCommand({ type: 'attack', team: 0, ids: [tank.id], targetId: bridge.id });
+    g.advance(20 * 40);
+    expect(bridge.hp).toBeLessThan(bridge.maxHp);
+  });
+
+  it('re-approaches a capture target when its path empties on the way', () => {
+    const g = game([{ defId: 'relay', owner: -1, x: 30, z: 20 }], [
+      { defId: 'engineer', owner: 0, x: 8, z: 20 },
+    ]);
+    const relay = at(g, 'relay');
+    const eng = engineer(g);
+    g.enqueueCommand({ type: 'capture', team: 0, ids: [eng.id], targetId: relay.id });
+    g.advance(20 * 2);
+    expect(eng.path.length).toBeGreaterThan(0);
+
+    // Separation, a closed crossing or a reroute can empty the queue well short
+    // of the objective; the engineer has to plan the rest of the way instead of
+    // standing there while the relay is never taken.
+    eng.path = [];
+    g.advance(20 * 60);
+    expect(relay.owner).toBe(0);
+  });
+});
+
 describe('scenario authoring and editor data', () => {
   it('offers every objective and shelter in the palette but not as player-buildable structures', () => {
     for (const id of ['relay', 'supplyDepot', 'radarStation', 'tenement', 'ruin']) {

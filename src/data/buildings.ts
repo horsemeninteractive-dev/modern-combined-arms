@@ -16,9 +16,9 @@ const ROSTER: BuildingDef[] = [
     commandPost: true,
     reqPerSec: 0.4,
     // A standing headquarters trickles a little material while its owner has
-    // no working drop-off — no refinery, and none affordable — so losing the
-    // whole hauling economy is a severe setback rather than a permanent dead
-    // end.
+    // no working hauling economy — no drop-off and none affordable, or no
+    // deposit left on the map to mine — so losing the whole economy or draining
+    // the map is a severe setback rather than a permanent dead end.
     matsPerSec: 1,
     matsPerSecBackstop: true,
     // Engineering fallback: the HQ trains engineers only while no vehicle
@@ -30,7 +30,7 @@ const ROSTER: BuildingDef[] = [
     // expansion is what makes a Turbine Plant necessary rather than optional.
     power: 50,
     description:
-      'The battlegroup command element. Loss of the Command Post ends the operation. Provides limited requisition income and, while no working drop-off remains, a small material trickle so a stripped base can recover; it can also train a replacement Combat Engineer when no Vehicle Factory is operational.',
+      'The battlegroup command element. Loss of the Command Post ends the operation. Provides limited requisition income and, while no working drop-off remains or the last deposit on the map is worked out, a small material trickle so a stripped base can recover; it can also train a replacement Combat Engineer when no Vehicle Factory is operational.',
     icon: 'command',
     hotkey: 'H',
   },

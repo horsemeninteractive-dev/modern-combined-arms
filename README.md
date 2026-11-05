@@ -194,10 +194,11 @@ override the project, branch and verification URL.
   the structure takes a hit, so a crew works between bombardments, not through
   them), per-facility queues with smooth cameo progress,
   counts and drag-to-prioritise cards that auto-scroll near the sheet edges.
-  A standing Command Post trickles 1 material/s while its owner has no
-  harvester left, and a captured Forward Supply Depot adds 2 more without a
-  harvester or refinery, so losing the hauling economy is a setback rather than
-  an unrecoverable deadlock.
+  A standing Command Post trickles 1 material/s while its owner has no working
+  hauling economy — no hauler left, no drop-off it can afford, or no deposit
+  left on the map to mine — and a captured Forward Supply Depot adds 2 more
+  without a harvester or refinery, so losing the hauling economy is a setback
+  rather than an unrecoverable deadlock.
 - **Strategic objectives**: neutral Signals Relays, Forward Supply Depots and
   Radar Stations are authored in the editor and captured by Combat Engineers.
   Relays pay requisition, depots pay supplementary materials, and a powered

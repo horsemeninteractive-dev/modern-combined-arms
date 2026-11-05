@@ -94,8 +94,12 @@ interface Run {
   unitsBeforeEngineer: number | null;
 }
 
-function run(w: RecoveryWorld, seconds: number): Run {
+function run(w: RecoveryWorld, seconds: number, prepare?: (game: Game) => void): Run {
   const game = new Game(scenarioFor(w), { enableAI: false });
+  // Mid-match changes (a drained map) belong to the running game, not the
+  // authored scenario, so the fixture can tell a map that ran out from one that
+  // was never given deposits.
+  prepare?.(game);
   const ai = new AIController();
   const state = initialAIState(SEED, 'veteran');
   const refineryId = game.buildingIdFor(1, 'refinery');
@@ -179,6 +183,32 @@ describe('economic recovery', () => {
     const r = run({ harvesters: 0, mats: 200 }, 60);
     expect(r.passiveRate).toBe(1);
     expect(r.bank.at(-1)).toBeGreaterThan(r.bank[0]!);
+  });
+
+  it('pays the lifeline when the map is worked out, even with haulers standing', () => {
+    // The reported dead end: every seam drained, haulers and a drop-off still
+    // standing, so the side had no income at all and the trickle stayed off
+    // until it destroyed its own harvesters. A drained map is not a working
+    // hauling economy, so the headquarters lifeline has to pay.
+    const r = run({ refineries: 1, harvesters: 2, mats: 200 }, 30, (game) => {
+      game.state.map.ore.fill(0);
+    });
+    expect(r.passiveRate).toBe(1);
+    // The bank itself is spent by the AI; the lifeline shows in what the base
+    // actually gathered: thirty seconds of one material a second.
+    expect(r.game.state.players[1]!.stats.matsGathered).toBeGreaterThanOrEqual(25);
+  });
+
+  it('keeps the trickle off while any seam still holds material', () => {
+    // One tile left on the map is still a working economy; the lifeline is for
+    // a drained map, not for a side that simply has not driven to the far field.
+    const r = run({ refineries: 1, harvesters: 2, mats: 200 }, 30, (game) => {
+      game.state.map.ore.fill(0);
+      // Far more than a crew can work out inside the window, so the seam is
+      // still paying when the rate is read.
+      game.state.map.ore[game.state.map.ore.length - 1] = 50_000;
+    });
+    expect(r.passiveRate).toBe(0);
   });
 
   it('recovers a hauler-stripped base instead of stalling forever', () => {

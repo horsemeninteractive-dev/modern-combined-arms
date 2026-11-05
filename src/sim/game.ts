@@ -289,6 +289,11 @@ export class Game {
   /** Fast lookup over `state.charted`, keyed "team:entityId". */
   private chartedIndex = new Set<string>();
   private incomeSamples = 0;
+  /** Material left on the map, refreshed at most once per tick. */
+  private oreRemaining = 0;
+  private oreCheckedTick = -1;
+  /** Whether the battlefield was authored with deposits at all. */
+  private readonly oreAuthored: boolean;
   private lastMatsSample: number[] = [];
   /** Last grid state announced per owner; presentation-only, never saved. */
   private gridBrownout = new Map<number, boolean>();
@@ -322,6 +327,7 @@ export class Game {
 
   constructor(scenario: Scenario, opts: GameOptions = {}) {
     this.localPlayerId = opts.localPlayerId ?? PLAYER;
+    this.oreAuthored = scenario.tiles.some((tile) => tile.o > 0);
     this.repairSuppression = opts.repairSuppression !== false;
     this.research = opts.research ?? RESEARCH;
     this.state = {
@@ -2258,7 +2264,12 @@ export class Game {
     }
     let accepted = 0;
     for (const e of engineers) {
-      const path = this.findPathFor(e, target.x, target.z);
+      // Aim at an approach point beside the objective rather than its centre:
+      // the footprint is blocked, so a path to the centre is redirected and can
+      // finish outside capture reach when the ground around the site is tight.
+      const approach = this.engineerApproachPoint(e, target);
+      const path =
+        this.findPathFor(e, approach.x, approach.z) ?? this.findPathFor(e, target.x, target.z);
       if (!path) {
         this.emit('orderFailed', {
           team: owner,
@@ -4213,14 +4224,21 @@ export class Game {
   }
 
   /** Send an assigned engineer to a spot just outside the site's footprint. */
-  private walkEngineerToSite(engineer: Entity, site: Entity): void {
+  /** Where an engineer should stand to work a structure, clear of its footprint. */
+  private engineerApproachPoint(engineer: Entity, site: Entity): { x: number; z: number } {
     const def = buildingDef(site.defId);
     const dx = engineer.x - site.x;
     const dz = engineer.z - site.z;
     const len = Math.hypot(dx, dz);
     const reach = (Math.max(def.footprint.w, def.footprint.h) * TILE_SIZE) / 2 + 2.5;
-    const tx = site.x + (len > 0.01 ? (dx / len) * reach : reach);
-    const tz = site.z + (len > 0.01 ? (dz / len) * reach : 0);
+    return {
+      x: site.x + (len > 0.01 ? (dx / len) * reach : reach),
+      z: site.z + (len > 0.01 ? (dz / len) * reach : 0),
+    };
+  }
+
+  private walkEngineerToSite(engineer: Entity, site: Entity): void {
+    const { x: tx, z: tz } = this.engineerApproachPoint(engineer, site);
     const path = this.findPathFor(engineer, tx, tz);
     engineer.path = path ?? [];
     engineer.pathIndex = 0;
@@ -4490,6 +4508,26 @@ export class Game {
     this.state.rngState = this.rng.getState();
   }
 
+  /**
+   * Whether there is any material left to gather. Summed once per tick and
+   * cached: the ore grid is one entry per tile, and passive income asks this for
+   * every player, every tick.
+   *
+   * A battlefield authored without deposits is not a drained one — an empty
+   * test arena has nothing to run out — so only a map that started with ore can
+   * be reported as worked out.
+   */
+  private hasRemainingOre(): boolean {
+    if (!this.oreAuthored) return true;
+    if (this.oreCheckedTick === this.state.tick) return this.oreRemaining > 0;
+    let total = 0;
+    const ore = this.state.map.ore;
+    for (let i = 0; i < ore.length; i++) total += ore[i];
+    this.oreRemaining = total;
+    this.oreCheckedTick = this.state.tick;
+    return total > 0;
+  }
+
   private updatePassiveIncome(dt: number): void {
     for (const p of this.state.players) {
       if (p.defeated) continue;
@@ -4591,8 +4629,14 @@ export class Game {
     // to be a permanent dead end: no income to buy the replacement. The bank
     // test keeps the trickle off while a drop-off is already affordable, so an
     // ordinary opening or a well-funded rebuild is never subsidised.
+    //
+    // A drained map is the same dead end by another route: every seam worked
+    // out, so the surviving crews have nothing to mine and the side sits at
+    // zero income until it destroys its own haulers. Hauling therefore needs
+    // ore left to gather, not merely a hull to gather it with.
     const hauling =
       harvesters > 0 &&
+      this.hasRemainingOre() &&
       (refineries > 0 || (player?.mats ?? 0) >= REFINERY_REPLACEMENT_COST);
     let rate = 0;
     for (const e of this.state.entities) {
@@ -6212,6 +6256,10 @@ export class Game {
         }
       } else {
         e.state = 'moving';
+        // Separation, a closed crossing or a rerouted path can empty the queue
+        // short of the objective. Without this the engineer stands there for
+        // the rest of the match and the site is never taken.
+        if (e.path.length === 0) this.walkEngineerToSite(e, target);
       }
       return;
     }
@@ -6258,6 +6306,10 @@ export class Game {
       // Occupants are represented by their shelter; the structure is the
       // engageable target and its envelope resolves occupant casualties.
       if (target.kind === 'unit' && target.garrisonId) continue;
+      // A span is crossing infrastructure, not a target: no crew levels the
+      // bridge it may need to cross on the strength of a stray sighting. An
+      // explicit attack order can still bring one down.
+      if (target.kind === 'building' && BUILDINGS[target.defId]?.walkable) continue;
       const d = dist(e.x, e.z, target.x, target.z);
       let usable = false;
       let weaponRange = 0;

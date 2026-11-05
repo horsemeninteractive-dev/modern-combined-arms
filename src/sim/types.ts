@@ -216,8 +216,9 @@ export interface BuildingDef {
   matsPerSec?: number;
   /**
    * A lifeline rather than an income stream: this passive income only pays
-   * while the owner has no harvester left, so a base stripped of its hauling
-   * economy can still rebuild instead of sitting at zero income forever.
+   * while the owner's hauling economy is not working — no hauler left, or no
+   * deposit left anywhere to mine — so a base stripped of its income can still
+   * rebuild instead of sitting at zero forever.
    */
   matsPerSecBackstop?: boolean;
   /**

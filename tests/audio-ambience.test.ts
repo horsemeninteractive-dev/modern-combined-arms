@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import {
   LOOP_SEAM_SECONDS,
   MAX_LOOP_SECONDS,
+  RECORDED_AMBIENCE_ENABLED,
   loopRate,
   parseAmbienceManifest,
 } from '../src/ui/ambienceSamples';
@@ -312,5 +313,13 @@ describe('recorded ambience manifest', () => {
   it('keeps the loop window short enough to hold in memory', () => {
     expect(MAX_LOOP_SECONDS).toBeLessThanOrEqual(15);
     expect(LOOP_SEAM_SECONDS).toBeGreaterThan(0.01);
+  });
+
+  it('ships with recorded playback off while the manifest stays parsed', () => {
+    // The files are still credited and checked; the switch is what decides
+    // whether the bed plays them. Flipping it is the only change needed once
+    // the replacement recordings land.
+    expect(RECORDED_AMBIENCE_ENABLED).toBe(false);
+    expect(parseAmbienceManifest(shipped).loops.length).toBeGreaterThan(0);
   });
 });

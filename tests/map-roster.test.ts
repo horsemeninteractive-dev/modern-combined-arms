@@ -32,6 +32,7 @@ import {
   validateLobbyConfig,
 } from '../src/multiplayer/lobbyConfig';
 import { BUILDINGS } from '../src/data/buildings';
+import { HARVESTER_CAPACITY } from '../src/sim/constants';
 import { RoomLobby } from '../src/multiplayer/roomLobby';
 import { CAMPAIGNS } from '../src/data/campaign';
 import { readFileSync } from 'node:fs';
@@ -282,6 +283,32 @@ describe.each(COMPETITIVE.map((entry) => [entry.name, entry] as const))('%s', (_
           expect([Terrain.DeepWater, Terrain.ShallowWater, Terrain.Forest, Terrain.Rock]).not.toContain(tile.t);
         }
       }
+    }
+  });
+});
+
+describe('competitive economy', () => {
+  it('fields a forward supply depot on every battlefield', () => {
+    // Deposits run dry in a long match; the depot is the secondary income that
+    // keeps a side fighting instead of sitting on a one-per-second lifeline.
+    for (const entry of scenariosForMode('skirmish')) {
+      const scenario = entry.create();
+      const depots = scenario.structures.filter(
+        (s) => s.defId === 'supplyDepot' && s.owner === -1,
+      );
+      // One per rotation, so no seat is nearer a depot than another.
+      expect(depots.length, entry.id).toBeGreaterThanOrEqual(4);
+      expect(new Set(depots.map((d) => `${d.x},${d.z}`)).size, entry.id).toBe(depots.length);
+    }
+  });
+
+  it('leaves no authored deposit thinner than a full hopper', () => {
+    for (const entry of scenariosForMode('skirmish')) {
+      const scenario = entry.create();
+      let thinnest = Infinity;
+      for (const tile of scenario.tiles) if (tile.o > 0) thinnest = Math.min(thinnest, tile.o);
+      expect(Number.isFinite(thinnest), entry.id).toBe(true);
+      expect(thinnest, entry.id).toBeGreaterThanOrEqual(HARVESTER_CAPACITY);
     }
   });
 });

@@ -96,6 +96,9 @@ export function createGraniteSteps(): Scenario {
 
   field.neutral('relay', q - 10, q - 10);
   field.neutral('radarStation', 34, 42);
+  // Stocks on the low ground between the first ridge and the base: the depot is
+  // what keeps an offensive going when the granite's ore runs out.
+  field.neutral('supplyDepot', 22, 34);
   // One step above the low ground: a two-step pedestal is a wall to wheels and
   // tracks, and the audit would rightly call the centre unreachable.
   field.centreBlock(Terrain.Rocks, 2);
@@ -295,6 +298,9 @@ export function createAshcrossSprawl(): Scenario {
   field.neutral('constabulary', 24, 11);
   field.neutral('ruin', 33, 24);
   field.neutral('relay', q - 7, q - 7);
+  // A stockpile on the outer street, off the junction itself: taken by whoever
+  // holds the block behind it, not by whoever happens to walk the road first.
+  field.neutral('supplyDepot', 21, 25);
   field.centreBlock(Terrain.Urban);
   field.centreStructure('relay');
 
