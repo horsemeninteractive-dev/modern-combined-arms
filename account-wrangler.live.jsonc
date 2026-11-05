@@ -25,13 +25,15 @@
   "vars": {
     "APP_ORIGIN": "https://moderncombinedarms.pages.dev",
     "ALLOWED_ORIGINS": "https://moderncombinedarms.pages.dev",
-    "SESSION_TTL_DAYS": "30"
+    "SESSION_TTL_DAYS": "30",
+    "GOOGLE_CLIENT_ID": "1087100457105-nnsa9204violfnnbi9sjgp5pk7rg70mf.apps.googleusercontent.com",
+    "DISCORD_CLIENT_ID": "1567405902393381054"
   },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "mca-accounts",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "be396040-3bf1-4106-8aa1-581eaa9406bd",
       "migrations_dir": "migrations"
     }
   ]

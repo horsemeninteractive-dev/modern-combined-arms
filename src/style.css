@@ -1957,20 +1957,37 @@ html.custom-cursors select { cursor: default !important; }
 .selection-panel { flex: 1; background: var(--panel); border: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
 .selection-panel > .panel-head { flex: 0 0 22px; padding: 0 9px; font-size: var(--fs-xs); }
 .selection-main { flex: 1; min-height: 0; display: flex; }
-.selection-body { flex: 1 1 0; min-width: 0; padding: 5px 9px; overflow-x: hidden; overflow-y: auto; }
+/* The selection band is a fixed-height instrument panel: everything it shows
+   fits inside it, so its contents never scroll and never run past the frame. */
+.selection-body { flex: 1 1 0; min-width: 0; padding: 5px 9px; overflow: hidden; }
 .sel-primary { min-width: 0; }
 .sel-stats { min-width: 0; }
 .sel-notes { min-width: 0; }
 .sel-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .sel-actions > * { margin-top: 0; }
 /*
- * Desktop selection is one fixed-height band: identity on the left, values in
- * the middle, status on the right and every command on a single scrolling row
- * underneath. Nothing stacks tall enough to need vertical scrolling.
+ * The square icon controls — abilities, sell, retrofits — are one run of
+ * buttons. Their rows are wrappers only, so the group decides the spacing and
+ * every square sits on the same baseline. In the desktop band this run is what
+ * occupies the right-hand end; on touch it is another row under the identity.
+ */
+.sel-squares { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 4px; }
+.sel-squares > * { display: contents; }
+/*
+ * Desktop selection is one fixed-height band: identity and its vitals on the
+ * left, values in the middle, status lines beside them, and the square command
+ * controls anchored to the far right where a big button is easy to hit. Stance,
+ * garrison and group chips keep the single scrolling row underneath. Nothing
+ * stacks tall enough to need vertical scrolling.
  */
 .layout-desktop .selection-body {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1.05fr) minmax(0, 1.2fr);
+  /* Values get the widest column: a power figure, a sensor name and a rank all
+     need more room than the name they belong to. The last two tracks are sized
+     by their content, so a band with no status lines gives their width to the
+     values instead of leaving a hollow column, and the squares stay exactly as
+     wide as the buttons in them — pinned to the far right of the band. */
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.3fr) auto auto;
   grid-template-rows: minmax(0, 1fr) auto;
   align-content: stretch;
   align-items: center;
@@ -1979,8 +1996,25 @@ html.custom-cursors select { cursor: default !important; }
   padding: 4px 8px;
   overflow: hidden;
 }
-.layout-desktop .selection-body .sel-primary { grid-column: 1; grid-row: 1; align-self: center; }
+/* The integrity bar belongs to the identity it describes, so it sits directly
+   under the portrait and name rather than drifting into the status column. */
+.layout-desktop .selection-body .sel-primary { grid-column: 1; grid-row: 1; align-self: center; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .layout-desktop .selection-body .sel-main { align-items: center; }
+.layout-desktop .selection-body .sel-vitals { min-width: 0; }
+.layout-desktop .selection-body .sel-vitals .hp-block { margin-top: 0; }
+.layout-desktop .selection-body .sel-vitals .hp-block + .hp-block { margin-top: 2px; }
+.layout-desktop .selection-body .sel-squares {
+  grid-column: 4;
+  grid-row: 1;
+  justify-self: end;
+  align-self: center;
+  flex-wrap: nowrap;
+  margin-top: 0;
+  gap: 5px;
+}
+/* Bigger than a sidebar chip: the band is the only place these commands live. */
+.layout-desktop .selection-body .sel-squares .sel-square { width: calc(40px * var(--ui-scale)); height: calc(40px * var(--ui-scale)); }
+.layout-desktop .selection-body .sel-squares .sel-square .square-icon { width: 22px; height: 22px; }
 /*
  * The identity column carries the name and its role and nothing else, so both
  * keep the full column width at every console size. Vitals live in the status
@@ -2001,6 +2035,7 @@ html.custom-cursors select { cursor: default !important; }
   flex-direction: column;
   justify-content: center;
   gap: 3px;
+  max-width: 260px;
   max-height: 100%;
   overflow: hidden;
 }
@@ -2015,9 +2050,18 @@ html.custom-cursors select { cursor: default !important; }
 }
 .layout-desktop .selection-body .sel-actions::-webkit-scrollbar { height: 0; }
 .layout-desktop .selection-body .sel-orders { margin-top: 0; }
-/* Two tight rows, no extra gap: the band has room for four values and no more. */
-.layout-desktop .selection-body .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 6px; margin-top: 0; }
-.layout-desktop .selection-body .stat b { line-height: 1.15; }
+/*
+ * One value per line, label left and figure right, exactly like the status
+ * column: five values become three 15 px rows instead of five stacked cells, so
+ * the whole band — values, vitals and the action row — fits the console height
+ * without scrolling or clipping. A value that is still too long is ellipsised
+ * and carries its full wording in its title.
+ */
+.layout-desktop .selection-body .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 10px; margin-top: 0; }
+.layout-desktop .selection-body .stat { display: flex; align-items: baseline; justify-content: space-between; gap: 5px; line-height: 1.25; }
+.layout-desktop .selection-body .stat span { flex: 0 0 auto; display: inline; }
+.layout-desktop .selection-body .stat b { display: block; min-width: 0; margin-top: 0; text-align: right; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.layout-desktop .selection-body .stat .supply-row { flex: 1 1 auto; justify-content: flex-end; margin-top: 0; }
 /*
  * Every status line is one fixed-height row: a label on the left, its value on
  * the right, and both are short enough to fit the column without an ellipsis.
@@ -2031,7 +2075,6 @@ html.custom-cursors select { cursor: default !important; }
 .group-mix { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.02em; color: var(--ink-dim); }
 .group-mix span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .group-mix b { font-weight: 500; color: var(--ink); }
-.group-mix.more span { color: var(--ink-faint); letter-spacing: 0.03em; }
 /* Notes keep their natural height and are never squeezed by the column. */
 .layout-desktop .selection-body .sel-notes > * { flex: 0 0 auto; }
 .layout-desktop .selection-body .sel-notes .hp-block { margin-top: 0; }
@@ -2048,7 +2091,7 @@ html.custom-cursors select { cursor: default !important; }
 .layout-desktop .sel-icon svg { width: 20px; height: 20px; }
 .layout-desktop .sel-title h3 { font-size: var(--fs-md); }
 .layout-desktop .sel-role { margin-top: 1px; }
-.layout-desktop .sel-orders { margin-top: 4px; gap: 4px; }
+.layout-desktop .sel-orders { margin-top: 0; gap: 4px; }
 .layout-desktop .stance-row { margin-top: 4px; }
 .layout-desktop .sel-roster { padding: 5px 6px; gap: 4px; }
 .layout-desktop .roster-chip { padding: 3px; gap: 2px; }
@@ -2139,11 +2182,17 @@ html.custom-cursors select { cursor: default !important; }
 .garrison-orders .mini-btn { border-color: rgba(96, 190, 205, 0.4); color: var(--blue-soft); }
 /* Selling is destructive and irreversible once the clock starts, so it reads
    in the alert colour rather than beside the ordinary order buttons. */
-.sell-orders { margin-top: 4px; }
-.sell-orders .mini-btn.danger { border-color: rgba(239, 108, 77, 0.5); color: var(--red-soft); }
-.sell-orders .mini-btn.danger:hover { border-color: var(--red-soft); background: rgba(239, 108, 77, 0.12); }
-.sell-orders .mini-btn:disabled { border-color: var(--line); color: var(--ink-dim); }
-.sell-note { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.04em; color: var(--amber-soft); }
+.sell-orders { margin-top: 0; }
+.sell-orders .sell-btn.danger { border-color: rgba(239, 108, 77, 0.5); color: var(--red-soft); }
+.sell-orders .sell-btn.danger:hover { border-color: var(--red-soft); background: rgba(239, 108, 77, 0.12); }
+.sell-orders .sell-btn:disabled { border-color: var(--line); background: rgba(255, 255, 255, 0.03); color: var(--ink-dim); }
+.sell-orders .sell-btn.dismantling { border-color: var(--line); background: rgba(255, 255, 255, 0.03); color: var(--ink-dim); }
+/* An armed sale is a question, so the armed row answers it: the confirm keeps
+   the alert colour and the way out sits beside it as a quiet neutral. */
+.sell-orders.confirm .sell-btn.danger { border-color: var(--red-soft); background: rgba(239, 108, 77, 0.16); color: #ffb4a2; }
+.sell-orders.confirm .sell-btn.danger:hover { border-color: var(--red-soft); background: rgba(239, 108, 77, 0.26); }
+.sell-orders.confirm .sell-btn.cancel { border-color: var(--line-strong); background: rgba(255, 255, 255, 0.04); color: var(--ink-dim); }
+.sell-orders.confirm .sell-btn.cancel:hover { border-color: var(--ink-dim); background: rgba(255, 255, 255, 0.08); color: var(--ink); }
 .mini-btn { border: 1px solid var(--line); background: rgba(255,255,255,0.03); padding: 4px 7px; font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.04em; color: var(--ink-dim); display: flex; align-items: center; gap: 4px; border-radius: 2px; white-space: nowrap; }
 .mini-btn:hover { border-color: var(--amber); color: var(--ink); }
 .mini-btn.active { border-color: var(--amber); background: rgba(224,163,74,0.14); color: var(--amber-soft); }
@@ -2154,27 +2203,25 @@ html.custom-cursors select { cursor: default !important; }
 .stance-row { display: flex; align-items: center; gap: 3px; margin-top: 6px; flex-wrap: wrap; }
 .stance-row .stance-label { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.06em; color: var(--ink-dim); margin-right: 2px; }
 .stance-row .mini-btn { padding: 3px 6px; }
-/* Researched unit abilities. One row, one button per capability, and the row
-   only exists when the hull actually has something to fire. */
-.ability-row { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
-.ability-btn { display: flex; align-items: center; gap: 6px; padding: 4px 7px; border: 1px solid rgba(224, 163, 74, 0.45); background: rgba(224, 163, 74, 0.1); color: var(--amber-soft); border-radius: 2px; text-align: left; min-width: 0; }
-.ability-btn:hover { border-color: var(--amber); background: rgba(224, 163, 74, 0.18); }
-.ability-btn.reloading { border-color: var(--line); background: rgba(255, 255, 255, 0.03); color: var(--ink-dim); }
-.ability-btn .ability-icon { width: 14px; height: 14px; flex: none; }
-.ability-btn .ability-copy { display: flex; flex-direction: column; min-width: 0; }
-.ability-btn .ability-copy b { font-family: var(--mono); font-size: var(--fs-xs); font-weight: 500; letter-spacing: 0.05em; white-space: nowrap; }
-.ability-btn .ability-copy span { font-family: var(--mono); font-size: var(--fs-xs); opacity: 0.8; white-space: nowrap; }
-.ability-btn .ability-key { font-family: var(--mono); font-size: var(--fs-xs); padding: 1px 4px; border: 1px solid rgba(224, 163, 74, 0.4); color: var(--amber); }
-.layout-desktop .ability-btn .ability-copy span { display: none; }
+/*
+ * Researched abilities and modules are square icon buttons: one capability per
+ * button, in one row that never grows tall enough to push the band. The name,
+ * description, price and hotkey live in the tooltip and the accessible label;
+ * the only overlays are the two states that must be legible without hovering —
+ * a reload countdown and, on a fitted module, a tick.
+ */
+.ability-row { display: flex; gap: 4px; margin-top: 0; flex-wrap: nowrap; }
+.sel-square { position: relative; flex: 0 0 auto; width: calc(28px * var(--ui-scale)); height: calc(28px * var(--ui-scale)); padding: 0; display: grid; place-items: center; border: 1px solid rgba(224, 163, 74, 0.45); background: rgba(224, 163, 74, 0.1); color: var(--amber-soft); border-radius: 2px; }
+.sel-square:hover { border-color: var(--amber); background: rgba(224, 163, 74, 0.18); }
+.sel-square:disabled, .sel-square[aria-disabled="true"] { border-color: var(--line); background: rgba(255, 255, 255, 0.03); color: var(--ink-dim); }
+.sel-square:disabled:hover, .sel-square[aria-disabled="true"]:hover { border-color: var(--line); background: rgba(255, 255, 255, 0.03); }
+.sel-square .square-icon { width: 15px; height: 15px; }
+.sel-square .square-badge { position: absolute; right: 1px; bottom: 0; z-index: 1; padding: 0 2px; background: rgba(6, 10, 12, 0.88); font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.1; letter-spacing: 0; color: var(--amber); }
+.sel-square .square-badge.ok { color: #9fd8b4; }
 /* A fitted module is a state, not an offer: it keeps the row's shape but reads
    as settled, so the amber "buy this" affordance belongs only to the price. */
 .module-btn.installed { border-color: rgba(122, 196, 148, 0.45); background: rgba(122, 196, 148, 0.1); color: #9fd8b4; }
 .module-btn.installed:hover { border-color: rgba(122, 196, 148, 0.45); background: rgba(122, 196, 148, 0.1); }
-.module-btn.installed .ability-key { border-color: rgba(122, 196, 148, 0.4); color: #9fd8b4; }
-/* Desktop hides the ability detail line to keep the panel one row; a module's
-   price and grid contribution are the whole decision, so they stay. */
-.layout-desktop .module-btn .ability-copy span { display: block; }
-.layout-desktop .ability-btn[aria-disabled="true"] .ability-copy span { display: block; }
 /* Production */
 /* Vertical only: every card grid is built from shrinkable tracks, so the panel
    must never grow a horizontal scrollbar of its own. */
@@ -2707,9 +2754,13 @@ html.custom-cursors select { cursor: default !important; }
 .end-screen.defeat .end-sting span { color: #ffe3da; }
 .end-screen.defeat .end-sting-rule { background: rgba(255, 176, 158, 0.72); box-shadow: 0 0 14px rgba(210, 84, 60, 0.35); }
 .end-card {
-  width: min(620px, 90vw); border: 1px solid var(--line-strong); background: rgba(10,16,18,0.97); padding: 34px 36px; box-shadow: var(--shadow);
+  display: flex; flex-direction: column;
+  width: min(620px, 90vw); max-height: 88vh; max-height: 88dvh; overflow: hidden;
+  border: 1px solid var(--line-strong); background: rgba(10,16,18,0.97); padding: 34px 36px; box-shadow: var(--shadow);
   position: relative; z-index: 3; animation: endCardIn 0.8s cubic-bezier(0.16, 0.9, 0.24, 1) 1.8s both;
 }
+/* Only the report scrolls; the advance controls stay at the bottom of the card. */
+.end-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 @keyframes endFlagDrift { from { transform: scale(1.12) translateY(-1.5%); } to { transform: scale(1.02) translateY(1.5%); } }
 @keyframes endFlagReveal { from { clip-path: inset(48% 0 48% 0); } to { clip-path: inset(0); } }
 @keyframes endSweep { from { transform: translateX(-70%); } to { transform: translateX(70%); } }
@@ -2740,7 +2791,10 @@ html.custom-cursors select { cursor: default !important; }
 .end-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 16px 0; margin-bottom: 22px; }
 .end-stats div span { display: block; font-family: var(--mono); font-size: 8px; color: var(--ink-faint); letter-spacing: 0.12em; }
 .end-stats div b { Font-family: var(--mono); font-size: 20px; font-weight: 500; }
-.end-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.end-actions {
+  flex: 0 0 auto; display: flex; gap: 8px; flex-wrap: wrap;
+  padding-top: 16px; border-top: 1px solid var(--line);
+}
 /* Career line on the verdict card. Empty for a test run or a failed read. */
 .end-career-slot:empty { display: none; }
 .end-career {
@@ -2784,13 +2838,17 @@ html.custom-cursors select { cursor: default !important; }
 .end-campaign-note.complete span { color: var(--ink-faint); }
 /* Modal */
 .modal-root { position: fixed; inset: 0; z-index: 90; background: rgba(3,6,8,0.7); backdrop-filter: blur(8px); display: grid; place-items: center; }
-.modal-card { width: min(560px, 94vw); max-height: 88vh; overflow-y: auto; background: rgba(10,16,18,0.98); border: 1px solid var(--line-strong); box-shadow: var(--shadow); }
-.modal-head { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+.modal-card {
+  display: flex; flex-direction: column;
+  width: min(560px, 94vw); max-height: 88vh; max-height: 88dvh; overflow: hidden;
+  background: rgba(10,16,18,0.98); border: 1px solid var(--line-strong); box-shadow: var(--shadow);
+}
+.modal-head { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--line); }
 .modal-head h2 { font-size: 17px; margin: 0; font-weight: 600; }
 .modal-head .close { background: none; border: 0; color: var(--ink-dim); font-size: 18px; line-height: 1; }
-.modal-body { padding: 20px; }
+.modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 20px; }
 .modal-body p { color: var(--ink-dim); font-size: 12px; line-height: 1.6; }
-.modal-actions { display: flex; gap: 8px; justify-content: flex-end; padding: 14px 20px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.modal-actions { flex: 0 0 auto; display: flex; gap: 8px; justify-content: flex-end; padding: 14px 20px; border-top: 1px solid var(--line); flex-wrap: wrap; }
 .modal-actions .btn { min-width: 100px; }
 .menu-modal-list { display: grid; gap: 6px; }
 .menu-modal-list .btn { justify-content: flex-start; }

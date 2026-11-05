@@ -8,6 +8,80 @@ The release version and stage come from `package.json`; the build number shown
 in the menu is the repository commit count at build time. The same file is
 rendered in game from **Changelog** in the main-menu footer.
 
+## [0.5.1 BETA] — 2026-11-05
+
+A patch for the battlefield's sound, the sale of a structure, and the panels that
+ran off the bottom of the screen.
+
+### Sound
+
+- **The ambience bed is recorded now.** Engine and structure voices come from
+  CC0 1.0 recordings — a heavy tank rumble, a petrol scout car, a heavy diesel
+  shared by light tracks and laden trucks at different rates, a facility
+  generator, and six single bootfalls rendered into a stride — each family with
+  its own loop, filter and level. Rotors, jets and ships stay synthesised, and a
+  family with no file falls back to the old voice rather than going silent.
+  Authors and licence for every file are listed in
+  `public/audio/ambience/CREDITS.md` and mirrored in the manifest.
+- **Idle and moving are different voices.** Motion opens the filter, lifts the
+  level and speeds the recording instead of only raising the gain, so a tank, a
+  jeep and a squad no longer sound like the same machine, and a halted column
+  settles rather than droning on.
+- **The mix follows the picture.** Every bed voice is placed against the live
+  camera: pan follows screen-right, loudness falls toward the edge of frame in
+  both axes, and zooming changes how distant the same ground distance sounds.
+- Engines catch with a short swell as a unit moves off and wind down when it
+  halts. A recorded loop handed to a different hull is rebuilt rather than
+  retuned, and loop seams are folded forward so a repeating engine does not tick.
+- Selecting, ordering and cancelling each have their own short interface cue.
+
+### Structure sales
+
+- **A sale asks twice.** The first click arms it and names the refund and the
+  deconstruction time; the second confirms. An armed sale lapses after five
+  seconds, and a confirming click inside the first few hundred milliseconds is
+  ignored, so an accidental double-click cannot dismantle a structure.
+- **A structure being sold comes apart.** The model runs the construction curve
+  backwards from full height to the stub a new site starts from while the
+  countdown runs, instead of vanishing at the end of it.
+
+### Interface
+
+- **Modal cards fit the screen.** The card is capped at 88% of the viewport,
+  only its body scrolls and its actions stay pinned, which puts the changelog's
+  pin buttons and the end-of-operation controls back on screen at every height.
+- The selection panel's integrity bar sits under the structure's name, and the
+  sell, confirm, upgrade and ability controls are square icon buttons on the
+  right with their cost and description in the tooltip. The panel's contents no
+  longer overflow its bounds or scroll.
+- A campaign mission that opens on a cinematic keeps the HUD out of the first
+  rendered frame, and the HUD returns to the player's own cinematic setting when
+  the scene ends.
+
+### Live service
+
+- The published account service now names its production D1 database and the
+  Google and Discord OAuth clients, so sign-in and career records resolve
+  against the live deployment instead of reporting the service unavailable.
+
+### Verification
+
+- `npm run typecheck` clean, and `npm run release -- --dry-run` confirms that
+  `package.json`, this file and the menu footer agree on `v0.5.1 BETA` and stamps
+  the built bundle with it.
+- Full `vitest` run: 160 files and 2,369 tests, 2,367 passing. Both failures are
+  outside this patch: the tracked difficulty-ladder baseline in
+  `tests/ai-matchups.test.ts` (`recruitVsVeteran.margin` −16,547 against its
+  < −30,000 bar), unchanged since 0.4.0, and one AI branch test that hit the 30 s
+  limit inside a 160-worker parallel run and passes alone in 11.3 s. The ladder,
+  arena and AI were not retuned to make the suite green.
+- New focused coverage for the recorded ambience (manifest parsing, per-family
+  idle and motion, framing against a real camera, seam continuity, slot rebuild
+  when a loop changes hands), the sale confirmation rules and the deconstruction
+  curve, and the modal card's scroll and pinned-action rules. The ambience audio
+  is heard by numbers — duration, peak and spectral centroid — not by ear, so the
+  per-loop level trims are the first thing to adjust if the mix reads wrong.
+
 ## [0.5.0 BETA] — 2026-11-04
 
 A command, campaign and identity release. Two twelve-operation campaigns give the

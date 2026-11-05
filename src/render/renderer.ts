@@ -37,6 +37,7 @@ import {
   WATER_VS,
 } from './shaders';
 import { buildingStyle, buildingTopHeight, FALLBACK_BUILDING } from './buildingMeshes';
+import { buildingVerticalScale } from './buildingScale';
 import {
   buildingDamageAnchors,
   buildingDamageMesh,
@@ -2508,9 +2509,9 @@ export class Renderer {
         if (e.kind === 'building') {
           const rig = this.buildingMeshes.get(e.defId);
           if (!rig) continue;
-          const construction = e.construction;
-          const progress = construction ? 0.04 + e.buildProgress * 0.96 : 1;
-          const vertical = construction ? 0.06 + progress * 0.94 : 1;
+          // The shadow follows the drawn model: a growing site and a
+          // dismantling one both cast the height that exists.
+          const vertical = buildingVerticalScale(e);
           const garrisoned =
             !!BUILDINGS[e.defId]?.garrison && game.garrisonOccupants(e.id).length > 0;
           const occupied = garrisoned && rig.garrisoned ? rig.garrisoned : rig.body;
@@ -3226,9 +3227,10 @@ export class Renderer {
           : [];
       const garrisonOwner = occupants.length > 0 ? occupants[0].owner : null;
       const construction = e.construction;
-      // A fresh site is groundworks, not a quarter-built shell: the mesh starts
-      // at roughly a tenth of its height and grows into the frame from there.
-      const progress = construction ? 0.04 + e.buildProgress * 0.96 : 1;
+      // A fresh site is groundworks, not a quarter-built shell, and a sale runs
+      // that same growth curve backwards; one helper scales both passes.
+      const dismantling = !construction && !!e.deconstruct;
+      const verticalScale = buildingVerticalScale(e);
       const liveAlpha = construction ? 0.72 : e.hp / e.maxHp < 0.25 ? 0.94 : 1;
       const alpha = remembered ? 0.46 : liveAlpha;
       // A charted structure is memory, not sight, and it has to read that way at
@@ -3266,10 +3268,12 @@ export class Renderer {
         z,
         facing,
         turret,
-        construction ? 0.06 + progress * 0.94 : 1,
+        verticalScale,
         alpha,
         flash,
-        construction,
+        // A dismantling structure has its lights out and its colours struck,
+        // exactly as an unfinished one does: it is no longer a working base.
+        construction || dismantling,
         e.harvester ? Math.min(1, e.harvester.ore / HARVESTER_CAPACITY) : 0,
         {
           gait: v?.gait ?? 0,

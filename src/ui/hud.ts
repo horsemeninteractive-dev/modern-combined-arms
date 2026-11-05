@@ -108,6 +108,16 @@ const QUEUE_EDGE_SCROLL_SPEED = 900;
 const QUEUE_EDGE_SCROLL_MARGIN = 28;
 
 /**
+ * A sale is irreversible once the deconstruction clock starts, so the sell
+ * control arms on the first click and only commits on a second one. The arm
+ * lapses on its own, and a confirm inside the grace window is ignored so an
+ * accidental double-click cannot sell a structure before the player has read
+ * what they are confirming.
+ */
+const SALE_CONFIRM_MS = 5000;
+const SALE_CONFIRM_GRACE_MS = 350;
+
+/**
  * The sidebar's one cost line: amber **M** for materials, blue **R** for
  * requisition, then the build time. Chips keep the three quantities legible at
  * a glance instead of reading as one run-on string, and both card types share
@@ -234,11 +244,22 @@ export class HUD {
   private hudEl: HTMLElement | null = null;
   /** HUD chrome hidden for a clean battlefield capture; the toggle stays. */
   private hudHidden = false;
+  /**
+   * Chrome put away for a cinematic. Kept apart from the player's own choice so
+   * a scene gives the picture back exactly the interface the commander had:
+   * someone who had already hidden the HUD with U still has it hidden after.
+   */
+  private cinemaHidden = false;
   /** Pending timer that takes the chrome out once the exit has played. */
   private hudAnimTimer = 0;
   private thumbnails: ThumbnailRenderer | null | undefined;
   /** Roster chip chosen for the detail card; cleared when it leaves the selection. */
   private inspectedId = 0;
+  /** Structure whose sale is armed and waiting for its confirming click. */
+  private sellArmed: number | null = null;
+  /** When the arm was set, in performance-clock milliseconds. */
+  private sellArmedAt = 0;
+  private sellArmTimer = 0;
   /** The rail gauge's styled hover readout is open; desktop only. */
   private powerReadoutOpen = false;
   /** Until this timestamp, BASE cards that sit on the grid are called out. */
@@ -296,6 +317,10 @@ export class HUD {
     this.endShown = false;
     this.powerReadoutOpen = false;
     this.lastPowerReadoutKey = '';
+    // Leaving the battlefield takes the scene with it. A shell that is mounted
+    // next keeps whatever a launch set before it, which is how an opening scene
+    // gets a first frame with no chrome on it.
+    this.cinemaHidden = false;
   }
 
   /** Rebuild the active composition when the viewport crosses the layout point. */
@@ -746,10 +771,34 @@ export class HUD {
     this.bindMinimap();
   }
 
+  /**
+   * Every control in the shell clicks, not just the ones that reach a command
+   * handler: tabs, cards and sheet buttons used to be silent, which made the
+   * whole panel feel like a picture rather than a console. One delegated cue
+   * covers them, and the engine's minimum gap collapses the duplicate when the
+   * action it triggers also plays its own feedback.
+   */
+  private clickCue(target: Element | null): void {
+    const control = target?.closest<HTMLElement>('button, [role="button"]');
+    if (!control) return;
+    const unavailable = control.hasAttribute('disabled') || control.getAttribute('aria-disabled') === 'true';
+    if (unavailable) {
+      this.app.audio.play('denied');
+      return;
+    }
+    const act = control.dataset.act;
+    if (control.dataset.sellCancel !== undefined || act === 'cancel-mode' || act === 'close-sheets') {
+      this.app.audio.play('cancel');
+      return;
+    }
+    this.app.audio.play('ui');
+  }
+
   private handleHudClick(event: MouseEvent): void {
     const root = this.root;
     if (!root) return;
     const target = event.target as Element | null;
+    this.clickCue(target);
     const actEl = target?.closest<HTMLElement>('[data-act]');
     if (actEl && root.contains(actEl)) {
       event.stopPropagation();
@@ -805,7 +854,13 @@ export class HUD {
         this.app.renderer.camera.centerOn(x * TILE_SIZE, z * TILE_SIZE);
       };
       minimap.onpointerdown = (event) => {
-        if (!this.minimapIsOnline()) return;
+        // The map is a control like any other: one cue on the press, never per
+        // move, so dragging the view does not rattle.
+        if (!this.minimapIsOnline()) {
+          this.app.audio.play('denied');
+          return;
+        }
+        this.app.audio.play('ui');
         minimap.setPointerCapture(event.pointerId);
         this.minimapDragging = true;
         jump(event);
@@ -835,6 +890,26 @@ export class HUD {
     this.applyHudVisibility(true);
   }
 
+  /**
+   * Put the chrome away while a scene owns the frame, and bring it back after.
+   *
+   * A cinematic drops it without animation — the opening scene begins on the
+   * same frame the battle mounts, and a chrome bar sliding out over the first
+   * shot reads as a glitch — while the return plays the usual entrance so the
+   * interface reassembles rather than popping back. A HUD the player had already
+   * hidden stays hidden.
+   */
+  setCinemaHidden(hidden: boolean): void {
+    if (this.cinemaHidden === hidden) return;
+    this.cinemaHidden = hidden;
+    this.applyHudVisibility(!hidden);
+  }
+
+  /** True while the chrome is off screen for any reason. */
+  private get chromeHidden(): boolean {
+    return this.hudHidden || this.cinemaHidden;
+  }
+
   /** U — the same toggle the pill offers, for a keyboard capture. */
   toggleVisibility(): void {
     this.setHudHidden(!this.hudHidden);
@@ -850,8 +925,10 @@ export class HUD {
   private applyHudVisibility(animate = false): void {
     const hud = this.hudEl;
     if (!hud) return;
+    const hidden = this.chromeHidden;
     const button = hud.querySelector<HTMLButtonElement>('.hud-toggle');
     if (button) {
+      // The toggle reports the commander's own choice, not a scene's.
       button.setAttribute('aria-pressed', String(this.hudHidden));
       button.classList.toggle('is-off', this.hudHidden);
       button.title = this.hudHidden ? 'Show HUD (U)' : 'Hide HUD (U) — clean battlefield for screenshots';
@@ -859,9 +936,11 @@ export class HUD {
       button.innerHTML = `${icon(this.hudHidden ? 'eye' : 'eyeOff')}<span>HUD</span>`;
     }
     window.clearTimeout(this.hudAnimTimer);
-    if (this.hudHidden) {
+    if (hidden) {
       hud.classList.remove('hud-enter');
-      if (!animate) {
+      // Already off screen: nothing to play, and replaying the exit would put
+      // the chrome back on screen for the length of the animation.
+      if (!animate || hud.classList.contains('hud-hidden')) {
         hud.classList.remove('hud-exit');
         hud.classList.add('hud-hidden');
         return;
@@ -1801,6 +1880,10 @@ export class HUD {
     const game = this.game;
     this.renderCommands();
     const entities = this.app.selectedEntities();
+    // A sale only stays armed while its structure is still the thing on screen.
+    if (this.sellArmed !== null && !entities.some((s) => s.id === this.sellArmed)) {
+      this.disarmSale();
+    }
     const countText = entities.length === 0 ? 'NONE' : `${entities.length} SELECTED`;
     this.root.querySelectorAll<HTMLElement>('#sel-count').forEach((count) => {
       count.textContent = countText;
@@ -1838,14 +1921,14 @@ export class HUD {
       const totalMax = entities.reduce((a, e) => a + e.maxHp, 0);
       const frac = totalMax > 0 ? totalHp / totalMax : 0;
       const stance = units[0]?.stance ?? 'aggressive';
-      // The breakdown lives in the status column so no line has to be clipped:
-      // up to three types by strength, then a count of the rest.
+      // The breakdown is one line of the status column: a stack of rows would
+      // be taller than the band at a small interface scale and clip the tail of
+      // the list, so the mix is a single ellipsised line that names every type.
       const mix = [...types.entries()].sort((a, b) => b[1] - a[1]);
-      const shown = mix.slice(0, 3);
-      const hidden = mix.length - shown.length;
-      const composition = `
-        ${shown.map(([id, n]) => `<div class="group-mix"><span>${escapeHtml(UNITS[id]?.shortName ?? id)}</span><b>×${n}</b></div>`).join('')}
-        ${hidden > 0 ? `<div class="group-mix more"><span>${hidden} more type${hidden === 1 ? '' : 's'}</span></div>` : ''}`;
+      const mixLine = mix.map(([id, n]) => `${UNITS[id]?.shortName ?? id} ×${n}`).join(' · ');
+      const composition = mixLine
+        ? `<div class="group-mix"><span title="${escapeHtml(mixLine)}">${escapeHtml(mixLine)}</span></div>`
+        : '';
       const role = units.length === 0 ? 'STRUCTURES' : `${stance.toUpperCase()} STANCE`;
       body.innerHTML = `
         <div class="sel-primary">
@@ -1947,10 +2030,11 @@ export class HUD {
         </div>`;
     } else if (e.kind === 'building' && def) {
       const q = e.queue[0];
-      // Stat cells are one short value each, so the long-form benefit is
-      // abbreviated here; the full wording lives in the data description.
-      const benefit = BUILDINGS[e.defId]
-        ? structureBenefit(BUILDINGS[e.defId])
+      // A value that does not fit its cell is ellipsised, so it carries the
+      // full sentence in its title rather than losing it.
+      const benefitFull = BUILDINGS[e.defId] ? structureBenefit(BUILDINGS[e.defId]) : '';
+      const benefit = benefitFull
+        ? benefitFull
             .replace(' requisition/s', ' req/s')
             .replace(' materials/s', ' mat/s')
             .replace('-tile scan', ' tile scan')
@@ -1976,10 +2060,10 @@ export class HUD {
           : stateLabel(e);
       stats = `
         <div class="stat-grid">
-          <div class="stat"><span>STATE</span><b>${escapeHtml(compactState)}</b></div>
-          <div class="stat"><span>${benefit ? 'BENEFIT' : 'QUEUE'}</span><b>${benefit ? escapeHtml(benefit) : `${e.queue.length}${q ? ` · ${UNITS[q.defId]?.shortName ?? q.defId}` : ''}`}</b></div>
+          <div class="stat"><span>STATE</span><b title="${escapeHtml(compactState)}">${escapeHtml(compactState)}</b></div>
+          <div class="stat"><span>${benefit ? 'BENEFIT' : 'QUEUE'}</span><b title="${escapeHtml(benefitFull)}">${benefit ? escapeHtml(benefit) : `${e.queue.length}${q ? ` · ${UNITS[q.defId]?.shortName ?? q.defId}` : ''}`}</b></div>
           <div class="stat"><span>VISION</span><b>${def.vision} tiles</b></div>
-          <div class="stat"><span>SENSORS</span><b>${escapeHtml(sensorFor(e).label)}</b></div>
+          <div class="stat"><span>SENSORS</span><b title="${escapeHtml(sensorFor(e).label)}">${escapeHtml(sensorFor(e).label)}</b></div>
           <div class="stat"><span>POWER</span><b${powerTitle ? ` title="${escapeHtml(powerTitle)}"` : ''}>${gridPower > 0 ? `+${gridPower}` : `${gridPower}`}</b></div>
         </div>`;
     }
@@ -2034,17 +2118,19 @@ export class HUD {
             <div class="sel-role">${escapeHtml(roleText)}</div>
           </div>
         </div>
+        ${vitalBlock ? `<div class="sel-vitals">${vitalBlock}</div>` : ''}
       </div>
       <div class="sel-stats">${stats}</div>
       <div class="sel-notes">
-        ${vitalBlock}
         ${statusLines}
         ${hint ? `<div class="sel-hint">${hint}</div>` : ''}
       </div>
-      <div class="sel-actions">
+      <div class="sel-squares">
         ${isOwn ? this.abilityButtons([e]) : ''}
         ${isOwn ? this.sellButton(e) : ''}
         ${isOwn ? this.moduleButtons([e]) : ''}
+      </div>
+      <div class="sel-actions">
         ${isOwn ? this.stanceButtons([e]) : ''}
         ${this.garrisonOrderButtons([e])}
         ${isOwn ? this.groupChips([e]) : ''}
@@ -2151,10 +2237,9 @@ export class HUD {
     return `<div class="ability-row">
       ${actions
         .map(
-          (action) => `<button class="ability-btn ${action.ready ? 'ready' : 'reloading'}" data-ability="${escapeHtml(action.upgradeId)}" data-ability-unit="${unit.id}" title="${escapeHtml(`${action.name} — ${action.detail}`)}" aria-label="${escapeHtml(`${action.name}, ${action.detail}`)}" aria-disabled="${action.ready ? 'false' : 'true'}">
-            ${icon(action.icon, 'ability-icon')}
-            <span class="ability-copy"><b>${escapeHtml(action.name.toUpperCase())}</b><span>${escapeHtml(action.detail)}</span></span>
-            <kbd class="ability-key" aria-hidden="true">${escapeHtml(action.label)}</kbd>
+          (action) => `<button class="sel-square ability-btn ${action.ready ? 'ready' : 'reloading'}" data-ability="${escapeHtml(action.upgradeId)}" data-ability-unit="${unit.id}" title="${escapeHtml(`${action.name} — ${action.description} · ${action.detail} · Key ${action.label}`)}" aria-label="${escapeHtml(`${action.name}, ${action.detail}`)}" aria-disabled="${action.ready ? 'false' : 'true'}">
+            ${icon(action.icon, 'square-icon')}
+            ${action.ready ? '' : `<span class="square-badge">${escapeHtml(action.cooldown > 0 ? `${Math.ceil(action.cooldown)}s` : '—')}</span>`}
           </button>`,
         )
         .join('')}
@@ -2198,10 +2283,9 @@ export class HUD {
     return `<div class="ability-row module-row">
       ${actions
         .map(
-          (action) => `<button class="ability-btn module-btn ${action.ready ? 'ready' : action.installed ? 'installed' : 'reloading'}" data-module="${escapeHtml(action.moduleId)}" data-module-building="${building.id}" title="${escapeHtml(`${action.name} — ${action.detail}`)}" aria-label="${escapeHtml(`${action.name}, ${action.detail}`)}" aria-disabled="${action.ready ? 'false' : 'true'}">
-            ${icon(action.icon, 'ability-icon')}
-            <span class="ability-copy"><b>${escapeHtml(action.name.toUpperCase())}</b><span>${escapeHtml(action.detail)}</span></span>
-            <kbd class="ability-key" aria-hidden="true">${escapeHtml(action.label)}</kbd>
+          (action) => `<button class="sel-square module-btn ${action.ready ? 'ready' : action.installed ? 'installed' : 'reloading'}" data-module="${escapeHtml(action.moduleId)}" data-module-building="${building.id}" title="${escapeHtml(`${action.name} — ${action.description} · ${action.detail} · Key ${action.label}`)}" aria-label="${escapeHtml(`${action.name}, ${action.detail}`)}" aria-disabled="${action.ready ? 'false' : 'true'}">
+            ${icon(action.icon, 'square-icon')}
+            ${action.installed ? '<span class="square-badge ok">✓</span>' : ''}
           </button>`,
         )
         .join('')}
@@ -2245,19 +2329,61 @@ export class HUD {
     if (!game || e.kind !== 'building' || e.construction || isIndestructibleStructure(e.defId)) {
       return '';
     }
+    const quote = game.sellQuote(e.id);
     if (e.deconstruct) {
-      const quote = game.sellQuote(e.id);
-      return `<div class="sel-orders sell-orders"><span class="sell-note">DISMANTLING · ${Math.ceil(e.deconstruct.remaining)}s · ${quote?.mats ?? 0}M/${quote?.req ?? 0}R</span></div>`;
+      const seconds = Math.ceil(e.deconstruct.remaining);
+      const title = `Dismantling — ${seconds}s remaining, ${quote?.mats ?? 0}M/${quote?.req ?? 0}R returned when it clears`;
+      return `<div class="sel-orders sell-orders">
+        <button class="sel-square sell-btn dismantling" disabled title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">
+          ${icon('sell', 'square-icon')}
+          <span class="square-badge">${seconds}s</span>
+        </button>
+      </div>`;
     }
     const status = game.sellStatus(this.app.localPlayerId, e.id);
-    const quote = game.sellQuote(e.id);
     if (!quote) return '';
+    const name = BUILDINGS[e.defId]?.name ?? e.defId;
+    // First click arms the sale; nothing is dispatched until the confirming
+    // click, so a stray click can never start a deconstruction.
+    if (this.sellArmed === e.id) {
+      const confirmTitle = `Confirm sale of ${name} — ${quote.mats}M/${quote.req}R returned after ${quote.seconds}s of deconstruction`;
+      return `<div class="sel-orders sell-orders confirm">
+        <button class="sel-square sell-btn danger" data-sell="${e.id}" title="${escapeHtml(confirmTitle)}" aria-label="${escapeHtml(confirmTitle)}" ${status.ok ? '' : 'disabled'}>
+          ${icon('check', 'square-icon')}
+        </button>
+        <button class="sel-square sell-btn cancel" data-sell-cancel="${e.id}" title="Keep ${escapeHtml(name)} — no sale" aria-label="Cancel sale">
+          ${icon('close', 'square-icon')}
+        </button>
+      </div>`;
+    }
     const title = status.ok
-      ? `Sell for ${quote.mats}M/${quote.req}R after ${quote.seconds}s of deconstruction`
-      : status.reason;
+      ? `Sell ${name} — ${quote.mats}M/${quote.req}R returned after ${quote.seconds}s of deconstruction. Click again to confirm.`
+      : `${status.reason} (${quote.mats}M/${quote.req}R after ${quote.seconds}s)`;
     return `<div class="sel-orders sell-orders">
-      <button class="mini-btn danger" data-sell="${e.id}" title="${escapeHtml(title)}" ${status.ok ? '' : 'disabled'}>SELL · ${quote.mats}M/${quote.req}R</button>
+      <button class="sel-square sell-btn danger" data-sell="${e.id}" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}" ${status.ok ? '' : 'disabled'}>
+        ${icon('sell', 'square-icon')}
+      </button>
     </div>`;
+  }
+
+  /** Offer the sale for confirmation; it expires on its own after a few seconds. */
+  private armSale(id: number): void {
+    this.disarmSale();
+    this.sellArmed = id;
+    this.sellArmedAt = performance.now();
+    this.sellArmTimer = window.setTimeout(() => {
+      if (this.sellArmed !== id) return;
+      this.sellArmed = null;
+      this.sellArmTimer = 0;
+      this.renderSelection(true);
+    }, SALE_CONFIRM_MS);
+    this.renderSelection(true);
+  }
+
+  private disarmSale(): void {
+    if (this.sellArmTimer) window.clearTimeout(this.sellArmTimer);
+    this.sellArmTimer = 0;
+    this.sellArmed = null;
   }
 
   private bindSellButtons(): void {
@@ -2265,7 +2391,21 @@ export class HUD {
       btn.addEventListener('click', () => {
         const id = Number(btn.dataset.sell);
         if (!Number.isFinite(id) || id <= 0) return;
+        if (this.sellArmed !== id) {
+          this.armSale(id);
+          return;
+        }
+        // The confirming click has to be a deliberate second action, not the
+        // second half of a double-click that started the arm.
+        if (performance.now() - this.sellArmedAt < SALE_CONFIRM_GRACE_MS) return;
+        this.disarmSale();
         this.app.sellBuilding(id);
+        this.renderSelection(true);
+      });
+    });
+    this.root?.querySelectorAll<HTMLElement>('[data-sell-cancel]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.disarmSale();
         this.renderSelection(true);
       });
     });
@@ -3548,30 +3688,32 @@ export class HUD {
           <small>${verdictSub}</small>
         </div>
         <div class="end-card">
-          <span class="result">${result === 'draw' ? 'OPERATION ENDED' : victory ? 'OPERATION COMPLETE' : 'OPERATION FAILED'}</span>
-          <h2 class="${victory ? '' : 'defeat'}">${heading}</h2>
-          <p>${copy}</p>
-          ${
-            missionResult
-              ? missionDebriefMarkup(missionResult, {
-                  ...(missionDoc ? { mission: missionDoc } : {}),
-                  outlook: campaignOutlook,
-                })
-              : ''
-          }
-          ${campaignNote}
-          ${testNote}
-          <div class="end-stats">
-            <div><span>MISSION TIME</span><b>${missionResult ? missionClock(missionResult.elapsedSeconds) : fmtTime(game.state.tick)}</b></div>
-            <div><span>UNITS BUILT</span><b>${stats?.unitsBuilt ?? 0}</b></div>
-            <div><span>UNITS LOST</span><b>${stats?.unitsLost ?? 0}</b></div>
-            <div><span>KILLS</span><b>${stats?.kills ?? 0}</b></div>
-            <div><span>MATERIALS</span><b>${Math.round(stats?.matsGathered ?? 0)}</b></div>
-            <div><span>STRUCTURES</span><b>${stats?.buildingsBuilt ?? 0}</b></div>
-            <div><span>ENEMY LOSSES</span><b>${enemyStats?.unitsLost ?? 0}</b></div>
-            <div><span>RELAYS</span><b>${p?.relayCount ?? 0}</b></div>
+          <div class="end-body">
+            <span class="result">${result === 'draw' ? 'OPERATION ENDED' : victory ? 'OPERATION COMPLETE' : 'OPERATION FAILED'}</span>
+            <h2 class="${victory ? '' : 'defeat'}">${heading}</h2>
+            <p>${copy}</p>
+            ${
+              missionResult
+                ? missionDebriefMarkup(missionResult, {
+                    ...(missionDoc ? { mission: missionDoc } : {}),
+                    outlook: campaignOutlook,
+                  })
+                : ''
+            }
+            ${campaignNote}
+            ${testNote}
+            <div class="end-stats">
+              <div><span>MISSION TIME</span><b>${missionResult ? missionClock(missionResult.elapsedSeconds) : fmtTime(game.state.tick)}</b></div>
+              <div><span>UNITS BUILT</span><b>${stats?.unitsBuilt ?? 0}</b></div>
+              <div><span>UNITS LOST</span><b>${stats?.unitsLost ?? 0}</b></div>
+              <div><span>KILLS</span><b>${stats?.kills ?? 0}</b></div>
+              <div><span>MATERIALS</span><b>${Math.round(stats?.matsGathered ?? 0)}</b></div>
+              <div><span>STRUCTURES</span><b>${stats?.buildingsBuilt ?? 0}</b></div>
+              <div><span>ENEMY LOSSES</span><b>${enemyStats?.unitsLost ?? 0}</b></div>
+              <div><span>RELAYS</span><b>${p?.relayCount ?? 0}</b></div>
+            </div>
+            <div class="end-career-slot" id="end-career"></div>
           </div>
-          <div class="end-career-slot" id="end-career"></div>
           <div class="end-actions">
             ${primaryAction}
             ${secondaryAction}

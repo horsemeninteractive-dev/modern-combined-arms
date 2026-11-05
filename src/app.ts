@@ -92,6 +92,13 @@ import type { SaveData } from './sim/save';
 import { AudioEngine } from './ui/audio';
 import { combatMix } from './ui/audioSpatial';
 import {
+  ambiencePlan,
+  framingGain,
+  structureAmbience,
+  unitAmbience,
+  type AmbienceCandidate,
+} from './ui/ambience';
+import {
   defaultMusicPlaylist,
   moveMusicTrack,
   normaliseMusicPlaylist,
@@ -436,6 +443,8 @@ export class App {
   /** Last idle unit reached by each idle-unit hotkey, so presses cycle. */
   private idleCursor = new Map<string, number>();
   private accumulator = 0;
+  /** Seconds since the battlefield bed last asked for a new plan. */
+  private ambienceClock = 0;
   private lastFrame = 0;
   /** Scenario used by the static loading backdrop; null once a battle owns the canvas. */
   private menuScenario: Scenario | null = null;
@@ -2472,6 +2481,7 @@ export class App {
     this.overlay.clear();
     this.renderer.setGame(null);
     this.audio.stopMatchMusic();
+    this.audio.stopAmbience();
     this.audio.resetAnnouncer();
     this.startMenuBackdrop();
     this.applyDifficultyUi();
@@ -2665,6 +2675,17 @@ export class App {
       this.mode = 'none';
       this.placeDefId = null;
       this.accumulator = 0;
+      // The opening scene belongs to the launch, not to a loaded save. It frames
+      // the battlefield that has just appeared and never advances the mission.
+      const openingCinematic = gameScenario.mission?.cinematics.find(
+        (entry) => entry.kind === 'opening',
+      );
+      // A scene that opens the battle must own its very first painted frame. The
+      // chrome is put away before the shell is built, so the interface is never
+      // assembled on screen only to be pulled down again a frame later.
+      const openingWillPlay =
+        !!openingCinematic && this.settings.cinematics && !this.cinematic;
+      if (openingWillPlay) this.hud.setCinemaHidden(true);
       this.hud.mount(game);
       this.lastEventSeq = 0;
       this.frameBattleCamera();
@@ -2673,18 +2694,16 @@ export class App {
       this.missionTestScenario = options.missionTest ? cloneScenario(gameScenario) : null;
       this.setLoading(false);
       this.audio.startMatchMusic();
-      // The opening scene belongs to the launch, not to a loaded save. It frames
-      // the battlefield that has just appeared and never advances the mission.
-      const openingCinematic = gameScenario.mission?.cinematics.find(
-        (entry) => entry.kind === 'opening',
-      );
       if (openingCinematic) {
-        this.playCinematic(
+        const started = this.playCinematic(
           openingCinematic,
           'opening',
           'OPERATION OPENING',
           gameScenario.mission?.title ?? gameScenario.meta.name,
         );
+        // Cinematics switched off, or a scene that already holds the frame: the
+        // battle still needs an interface, so give the chrome back immediately.
+        if (!started) this.hud.setCinemaHidden(false);
       }
       // The opening line belongs to the battle, not to the deck: the announcer is
       // reset above, so each engagement establishes its own field once.
@@ -3043,6 +3062,7 @@ export class App {
     } else if (this.screen === 'battle' && this.game) {
       const sig = this.hudSignatureOf(this.game);
       this.hud.update(this.game, dt, sig);
+      this.updateBattlefieldAmbience(dt);
       this.tutorial?.update(dt);
       this.maybeStartInMissionCinematic();
       this.checkVictory();
@@ -3150,6 +3170,93 @@ export class App {
     }
   }
 
+  /**
+   * Describe the battlefield bed for this frame: engines on the ground and
+   * working structures that the local commander can actually see.
+   *
+   * Fog decides who gets a voice. A charted structure is memory, not a running
+   * plant, and an unseen column must not give itself away by its engine — the
+   * bed is presentation, but it still must not leak what the map hides.
+   */
+  private ambienceCandidates(): AmbienceCandidate[] {
+    const game = this.game;
+    if (!game) return [];
+    const camera = this.renderer.camera;
+    const width = Math.max(1, camera.width);
+    const height = Math.max(1, camera.height);
+    // Screen position, not ground position: the ask is that the mix follows the
+    // picture. The camera's own projection already folds in pan, the HUD's
+    // framing lift and the zoom, so one call per source is all the bed needs.
+    const project = (x: number, z: number) => {
+      const p = camera.worldToScreen(x, 0, z);
+      return { sx: (p.x / width) * 2 - 1, sy: (p.y / height) * 2 - 1 };
+    };
+    const out: AmbienceCandidate[] = [];
+    for (const e of game.state.entities) {
+      if (e.hp <= 0) continue;
+      if (!game.isVisibleTo(this.localPlayerId, e.id)) continue;
+      if (e.kind === 'unit') {
+        const def = UNITS[e.defId];
+        if (!def) continue;
+        const tone = unitAmbience({
+          domain: def.domain,
+          moveClass: def.moveClass,
+          armour: def.armour,
+          role: def.role,
+          speed: def.speed,
+          moving: e.state === 'moving',
+          harvesting: !!e.harvester,
+          garrisoned: !!e.garrisonId,
+          dived: !!e.submarine?.dived,
+        });
+        if (!tone) continue;
+        out.push({
+          id: e.id,
+          kind: tone.kind,
+          level: tone.level,
+          pitch: tone.pitch,
+          motion: tone.motion,
+          ...project(e.x, e.z),
+        });
+        continue;
+      }
+      // A site is scaffolding and a sale is a teardown: neither is a working
+      // plant, and both already have their own cues.
+      if (e.construction || e.deconstruct) continue;
+      const def = BUILDINGS[e.defId];
+      if (!def) continue;
+      const tone = structureAmbience(def);
+      if (!tone) continue;
+      // A working plant hums at a steady speed: some life, no travel.
+      out.push({
+        id: e.id,
+        kind: 'facility',
+        level: tone.level,
+        pitch: tone.pitch,
+        motion: 0.15,
+        ...project(e.x, e.z),
+      });
+    }
+    return out;
+  }
+
+  /**
+   * Steer the bed ten times a second rather than once per frame.
+   *
+   * The gains are smoothed inside the audio graph, so a 10 Hz plan sounds
+   * continuous while costing a fraction of the walk over the entity list — the
+   * bed is ambience, not a cue that has to land on a tick.
+   */
+  private updateBattlefieldAmbience(dt: number): void {
+    if (!this.game) return;
+    this.ambienceClock += dt;
+    if (this.ambienceClock < 0.1) return;
+    this.ambienceClock = 0;
+    this.audio.updateAmbience(
+      ambiencePlan(this.ambienceCandidates(), { gainScale: framingGain(this.renderer.camera.zoom) }),
+    );
+  }
+
   /* ------------------------------------------------------------------ */
   /* Cinematic presentation                                              */
   /* ------------------------------------------------------------------ */
@@ -3222,6 +3329,8 @@ export class App {
     );
     this.cinematic = player;
     this.cinematicContext = context;
+    // A scene owns the frame: the chrome leaves with it and returns afterwards.
+    this.hud.setCinemaHidden(true);
     this.hideCinematicBackground(true);
     this.cinematicOverlay.show({
       eyebrow,
@@ -3242,6 +3351,8 @@ export class App {
       this.menuScenario = null;
     }
     this.cinematicOverlay.hide();
+    // The commander's own HUD preference decides what comes back, not the scene.
+    this.hud.setCinemaHidden(false);
     this.hideCinematicBackground(false);
   }
 
@@ -3499,6 +3610,9 @@ export class App {
     this.mode = 'none';
     this.placeDefId = null;
     this.hud.selectionChanged();
+    // The map answers a click before a unit does: one short tick under the
+    // bark, so a click that caught nothing still feels like it landed.
+    this.audio.play('select');
     this.playSelectionBark();
   }
 
@@ -3765,7 +3879,7 @@ export class App {
     if (movable.length > 0) {
       const cmd: Command = { type: 'move', team: this.localPlayerId, ids: movable.map((e) => e.id), x, z, attackMove };
       this.dispatchCommand(cmd);
-      this.audio.play('ui');
+      this.audio.play('order');
       this.mode = 'none';
       return true;
     }
@@ -3780,7 +3894,7 @@ export class App {
         return false;
       }
       this.dispatchCommand({ type: 'setRally', team: this.localPlayerId, buildingId: target.id, x, z });
-      this.audio.play('ui');
+      this.audio.play('order');
       this.mode = 'none';
       this.notify(target.defId === 'shipyard' ? 'Naval rally point set.' : 'Rally point set.', 'info');
       return true;
@@ -3807,7 +3921,7 @@ export class App {
       return false;
     }
     this.dispatchCommand({ type: 'attack', team: this.localPlayerId, ids: attackers.map((e) => e.id), targetId });
-    this.audio.play('ui');
+    this.audio.play('order');
     this.mode = 'none';
     return true;
   }
@@ -3821,7 +3935,7 @@ export class App {
       return;
     }
     this.dispatchCommand({ type: 'capture', team: this.localPlayerId, ids: engineers.map((e) => e.id), targetId });
-    this.audio.play('ui');
+    this.audio.play('order');
     this.mode = 'none';
   }
 
@@ -3836,7 +3950,7 @@ export class App {
       return;
     }
     this.dispatchCommand({ type: 'garrison', team: this.localPlayerId, ids: infantry.map((e) => e.id), targetId });
-    this.audio.play('ui');
+    this.audio.play('order');
     this.mode = 'none';
   }
 
@@ -3855,7 +3969,7 @@ export class App {
       return;
     }
     this.dispatchCommand({ type: 'ungarrison', team: this.localPlayerId, ids });
-    this.audio.play('ui');
+    this.audio.play('order');
     this.mode = 'none';
   }
 
@@ -3868,7 +3982,7 @@ export class App {
       return;
     }
     this.dispatchCommand({ type: 'repair', team: this.localPlayerId, ids: engineers.map((e) => e.id), targetId });
-    this.audio.play('ui');
+    this.audio.play('order');
     this.mode = 'none';
   }
 
@@ -3883,7 +3997,7 @@ export class App {
       .map((e) => e.id);
     if (ids.length === 0) return;
     this.dispatchCommand({ type: 'stop', team: this.localPlayerId, ids });
-    this.audio.play('ui');
+    this.audio.play('order');
   }
 
   commandHold(): void {
@@ -3891,7 +4005,7 @@ export class App {
     const ids = this.ownSelected().filter((e) => e.kind === 'unit').map((e) => e.id);
     if (ids.length === 0) return;
     this.dispatchCommand({ type: 'hold', team: this.localPlayerId, ids });
-    this.audio.play('ui');
+    this.audio.play('order');
   }
 
   setStance(stance: Stance): void {
@@ -3899,7 +4013,7 @@ export class App {
     const ids = this.ownSelected().filter((e) => e.kind === 'unit').map((e) => e.id);
     if (ids.length === 0) return;
     this.dispatchCommand({ type: 'stance', team: this.localPlayerId, ids, stance });
-    this.audio.play('ui');
+    this.audio.play('order');
   }
 
   /**
@@ -3920,7 +4034,7 @@ export class App {
       return;
     }
     this.dispatchCommand({ type: 'useAbility', team: this.localPlayerId, unitId, abilityId });
-    this.audio.play('ui');
+    this.audio.play('order');
   }
 
   /**
@@ -5043,6 +5157,7 @@ export class App {
     this.audio.init();
     this.audio.stopMenuMusic();
     this.audio.stopMatchMusic();
+    this.audio.stopAmbience();
     this.stopAttract();
     this.menuScenario = null;
     document.getElementById('menu-screen')?.classList.add('hidden');

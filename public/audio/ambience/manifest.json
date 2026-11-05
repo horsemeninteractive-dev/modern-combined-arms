@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "loops": [
+    {
+      "kind": "trackedHeavy",
+      "src": "tank-loop.ogg",
+      "gain": 1.05,
+      "idleRate": 0.88,
+      "moveRate": 1
+    },
+    {
+      "kind": "trackedLight",
+      "src": "diesel-loop.ogg",
+      "gain": 0.92,
+      "idleRate": 0.72,
+      "moveRate": 0.86
+    },
+    {
+      "kind": "truck",
+      "src": "diesel-loop.ogg",
+      "gain": 0.86,
+      "idleRate": 0.6,
+      "moveRate": 0.72
+    },
+    {
+      "kind": "buggy",
+      "src": "jeep-loop.ogg",
+      "gain": 0.95,
+      "idleRate": 0.82,
+      "moveRate": 1.02
+    },
+    {
+      "kind": "facility",
+      "src": "generator-loop.mp3",
+      "gain": 0.8,
+      "idleRate": 1,
+      "moveRate": 1
+    }
+  ],
+  "steps": {
+    "src": [
+      "steps/cloth-1.ogg",
+      "steps/cloth-2.ogg",
+      "steps/cloth-3.ogg",
+      "steps/cloth-4.ogg",
+      "steps/leather-1.ogg",
+      "steps/leather-2.ogg"
+    ],
+    "strideSeconds": 0.46,
+    "gain": 2.6
+  },
+  "credits": [
+    {
+      "title": "Underwater or space engine rumble",
+      "author": "gmason",
+      "licence": "CC0 1.0",
+      "source": "https://opengameart.org/content/underwater-or-space-engine-rumble",
+      "files": ["tank-loop.ogg"]
+    },
+    {
+      "title": "Car sound effects pack (low quality)",
+      "author": "GGBotNet",
+      "licence": "CC0 1.0",
+      "source": "https://opengameart.org/content/car-sound-effects-pack-low-quality",
+      "files": ["jeep-loop.ogg", "diesel-loop.ogg"]
+    },
+    {
+      "title": "Generator loop",
+      "author": "YCbCr",
+      "licence": "CC0 1.0",
+      "source": "https://opengameart.org/content/generator-loop",
+      "files": ["generator-loop.mp3"]
+    },
+    {
+      "title": "Footsteps — leather, cloth, armour",
+      "author": "HaelDB",
+      "licence": "CC0 1.0",
+      "source": "https://opengameart.org/content/footsteps-leather-cloth-armor",
+      "files": [
+        "steps/cloth-1.ogg",
+        "steps/cloth-2.ogg",
+        "steps/cloth-3.ogg",
+        "steps/cloth-4.ogg",
+        "steps/leather-1.ogg",
+        "steps/leather-2.ogg"
+      ]
+    }
+  ]
+}

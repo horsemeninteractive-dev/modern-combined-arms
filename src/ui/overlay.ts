@@ -165,8 +165,10 @@ export class Overlay {
 
     // A site under construction keeps its building's own outline for the whole
     // build: the growing model fills in a frame that is always the real shape.
+    // A structure being sold runs the same frame in reverse as its model sinks
+    // back out of it.
     for (const e of state.entities) {
-      if (e.kind !== 'building' || !e.construction || e.hp <= 0) continue;
+      if (e.kind !== 'building' || (!e.construction && !e.deconstruct) || e.hp <= 0) continue;
       if (e.owner !== app.localPlayerId && !game.isVisibleTo(app.localPlayerId, e.id)) continue;
       this.drawConstructionOutline(app, e, state);
     }
@@ -601,8 +603,11 @@ export class Overlay {
     const player = state.scenario.players.find((entry) => entry.id === e.owner);
     const colour = player?.color ?? tryIdentityDef(player?.factionId ?? '')?.color ?? BLUE;
     // The frame hands over to the built structure: strongest on a bare site,
-    // gone by the time the model has filled it.
-    const fade = Math.max(0, 1 - e.buildProgress);
+    // gone by the time the model has filled it. A sale reverses the handover,
+    // so the outline returns as the model is taken down.
+    const fade = e.deconstruct && e.deconstruct.total > 0
+      ? Math.max(0, Math.min(1, 1 - e.deconstruct.remaining / e.deconstruct.total))
+      : Math.max(0, 1 - e.buildProgress);
     this.strokeBuildingOutline(
       app,
       e.defId,

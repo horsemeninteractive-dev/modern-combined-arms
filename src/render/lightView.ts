@@ -188,7 +188,9 @@ export function buildLightView(input: LightViewInput): GpuLight[] {
     if (kind === 'none') continue;
 
     if (e.kind === 'building') {
-      if (e.owner >= 0 && (!powered(e.owner) || e.construction)) continue;
+      // A structure being sold for parts is no longer a working base: its
+      // floodlights go out with its windows as soon as the sale starts.
+      if (e.owner >= 0 && (!powered(e.owner) || e.construction || e.deconstruct)) continue;
       const pose = input.pose?.(e) ?? { x: e.x, z: e.z, facing: e.facing };
       pushStructureLights(out, e, pose, kind, gain * strength, groundY, limit);
       continue;
