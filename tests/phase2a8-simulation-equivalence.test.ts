@@ -13,11 +13,18 @@ import baseline from './fixtures/phase2a8-path-baseline.json';
  * path-scaling probe against that old capture.
  *
  * The recorded fingerprints have since been re-anchored whenever the state hash
- * gained authoritative content (veterancy, research, and now each hull's ability
- * reload plus the live smoke list). Only the checksums move: the fixture's paths,
- * unit and event summaries are re-asserted unchanged, which is what this test is
- * really about — the optimised pathfinder still produces the pre-optimisation
- * battle.
+ * gained authoritative content (veterancy, research, each hull's ability reload
+ * plus the live smoke list, and now the materials-plant gate on the headquarters
+ * trickle). Those re-anchors move only checksums: the fixture's paths, unit and
+ * event summaries are re-asserted unchanged, which is what this test is really
+ * about — the optimised pathfinder still produces the pre-optimisation battle.
+ *
+ * Two authored exceptions are recorded in the fixture itself. The 80-unit order's
+ * formation slots now walk out to ground a hull can actually reach, so all 80
+ * orders are accepted instead of eight being refused. And one artillery hull's
+ * final route detours around a standing structure rather than driving into it —
+ * the building-avoidance fix, visible here as a three-leg path in place of the
+ * old straight run.
  */
 
 function checksum(text: string): string {

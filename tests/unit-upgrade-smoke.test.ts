@@ -174,8 +174,9 @@ describe('recon smokescreen activation', () => {
     const ack = game.state.events.find((event) => event.code === 'abilityUsed');
     expect(ack?.type).toBe('orderAck');
     expect(ack?.entityId).toBe(recon.id);
-    // The ability itself costs nothing; the reload is the limiter. The bank only
-    // moved because the headquarters trickles a little material each second.
+    // The ability itself costs nothing; the reload is the limiter. The arena has
+    // no materials plant, so the headquarters pays no trickle and the bank does
+    // not move at all.
     expect(game.player(0)!.mats - bank).toBeLessThan(0.1);
   });
 

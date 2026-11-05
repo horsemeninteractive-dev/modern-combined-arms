@@ -49,7 +49,7 @@ Neither issue is an observed recovery, authority, deadline or data-integrity fai
 
 `wrangler deployments list` and `wrangler versions view` were run after the soak. The active version and tag still match Phase 2A.13; the health endpoint still returns `build: "phase2a13-staging"`. No deployment occurred after Phase 2A.13 before or during this soak.
 
-**Artifact-hash limitation.** Cloudflare’s version metadata does not expose a downloadable module digest. The version ID, tag, creation time, health label and deployment history were checked, and the local uploaded bundle still hashes to the digest recorded at deployment. This is not a byte-for-byte download of the deployed module. Raw evidence: [`phase2a14-deployment-verification.json`](staging-evidence/phase2a14-deployment-verification.json), [`phase2a14-deployments-post.log`](staging-evidence/phase2a14-deployments-post.log), [`phase2a14-version-post.log`](staging-evidence/phase2a14-version-post.log), [`phase2a14-artifact-post.txt`](staging-evidence/phase2a14-artifact-post.txt).
+**Artifact-hash limitation.** Cloudflare’s version metadata does not expose a downloadable module digest. The version ID, tag, creation time, health label and deployment history were checked, and the local uploaded bundle still hashes to the digest recorded at deployment. This is not a byte-for-byte download of the deployed module. Raw evidence: [`phase2a14-deployment-verification.json`](../staging-evidence/phase2a14-deployment-verification.json), [`phase2a14-deployments-post.log`](../staging-evidence/phase2a14-deployments-post.log), [`phase2a14-version-post.log`](../staging-evidence/phase2a14-version-post.log), [`phase2a14-artifact-post.txt`](../staging-evidence/phase2a14-artifact-post.txt).
 
 ---
 
@@ -619,4 +619,4 @@ Supporting files at `staging-evidence/`:
 - `phase2a14-30m-console.log`
 - `phase2a14-worker-tail.log`
 
-See [`staging-evidence/phase2a14-evidence-README.md`](staging-evidence/phase2a14-evidence-README.md) for raw-file notes, reproduction commands and coverage caveats.
+See [`staging-evidence/phase2a14-evidence-README.md`](../staging-evidence/phase2a14-evidence-README.md) for raw-file notes, reproduction commands and coverage caveats.

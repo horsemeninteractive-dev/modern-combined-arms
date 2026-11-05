@@ -21,16 +21,19 @@ const ROSTER: BuildingDef[] = [
     // the map is a severe setback rather than a permanent dead end.
     matsPerSec: 1,
     matsPerSecBackstop: true,
-    // Engineering fallback: the HQ trains engineers only while no vehicle
-    // factory is operational (see Game.productionStatus).
+    // Recovery fallback: the HQ trains engineers and haulers only while no
+    // vehicle factory is operational (see Game.productionStatus). Those two are
+    // the whole rebuild chain — without an engineer nothing is built, and
+    // without a hauler nothing is earned — so the pair has to be reachable from
+    // the headquarters when the factory is gone.
     produces: 'land',
-    productionList: ['engineer'],
+    productionList: ['engineer', 'harvester'],
     // The headquarters runs its own generator, but only enough for the opening:
     // barracks, factory, refinery and radar sit just inside 50, so the first
     // expansion is what makes a Turbine Plant necessary rather than optional.
     power: 50,
     description:
-      'The battlegroup command element. Loss of the Command Post ends the operation. Provides limited requisition income and, while no working drop-off remains or the last deposit on the map is worked out, a small material trickle so a stripped base can recover; it can also train a replacement Combat Engineer when no Vehicle Factory is operational.',
+      'The battlegroup command element. Loss of the Command Post ends the operation. Provides limited requisition income and, while no working drop-off remains or the last deposit on the map is worked out, a small material trickle so a stripped base can recover; it can also train a replacement Combat Engineer or Harvester when no Vehicle Factory is operational.',
     icon: 'command',
     hotkey: 'H',
   },

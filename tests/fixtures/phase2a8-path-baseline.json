@@ -139,31 +139,31 @@
       },
       {
         "tick": 1,
-        "checksum": "2e6080094ae40ea5"
+        "checksum": "61378b4d07634c17"
       },
       {
         "tick": 2,
-        "checksum": "3478d8f7af996509"
+        "checksum": "761dd400c88f39fb"
       },
       {
         "tick": 3,
-        "checksum": "17881119cd15572e"
+        "checksum": "c98d3897ac68504a"
       },
       {
         "tick": 10,
-        "checksum": "34b0ce48904e9ac2"
+        "checksum": "52646472462094fc"
       },
       {
         "tick": 30,
-        "checksum": "48d4d2e5c6cede73"
+        "checksum": "b6412011004e53b3"
       },
       {
         "tick": 60,
-        "checksum": "a52fdb437628417e"
+        "checksum": "39b638ce72761401"
       },
       {
         "tick": 100,
-        "checksum": "113d567b1f0a4240"
+        "checksum": "55518d08e0c1c322"
       }
     ],
     "firstTickPaths": [
@@ -2830,8 +2830,12 @@
         },
         "path": [
           {
-            "x": 146,
-            "z": 150
+            "x": 190,
+            "z": 142
+          },
+          {
+            "x": 142,
+            "z": 154
           },
           {
             "x": 130,
@@ -3300,23 +3304,23 @@
       },
       {
         "tick": 1,
-        "checksum": "18978707cf367486"
+        "checksum": "0b5348c3848b3ff6"
       },
       {
         "tick": 2,
-        "checksum": "5328f3c64f379abb"
+        "checksum": "1a3a452f6d5e5903"
       },
       {
         "tick": 10,
-        "checksum": "f981e93066e0a100"
+        "checksum": "111b8613ca13d1ac"
       },
       {
         "tick": 30,
-        "checksum": "9204ab6423d585ca"
+        "checksum": "be3252597a2b8462"
       },
       {
         "tick": 100,
-        "checksum": "9a4faa522109a71e"
+        "checksum": "814145a1c6a3a8f2"
       }
     ]
   },

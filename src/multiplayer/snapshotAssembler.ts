@@ -168,7 +168,7 @@ function validateEntity(value: unknown, worldWidth: number, worldHeight: number)
       'id', 'kind', 'defId', 'owner', 'team', 'x', 'z', 'facing', 'turretFacing', 'hp', 'maxHp',
       'state', 'stance', 'buildProgress', 'construction', 'remembered', 'queue', 'rallyX',
       'rallyZ', 'targetId', 'garrisonId', 'xp', 'upgrades', 'modules', 'cooldowns',
-      'deconstruct',
+      'deconstruct', 'harvester', 'captureTargetId', 'captureProgress',
     ],
     'Entity',
   );
@@ -232,6 +232,31 @@ function validateEntity(value: unknown, worldWidth: number, worldHeight: number)
       assert(isNum(remaining) && remaining > 0, 'Cooldown remaining time is invalid.');
     }
   }
+  if (value.harvester !== undefined) {
+    assert(value.remembered === undefined, 'A remembered entity must not carry mining state.');
+    assert(isRecord(value.harvester), 'Entity harvester state is invalid.');
+    checkKeys(value.harvester, ['phase', 'ore', 'oreTileX', 'oreTileZ'], 'Entity harvester');
+    assert(
+      HARVESTER_PHASES.includes(value.harvester.phase as string),
+      'Entity harvester phase is invalid.',
+    );
+    assert(
+      isNum(value.harvester.ore) && value.harvester.ore >= 0 && value.harvester.ore <= 10_000,
+      'Entity harvester cargo is invalid.',
+    );
+    for (const key of ['oreTileX', 'oreTileZ'] as const) {
+      assert(isInt(value.harvester[key], -1), `Entity harvester ${key} is invalid.`);
+    }
+  }
+  assert(
+    value.captureTargetId === undefined || isInt(value.captureTargetId, 1),
+    'Entity capture target is invalid.',
+  );
+  assert(
+    value.captureProgress === undefined ||
+      (isNum(value.captureProgress) && value.captureProgress >= 0 && value.captureProgress <= 1),
+    'Entity capture progress is invalid.',
+  );
   if (value.remembered === true) {
     assert(value.hp === null && value.maxHp === null, 'A remembered entity must not carry live hp.');
     assert(value.state === null && value.buildProgress === null, 'A remembered entity must not carry live state.');
@@ -350,6 +375,8 @@ function validateEvent(value: unknown): SimEvent {
   assert(value.targetId === undefined || isInt(value.targetId, 1), 'Event target id is invalid.');
   return value as unknown as SimEvent;
 }
+
+const HARVESTER_PHASES = ['seek', 'toOre', 'mining', 'toRefinery', 'unloading'];
 
 const CONTACT_STATES = ['confirmed', 'detected', 'last-known'];
 const CONTACT_BANDS = ['infantry', 'armour', 'air', 'naval', 'structure'];

@@ -274,10 +274,14 @@ describe('brownout effects', () => {
   });
 
   it('builds turbine plants on a deficit instead of waiting', () => {
-    const extras: Extra[] = [...CONSUMERS, BARRACKS, { defId: 'factory', x: 44, z: 34, owner: 1 }].map(
-      (s) => ({ ...s, owner: 1 }),
-    );
-    const game = gameWith(extras, true);
+    // A commander on a 50-supply grid with 93 demand. The human landing force is
+    // cleared out of this fixture: left in place it shoots the authored enemy
+    // structures, and demand drifts as they die instead of holding still.
+    const extras: Extra[] = [...CONSUMERS, BARRACKS].map((s) => ({ ...s, owner: 1 }));
+    const scenario = createIslandAssault();
+    for (const s of extras) scenario.structures.push({ ...s, owner: 1 });
+    scenario.units = scenario.units.filter((u) => u.owner !== 0);
+    const game = new Game(scenario, { enableAI: true });
     expect(game.powerStatus(1).brownout).toBe(true);
     game.advance(20 * 120);
     const plants = game.entitiesOf(1, 'building').filter((e) => e.defId === 'powerPlant');

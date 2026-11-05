@@ -168,7 +168,19 @@ function createEntity(projected: ProjectedEntity, x: number, z: number): Entity 
   // The projection ships reload clocks for own hulls only, which is exactly
   // what the selection box needs to draw a disabled ability button.
   if (projected.cooldowns) entity.cooldowns = { ...projected.cooldowns };
-  if (projected.kind === 'unit' && projected.defId === 'harvester') {
+  // The room ships the hauler's work state, so the client draws the same dust,
+  // cargo bar and MINING label the simulation is actually producing. A build
+  // that predates the field still gets a plausible idle hull rather than none.
+  if (projected.harvester) {
+    entity.harvester = {
+      phase: projected.harvester.phase,
+      ore: projected.harvester.ore,
+      timer: 0,
+      oreTileX: projected.harvester.oreTileX,
+      oreTileZ: projected.harvester.oreTileZ,
+      refineId: 0,
+    };
+  } else if (projected.kind === 'unit' && projected.defId === 'harvester') {
     entity.harvester = {
       phase: state === 'delivering' ? 'toRefinery' : 'seek',
       ore: 0,
@@ -178,6 +190,10 @@ function createEntity(projected: ProjectedEntity, x: number, z: number): Entity 
       refineId: 0,
     };
   }
+  // Own units only: what the engineer is taking and how far it has got. The
+  // relay meter reads exactly these two fields.
+  if (projected.captureTargetId) entity.captureTargetId = projected.captureTargetId;
+  if (projected.captureProgress !== undefined) entity.captureProgress = projected.captureProgress;
   return entity;
 }
 
@@ -341,6 +357,12 @@ export class NetworkBattle {
       });
       if (reusable) {
         // Refresh everything except the eased transform, which `sync` owns.
+        // Ownership changes mid-match: an engineer takes a relay or supply
+        // depot and it changes hands on the authoritative tick. Without this
+        // the replica keeps the old owner, so a captured objective still reads
+        // neutral, its meter never claims, and its tint never changes — the
+        // capture looks like it never happened on the player's screen.
+        entity.owner = projected.owner;
         entity.hp = projected.remembered ? entity.maxHp : (projected.hp ?? entity.maxHp);
         entity.maxHp = projected.maxHp ?? entity.maxHp;
         entity.state = projected.remembered ? 'idle' : entityState(projected.state);
@@ -353,6 +375,20 @@ export class NetworkBattle {
         // rank it last knew rather than inventing one.
         entity.xp = projected.remembered === true ? entity.xp ?? 0 : projected.xp ?? entity.xp ?? 0;
         entity.targetId = projected.targetId ?? 0;
+        // Mining and capture are per-tick work, so a reused replica adopts the
+        // fresh figures instead of keeping the ones it was created with.
+        if (projected.harvester) {
+          entity.harvester = {
+            phase: projected.harvester.phase,
+            ore: projected.harvester.ore,
+            timer: 0,
+            oreTileX: projected.harvester.oreTileX,
+            oreTileZ: projected.harvester.oreTileZ,
+            refineId: entity.harvester?.refineId ?? 0,
+          };
+        }
+        entity.captureTargetId = projected.captureTargetId ?? 0;
+        entity.captureProgress = projected.captureProgress ?? 0;
         if (projected.cooldowns) entity.cooldowns = { ...projected.cooldowns };
         else delete entity.cooldowns;
         if (entity.aircraft) {

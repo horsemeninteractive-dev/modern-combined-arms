@@ -8,6 +8,68 @@ The release version and stage come from `package.json`; the build number shown
 in the menu is the repository commit count at build time. The same file is
 rendered in game from **Changelog** in the main-menu footer.
 
+`## [Unreleased]` holds notes for work that is in the tree but not in a release.
+When the version is bumped, rename it to the new `## [x.y.z STAGE] — date`
+heading: `tools/release.mjs` refuses to ship unless that heading exists.
+
+## [0.5.4 BETA] — 2026-11-05
+
+A reconciliation pass before new feature work: the build, the documents and the
+verification baseline now agree with each other.
+
+### Economy
+
+- **No material trickle before a materials plant stands.** The Command Post's
+  backstop was selected whenever a side had no harvester and no production line,
+  which is true of every match that opens with only a headquarters — so both
+  sides were paid 4 materials a second from the first tick instead of opening on
+  their authorised bank. The trickle now requires a Material Refinery (standing
+  or under construction) or a completed land production facility, and then pays
+  as before: 1 material a second for a base that still holds the means to
+  rebuild, the 4 a second stripped rate for one that has lost both.
+- **The stripped lifeline and its tests tell the same story.** The depot,
+  smokescreen and rebuild fixtures that had been written against a 1 a second
+  opening now assert the shipped rule, including the case that matters in a
+  real match: a drained map or a lost refinery still reopens the trickle for a
+  side that has built an economy. A captured depot is now covered explicitly as
+  its own source: 2 materials a second on a bare headquarters, 6 once a refinery
+  stands and the stripped lifeline applies, and 2 again if that refinery is
+  lost.
+
+### Documentation
+
+- **The GDD states what ships.** It gains a §0 implementation-status table
+  (built / partial / design-only, per area) so the design text is no longer read
+  as a description of the current build, and its header names 0.5.3.
+- **The README matches the build**: current suite size, the economy rule, the
+  campaign's real shape, and what `MULTIPLAYER_FEATURE` means now that accounts
+  exist. A duplicated network-play paragraph is gone.
+- **Broken documentation links are resolved.** Twenty-nine repository-root
+  references inside `docs/` now resolve relative to their own file, and the two
+  `SECURITY-REVIEW.md` links point at the copy that exists.
+- **The stale multiplayer feature-flag comment is corrected**: online 1v1 is on,
+  rooms are joined by code, and `accountLinking` stays off because a room seat is
+  authorised by its own token rather than by an account.
+- **A deployment and baseline record** is added at
+  [docs/PHASE_0_RECONCILIATION_AND_BASELINE.md](docs/PHASE_0_RECONCILIATION_AND_BASELINE.md):
+  the real Cloudflare architecture (Pages app, room Worker with Durable Objects,
+  account Worker with D1, the Pages Function forwarder, secrets and origins),
+  the clean-install/typecheck/build/test baseline, and the release checklist.
+
+### Verification
+
+- **The suite is green from a clean tree.** The eight failures this pass started
+  from were all one rule — the opening subsidy above — plus two budgets that sat
+  below their own runtime: the 48-match difficulty ladder and the 26,000-tick
+  air/naval branch test were given budgets that survive a loaded host, and the
+  global timeout is a hang guard rather than a performance assertion.
+- **The deterministic fixtures were re-anchored, paths included.** The Phase 2A.7
+  and 2A.8 checksums moved with every recorded bank figure. Paths, unit counts,
+  event counts, RNG state and the path-scaling probes are re-asserted unchanged,
+  with one authored exception recorded in the fixture: an artillery hull's final
+  route takes three legs around a standing structure instead of driving through
+  it.
+
 ## [0.5.3 BETA] — 2026-11-05
 
 A rendering fix: no battlefield opens holding another scene's structure lamps.

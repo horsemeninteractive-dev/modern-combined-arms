@@ -55,6 +55,19 @@ export interface ProjectedPlayer {
   superweapon?: PlayerState['superweapon'];
 }
 
+/**
+ * A hauler's working state. Mining is a per-tick action, so without the phase,
+ * the cargo and the seam the client can draw a stopped hull but never the dust,
+ * the cargo bar or the MINING readout: in a room every hauler looked idle at the
+ * deposit even while the server was filling it.
+ */
+export interface ProjectedHarvester {
+  phase: 'seek' | 'toOre' | 'mining' | 'toRefinery' | 'unloading';
+  ore: number;
+  oreTileX: number;
+  oreTileZ: number;
+}
+
 export interface ProjectedEntity {
   id: number;
   kind: Entity['kind'];
@@ -89,6 +102,15 @@ export interface ProjectedEntity {
   upgrades?: string[];
   /** Own entities only: modules installed on this structure. */
   modules?: string[];
+  /** A visible hauler's work state, so mining reads on the client. */
+  harvester?: ProjectedHarvester;
+  /**
+   * Own/allied units only: the objective being worked and how far it has got.
+   * The control meter is drawn from these two fields, so withholding them left
+   * every relay reading "NEUTRAL · UNCLAIMED" while it was being taken.
+   */
+  captureTargetId?: number;
+  captureProgress?: number;
   /**
    * Own entities only: seconds left on a sale. The countdown is the player's
    * own commitment, not combat information about an opponent.
@@ -221,6 +243,17 @@ function liveEntity(game: Game, entity: Entity, team: number, own: boolean): Pro
     construction: entity.construction,
     xp: entity.xp ?? 0,
   };
+  // A hull that is currently working already shows the work on its own model,
+  // so the phase and the seam are no more secret than the exhaust. The cargo is
+  // read from the same vehicle, and both sides may see it.
+  if (entity.harvester) {
+    projected.harvester = {
+      phase: entity.harvester.phase,
+      ore: entity.harvester.ore,
+      oreTileX: entity.harvester.oreTileX,
+      oreTileZ: entity.harvester.oreTileZ,
+    };
+  }
   if (!own) return projected;
   projected.stance = entity.stance;
   projected.queue = entity.queue.map((item) => ({ ...item }));
@@ -233,6 +266,12 @@ function liveEntity(game: Game, entity: Entity, team: number, own: boolean): Pro
     entity.targetId && game.isVisibleTo(team, entity.targetId) ? entity.targetId : 0;
   projected.garrisonId =
     entity.garrisonId && game.isKnownTo(team, entity.garrisonId) ? entity.garrisonId : 0;
+  // The same redaction as targetId: an engineer can hold a structure id after
+  // the enemy slips back into fog, and the projection never ships that id.
+  if (entity.captureTargetId && game.isKnownTo(team, entity.captureTargetId)) {
+    projected.captureTargetId = entity.captureTargetId;
+    projected.captureProgress = entity.captureProgress;
+  }
   if (entity.upgrades && entity.upgrades.length > 0) projected.upgrades = [...entity.upgrades];
   if (entity.modules && entity.modules.length > 0) projected.modules = [...entity.modules];
   if (entity.cooldowns && Object.keys(entity.cooldowns).length > 0) {

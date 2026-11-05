@@ -5,7 +5,7 @@
 **Repository:** `C:/Users/aeryt/Documents/Modern Combined Arms` (`master`)
 **Date:** 2026-10-29
 **Remediation:** MP-05 and the static-shell portion of MP-06 were fixed in a follow-up on 2026-10-29.
-**Companion document:** [docs/MULTIPLAYER_READINESS_AUDIT.md](docs/MULTIPLAYER_READINESS_AUDIT.md)
+**Companion document:** [docs/MULTIPLAYER_READINESS_AUDIT.md](MULTIPLAYER_READINESS_AUDIT.md)
 
 ---
 

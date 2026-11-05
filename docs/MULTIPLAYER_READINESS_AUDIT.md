@@ -47,7 +47,7 @@ single-player shell keeps working.
 
 **The audit itself changed no source, configuration, dependency manifest,
 lockfile, test or generated asset.** It only added this document and
-[`SECURITY-REVIEW.md`](../SECURITY-REVIEW.md). A follow-up request then
+[`SECURITY-REVIEW.md`](SECURITY-REVIEW.md). A follow-up request then
 authorised the shell-hardening changes described under MP-05 and MP-06; those
 were built locally but not deployed. The working tree already contained
 substantial unrelated work; it was preserved untouched.
@@ -152,7 +152,7 @@ once the feature exists; **Medium** means a correctness, privacy or operational
 defect that should be fixed before public launch; **Low** is hardening.
 
 The full security register, including the read-only status of every item, is in
-[`SECURITY-REVIEW.md`](../SECURITY-REVIEW.md).
+[`SECURITY-REVIEW.md`](SECURITY-REVIEW.md).
 
 ### MP-01 — The client owns the authoritative simulation and command queue
 

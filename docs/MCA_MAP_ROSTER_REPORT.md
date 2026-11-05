@@ -11,14 +11,14 @@ skirmish and multiplayer, and server-side multiplayer scenario validation.
 
 ### 1.1 Scenario format
 
-- One format already existed in [scenario.ts](src/sim/scenario.ts):
+- One format already existed in [scenario.ts](../src/sim/scenario.ts):
   `format/version`, `meta`, `width/height`, packed `tiles` (`t` terrain,
   `e` elevation, `o` ore), `structures`, `units`, `players[]`, `objectives`,
   `settings`, plus `parseScenario`, `scenarioToJson`, `validateScenario`,
   `canLaunch`, `cloneScenario`, `reachableFrom`.
 - Terrain is a 0–7 enum (deep water, shallows, beach, open ground, forest,
   ridge, road, urban) with per-move-class costs, cover, concealment,
-  `blocksSight` and buildability ([terrain.ts](src/sim/terrain.ts)).
+  `blocksSight` and buildability ([terrain.ts](../src/sim/terrain.ts)).
   `ridge` and deep water are impassable to land classes; forest/sand/urban are
   passable but cost more; `ELEVATION_STEP` is `foot: 2`, `wheeled/tracked: 1`.
 - Ore is a per-tile quantity; strategic sites are owner `-1` structures
@@ -37,7 +37,7 @@ skirmish and multiplayer, and server-side multiplayer scenario validation.
 | `kestrel-straits` | Kestrel Straits | 88×64 | Naval | deep strait, two islands |
 | `foundry-district` | Foundry District | 104×76 | Urban | city core, garrisonable blocks |
 
-These were declared in `BUILTIN_SCENARIOS` in [scenarios.ts](src/data/scenarios.ts),
+These were declared in `BUILTIN_SCENARIOS` in [scenarios.ts](../src/data/scenarios.ts),
 which was also the list the skirmish selector rendered and the only allowlist
 the multiplayer lobby validated against.
 
@@ -77,7 +77,7 @@ No blocker prevented the work; all five were addressed additively.
 
 ### 2.1 One catalogue, one format
 
-New [scenarioCatalog.ts](src/data/scenarioCatalog.ts) is the single source of
+New [scenarioCatalog.ts](../src/data/scenarioCatalog.ts) is the single source of
 map availability and display metadata:
 
 - `ScenarioEntry`: `id`, `name`, `description`, `focus`, `tags`, `domains`,
@@ -108,7 +108,7 @@ catalogue.
 
 ### 2.3 Authoring model for four-way maps
 
-[competitiveMaps.ts](src/data/competitiveMaps.ts) builds each map from a
+[competitiveMaps.ts](../src/data/competitiveMaps.ts) builds each map from a
 **quarter**: terrain, elevation, ore, roads, cover and neutral objectives are
 painted in the top-left quadrant and stamped at 0°/90°/180°/270° by
 `Field.set`/`rect`/ore helpers. Consequences:
@@ -147,10 +147,10 @@ ridge/forest/water.
 
 ### 2.5 Presentation
 
-- Skirmish selector ([app.ts](src/app.ts)) lists `scenariosForMode('skirmish')`
+- Skirmish selector ([app.ts](../src/app.ts)) lists `scenariosForMode('skirmish')`
   with raster preview, name, focus, size and two tags; the brief gained
   `STRATEGIC` tags and `PLAYERS`.
-- Lobby ([multiplayerPanel.ts](src/ui/multiplayerPanel.ts)) has a **Battlefield**
+- Lobby ([multiplayerPanel.ts](../src/ui/multiplayerPanel.ts)) has a **Battlefield**
   card: a raster preview painted from the catalogue's own scenario
   (`drawBriefMap`), a host-only `<select>` of the eight maps, size/player/tag
   detail, and an explicit note that changing the map clears both ready states.
@@ -252,7 +252,7 @@ simulation's own `moveCost`; all four slots produce the same value.
 
 ## 4. Validation tooling
 
-[mapValidation.ts](src/data/mapValidation.ts) exports `auditCompetitiveMap(entry,
+[mapValidation.ts](../src/data/mapValidation.ts) exports `auditCompetitiveMap(entry,
 scenario?)` and `auditCompetitiveRoster()`. It is reusable for any future
 square, four-way scenario and never mutates the scenario.
 
@@ -321,7 +321,7 @@ force parity all pass. Every competitive map is `validateScenario`-clean and
 | Worker build `vite build --config mp-room-vite.config.ts` | success, `dist-mp-room/roomWorker.js` 608.70 kB / 151.84 kB gzip |
 | Live UI check (dev server, browser) | skirmish deck renders 8 catalogue cards, each with a painted raster, correct focus/size/tags; selecting Crossing Point updates the title, lede, `96 × 96 tiles` and brief tags |
 
-New tests in [map-roster.test.ts](tests/map-roster.test.ts) (86 cases) cover:
+New tests in [map-roster.test.ts](../tests/map-roster.test.ts) (86 cases) cover:
 
 - catalogue uniqueness, count (12), campaign/competitive split, mode filtering,
   strict availability answers for junk ids, display summary without tile
@@ -414,30 +414,30 @@ use `open-front` as the default multiplayer map instead of the campaign island.
 
 **New**
 
-- [src/data/scenarioCatalog.ts](src/data/scenarioCatalog.ts) — catalogue, modes, slots, defaults.
-- [src/data/competitiveMaps.ts](src/data/competitiveMaps.ts) — eight four-way maps.
-- [src/data/mapValidation.ts](src/data/mapValidation.ts) — reusable audit and diagnostics.
-- [tests/map-roster.test.ts](tests/map-roster.test.ts) — catalogue, symmetry, access, lobby, separation.
+- [src/data/scenarioCatalog.ts](../src/data/scenarioCatalog.ts) — catalogue, modes, slots, defaults.
+- [src/data/competitiveMaps.ts](../src/data/competitiveMaps.ts) — eight four-way maps.
+- [src/data/mapValidation.ts](../src/data/mapValidation.ts) — reusable audit and diagnostics.
+- [tests/map-roster.test.ts](../tests/map-roster.test.ts) — catalogue, symmetry, access, lobby, separation.
 - [MCA_MAP_ROSTER_REPORT.md](MCA_MAP_ROSTER_REPORT.md) — this report.
 
 **Modified**
 
-- [src/sim/scenario.ts](src/sim/scenario.ts) — optional `slots`, parse and validation.
-- [src/data/scenarios.ts](src/data/scenarios.ts) — builtin list moved to the catalogue.
-- [src/app.ts](src/app.ts) — catalogue-driven skirmish selection, tags/players in the brief.
-- [index.html](index.html) — brief rows for strategic tags and player count; skirmish copy.
-- [src/style.css](src/style.css) — lobby battlefield preview.
-- [src/ui/multiplayerPanel.ts](src/ui/multiplayerPanel.ts) — battlefield card, host map picker, preview, detail.
-- [src/multiplayer/lobbyConfig.ts](src/multiplayer/lobbyConfig.ts) — catalogue validation, defensive build.
-- [src/multiplayer/protocol.ts](src/multiplayer/protocol.ts) — `lobbySet.mapId`.
-- [src/multiplayer/roomLobby.ts](src/multiplayer/roomLobby.ts) — host-only `setMapId`, readiness reset.
-- [src/multiplayer/lobbyClient.ts](src/multiplayer/lobbyClient.ts) — `setMap`.
-- [src/multiplayer/roomDurableObject.ts](src/multiplayer/roomDurableObject.ts) — multiplayer default map.
-- [src/multiplayer/roomMatch.ts](src/multiplayer/roomMatch.ts) — multiplayer default map.
-- [src/sim/game.ts](src/sim/game.ts), [src/ui/hud.ts](src/ui/hud.ts) — objective copy no longer says "the island".
-- [tests/campaign.test.ts](tests/campaign.test.ts), [tests/maps.test.ts](tests/maps.test.ts),
-  [tests/phase2b1-lobby-lifecycle.test.ts](tests/phase2b1-lobby-lifecycle.test.ts),
-  [tests/phase2b2-lobby-client.test.ts](tests/phase2b2-lobby-client.test.ts),
-  [tests/phase2b3-network-battle.test.ts](tests/phase2b3-network-battle.test.ts) — follow the catalogue.
+- [src/sim/scenario.ts](../src/sim/scenario.ts) — optional `slots`, parse and validation.
+- [src/data/scenarios.ts](../src/data/scenarios.ts) — builtin list moved to the catalogue.
+- [src/app.ts](../src/app.ts) — catalogue-driven skirmish selection, tags/players in the brief.
+- [index.html](../index.html) — brief rows for strategic tags and player count; skirmish copy.
+- [src/style.css](../src/style.css) — lobby battlefield preview.
+- [src/ui/multiplayerPanel.ts](../src/ui/multiplayerPanel.ts) — battlefield card, host map picker, preview, detail.
+- [src/multiplayer/lobbyConfig.ts](../src/multiplayer/lobbyConfig.ts) — catalogue validation, defensive build.
+- [src/multiplayer/protocol.ts](../src/multiplayer/protocol.ts) — `lobbySet.mapId`.
+- [src/multiplayer/roomLobby.ts](../src/multiplayer/roomLobby.ts) — host-only `setMapId`, readiness reset.
+- [src/multiplayer/lobbyClient.ts](../src/multiplayer/lobbyClient.ts) — `setMap`.
+- [src/multiplayer/roomDurableObject.ts](../src/multiplayer/roomDurableObject.ts) — multiplayer default map.
+- [src/multiplayer/roomMatch.ts](../src/multiplayer/roomMatch.ts) — multiplayer default map.
+- [src/sim/game.ts](../src/sim/game.ts), [src/ui/hud.ts](../src/ui/hud.ts) — objective copy no longer says "the island".
+- [tests/campaign.test.ts](../tests/campaign.test.ts), [tests/maps.test.ts](../tests/maps.test.ts),
+  [tests/phase2b1-lobby-lifecycle.test.ts](../tests/phase2b1-lobby-lifecycle.test.ts),
+  [tests/phase2b2-lobby-client.test.ts](../tests/phase2b2-lobby-client.test.ts),
+  [tests/phase2b3-network-battle.test.ts](../tests/phase2b3-network-battle.test.ts) — follow the catalogue.
 
 All changes are uncommitted, as requested.

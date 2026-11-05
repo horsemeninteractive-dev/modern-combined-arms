@@ -27,7 +27,7 @@ The Phase 2A.16 snapshot read-back diagnostic is untouched and still guarded by 
 
 ## 2. Lifecycle
 
-![lifecycle](docs/phase2b1-lifecycle.svg)
+![lifecycle](phase2b1-lifecycle.svg)
 
 ```mermaid
 stateDiagram-v2

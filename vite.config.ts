@@ -49,6 +49,11 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     environment: 'node',
     globals: true,
-    testTimeout: 30000,
+    // These are whole simulated battles, timed by CPU speed rather than by how
+    // long the work should take. The suite is 160 files on an 8-core host, so a
+    // ten-second test can take four times that while its neighbours run, which
+    // is a property of the machine and not of the game. The limit is a guard
+    // against a hang, not a performance assertion: perf.test.ts owns those.
+    testTimeout: 90000,
   },
 });

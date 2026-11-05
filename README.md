@@ -34,7 +34,7 @@ and the measurements behind both — is in
 npm install
 npm run dev        # http://127.0.0.1:5173
 npm run build      # typecheck + production bundle in dist/
-npm test           # 1116 Vitest tests
+npm test           # the full Vitest suite (163 files)
 npm run bench      # measured simulation/save/pathfinding performance
 ```
 
@@ -101,13 +101,6 @@ and the host starts. Nothing starts automatically: connecting is never a start,
 and the room re-validates occupancy, connectivity, readiness and the remaining
 reserved window before it builds the authoritative match.
 
-The deck is: host a room (the room reserves capacity, so it must be started
-before the reservation runs out), share the room code and join code, the guest
-claims the second seat, both players pick a nation and a colour, both ready up,
-and the host starts. Nothing starts automatically: connecting is never a start,
-and the room re-validates occupancy, connectivity, readiness and the remaining
-reserved window before it builds the authoritative match.
-
 ## Install it
 
 The build is a PWA: a manifest, an icon set and a service worker that caches the
@@ -130,7 +123,10 @@ footer in [index.html](index.html) agree on the version, refuses a dirty tree
 site is serving the new bundle.
 
 So the order is: bump the version in those three places, write the notes,
-commit, then `npm run release`. The upload needs Cloudflare credentials once
+commit, then `npm run release`. The measured baseline for that check — the
+verification commands, the current suite shape, the long-running measurement
+tests and the deployed Cloudflare architecture — is recorded in
+[docs/PHASE_0_RECONCILIATION_AND_BASELINE.md](docs/PHASE_0_RECONCILIATION_AND_BASELINE.md). The upload needs Cloudflare credentials once
 (`npx wrangler login`); `--dry-run` stops before the upload, `--skip-tests`
 skips the suite, and `--allow-dirty` ships an uncommitted tree under the
 previous commit's build number. `PAGES_PROJECT`, `PAGES_BRANCH` and `PAGES_URL`
@@ -390,7 +386,7 @@ legacy presets, old maps and existing saves keep the unmodified baseline. See
 
 ## Tests and measurements
 
-`npm test` runs 1116 tests across 104 files, including nation identity, roster
+`npm test` runs 2,402 tests across 163 files, including nation identity, roster
 gating and national substitutions, national counterplay fixtures, two-run
 state-hash determinism, batch-size
 invariance, save/load round-trip, blocked paths,
@@ -447,9 +443,12 @@ the haulers have saturated the drop-offs, the perimeter only while the scouted
 force outnumbers the armament — are in `tests/construction-priority.test.ts`, with
 the audit in
 [docs/PHASE_14_CONSTRUCTION_PRIORITY_AUDIT.md](docs/PHASE_14_CONSTRUCTION_PRIORITY_AUDIT.md).
-The economy's recovery rules are pinned by `tests/economic-recovery.test.ts` — an
-idle bank climbs at the headquarters' 1 mat/s when no drop-off exists and none is
-affordable — and the perimeter's request surface by
+The economy's recovery rules are pinned by `tests/economic-recovery.test.ts` and
+`tests/economy-rebuild.test.ts` — the headquarters pays nothing until a Material
+Refinery stands (this match opens with a Command Post alone), then 1 mat/s for a
+base that still holds the means to rebuild and the 4 mat/s stripped rate for one
+that has lost its haulers and its production line — and the perimeter's request
+surface by
 `tests/defence-priority.test.ts`; both audits, the recovery fix and the unchanged
 defensive priorities are in
 [docs/PHASE_15_ECONOMIC_RECOVERY_AND_DEFENCE_PRIORITY_AUDIT.md](docs/PHASE_15_ECONOMIC_RECOVERY_AND_DEFENCE_PRIORITY_AUDIT.md).
@@ -484,10 +483,13 @@ latest runs are recorded in
 - Audio is generated with Web Audio and has not been auditioned in automated runs.
 - The renderer is validated by shader compilation, a live WebGL2 context, frame
   timing and DOM checks, not pixel-diff screenshots.
-- One AI opponent. The campaign is a short linear prologue over the built-in
-  theatres rather than a full campaign; online play is 1v1 only, joined by room
-  code with no room browser, accounts or matchmaking (`MULTIPLAYER_FEATURE`
-  keeps `roomDiscovery` and `accountLinking` off); there is no mod SDK. All ten nations are selectable in skirmish and each substitutes one shared baseline
+- One AI opponent. The campaign is two linear twelve-operation tracks (Baltic
+  Line and Eastern Corridor) over the built-in theatres, not a branching
+  narrative; online play is 1v1 only, joined by room
+  code with no room browser or matchmaking. Accounts exist and keep a career
+  record for local battles, but a room seat is still authorised by its own bearer
+  token rather than an account, so `MULTIPLAYER_FEATURE` keeps `roomDiscovery`
+  and `accountLinking` off; there is no mod SDK. All ten nations are selectable in skirmish and each substitutes one shared baseline
   slot with a national variant, adds one exclusive unit and one structure
   variant, and Sweden and Iran also add a national naval hull of their own; but
   they have no national-only upgrades or signature abilities yet;

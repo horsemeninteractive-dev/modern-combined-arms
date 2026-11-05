@@ -55,8 +55,9 @@ describe('strategic infrastructure capture', () => {
     const depot = tier(g, 'supplyDepot');
     const eng = engineer(g);
     expect(depot.owner).toBe(-1);
-    // Only the standing Command Post's trickle before the depot is taken.
-    expect(g.passiveMatsRate(0)).toBe(1);
+    // A bare Command Post is not an economy. No materials plant stands, so the
+    // headquarters pays nothing and the depot is the side's first income.
+    expect(g.passiveMatsRate(0)).toBe(0);
 
     // Put the engineer inside capture range: the order is still the public
     // capture command, not a direct ownership write.
@@ -66,56 +67,57 @@ describe('strategic infrastructure capture', () => {
     g.advance(20 * 6);
 
     expect(depot.owner).toBe(0);
-    expect(g.passiveMatsRate(0)).toBe(3);
+    expect(g.passiveMatsRate(0)).toBe(2);
     const p = g.player(0)!;
     p.mats = 0;
     p.stats.matsGathered = 0;
     g.advance(20 * 10);
-    expect(p.mats).toBeCloseTo(30, 4);
+    expect(p.mats).toBeCloseTo(20, 4);
 
     // The HUD rate is a per-minute figure over the rolling 30-second window.
     g.advance(20 * 30);
-    expect(g.matsPerMinute(0)).toBe(180);
+    expect(g.matsPerMinute(0)).toBe(120);
   });
 
   it('does not pay a neutral or enemy-owned depot', () => {
     const g = game([{ defId: 'supplyDepot', owner: -1, x: 16, z: 8 }]);
     const depot = tier(g, 'supplyDepot');
     g.advance(20 * 5);
-    expect(g.passiveMatsRate(0)).toBe(1);
-    expect(g.passiveMatsRate(1)).toBe(1);
+    expect(g.passiveMatsRate(0)).toBe(0);
+    expect(g.passiveMatsRate(1)).toBe(0);
 
     depot.owner = 1;
     g.advance(20 * 5);
-    expect(g.passiveMatsRate(0)).toBe(1);
-    expect(g.passiveMatsRate(1)).toBe(3);
-    expect(g.player(0)!.mats).toBeCloseTo(10, 4);
-    expect(g.player(1)!.mats).toBeCloseTo(20, 4);
+    expect(g.passiveMatsRate(0)).toBe(0);
+    expect(g.passiveMatsRate(1)).toBe(2);
+    expect(g.player(0)!.mats).toBeCloseTo(0, 4);
+    expect(g.player(1)!.mats).toBeCloseTo(10, 4);
   });
 
   it('stops income while a depot is a construction site or destroyed', () => {
     const g = game([{ defId: 'supplyDepot', owner: 0, x: 16, z: 8 }]);
     const depot = tier(g, 'supplyDepot');
     g.advance(20 * 3);
-    expect(g.passiveMatsRate(0)).toBe(3);
+    expect(g.passiveMatsRate(0)).toBe(2);
 
     depot.construction = true;
     depot.buildProgress = 0.5;
     const before = g.player(0)!.mats;
     g.advance(20 * 4);
-    expect(g.passiveMatsRate(0)).toBe(1);
-    // The site pays nothing; only the headquarters trickle keeps running.
-    expect(g.player(0)!.mats).toBeCloseTo(before + 4, 4);
+    expect(g.passiveMatsRate(0)).toBe(0);
+    // The site pays nothing, and with no materials plant yet the headquarters
+    // trickle is not running either: the bank is exactly where it was.
+    expect(g.player(0)!.mats).toBeCloseTo(before, 4);
 
     depot.construction = false;
     depot.buildProgress = 1;
     g.advance(20 * 2);
-    expect(g.passiveMatsRate(0)).toBe(3);
-    expect(g.player(0)!.mats).toBeGreaterThan(before + 9);
+    expect(g.passiveMatsRate(0)).toBe(2);
+    expect(g.player(0)!.mats).toBeGreaterThan(before + 3);
 
     depot.hp = 0;
     g.advance(2);
-    expect(g.passiveMatsRate(0)).toBe(1);
+    expect(g.passiveMatsRate(0)).toBe(0);
     expect(g.getEntity(depot.id)).toBeUndefined();
   });
 
@@ -125,23 +127,23 @@ describe('strategic infrastructure capture', () => {
       { defId: 'supplyDepot', owner: 0, x: 22, z: 8 },
     ]);
     const [a, b] = g.entitiesOf(0, 'building').filter((e) => e.defId === 'supplyDepot');
-    expect(g.passiveMatsRate(0)).toBe(5);
+    expect(g.passiveMatsRate(0)).toBe(4);
     const p = g.player(0)!;
     p.mats = 0;
     g.advance(20 * 5);
-    expect(p.mats).toBeCloseTo(25, 4);
+    expect(p.mats).toBeCloseTo(20, 4);
 
     // Losing one depot must remove exactly its own contribution. The other
     // keeps paying without a duplicate tick from the old source.
     a.owner = 1;
-    expect(g.passiveMatsRate(0)).toBe(3);
-    // Enemy headquarters trickle plus the captured depot.
-    expect(g.passiveMatsRate(1)).toBe(3);
+    expect(g.passiveMatsRate(0)).toBe(2);
+    // The enemy's own captured depot, nothing else.
+    expect(g.passiveMatsRate(1)).toBe(2);
     const mine = p.mats;
     const enemy = g.player(1)!.mats;
     g.advance(20 * 5);
-    expect(p.mats).toBeCloseTo(mine + 15, 4);
-    expect(g.player(1)!.mats).toBeCloseTo(enemy + 15, 4);
+    expect(p.mats).toBeCloseTo(mine + 10, 4);
+    expect(g.player(1)!.mats).toBeCloseTo(enemy + 10, 4);
     expect(b.owner).toBe(0);
   });
 
@@ -154,11 +156,11 @@ describe('strategic infrastructure capture', () => {
     depot.hp = depot.maxHp * 0.3;
     eng.x = depot.x - 2 * TILE_SIZE;
     eng.z = depot.z;
-    expect(g.passiveMatsRate(0)).toBe(3);
+    expect(g.passiveMatsRate(0)).toBe(2);
     g.enqueueCommand({ type: 'repair', team: 0, ids: [eng.id], targetId: depot.id });
     g.advance(20 * 5);
     expect(depot.hp).toBeGreaterThan(depot.maxHp * 0.3);
-    expect(g.passiveMatsRate(0)).toBe(3);
+    expect(g.passiveMatsRate(0)).toBe(2);
   });
 
   it('keeps depot state and income through save/load', () => {
@@ -168,7 +170,7 @@ describe('strategic infrastructure capture', () => {
     const restored = Game.fromSave(saved, { enableAI: false });
     const restoredDepot = restored.state.entities.find((e) => e.defId === 'supplyDepot')!;
     expect(restoredDepot.owner).toBe(0);
-    expect(restored.passiveMatsRate(0)).toBe(3);
+    expect(restored.passiveMatsRate(0)).toBe(2);
     g.advance(20 * 10);
     restored.advance(20 * 10);
     expect(restored.player(0)!.mats).toBeCloseTo(g.player(0)!.mats, 6);
@@ -190,13 +192,28 @@ describe('strategic infrastructure capture', () => {
     expect(g.player(0)!.mats).toBe(99999);
   });
 
-  it('keeps a stripped base solvent from its standing Command Post alone', () => {
-    // No harvesters, no depots, no refineries: the headquarters is the only
-    // source, and it must not leave the player at zero income forever.
-    const g = game();
+  it('pays the headquarters trickle only once a materials plant stands', () => {
+    // A match opens with a Command Post and nothing else. Paying a trickle there
+    // is an opening subsidy, so the bare headquarters pays nothing at all.
+    const opening = game();
+    opening.advance(20 * 10);
+    expect(opening.passiveMatsRate(0)).toBe(0);
+    expect(opening.player(0)!.mats).toBeCloseTo(0, 3);
+
+    // A base that has lost its whole hauling economy keeps its lifeline: with a
+    // refinery standing but no hauler and no production line, the headquarters
+    // pays the stripped rate instead of leaving the side at zero forever.
+    const g = game([{ defId: 'refinery', owner: 0, x: 8, z: 8 }]);
     g.advance(20 * 10);
-    expect(g.passiveMatsRate(0)).toBe(1);
-    expect(g.player(0)!.mats).toBeCloseTo(10, 3);
+    expect(g.passiveMatsRate(0)).toBe(4);
+    expect(g.player(0)!.mats).toBeCloseTo(40, 3);
+
+    // A plant still going up already counts as committing to the economy.
+    const site = game([{ defId: 'refinery', owner: 0, x: 8, z: 8 }]);
+    const plant = at(site, 'refinery', 0);
+    plant.construction = true;
+    plant.buildProgress = 0.4;
+    expect(site.passiveMatsRate(0)).toBe(4);
 
     // The lifeline is for a base with no hauling left: a hauler working a
     // drop-off replaces it.
@@ -206,10 +223,10 @@ describe('strategic infrastructure capture', () => {
     );
     expect(hauling.passiveMatsRate(0)).toBe(0);
 
-    // A hauler with no drop-off is not hauling (Phase 15): ore cannot be tipped
-    // anywhere, so the lifeline keeps paying until one stands or is affordable.
+    // A hauler with no plant at all is not an economy yet: nothing stands to
+    // bank against, so the headquarters still pays nothing.
     const stranded = game([], [{ defId: 'harvester', owner: 0, x: 8, z: 8 }]);
-    expect(stranded.passiveMatsRate(0)).toBe(1);
+    expect(stranded.passiveMatsRate(0)).toBe(0);
 
     // A half-built headquarters pays nothing; only a standing one trickles.
     const hq = at(g, 'commandPost', 0);
@@ -225,6 +242,33 @@ describe('strategic infrastructure capture', () => {
     hq.hp = 0;
     g.advance(2);
     expect(g.passiveMatsRate(0)).toBe(0);
+  });
+
+  it('stacks captured depot income on the headquarters trickle without an opening subsidy', () => {
+    // A captured depot is income in its own right, so it pays beside the
+    // headquarters trickle rather than replacing it — but only once the
+    // trickle's own condition holds. A depot on a bare headquarters is the
+    // side's whole economy, never a top-up on an opening allowance.
+    const depotOnly = game([{ defId: 'supplyDepot', owner: 0, x: 16, z: 8 }]);
+    expect(depotOnly.passiveMatsRate(0)).toBe(2);
+
+    // With a refinery standing but no hauler left, the headquarters pays its
+    // stripped lifeline (4/s) and the depot keeps its own 2/s on top.
+    const ruined = game([
+      { defId: 'supplyDepot', owner: 0, x: 16, z: 8 },
+      { defId: 'refinery', owner: 0, x: 8, z: 8 },
+    ]);
+    expect(ruined.passiveMatsRate(0)).toBe(6);
+    const banked = ruined.player(0)!.mats;
+    ruined.advance(20 * 5);
+    expect(ruined.player(0)!.mats).toBeCloseTo(banked + 30, 4);
+
+    // Losing the plant drops the side back to the depot alone: the trickle and
+    // the depot are separate sources, and the gate closes with the plant.
+    const plant = at(ruined, 'refinery', 0);
+    plant.hp = 0;
+    ruined.advance(2);
+    expect(ruined.passiveMatsRate(0)).toBe(2);
   });
 });
 

@@ -128,6 +128,104 @@ describe('group orders into a tight space', () => {
   });
 });
 
+describe('a structure raised across a route already planned', () => {
+  /**
+   * A hull was driving east when a barracks went up on the next few tiles of
+   * its route. The plan it was holding still pointed through the site, so it
+   * hit the wall — and because the detour waypoint the re-plan put on the
+   * shoulder of that building sat level with the hull, it was dismissed as
+   * "passed" and the hull turned straight back into the structure. Re-plan,
+   * jam, re-plan, for the rest of the battle.
+   */
+  it('drives around it instead of into it', () => {
+    const scenario = arena(56, 40);
+    scenario.structures.push({ defId: 'commandPost', owner: 0, x: 36, z: 20 });
+    scenario.units.push(
+      { defId: 'engineer', owner: 0, x: 30, z: 18 },
+      { defId: 'tank', owner: 0, x: 26, z: 26 },
+    );
+    const game = new Game(scenario, { enableAI: false });
+    const tank = unitsOf(game).find((e) => e.defId === 'tank')!;
+    game.player(0)!.mats = 4000;
+    game.player(0)!.req = 2000;
+
+    game.enqueueCommand({
+      type: 'move',
+      team: 0,
+      ids: [tank.id],
+      x: 52.5 * TILE_SIZE,
+      z: 26.5 * TILE_SIZE,
+    });
+    game.tick();
+    // Let it commit to the route before the site appears in front of it.
+    game.advance(20);
+    game.enqueueCommand({
+      type: 'placeBuilding',
+      team: 0,
+      defId: 'barracks',
+      tileX: 44,
+      tileZ: 24,
+    });
+    game.tick();
+    const site = game.entitiesOf(0, 'building').find((e) => e.defId === 'barracks');
+    expect(site).toBeDefined();
+
+    let stoodInStructure = 0;
+    for (let i = 0; i < 20 * 40; i++) {
+      game.tick();
+      const tx = Math.floor(tank.x / TILE_SIZE);
+      const tz = Math.floor(tank.z / TILE_SIZE);
+      if (game.blocked[tx + tz * scenario.width]) stoodInStructure++;
+    }
+
+    expect(stoodInStructure).toBe(0);
+    expect(tank.x).toBeGreaterThan(51 * TILE_SIZE);
+    expect(game.state.events.filter((e) => e.type === 'orderFailed')).toHaveLength(0);
+  });
+
+  it('does not let a hull caught inside a footprint drive out through the next building', () => {
+    const scenario = arena(40, 40);
+    // The hull is authored inside a 4x4 headquarters with a barracks standing
+    // east of it: it may walk out of the building it is caught in, but the
+    // barracks behind is still a wall, not a shortcut to the far side.
+    scenario.structures.push(
+      { defId: 'commandPost', owner: 0, x: 20, z: 20 },
+      { defId: 'barracks', owner: 0, x: 25, z: 20 },
+    );
+    scenario.units.push({ defId: 'tank', owner: 0, x: 21, z: 21 });
+    const game = new Game(scenario, { enableAI: false });
+    const tank = unitsOf(game).find((e) => e.defId === 'tank')!;
+
+    game.enqueueCommand({
+      type: 'move',
+      team: 0,
+      ids: [tank.id],
+      x: 34.5 * TILE_SIZE,
+      z: 24.5 * TILE_SIZE,
+    });
+
+    let inBarracks = 0;
+    for (let i = 0; i < 20 * 45; i++) {
+      game.tick();
+      if (
+        tank.x >= 25 * TILE_SIZE &&
+        tank.x < 28 * TILE_SIZE &&
+        tank.z >= 20 * TILE_SIZE &&
+        tank.z < 23 * TILE_SIZE
+      ) {
+        inBarracks++;
+      }
+    }
+
+    expect(inBarracks).toBe(0);
+    // It got out of the headquarters it was standing in and drove on.
+    const tx = Math.floor(tank.x / TILE_SIZE);
+    const tz = Math.floor(tank.z / TILE_SIZE);
+    expect(game.blocked[tx + tz * scenario.width]).toBe(0);
+    expect(tank.x).toBeGreaterThan(30 * TILE_SIZE);
+  });
+});
+
 describe('traffic makes way', () => {
   it('drives through ground a parked squad is holding, without refusing the order', () => {
     const scenario = arena();
@@ -259,5 +357,67 @@ describe('deposits nobody can mine', () => {
 
     expect(harvester.harvester!.phase).not.toBe('seek');
     expect(harvester.x).toBeLessThan(30 * TILE_SIZE);
+  });
+});
+
+describe('a structure raised across a route already being driven', () => {
+  /** A tank crossing open ground east, with a clear straight line to its aim. */
+  function crossing() {
+    const scenario = arena(64, 40);
+    scenario.units.push({ defId: 'tank', owner: 0, x: 8, z: 20 });
+    const game = new Game(scenario, { enableAI: false });
+    const tank = unitsOf(game)[0];
+    game.enqueueCommand({
+      type: 'move',
+      team: 0,
+      ids: [tank.id],
+      x: 52.5 * TILE_SIZE,
+      z: 20.5 * TILE_SIZE,
+    });
+    game.tick();
+    return { game, tank };
+  }
+
+  it('re-plans the route instead of driving at the new wall', () => {
+    const { game, tank } = crossing();
+    // The hull is under way and its line runs down z = 20. A structure finishes
+    // on that line while it is still a dozen tiles short of it.
+    const wall = footprintOf('barracks');
+    const centreX = 26;
+    for (let dz = 0; dz < wall.h; dz++) {
+      for (let dx = 0; dx < wall.w; dx++) {
+        const x = centreX - Math.floor(wall.w / 2) + dx;
+        const z = 20 - Math.floor(wall.h / 2) + dz;
+        game.blocked[tileIndex(game.state.map.width, x, z)] = 1;
+      }
+    }
+
+    game.tick();
+
+    const waypoint = tank.path[tank.pathIndex];
+    expect(waypoint).toBeDefined();
+    const waypointTile = game.tileAt(waypoint.x, waypoint.z)!;
+    // The very next waypoint is open ground: the hull turned out rather than
+    // pressing on into the footprint and grinding along its wall.
+    expect(game.blocked[waypointTile]).toBe(0);
+    expect(game.state.events.filter((e) => e.type === 'orderFailed')).toHaveLength(0);
+  });
+
+  it('still arrives on the far side of a wall that was not there when it set off', () => {
+    const { game, tank } = crossing();
+    const wall = footprintOf('barracks');
+    const centreX = 26;
+    for (let dz = 0; dz < wall.h; dz++) {
+      for (let dx = 0; dx < wall.w; dx++) {
+        const x = centreX - Math.floor(wall.w / 2) + dx;
+        const z = 20 - Math.floor(wall.h / 2) + dz;
+        game.blocked[tileIndex(game.state.map.width, x, z)] = 1;
+      }
+    }
+
+    game.advance(20 * 40);
+
+    expect(tank.x).toBeGreaterThan((centreX + wall.w) * TILE_SIZE);
+    expect(tank.state).not.toBe('moving');
   });
 });

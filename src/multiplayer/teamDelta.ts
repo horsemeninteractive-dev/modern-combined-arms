@@ -78,6 +78,9 @@ export function sameProjectedEntity(a: ProjectedEntity, b: ProjectedEntity): boo
     a.rallyZ === b.rallyZ &&
     a.targetId === b.targetId &&
     a.garrisonId === b.garrisonId &&
+    a.captureTargetId === b.captureTargetId &&
+    a.captureProgress === b.captureProgress &&
+    sameHarvester(a.harvester, b.harvester) &&
     sameDeconstruct(a.deconstruct, b.deconstruct) &&
     sameIds(a.upgrades, b.upgrades) &&
     sameIds(a.modules, b.modules) &&
@@ -92,6 +95,20 @@ function sameDeconstruct(
 ): boolean {
   if (!a || !b) return a === b;
   return a.remaining === b.remaining && a.total === b.total;
+}
+
+/** A working hauler changes every tick, so all four fields are compared. */
+function sameHarvester(
+  a: ProjectedEntity['harvester'],
+  b: ProjectedEntity['harvester'],
+): boolean {
+  if (!a || !b) return a === b;
+  return (
+    a.phase === b.phase &&
+    a.ore === b.ore &&
+    a.oreTileX === b.oreTileX &&
+    a.oreTileZ === b.oreTileZ
+  );
 }
 
 /** Reload clocks change continuously, so compare them by value. */

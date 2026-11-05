@@ -110,7 +110,7 @@ The room had been tick 1,156 immediately before restart B. The last successful c
 
 ### 5.2 Worker error
 
-Captured in the staging Worker log and preserved in [phase2a12-tail-errors.txt](staging-evidence/phase2a12-tail-errors.txt):
+Captured in the staging Worker log and preserved in [phase2a12-tail-errors.txt](../staging-evidence/phase2a12-tail-errors.txt):
 
 ```text
 MP room restore failed RoomSnapshotError: Saved targetId references an unknown entity.
@@ -242,7 +242,7 @@ The failure is a mismatch between what the snapshot writer persists and what the
 
 ### 8.1 The validator is correct
 
-[roomSnapshot.ts:428](src/multiplayer/roomSnapshot.ts#L428) requires every non-zero `entity.targetId` to reference an entity present in the snapshot:
+[roomSnapshot.ts:428](../src/multiplayer/roomSnapshot.ts#L428) requires every non-zero `entity.targetId` to reference an entity present in the snapshot:
 
 ```ts
 if (entity.targetId) requireEntity(entity.targetId, 'targetId');
@@ -254,7 +254,7 @@ Rejecting the snapshot is the safe behaviour. Defaulting the reference to zero w
 
 The simulation's combat cleanup only clears `targetId` inside the branch that handles an order still pointing at a removed target:
 
-[game.ts:4959-4967](src/sim/game.ts#L4959-L4967)
+[game.ts:4959-4967](../src/sim/game.ts#L4959-L4967)
 
 ```ts
 // Clear orders pointing at dead entities.
@@ -270,7 +270,7 @@ for (const e of this.state.entities) {
 }
 ```
 
-A move order does not carry a `targetId`. [game.ts:777-779](src/sim/game.ts#L777-L779) creates the new move order and clears the aim, but never clears the direct target:
+A move order does not carry a `targetId`. [game.ts:777-779](../src/sim/game.ts#L777-L779) creates the new move order and clears the aim, but never clears the direct target:
 
 ```ts
 // A new move order drops the old aim; the turret settles onto the hull
@@ -474,7 +474,7 @@ The post-trial capacity check passed after the failed `dry5` room's reservation 
 
 The test suite was rerun after the restart trials. Test count was unchanged, which is expected because this phase added evidence tooling only; it is not proof that behaviour is unchanged. The restart harness change from this phase is not part of the production bundle.
 
-Logs: [phase2a12-vitest-pre.log](staging-evidence/phase2a12-vitest-pre.log), [phase2a12-vitest-post.log](staging-evidence/phase2a12-vitest-post.log), [phase2a12-build-post.log](staging-evidence/phase2a12-build-post.log), [phase2a12-smoke-post.json](staging-evidence/phase2a12-smoke-post.json), [phase2a12-lifecycle-post-results.json](staging-evidence/phase2a12-lifecycle-post-results.json).
+Logs: [phase2a12-vitest-pre.log](../staging-evidence/phase2a12-vitest-pre.log), [phase2a12-vitest-post.log](../staging-evidence/phase2a12-vitest-post.log), [phase2a12-build-post.log](../staging-evidence/phase2a12-build-post.log), [phase2a12-smoke-post.json](../staging-evidence/phase2a12-smoke-post.json), [phase2a12-lifecycle-post-results.json](../staging-evidence/phase2a12-lifecycle-post-results.json).
 
 ---
 
@@ -528,16 +528,16 @@ Do not redesign persistence or protocol. Fix the reference invariant and re-run 
 
 | Artifact | Purpose |
 |---|---|
-| [phase2a12-summary.json](staging-evidence/phase2a12-summary.json) | Machine-readable trial and metric summary |
-| [phase2a12-failure.json](staging-evidence/phase2a12-failure.json) | Failure capture for `dry5` |
-| [phase2a12-deployment.txt](staging-evidence/phase2a12-deployment.txt) | Build, artifact and source identity |
-| [phase2a12-platform-periodic.json](staging-evidence/phase2a12-platform-periodic.json) | Raw periodic CPU/memory rows |
-| [phase2a12-platform-invocations.json](staging-evidence/phase2a12-platform-invocations.json) | Invocation coverage and quantiles |
+| [phase2a12-summary.json](../staging-evidence/phase2a12-summary.json) | Machine-readable trial and metric summary |
+| [phase2a12-failure.json](../staging-evidence/phase2a12-failure.json) | Failure capture for `dry5` |
+| [phase2a12-deployment.txt](../staging-evidence/phase2a12-deployment.txt) | Build, artifact and source identity |
+| [phase2a12-platform-periodic.json](../staging-evidence/phase2a12-platform-periodic.json) | Raw periodic CPU/memory rows |
+| [phase2a12-platform-invocations.json](../staging-evidence/phase2a12-platform-invocations.json) | Invocation coverage and quantiles |
 | `phase2a12-dry5-2026-10-30T22-50-38-375Z/` | Failed trial logs, statuses and Restart A record |
 | `phase2a12-dry6-2026-10-30T22-53-16-754Z/` | Passing short trial summary, restarts and metrics |
-| [phase2a12-tail-errors.txt](staging-evidence/phase2a12-tail-errors.txt) | Worker restore and final-snapshot errors |
-| [phase2a12-vitest-post.log](staging-evidence/phase2a12-vitest-post.log) | Post-trial 959-test run |
-| [phase2a12-build-post.log](staging-evidence/phase2a12-build-post.log) | Post-trial production build |
-| [phase2a12-bundle-scan.txt](staging-evidence/phase2a12-bundle-scan.txt) | Staging-marker scan |
+| [phase2a12-tail-errors.txt](../staging-evidence/phase2a12-tail-errors.txt) | Worker restore and final-snapshot errors |
+| [phase2a12-vitest-post.log](../staging-evidence/phase2a12-vitest-post.log) | Post-trial 959-test run |
+| [phase2a12-build-post.log](../staging-evidence/phase2a12-build-post.log) | Post-trial production build |
+| [phase2a12-bundle-scan.txt](../staging-evidence/phase2a12-bundle-scan.txt) | Staging-marker scan |
 
 **The 10 ms individual-tick CPU target remains unverified.**

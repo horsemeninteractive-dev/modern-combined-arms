@@ -246,7 +246,10 @@ const ROSTER: UnitDef[] = [
     armour: 'support',
     cost: { mats: 500, req: 0 },
     buildTime: 14,
-    producedBy: ['factory'],
+    // Same fallback as the engineer: the headquarters keeps the base able to
+    // earn when the vehicle factory is gone, and hands the slot back the moment
+    // a factory is operational again.
+    producedBy: ['factory', 'commandPost'],
     weapons: [],
     description:
       'Armoured bulk hauler. Automatically mines material deposits and returns them to the nearest refinery.',

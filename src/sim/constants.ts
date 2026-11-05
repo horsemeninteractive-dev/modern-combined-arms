@@ -57,3 +57,17 @@ export const STARTING_REQ = 120;
  * same number.
  */
 export const HARVESTER_CAPACITY = 300;
+
+/**
+ * Materials per second the headquarters lifeline pays when a base has lost both
+ * its haulers and its vehicle factory.
+ *
+ * The ordinary trickle (one a second, see `matsPerSecBackstop`) exists so a
+ * stripped base can recover, but a hauler costs 500: at one a second the
+ * promise takes over eight minutes, longer than a match, which is how a side
+ * with a standing refinery and no hull to feed it ended up with no income and
+ * no way back. This rate is only paid in the state where nothing can earn and
+ * nothing can build the thing that earns, so it cannot subsidise an ordinary
+ * opening, a base that still hauls, or a base that still holds a factory.
+ */
+export const STRIPPED_BASE_TRICKLE_RATE = 4;

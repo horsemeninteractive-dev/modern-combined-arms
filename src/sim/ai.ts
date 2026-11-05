@@ -139,6 +139,11 @@ export interface AIProfile {
   commitShare: number;
   /** Combat units kept at home while a wave is away. */
   reserve: number;
+  /**
+   * Whether a commander pulls a committed wave home when its own base is
+   * attacked. A recruit does not: its army walks on while its base burns.
+   */
+  recall: boolean;
 }
 
 /** Every commander picks one of these from the match seed. */
@@ -200,6 +205,15 @@ function unitHash(...values: number[]): number {
   return h / 0xffffffff;
 }
 
+/**
+ * How close to the command post an attacker has to be before a commander that
+ * watches its own base calls the wave home. Small on purpose: it is the base
+ * under fire, not contact anywhere on the map, that cancels an assault.
+ */
+const RECALL_RING = 18;
+/** A wave further out than this cannot return in time and keeps pressing. */
+const RECALL_RANGE = 45;
+
 const DIFFICULTY_BIAS: Record<
   AIDifficulty,
   {
@@ -212,15 +226,27 @@ const DIFFICULTY_BIAS: Record<
     responseWeight: number;
     commitShare: number;
     reserve: number;
+    recall: boolean;
   }
 > = {
   // Same planner, same resources and vision: a level changes judgement, never
   // income. A recruit decides every three seconds, runs the thinnest economy,
-  // presses early with a small army that ignores what it scouted. An elite
-  // decides more than twice a second, builds the broadest economy, counters the
-  // force it actually saw and masses a supported wave instead of dribbling
-  // units in. Its army scale and reaction were re-measured after units learned
-  // to walk around each other, which compressed the margin over veteran.
+  // presses early with a small army that ignores what it scouted, and never
+  // turns that wave around: its base is on its own. A veteran is the baseline —
+  // it decides every second, counters what it scouted and recalls a committed
+  // wave when its command post itself comes under fire. An elite decides more
+  // than twice a second, keeps two units on station, spends its economy bias on
+  // units rather than static guns and commits a coordinated wave sooner.
+  //
+  // The recall (and the elite guard) exist because the ladder used to be decided
+  // by knockouts: no level could answer a strike force once its wave had left,
+  // so a recruit-level rush lifted a veteran command post in half its matches
+  // and the measured gap collapsed to a coin flip. With both higher levels
+  // defending, the margin has to come from judgement again — which is why the
+  // elite's economy and defence biases are small here: on a 600-second arena
+  // every material spent on infrastructure the veteran does not buy is tempo
+  // given away, and an elite that invests like a turtle loses the attrition war
+  // it should win.
   recruit: {
     aggression: 0.16,
     economy: -0.4,
@@ -231,6 +257,7 @@ const DIFFICULTY_BIAS: Record<
     responseWeight: 0.15,
     commitShare: 0.35,
     reserve: 0,
+    recall: false,
   },
   veteran: {
     aggression: 0,
@@ -242,17 +269,19 @@ const DIFFICULTY_BIAS: Record<
     responseWeight: 0.55,
     commitShare: 1,
     reserve: 0,
+    recall: true,
   },
   elite: {
-    aggression: -0.04,
-    economy: 0.4,
+    aggression: 0,
+    economy: 0.15,
     tech: 0.2,
-    defence: 0.15,
-    armyScale: 1.3,
+    defence: 0.05,
+    armyScale: 1.15,
     reactionTicks: 8,
     responseWeight: 0.95,
-    commitShare: 1.1,
+    commitShare: 0.85,
     reserve: 2,
+    recall: true,
   },
 };
 
@@ -282,6 +311,7 @@ export function aiProfile(seed: number, difficulty: AIDifficulty = 'veteran'): A
     responseWeight: level.responseWeight,
     commitShare: level.commitShare,
     reserve: level.reserve,
+    recall: level.recall,
   };
 }
 
@@ -1265,9 +1295,29 @@ export class AIController {
       dist(e.x, e.z, ctx.baseX, ctx.baseZ) < dist(best.x, best.z, ctx.baseX, ctx.baseZ) ? e : best,
     );
     ctx.st.phase = 'defend';
+    // A wave already on its way out is not `free`, so without this nothing can
+    // be called back: the whole army walks on while a strike force dismantles
+    // the base, and a commander that never defends loses to any level that
+    // pushes early. Only an attacker standing in the base itself is an
+    // emergency, and only a level that watches its own base calls the wave home,
+    // so a commander keeps pressing while its base is safe and turns around when
+    // it is not.
+    const emergency =
+      ctx.profile.recall &&
+      dist(target.x, target.z, ctx.baseX, ctx.baseZ) < RECALL_RING * TILE_SIZE;
     let ordered = 0;
+    let recalled = 0;
     for (const unit of ctx.own) {
-      if (unit.kind !== 'unit' || !this.free(unit)) continue;
+      if (unit.kind !== 'unit' || unit.garrisonId || this.claimed.has(unit.id)) continue;
+      const committed = !!unit.order;
+      if (committed) {
+        // Already shooting the thing that is attacking the base.
+        if (unit.order!.type === 'attack' && unit.order!.targetId === target.id) continue;
+        if (!emergency) continue;
+        // A wave that has crossed the map cannot get back in time to save the
+        // base, and abandoning a winning assault only feeds one unit at a time.
+        if (dist(unit.x, unit.z, ctx.baseX, ctx.baseZ) > RECALL_RANGE * TILE_SIZE) continue;
+      }
       const family = unitFamily(unit.defId);
       if (
         family === 'harvester' ||
@@ -1283,19 +1333,24 @@ export class AIController {
       // ground guns ignore aircraft and interceptors ignore tanks.
       if (!weapons.some((weapon) => canWeaponTarget(weapon, target))) continue;
       if (dist(unit.x, unit.z, ctx.baseX, ctx.baseZ) > 60 * TILE_SIZE) continue;
-      if (unit.order?.type === 'attack' && unit.order.targetId === target.id) continue;
-      if (
-        this.order(ctx, unit, {
-          type: 'attack',
-          team: ctx.aiId,
-          ids: [unit.id],
-          targetId: target.id,
-        })
-      ) {
-        ordered++;
-      }
+      // Reaching here with an order means the unit is being recalled, which
+      // `order()` would refuse; the claim keeps the rest of the tick off it.
+      this.claim(unit);
+      ctx.game.enqueueCommand({
+        type: 'attack',
+        team: ctx.aiId,
+        ids: [unit.id],
+        targetId: target.id,
+      });
+      ordered++;
+      if (committed) recalled++;
     }
-    if (ordered > 0) ctx.st.lastDecision = `defending base against ${target.defId}`;
+    if (ordered > 0) {
+      ctx.st.lastDecision =
+        recalled > 0
+          ? `recalling ${recalled} units to defend base against ${target.defId}`
+          : `defending base against ${target.defId}`;
+    }
   }
 
   private scout(ctx: AIContext): void {
@@ -1849,6 +1904,45 @@ export class AIController {
     return def.cost.mats;
   }
 
+  /**
+   * The hauler half of the same rule.
+   *
+   * A base with a drop-off and no hauler is an absorbing state: nothing it owns
+   * can earn, so the lifeline is the only income left. A rifleman's 130 arrives
+   * long before a hauler's 500, and without this reserve production spends the
+   * lifeline on the army a few seconds at a time while the economy stays dead —
+   * the trap the ladder showed an early raid could put a commander into.
+   *
+   * The reserve is paid only while the base can actually train a hauler (the
+   * vehicle factory, or the headquarters fallback once the factory is gone),
+   * only with a drop-off standing to tip into, and it releases the moment a
+   * hauler exists or is queued. A base with no drop-off is the drop-off and
+   * engineer reserves' problem, and it holds nothing here.
+   */
+  private haulerReserve(ctx: AIContext): number {
+    if ((ctx.unitCounts.get('harvester') ?? 0) > 0) return 0;
+    if ((ctx.counts.get('refinery') ?? 0) === 0) return 0;
+    // A drained map is not a broken economy: the lifeline keeps paying with a
+    // hauler standing, so hoarding for one that has nothing left to mine would
+    // hold the bank hostage for the rest of the match.
+    if (!ctx.game.hasRemainingOre()) return 0;
+    const harvesterId = ctx.game.unitIdFor(ctx.aiId, 'harvester');
+    const def = harvesterId ? UNITS[harvesterId] : undefined;
+    if (!harvesterId || !def) return 0;
+    if ((this.queuedCounts(ctx).get(harvesterId) ?? 0) > 0) return 0;
+    const factory = ctx.complete.some((b) => b.defId === 'factory');
+    const facility = ctx.complete.some((b) => {
+      if (!ctx.game.productionEntries(ctx.aiId, b.defId).includes(harvesterId)) return false;
+      // The command post hands the hauler slot back while a factory stands, so
+      // asking it would only produce a refused order.
+      if (b.defId === 'commandPost' && factory) return false;
+      return true;
+    });
+    if (!facility) return 0;
+    if (ctx.player.req < def.cost.req) return 0;
+    return def.cost.mats;
+  }
+
   private manageConstruction(ctx: AIContext): { mats: number; req: number } {
     const site = ctx.buildings.find((e) => e.construction);
     if (site) {
@@ -1930,6 +2024,25 @@ export class AIController {
     }
 
     for (const option of affordable) {
+      // A pending rebuild reserve owns the bank while the bank is still short
+      // of it. The reserves exist so the lifeline can buy the hauler or engineer
+      // that earns; letting an optional structure dip into that same shortfall
+      // is the starvation one level up (a 380-material radar placed at 401
+      // materials delayed the 500-material hauler by minutes). Essential
+      // structures are the other half of the same recovery and are still
+      // placed, and a funded bank is never held back.
+      // The engineer is the first link in the chain, so its reserve takes
+      // precedence rather than the larger of the two.
+      const rebuildReserve = this.engineerReserve(ctx) || this.haulerReserve(ctx);
+      const price = BUILDINGS[option.defId]?.cost.mats ?? 0;
+      if (
+        !option.essential &&
+        rebuildReserve > 0 &&
+        ctx.player.mats - price < rebuildReserve
+      ) {
+        ctx.st.lastDecision = 'holding the bank for a replacement economy unit';
+        continue;
+      }
       const siteChoice = this.findBuildSite(ctx, ctx.engineer, option.defId);
       if (!siteChoice) continue;
       const def = BUILDINGS[option.defId];
@@ -2240,7 +2353,14 @@ export class AIController {
     // is a capability the commander adds, never the plan it substitutes for.
     // A nation without one simply has nothing to push, so this cannot produce
     // another nation's equipment.
-    if (ctx.st.desiredArmy >= 6 && ctx.threats.length === 0) {
+    //
+    // "The field army exists" is read from units on the ground, not from the
+    // planned size: a fixed 6-unit plan gate went silently dead when the elite
+    // plan was retuned to 5, and the commander then never fielded its national
+    // equipment at all. Half the planned army, and never fewer than four
+    // bayonets, is the same intent at any scale.
+    const fieldArmy = Math.max(4, Math.round(ctx.st.desiredArmy * 0.5));
+    if (ctx.combat.length >= fieldArmy && ctx.threats.length === 0) {
       for (const defId of ctx.game.rosterFor(ctx.aiId).units) {
         const def = UNITS[defId];
         if (!def?.national || def.variantOf !== undefined) continue;
@@ -2474,6 +2594,16 @@ export class AIController {
     const engineerReserve = this.engineerReserve(ctx);
     if (engineerReserve > 0 && budget.mats < engineerReserve) {
       ctx.st.lastDecision = `holding ${Math.ceil(engineerReserve - budget.mats)} mats for a replacement engineer`;
+      return;
+    }
+    // The hauler is the other half of the rebuild chain: a base with no hauler
+    // earns only the lifeline, so the lifeline belongs to the replacement and
+    // not to the army. Engineers are checked first because nothing can be built
+    // at all without one: while the engineer reserve is pending it owns every
+    // material, so its purchase is not preempted by the hauler's larger price.
+    const haulerReserve = engineerReserve > 0 ? 0 : this.haulerReserve(ctx);
+    if (haulerReserve > 0 && budget.mats < haulerReserve) {
+      ctx.st.lastDecision = `holding ${Math.ceil(haulerReserve - budget.mats)} mats for a replacement harvester`;
       return;
     }
     // A planned support arm may hold the bank for a few seconds, but only when

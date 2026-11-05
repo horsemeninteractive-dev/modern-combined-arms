@@ -4,6 +4,7 @@ import {
   MAX_QUEUE,
   PLAYER,
   REPAIR_SUPPRESSION_TICKS,
+  STRIPPED_BASE_TRICKLE_RATE,
   TICK_RATE,
   TILE_SIZE,
   VISION_INTERVAL,
@@ -3680,15 +3681,21 @@ export class Game {
         reason: `${def.name} requires ${missingResearch.map((tech) => tech.name).join(' and ')} research.`,
       };
     }
-    // Engineers are a factory unit, with the command post as a fallback so a
-    // lost factory and engineer do not leave the player permanently unable to
-    // build. The HQ hands the role back as soon as a factory is operational.
-    if (defId === 'engineer' && b.defId === 'commandPost') {
+    // Engineers and harvesters are factory units, with the command post as a
+    // fallback so a lost factory does not leave the player permanently unable
+    // to build or permanently unable to earn. Those two are the whole rebuild
+    // chain: without an engineer nothing is built, and without a hauler nothing
+    // is mined. The HQ hands both roles back as soon as a factory is
+    // operational, so the fallback never competes with the real facility.
+    if ((defId === 'engineer' || defId === 'harvester') && b.defId === 'commandPost') {
       const factory = this.state.entities.some(
         (e) => e.owner === owner && e.defId === 'factory' && e.hp > 0 && !e.construction,
       );
       if (factory) {
-        return { ok: false, reason: 'An operational Vehicle Factory builds engineers.' };
+        return {
+          ok: false,
+          reason: `An operational Vehicle Factory builds ${defId === 'harvester' ? 'harvesters' : 'engineers'}.`,
+        };
       }
     }
     if (b.queue.length >= MAX_QUEUE) return { ok: false, reason: 'Production queue is full.' };
@@ -4517,7 +4524,7 @@ export class Game {
    * test arena has nothing to run out — so only a map that started with ore can
    * be reported as worked out.
    */
-  private hasRemainingOre(): boolean {
+  hasRemainingOre(): boolean {
     if (!this.oreAuthored) return true;
     if (this.oreCheckedTick === this.state.tick) return this.oreRemaining > 0;
     let total = 0;
@@ -4619,10 +4626,23 @@ export class Game {
     const player = this.player(playerId);
     let harvesters = 0;
     let refineries = 0;
+    let factories = 0;
     for (const e of this.state.entities) {
       if (e.owner !== playerId || e.hp <= 0) continue;
       if (e.kind === 'unit' && e.defId === 'harvester') harvesters++;
       else if (e.kind === 'building' && BUILDINGS[e.defId]?.refinery) refineries++;
+      else if (
+        e.kind === 'building' &&
+        !e.construction &&
+        !BUILDINGS[e.defId]?.commandPost &&
+        BUILDINGS[e.defId]?.produces === 'land'
+      ) {
+        // A real production facility can still put a hauler on the ground, so
+        // the base is not stripped of the means to rebuild. The headquarters
+        // fallback does not count: it exists in every base, and a base that has
+        // only the fallback is exactly the stripped state this checks for.
+        if (this.productionEntries(playerId, e.defId).includes('harvester')) factories++;
+      }
     }
     // The lifeline covers a base with no working hauling economy. A hauler with
     // nowhere to tip is not hauling — all refineries were lost — and that used
@@ -4638,12 +4658,30 @@ export class Game {
       harvesters > 0 &&
       this.hasRemainingOre() &&
       (refineries > 0 || (player?.mats ?? 0) >= REFINERY_REPLACEMENT_COST);
+    // No hauler and nothing that can build one is the state the lifeline is
+    // for: the base cannot earn and cannot rebuild the thing that earns. The
+    // ordinary rate is too small to buy the hull inside a match, so the lifeline
+    // pays a workable rate there instead. It is still far below hauling, so
+    // deliberately running without haulers is never the better economy.
+    const stripped = harvesters === 0 && factories === 0;
+    // The trickle is a lifeline for an economy that was built and then broken,
+    // never an opening allowance. A side that has not committed to materials at
+    // all — no refinery standing or going up, no production facility that can
+    // field a hauler — opens on its authorised bank alone: the Command Post pays
+    // nothing until one of those stands. Every real match opens with only a
+    // Command Post, so this is what keeps the opening subsidy out of the game.
+    const economyEstablished = refineries > 0 || factories > 0;
     let rate = 0;
     for (const e of this.state.entities) {
       if (e.owner !== playerId || e.kind !== 'building' || e.construction || e.hp <= 0) continue;
       const def = BUILDINGS[e.defId];
       if (!def?.matsPerSec) continue;
-      if (def.matsPerSecBackstop && hauling) continue;
+      if (def.matsPerSecBackstop) {
+        if (!economyEstablished) continue;
+        if (hauling) continue;
+        rate += stripped ? STRIPPED_BASE_TRICKLE_RATE : def.matsPerSec;
+        continue;
+      }
       rate += def.matsPerSec;
     }
     return rate;
@@ -6858,7 +6896,28 @@ export class Game {
     }
     const goal = nearestWalkable(nav, goalX, goalZ, 10);
     if (goal === null) return null;
-    if (goal === tileIndex(this.state.map.width, startX, startZ)) return [];
+    // A hull standing inside a footprint cannot start a search: every tile
+    // around it is structure, so A* has nowhere to expand and the order came
+    // back "no route" — the hull was left where it was for the rest of the
+    // battle. Plan from the nearest open tile instead and let the first leg be
+    // the walk out. The movement layer already lets a caught hull cross its own
+    // structure on the way out, and only on the way out.
+    let planX = startX;
+    let planZ = startZ;
+    let escape: import('./types').PathPoint | null = null;
+    if (this.blocked[tileIndex(this.state.map.width, startX, startZ)]) {
+      const exit = this.escapeTile(e.x, e.z, def.moveClass);
+      if (!exit) return null;
+      planX = exit.x;
+      planZ = exit.z;
+      escape = {
+        x: (exit.x + 0.5) * TILE_SIZE,
+        z: (exit.z + 0.5) * TILE_SIZE,
+      };
+      if (goal === tileIndex(this.state.map.width, planX, planZ)) return [escape];
+    } else if (goal === tileIndex(this.state.map.width, startX, startZ)) {
+      return [];
+    }
     // Path to the tile that was actually resolved, not to the raw aim. The
     // search inside findPath widens its own ring to 8, so an aim beside a large
     // structure — a command post, a research centre — could resolve here at 9
@@ -6866,7 +6925,9 @@ export class Game {
     // ring scan. The resolved tile is walkable, so it resolves to itself.
     const goalTileX = goal % this.state.map.width;
     const goalTileZ = (goal / this.state.map.width) | 0;
-    return findPath(nav, startX, startZ, goalTileX, goalTileZ);
+    const path = findPath(nav, planX, planZ, goalTileX, goalTileZ);
+    if (!path) return null;
+    return escape ? [escape, ...path] : path;
   }
 
   /**
@@ -7077,6 +7138,33 @@ export class Game {
     return nav;
   }
 
+  /** True when the hull is standing on ground a structure has claimed. */
+  private onStructureGround(e: Entity): boolean {
+    const tile = this.tileAt(e.x, e.z);
+    return tile !== null && this.blocked[tile] === 1;
+  }
+
+  /**
+   * Re-plan this hull to what it is actually trying to reach and adopt the new
+   * route. Returns false when no route exists, leaving the caller's failure
+   * handling — the nudge pass, traffic yielding, the give-up notice — intact.
+   * The waypoint check skips a hull that is standing inside a footprint itself,
+   * because its own escape route legitimately crosses that structure.
+   */
+  private reroute(e: Entity, def: UnitDef): boolean {
+    const plan = this.planMove(e, def, e.destX, e.destZ);
+    if (!plan || plan.path.length === 0) return false;
+    e.path = plan.path;
+    e.pathIndex = 0;
+    e.destX = plan.x;
+    e.destZ = plan.z;
+    if (e.order?.type === 'move' || e.order?.type === 'attackMove') {
+      e.order = { ...e.order, x: plan.x, z: plan.z };
+    }
+    e.blockedTicks = 0;
+    return true;
+  }
+
   private moveAlongPath(e: Entity, def: UnitDef, dt: number): void {
     if (e.order?.type === 'return' && def.domain === 'air') {
       // handled by aircraft update / path
@@ -7090,6 +7178,15 @@ export class Game {
       return;
     }
     const target = e.path[e.pathIndex];
+    // A structure can be raised across a route that was planned before it
+    // stood there. The old waypoint is then inside a footprint, so the hull
+    // drove at it, slipped along its wall and kept re-clearing the blocked
+    // counter — it only turned the corner once the wall ran out. Re-plan the
+    // moment the next waypoint is blocked instead of driving into it.
+    if (!this.onStructureGround(e)) {
+      const waypointTile = this.tileAt(target.x, target.z);
+      if (waypointTile !== null && this.blocked[waypointTile] && this.reroute(e, def)) return;
+    }
     const dx = target.x - e.x;
     const dz = target.z - e.z;
     const d = Math.hypot(dx, dz);
@@ -7116,7 +7213,18 @@ export class Game {
       const routeZ = (next ?? target).z - (prev ?? target).z;
       const routeLen = Math.hypot(routeX, routeZ);
       if (routeLen > 0.001) {
-        passed = ((e.x - target.x) * routeX + (e.z - target.z) * routeZ) / routeLen > 0;
+        const beyond =
+          ((e.x - target.x) * routeX + (e.z - target.z) * routeZ) / routeLen;
+        // Skipping a waypoint that is already behind the hull is only safe when
+        // the ground on to the next one is actually open. A route planned around
+        // a structure spends its first waypoint on the shoulder of that
+        // structure, and a hull that arrives level with the wall is technically
+        // past it — dismissing the waypoint there turned the hull straight into
+        // the building, where it jammed, re-planned and did the same thing again
+        // for the rest of the battle. If something is still in the way, the
+        // waypoint is the detour and has to be honoured.
+        const ahead = next ?? target;
+        passed = beyond > 0 && this.structureLineClear(e.x, e.z, ahead.x, ahead.z);
       }
     }
     if (d <= arrivalRadius || passed) {
@@ -7177,15 +7285,23 @@ export class Game {
       e.x = nx;
       e.z = nz;
       e.blockedTicks = 0;
-    } else if (this.canOccupy(e, nx, e.z)) {
+    } else if (Math.abs(nx - e.x) > 1e-6 && this.canOccupy(e, nx, e.z)) {
       // Slip along a wall instead of stopping dead against it: a step on one
       // axis alone clears the corners the smoothed path cuts across. It is a
-      // last-resort correction, not a driving lane.
+      // last-resort correction, not a driving lane, so it only counts as
+      // progress when it actually closes the gap to the waypoint. A hull
+      // grinding down the side of a structure used to clear the blocked
+      // counter on every slip, which is why it drove along the wall instead of
+      // re-planning around it.
+      if (Math.hypot(target.x - nx, target.z - e.z) < d - 0.01) e.blockedTicks = 0;
       e.x = nx;
-      e.blockedTicks = 0;
-    } else if (this.canOccupy(e, e.x, nz)) {
+    } else if (Math.abs(nz - e.z) > 1e-6 && this.canOccupy(e, e.x, nz)) {
+      // A head-on wall makes the lateral component of the step exactly zero.
+      // That zero-length "slip" used to count as a successful move, which kept
+      // the hull out of the blocked branch below and stopped it ever re-planning
+      // — it stood nose-first against the structure for the rest of the battle.
+      if (Math.hypot(target.x - e.x, target.z - nz) < d - 0.01) e.blockedTicks = 0;
       e.z = nz;
-      e.blockedTicks = 0;
     } else {
       // Nothing can be driven: the bow is against something. If a friendly hull
       // is the thing in the way, it gives way — including here, where the step
@@ -7212,53 +7328,110 @@ export class Game {
           const sx = e.x + Math.cos(angle) * nudge;
           const sz = e.z + Math.sin(angle) * nudge;
           if (this.canOccupy(e, sx, sz) && this.unitClearAt(e, sx, sz)) {
+            // A shoulder step only counts as progress when it brings the hull
+            // closer to its waypoint. Clearing the counter for any step at all
+            // meant a hull grinding along the face of a structure reached the
+            // nudge every fourth tick and reset itself for ever, so the re-plan
+            // that would have sent it round never fired — it scraped along the
+            // wall until the wall happened to end.
+            const gained = Math.hypot(target.x - sx, target.z - sz) < d - 0.01;
             e.x = sx;
             e.z = sz;
-            e.blockedTicks = 0;
-            return;
+            if (gained) {
+              e.blockedTicks = 0;
+              return;
+            }
+            break;
           }
-        }
-      }
-      // Something is in the way for good: a new structure across the route, a
-      // walled pocket the aim sat behind, a column that closed up. Re-plan to
-      // the nearest ground this hull can actually reach before declaring the
-      // order impossible, and give it far more than a few ticks to work out.
-      if (e.blockedTicks > 8) {
-        const plan = this.planMove(e, def, e.destX, e.destZ);
-        if (plan && plan.path.length > 0) {
-          e.path = plan.path;
-          e.pathIndex = 0;
-          e.destX = plan.x;
-          e.destZ = plan.z;
-          if (e.order?.type === 'move' || e.order?.type === 'attackMove') {
-            e.order = { ...e.order, x: plan.x, z: plan.z };
-          }
-          e.blockedTicks = 0;
-        } else if (e.blockedTicks < STUCK_GIVE_UP_TICKS) {
-          // Keep trying: the nudge pass and traffic yielding below still have
-          // a chance to open the lane before this becomes a refusal.
-        } else if (e.order?.type === 'garrison') {
-          // The garrison handler owns this failure: it keeps trying doors for a
-          // while, then reports the shelter it could not reach.
-          e.path = [];
-          e.pathIndex = 0;
-        } else {
-          this.emit('orderFailed', {
-            team: e.owner,
-            x: e.x,
-            z: e.z,
-            text: `${entityName(e)} cannot reach its destination.`,
-            level: 'warning',
-            entityId: e.id,
-            sound: 'denied',
-          });
-          e.order = null;
-          e.path = [];
-          e.state = 'idle';
-          e.blockedTicks = 0;
         }
       }
     }
+    // A hull that cannot close on its waypoint has a route that no longer
+    // matches the ground: a structure raised across it, a wall it is sliding
+    // along a few centimetres at a time, a pocket that closed. Re-plan once the
+    // counter says so. This lives outside the step chain because a hull that is
+    // slipping sideways along a wall counts as moving, and the old placement
+    // inside the "nothing can be driven" branch is exactly why it never
+    // re-planned and ground along the structure instead.
+    if (e.blockedTicks > 8) this.handleBlockedRoute(e, def);
+  }
+
+  /**
+   * True when no structure footprint sits between two world points. A tile walk
+   * over the occupancy grid, used only to decide whether a hull may dismiss a
+   * waypoint that is already behind it: on open ground there is nothing to steer
+   * around, but with a building in the way that waypoint is the detour.
+   */
+  private structureLineClear(
+    fromX: number,
+    fromZ: number,
+    toX: number,
+    toZ: number,
+  ): boolean {
+    const map = this.state.map;
+    let x0 = Math.floor(fromX / TILE_SIZE);
+    let z0 = Math.floor(fromZ / TILE_SIZE);
+    const x1 = Math.floor(toX / TILE_SIZE);
+    const z1 = Math.floor(toZ / TILE_SIZE);
+    const dx = Math.abs(x1 - x0);
+    const dz = Math.abs(z1 - z0);
+    // Nothing is decided a map's length away, and the walk is bounded anyway.
+    if (dx > 40 || dz > 40) return false;
+    const sx = x0 < x1 ? 1 : -1;
+    const sz = z0 < z1 ? 1 : -1;
+    let err = dx - dz;
+    let guard = 0;
+    for (;;) {
+      if (x0 === x1 && z0 === z1) return true;
+      if (++guard > 160) return false;
+      const e2 = 2 * err;
+      if (e2 > -dz) {
+        err -= dz;
+        x0 += sx;
+      }
+      if (e2 < dx) {
+        err += dx;
+        z0 += sz;
+      }
+      if (!inBounds(map.width, map.height, x0, z0)) return false;
+      // The tile the hull stands on is not part of the walk, so a hull caught
+      // inside a footprint still gets a verdict about the ground ahead.
+      if (this.blocked[tileIndex(map.width, x0, z0)]) return false;
+    }
+  }
+
+  /**
+   * The last resort for a hull that is not closing on its waypoint: plan again
+   * around what is actually there, and only refuse the order when no route
+   * exists and the hull has had long enough to work the problem out.
+   */
+  private handleBlockedRoute(e: Entity, def: UnitDef): void {
+    if (this.reroute(e, def)) return;
+    if (e.blockedTicks < STUCK_GIVE_UP_TICKS) {
+      // Keep trying: the nudge pass and traffic yielding still have a chance to
+      // open the lane before this becomes a refusal.
+      return;
+    }
+    if (e.order?.type === 'garrison') {
+      // The garrison handler owns this failure: it keeps trying doors for a
+      // while, then reports the shelter it could not reach.
+      e.path = [];
+      e.pathIndex = 0;
+      return;
+    }
+    this.emit('orderFailed', {
+      team: e.owner,
+      x: e.x,
+      z: e.z,
+      text: `${entityName(e)} cannot reach its destination.`,
+      level: 'warning',
+      entityId: e.id,
+      sound: 'denied',
+    });
+    e.order = null;
+    e.path = [];
+    e.state = 'idle';
+    e.blockedTicks = 0;
   }
 
   /**
@@ -7614,6 +7787,24 @@ export class Game {
     const curIdx = tileIndex(this.state.map.width, curTx, curTz);
     const trapped = this.blocked[curIdx] === 1;
     if (this.blocked[idx] && !trapped) return false;
+    if (trapped && this.blocked[idx]) {
+      // A hull caught inside a footprint may walk back out of it, but not
+      // through the structure and out the far side, and certainly not straight
+      // on into the next building on the map. The old blanket exemption let a
+      // hull that was caught once drive through every structure after it, which
+      // is what looked like units refusing to path around buildings at all.
+      const from = this.escapeDepth(e.x, e.z, def.moveClass);
+      if (
+        Number.isFinite(from) &&
+        // Equal depth is a step within the tile the hull already stands in, or
+        // along the face of the structure it is trapped against: refusing that
+        // froze the hull where it was, because a hull deep inside a building
+        // never changes tile until it is already moving.
+        this.escapeDepth(x, z, def.moveClass) > from
+      ) {
+        return false;
+      }
+    }
     if (this.deckDirty) this.rebuildDecks();
     // Routing and movement must agree about a bridge deck: the route is planned
     // on the decked ground (see `navFor`), so the per-step check is too, or a
@@ -7629,7 +7820,55 @@ export class Game {
       curTz,
       def.moveClass,
     );
-    return Number.isFinite(cost) || trapped;
+    if (Number.isFinite(cost)) return true;
+    // The escape above still has to cross the ground the structure covers when
+    // the hull is standing on a tile the terrain table refuses; open water and
+    // cliffs stay closed to it either way.
+    return trapped && this.blocked[idx] === 1;
+  }
+
+  /**
+   * The nearest tile a hull standing at `x`,`z` could drive out to, and how
+   * many tiles of structure lie between the two. A hull that is already on
+   * open ground resolves to itself at depth 0; a hull caught inside a
+   * footprint resolves to the closest open tile on any side. Null when there
+   * is nothing usable in reach.
+   */
+  private escapeTile(
+    x: number,
+    z: number,
+    moveClass: UnitDef['moveClass'],
+  ): { depth: number; x: number; z: number } | null {
+    const map = this.state.map;
+    const cx = Math.floor(x / TILE_SIZE);
+    const cz = Math.floor(z / TILE_SIZE);
+    const cur = tileIndex(map.width, cx, cz);
+    if (!this.blocked[cur]) return { depth: 0, x: cx, z: cz };
+    for (let radius = 1; radius <= 6; radius++) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          // Ring only: the first radius that reaches open ground is the answer.
+          if (Math.max(Math.abs(dx), Math.abs(dz)) !== radius) continue;
+          const tx = cx + dx;
+          const tz = cz + dz;
+          if (!inBounds(map.width, map.height, tx, tz)) continue;
+          const i = tileIndex(map.width, tx, tz);
+          if (this.blocked[i]) continue;
+          if (!canStandOn(map.width, map.height, map.terrain, i, moveClass)) continue;
+          return { depth: radius, x: tx, z: tz };
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Tiles of structure between a hull at `x`,`z` and open ground: 0 when it is
+   * already clear, Infinity when there is nothing usable within reach. Used to
+   * make an escape from a footprint monotone — every step has to lead out.
+   */
+  private escapeDepth(x: number, z: number, moveClass: UnitDef['moveClass']): number {
+    return this.escapeTile(x, z, moveClass)?.depth ?? Infinity;
   }
 
   private separateUnits(): void {

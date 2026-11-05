@@ -56,11 +56,20 @@ describe('skirmish AI', () => {
     expect(recruit.strategy).toBe(veteran.strategy);
     expect(elite.strategy).toBe(veteran.strategy);
     // A recruit is deliberately the weaker commander: it decides slowly, plans
-    // a smaller army on a thinner economy, ignores what it scouted and feeds
-    // units in as they finish. Elite decides fastest, masses a larger army that
-    // counters the force it actually saw, and only attacks once it is complete.
+    // a smaller army on a thinner economy, ignores what it scouted, feeds units
+    // in as they finish and never recalls a committed wave. Elite decides
+    // fastest, plans a slightly larger army that counters the force it actually
+    // saw, posts a guard and recalls it.
+    //
+    // The elite used to be the most patient of the three — lower aggression and a
+    // commit share above the baseline, so it would only attack with more than its
+    // planned army. The ladder measured what that costs: on a 600-second arena
+    // every second spent massing is ground given away, and an elite that waited
+    // lost the attrition war it is supposed to win. Tempo, not patience, is the
+    // elite's edge, so the invariant is that no higher level is more cautious
+    // than the baseline it outranks.
     expect(recruit.aggression).toBeGreaterThan(veteran.aggression);
-    expect(veteran.aggression).toBeGreaterThan(elite.aggression);
+    expect(elite.aggression).toBeGreaterThanOrEqual(veteran.aggression);
     expect(veteran.economy).toBeGreaterThan(recruit.economy);
     expect(elite.economy).toBeGreaterThan(veteran.economy);
     expect(recruit.armyScale).toBeLessThan(veteran.armyScale);
@@ -68,9 +77,16 @@ describe('skirmish AI', () => {
     expect(recruit.reactionTicks).toBeGreaterThan(veteran.reactionTicks);
     expect(veteran.reactionTicks).toBeGreaterThan(elite.reactionTicks);
     expect(recruit.commitShare).toBeLessThan(veteran.commitShare);
-    expect(elite.commitShare).toBeGreaterThan(veteran.commitShare);
+    expect(elite.commitShare).toBeLessThanOrEqual(veteran.commitShare);
     expect(recruit.responseWeight).toBeLessThan(veteran.responseWeight);
     expect(elite.responseWeight).toBeGreaterThan(veteran.responseWeight);
+    // The defensive half of the same ladder: only the levels above recruit turn
+    // a wave around, and only the elite posts a standing guard.
+    expect(recruit.reserve).toBe(0);
+    expect(elite.reserve).toBeGreaterThan(veteran.reserve);
+    expect(recruit.recall).toBe(false);
+    expect(veteran.recall).toBe(true);
+    expect(elite.recall).toBe(true);
 
     const low = new Game(createIslandAssault(), {
       enableAI: true,
@@ -367,7 +383,10 @@ describe('skirmish AI', () => {
     expect(buildings).toContain('airfield');
     expect(buildings).toContain('shipyard');
     expect(game.state.ai.attackWave).toBeGreaterThanOrEqual(1);
-  });
+    // 26,000 simulated ticks is the longest run in the suite; at roughly 1 ms
+    // per tick it sits on the default 30 s limit and times out on a busy host.
+    // The horizon is the assertion, so the budget is raised rather than cut.
+  }, 120_000);
 
   it('sends an attack force and produces a credible threat', () => {
     const game = aiGame();

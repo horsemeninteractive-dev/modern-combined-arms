@@ -26,11 +26,13 @@ function checksum(text: string): string {
  * instead of being refused) and what the state hash contains (veterancy carries
  * the crew's experience per entity, research carries each player's completed
  * technologies and active project, and the ability layer adds each hull's reload
- * clock plus the live smoke list). The workload, its ground-unit count and the
- * per-tick order accounting are unchanged.
+ * clock plus the live smoke list). They were re-anchored again when the
+ * headquarters trickle became conditional on a materials plant, which moved
+ * every bank figure the hash records without touching a path. The workload, its
+ * ground-unit count and the per-tick order accounting are unchanged.
  */
 const DEPLOYED_STRESS_SETUP = 'b52e483d514948ca';
-const DEPLOYED_STRESS_FIRST_TICK = '2e6080094ae40ea5';
+const DEPLOYED_STRESS_FIRST_TICK = '61378b4d07634c17';
 
 function groundUnitCount(game: Game): number {
   return game.state.entities.filter(

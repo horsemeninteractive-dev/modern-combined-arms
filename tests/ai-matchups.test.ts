@@ -162,13 +162,19 @@ describe('AI difficulty matchups', () => {
       );
     }
 
-    // Recruit: slow decisions, thin economy, no home guard, piecemeal attacks.
+    // Recruit: slow decisions, thin economy, no home guard, piecemeal attacks
+    // and no recall — it keeps pressing while its own base is dismantled. That
+    // last point is what this margin now measures: before the recall existed,
+    // every level abandoned its base on the way out, so a recruit rush lifted a
+    // veteran command post in half its matches and this pairing was a coin flip
+    // (margin -22.8k, 7-9).
     expect(recruitVsVeteran.margin).toBeLessThan(-30000);
     expect(recruitVsVeteran.losses).toBeGreaterThan(recruitVsVeteran.wins);
     expect(recruitVsVeteran.wins).toBeLessThanOrEqual(7);
 
-    // Elite: fastest decisions, broadest economy, counters what it scouted and
-    // holds a home guard, so it should not just edge Recruit but dominate it.
+    // Elite: fastest decisions, leanest spend on infrastructure, counters what it
+    // scouted, posts two guards and recalls, so it should not just edge Recruit
+    // but dominate it.
     expect(eliteVsRecruit.margin).toBeGreaterThan(45000);
     expect(eliteVsRecruit.wins).toBeGreaterThanOrEqual(11);
 
@@ -176,5 +182,12 @@ describe('AI difficulty matchups', () => {
     // positive result rather than a coin flip.
     expect(eliteVsVeteran.margin).toBeGreaterThan(15000);
     expect(eliteVsVeteran.wins).toBeGreaterThanOrEqual(9);
-  }, 240000);
+    // The ladder runs 48 full-length matches; with both higher levels now
+    // defending, matches that used to end in a knockout run to the 600-second
+    // limit instead. The budget is deliberately generous so a slower machine
+    // measures the same thing rather than timing out mid-pairing: the whole set
+    // is roughly 576,000 simulated ticks, which is over nine minutes at the
+    // host's measured tick cost before a single match is lost to contention.
+    // This is the longest single test in the suite by an order of magnitude.
+  }, 1_200_000);
 });

@@ -1,11 +1,40 @@
 # Modern Combined Arms — Game Design Document
 
 **Document status:** Consolidated working design, reconciled against the shipped build  
-**Version:** 0.1.1  
-**Date:** 31 October 2026  
+**Version:** 0.1.2  
+**Date:** 5 November 2026  
 **Project title:** Modern Combined Arms (MCA)  
-**Shipped build:** 0.3.0 BETA — seventeen competitive battlefields, eight new terrains and six surface layers, selectable weather and a running time of day, unit veterancy, garrisonable shelters and bridges, an expanded Scenario Forge and playable online 1v1. Release notes are in [CHANGELOG.md](CHANGELOG.md).  
+**Shipped build:** 0.5.4 BETA — every competitive battlefield, selectable weather and a running time of day, unit veterancy, garrisonable shelters and bridges, the Scenario Forge and mission workbench, two twelve-operation campaigns, ten playable nations and online 1v1. Release notes are in [CHANGELOG.md](CHANGELOG.md); the verification baseline is in [docs/PHASE_0_RECONCILIATION_AND_BASELINE.md](docs/PHASE_0_RECONCILIATION_AND_BASELINE.md).  
 **Important status note:** This document consolidates the current interview decisions and fills unanswered details with recommended defaults where the user authorised recommendations. It is a working baseline, not a claim that every narrative or balance detail is permanently locked. Explicitly provisional ideas are labelled as such. The first playable slice should validate the core experience before the design is expanded into a full production specification.
+
+**How to read it:** §0 states what the build actually does today. Everything
+after it is design intent — the target the build is measured against — and is
+only marked *implemented* where §0 says so.
+
+---
+
+## 0. Implementation status (5 November 2026, build 0.5.4)
+
+This section is separated from the design text on purpose. The sections below
+record what the game is meant to be; this table records what it is. Where the two
+differ, §0 is the truth about the build and the later section is the intent, and
+the gap is named rather than quietly closed.
+
+| Area | What ships now | Gap against the design text |
+| --- | --- | --- |
+| **Economy** | Harvester → Material Refinery loop on an authored ore field; deposits exhaust. The Command Post pays nothing until a materials plant stands, then 1 mat/s, or the 4 mat/s stripped rate once no hauler and no production line remain. Captured forward supply depots pay 2 mat/s. Ore is scaled per map so a field outlasts the opening. | Intended richer logistics (supply lines, multiple resource classes) is not designed in yet. Balance is fixture- and ladder-validated, not human-player validated. |
+| **Combined arms** | Land, air and naval are all simulated with movement, detection and weapons: tracked/wheeled/foot movement, aircraft with fuel and ammunition and recovery, a three-hull navy including submarines. Artillery is indirect-fire with minimum range and lobbed projectiles. | No mechanised transport or IFV (no passenger load/unload), no recovery-and-tow, no field obstacles, no second buildable naval hull. |
+| **Roster and nations** | Ten playable nations over two alliance baselines, each substituting exactly one baseline slot with a national variant and adding one exclusive unit and one structure variant; Sweden and Iran add a national naval hull. | No national-only upgrade trees or signature abilities; one shared tech tree. National values are not tuned against human play. |
+| **Research** | Applied Research Centre with per-nation projects, research gating production and abilities, and AI research demand. | The intended deep branch-per-nation technology tree is design-only. |
+| **Skirmish** | Twenty-one battlefields in the scenario catalogue (island, competitive and expansion rosters), selectable weather and a running time of day, three AI difficulty levels, mirror-symmetric ladder measurement. | One AI opponent; no team skirmish against AI. |
+| **Campaign** | Two campaign tracks, each twelve authored operations over the built-in theatres (Baltic Line, Eastern Corridor), with mission briefing, mid-mission cinematic overlays, objectives and a debrief; operation tokens persist between operations. | The intended interwoven, branching two-faction narrative with persistent consequences beyond tokens is design-only. Missions are linear within a track. |
+| **Editor and mission tooling** | Scenario Forge (terrain, structures, ore, objectives, symmetry tools), a mission workbench with JSON import/export and validation, a mission library, and a validated scenario/mission format. | No mod SDK, no scripting language for third parties; authored operations are TypeScript data. |
+| **Multiplayer** | Online 1v1 through a Cloudflare Worker with Durable Objects; rooms joined by code and join code; authoritative room simulation with snapshot projection, command gating and per-seat fog. | No room browser, no matchmaking, no ranked play, no team modes; a seat is not tied to an account, so room results are not written to a career. |
+| **Accounts** | Google/Discord sign-in through an account Worker with D1, HttpOnly first-party session cookies, a guest path, and a career record (rank, service record) for local battles. | Career progression is single-player only; no cross-device save sync from a room. |
+| **Presentation** | Hand-written WebGL2 renderer with shadow maps, fog of war, ground decals, particle combat feedback, building construction and deconstruction animation, unit silhouettes, thumbnails rendered from meshes. | Validated by shader compilation, a live context and frame timing, not by pixel-diff captures. |
+| **Audio** | Procedural Web Audio: fire, explosion, per-unit-family movement and idle beds, engine start/spool, building ambience, spatial mix by camera position and zoom, UI sounds, announcer and narrator voices. | Recorded ambience is shipped in the manifest but disabled (synthesis is the live path); audio has never been auditioned in an automated run. |
+| **Input and platforms** | Keyboard/mouse, touch controls, gamepad mapping; PWA install; landscape mobile layout with a rotate prompt. | Gamepad is untested on hardware; the mobile result screen is unusable at small viewports (known defect). No Steam/Play/App Store packaging. |
+| **Persistence** | Saves in `localStorage` with versioned migrations and build stamps, settings, campaign progress, mission library. | No cloud saves; saves are tied to the browser profile. |
 
 ---
 
