@@ -85,6 +85,8 @@ function lobbyMessage(overrides: {
         ready: seat.ready ?? false,
         host: index === 0,
         connected: seat.connected ?? false,
+        identity: seat.identity ?? null,
+        verified: seat.verified === true,
       })),
     },
   };
@@ -525,5 +527,51 @@ describe('start gating and codes', () => {
     const code = makeRoomCode(() => 0.5);
     expect(code).toHaveLength(8);
     expect(code).toMatch(/^[abcdefghjkmnpqrstuvwxyz23456789]{8}$/);
+  });
+});
+
+describe('lobby client — verified identity and result reference', () => {
+  it('surfaces the seat identity and rank the room verified', async () => {
+    const { client, reply, sockets, views } = harness();
+    reply({ status: 200, body: { ok: true, seat: 0, token: 'tok-0', joinCode: 'ABCD2345' } });
+    await client.createRoom(600_000, 'kestrel');
+    const socket = sockets[0];
+
+    socket.receive(
+      lobbyMessage({
+        seat: 0,
+        seats: [
+          { connected: true, identity: { callsign: 'Sable', avatar: 'eagle', rank: 'corporal' }, verified: true },
+          { connected: true, identity: { callsign: 'Vesper', avatar: 'bolt' }, verified: true },
+        ],
+      }),
+    );
+
+    const view = views.at(-1);
+    expect(view?.seats[0]?.identity).toEqual({ callsign: 'Sable', avatar: 'eagle', rank: 'corporal' });
+    expect(view?.seats[0]?.verified).toBe(true);
+    // A ticket minted before ranks travelled still presents its callsign.
+    expect(view?.seats[1]?.identity).toEqual({ callsign: 'Vesper', avatar: 'bolt' });
+  });
+
+  it('keeps the authoritative match reference from the result message', async () => {
+    const { client, reply, sockets, views } = harness();
+    reply({ status: 200, body: { ok: true, seat: 0, token: 'tok-0', joinCode: 'ABCD2345' } });
+    await client.createRoom(600_000, 'kestrel');
+    const socket = sockets[0];
+
+    expect(views.at(-1)?.matchResult).toBeNull();
+    socket.receive({
+      type: 'result',
+      v: 2,
+      outcome: 'victory',
+      result: { phase: 'finished', winnerTeam: 0, reason: 'elimination', tick: 900 },
+      matchId: 'mp:kestrel:1700000000000',
+    });
+
+    expect(views.at(-1)?.matchResult).toEqual({
+      outcome: 'victory',
+      matchId: 'mp:kestrel:1700000000000',
+    });
   });
 });

@@ -511,9 +511,17 @@ describe('advanced turbine AI', () => {
     expect(commands).not.toContain('installModule');
   });
 
-  it('does not buy what has not been researched', () => {
-    const { commands } = runAI(strainedArena(false, []));
-    expect(commands).not.toContain('installModule');
+  it('does not buy the retrofit it has not researched', () => {
+    // The strained arena places an airfield and a shipyard, and a pre-placed
+    // structure grants the technology that fields it — so this commander does
+    // legitimately own those branch modules now that Phase 1 added them. The
+    // question this test asks is narrower and unchanged: the turbine rides on
+    // manoeuvre doctrine, which this commander has not studied.
+    const { game } = runAI(strainedArena(false, []));
+    const installed = game.pending.flatMap((command) =>
+      command.type === 'installModule' ? [command.moduleId] : [],
+    );
+    expect(installed).not.toContain(MODULE);
   });
 
   it('never re-issues an installation it already made', () => {
@@ -525,7 +533,14 @@ describe('advanced turbine AI', () => {
     const state = initialAIState(11, 'veteran');
     game.advance(TICK_RATE);
     ai.update(game, 1, state);
-    expect(game.pending.some((c) => c.type === 'installModule')).toBe(false);
+    // Phase 1 gave the same arena its own branch modules (the airfield's
+    // flightline crew, the yard's sonar suite), so a later pass may spend on a
+    // different structure. The invariant is one installation per position, not
+    // one purchase per commander.
+    const repeats = game.pending.filter(
+      (c) => c.type === 'installModule' && (c.moduleId === MODULE || c.buildingId === plant.id),
+    );
+    expect(repeats).toEqual([]);
   });
 
   it('scores the technology higher when the grid is short', () => {

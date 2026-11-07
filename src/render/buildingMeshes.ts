@@ -1,5 +1,6 @@
 import { MeshBuilder, PALETTE, shade, type Color } from './geometry';
 import type { MeshBuffers } from './gl';
+import { MATERIAL } from './materials';
 
 /**
  * Team-masked ownership panel. A roof plate is the most reliable ownership
@@ -64,6 +65,121 @@ function sandbagWall(
     const pz = horizontal ? z : z + off;
     b.box(px, baseY + (i % 2) * 0.08, pz, horizontal ? 0.72 : 0.55, 0.55, horizontal ? 0.55 : 0.72, PALETTE.sandbag);
   }
+}
+
+/**
+ * Recessed window bay: dark reveal, glass, sill, lintel and a centre mullion.
+ *
+ * The reveal is set *into* the wall rather than laid on top of it, which is
+ * what stops a window from reading as a dark decal on a flat elevation. `axis`
+ * is the wall's normal, so the same bay works on a street facade and a flank.
+ */
+function windowBay(
+  b: MeshBuilder,
+  x: number,
+  y: number,
+  z: number,
+  width: number,
+  height: number,
+  axis: 'x' | 'z',
+  frame: Color = PALETTE.concrete,
+): void {
+  const along = axis === 'z' ? [width, 0.18] : [0.18, width];
+  const back = axis === 'z' ? [width - 0.1, 0.08] : [0.08, width - 0.1];
+  // Reveal: a slightly smaller dark plane behind the glass, so the opening has
+  // depth instead of one flat pane.
+  b.box(x, y, z, back[0], height - 0.08, back[1], PALETTE.hullDark);
+  b.box(x, y, z, along[0], height, along[1], PALETTE.glassDark);
+  // Sill projects; the lintel is shallower, so light reads from above.
+  const sill = axis === 'z' ? [width + 0.34, 0.12, 0.3] : [0.3, 0.12, width + 0.34];
+  const lintel = axis === 'z' ? [width + 0.26, 0.13, 0.24] : [0.24, 0.13, width + 0.26];
+  const sOff = axis === 'z' ? 0.06 : 0.06;
+  b.box(x, y - height / 2 - 0.05, z + sOff, sill[0], sill[1], sill[2], frame);
+  b.box(x, y + height / 2 + 0.06, z + sOff * 0.7, lintel[0], lintel[1], lintel[2], shade(frame, 1.06));
+  // Centre mullion and an upper transom bar break the pane into joinery.
+  b.box(x, y, z + 0.055, axis === 'z' ? 0.07 : 0.1, height, axis === 'z' ? 0.1 : 0.07, frame);
+  b.box(x, y + height * 0.18, z + 0.05, axis === 'z' ? width : 0.09, 0.07, axis === 'z' ? 0.09 : width, frame);
+}
+
+/** Projecting string course: a shadow line and a cap, wrapped round a building. */
+function stringCourse(
+  b: MeshBuilder,
+  x: number,
+  y: number,
+  z: number,
+  width: number,
+  depth: number,
+  color: Color = PALETTE.concrete,
+): void {
+  b.box(x, y - 0.07, z, width + 0.34, 0.1, depth + 0.34, shade(color, 0.84));
+  b.box(x, y, z, width + 0.42, 0.16, depth + 0.42, color);
+}
+
+/** Roof plant: a chiller housing with a fan ring and a service grille. */
+function roofPlant(b: MeshBuilder, x: number, y: number, z: number, w = 1.9, d = 1.5): void {
+  b.box(x, y + 0.42, z, w, 0.84, d, PALETTE.metal);
+  b.box(x, y + 0.86, z, w + 0.1, 0.08, d + 0.1, PALETTE.darkMetal);
+  b.cylinder(x, y + 0.92, z, Math.min(w, d) * 0.32, 0.1, 8, PALETTE.darkMetal);
+  b.box(x, y + 0.42, z + d / 2 + 0.02, w * 0.62, 0.5, 0.06, PALETTE.hullDark);
+  for (let i = 0; i < 3; i++) {
+    b.box(x, y + 0.26 + i * 0.16, z + d / 2 + 0.06, w * 0.56, 0.04, 0.03, PALETTE.metal);
+  }
+}
+
+/** Cable tray along a wall, with brackets: the runs that make a site read wired. */
+function ductRun(
+  b: MeshBuilder,
+  x: number,
+  y: number,
+  z: number,
+  length: number,
+  axis: 'x' | 'z',
+): void {
+  b.box(x, y, z, axis === 'x' ? length : 0.26, 0.12, axis === 'x' ? 0.26 : length, PALETTE.darkMetal);
+  b.box(x, y + 0.09, z, axis === 'x' ? length : 0.14, 0.06, axis === 'x' ? 0.14 : length, PALETTE.metal);
+  const n = Math.max(2, Math.round(length / 2.4));
+  for (let i = 0; i < n; i++) {
+    const off = -length / 2 + (i + 0.5) * (length / n);
+    b.box(
+      x + (axis === 'x' ? off : 0),
+      y - 0.11,
+      z + (axis === 'z' ? off : 0),
+      axis === 'x' ? 0.1 : 0.32,
+      0.12,
+      axis === 'x' ? 0.32 : 0.1,
+      PALETTE.metal,
+    );
+  }
+}
+
+/** Fixed ladder: two rails and rungs, for masts, roofs and tower legs. */
+function ladder(b: MeshBuilder, x: number, y0: number, y1: number, z: number, axis: 'x' | 'z' = 'z'): void {
+  const mid = (y0 + y1) / 2;
+  const height = y1 - y0;
+  const gap = 0.34;
+  for (const side of [-1, 1]) {
+    b.box(x + (axis === 'z' ? side * gap : 0), mid, z + (axis === 'x' ? side * gap : 0), 0.07, height, 0.07, PALETTE.metal);
+  }
+  const rungs = Math.max(2, Math.floor(height / 0.42));
+  for (let i = 1; i < rungs; i++) {
+    b.box(
+      x,
+      y0 + (i / rungs) * height,
+      z,
+      axis === 'z' ? gap * 2 : 0.06,
+      0.05,
+      axis === 'z' ? 0.06 : gap * 2,
+      PALETTE.darkMetal,
+    );
+  }
+}
+
+/** Rainwater downpipe with its two clamps. */
+function downpipe(b: MeshBuilder, x: number, z: number, top: number, bottom: number): void {
+  const mid = (top + bottom) / 2;
+  b.cylinder(x, mid, z, 0.085, top - bottom, 6, PALETTE.darkMetal);
+  b.box(x, top - 0.3, z, 0.24, 0.1, 0.24, PALETTE.metal);
+  b.box(x, bottom + 0.4, z, 0.24, 0.1, 0.24, PALETTE.metal);
 }
 
 /**
@@ -324,6 +440,49 @@ function buildBarracks(): MeshBuffers {
   b.box(-4.8, 1.3, 2.9, 0.12, 1.5, 0.9, PALETTE.hullLight);
   b.box(-4.8, 1.85, 2.9, 0.08, 0.35, 0.65, PALETTE.warning, 0.7);
   sandbagWall(b, 3.8, 5.0, 4.0, true);
+
+  // ---- The rear elevation and the camp around it -------------------------
+  // The block's back wall faces the player's own base edge, so it cannot be a
+  // blank plane: it carries the same window rhythm as the front, the ducting
+  // that serves the bunks and a fire escape up to the roof.
+  for (const x of [-3.4, -1.2, 1.0, 3.0]) {
+    b.box(x, 2.62, -4.56, 1.15, 0.72, 0.2, PALETTE.glassDark);
+    b.box(x, 3.02, -4.52, 1.3, 0.13, 0.26, PALETTE.hullLight);
+    b.box(x, 2.22, -4.52, 1.3, 0.11, 0.26, PALETTE.canvas);
+  }
+  ductRun(b, -0.4, 1.35, -4.6, 6.0, 'x');
+  b.box(-2.4, 1.02, -4.7, 1.2, 0.9, 0.7, PALETTE.metal);
+  b.box(-2.4, 1.5, -4.7, 0.9, 0.14, 0.5, PALETTE.darkMetal);
+  ladder(b, 3.5, 1.0, 3.85, -4.5);
+  // Roof vents and a water tank on a timber frame behind the ridge.
+  for (const x of [-2.6, 0.6]) {
+    b.cylinder(x, 4.15, -2.8, 0.26, 0.7, 8, PALETTE.darkMetal);
+    b.cylinder(x, 4.5, -2.8, 0.34, 0.14, 8, PALETTE.metal);
+  }
+  for (const [x, z] of [
+    [2.4, -3.6],
+    [3.8, -3.6],
+    [2.4, -2.4],
+    [3.8, -2.4],
+  ] as const) {
+    b.box(x, 1.8, z, 0.14, 2.0, 0.14, PALETTE.oliveDark);
+  }
+  b.cylinder(3.1, 3.1, -3.0, 0.85, 1.6, 10, PALETTE.oliveDark);
+  b.cylinder(3.1, 3.95, -3.0, 0.92, 0.16, 10, PALETTE.metal);
+  b.box(3.1, 3.1, -2.14, 0.6, 0.34, 0.08, PALETTE.hullLight);
+  // Fire point: a sandbagged extinguisher bay against the wing wall.
+  sandbagWall(b, -3.4, 3.6, 1.6, true, 0.32);
+  b.box(-3.4, 0.72, 3.35, 1.2, 0.18, 0.4, PALETTE.concreteDark);
+  b.cylinder(-3.75, 1.0, 3.35, 0.14, 0.46, 7, PALETTE.red);
+  b.cylinder(-3.05, 1.0, 3.35, 0.14, 0.46, 7, PALETTE.red);
+  // Parade matting and the kit stacked ready for issue.
+  for (const z of [4.0, 4.55]) {
+    b.box(1.6, 0.58, z, 2.6, 0.05, 0.42, PALETTE.darkMetal);
+  }
+  b.box(1.6, 0.56, 4.28, 2.4, 0.04, 0.1, PALETTE.metal);
+  b.box(-2.2, 0.86, 4.4, 1.1, 0.5, 0.8, PALETTE.oliveDark);
+  b.box(-2.2, 1.14, 4.4, 1.16, 0.08, 0.86, PALETTE.olive);
+  b.box(-1.0, 0.82, 4.4, 0.9, 0.42, 0.7, PALETTE.canvas);
   return b.build();
 }
 
@@ -357,6 +516,52 @@ function buildFactory(): MeshBuffers {
   sandbagWall(b, -6.2, 2.8, 4.2, false);
   b.box(3.8, 1.0, 4.1, 1.2, 0.8, 1.2, PALETTE.oliveDark);
   b.box(5.0, 1.0, 4.0, 1.2, 0.8, 1.2, PALETTE.olive);
+
+  // ---- The works at working distance ------------------------------------
+  // A vehicle factory is read from its long elevation: the roller frames, the
+  // clerestory lights over the bay, the extract ducts on the roof and the rail
+  // the gantry runs on. Everything below is that elevation plus the yard that
+  // makes the apron look like a plant rather than a pad.
+  for (const z of [-3.3, -1.1, 1.1, 3.3]) {
+    windowBay(b, 5.74, 4.2, z, 1.5, 1.15, 'x', PALETTE.hullDark);
+  }
+  for (const z of [-4.3, -2.2, 0, 2.2, 4.3]) {
+    b.box(5.78, 3.1, z, 0.22, 4.4, 0.34, PALETTE.hullDark);
+  }
+  b.box(5.8, 1.06, 0, 0.28, 0.5, 9.0, PALETTE.concreteDark);
+  for (const x of [-3.6, -1.2, 1.2]) {
+    b.cylinder(x, 6.0, -2.6, 0.32, 0.9, 8, PALETTE.darkMetal);
+    b.cylinder(x, 6.5, -2.6, 0.42, 0.16, 8, PALETTE.metal);
+  }
+  ductRun(b, 0.4, 5.95, -3.3, 8.0, 'x');
+  for (const y of [2.6, 4.2]) b.box(5.4, y, -3.2, 2.2, 0.16, 2.2, PALETTE.concreteDark);
+  ladder(b, 6.42, 1.1, 6.4, -3.2);
+  // Bay rails, buffer stops and the threshold plate a vehicle crosses.
+  for (const x of [-3.4, 2.4]) {
+    b.box(x, 0.86, 5.3, 0.16, 0.12, 1.6, PALETTE.metal);
+    b.box(x, 1.05, 5.9, 0.32, 0.34, 0.22, PALETTE.warning);
+  }
+  b.box(-0.5, 0.82, 5.06, 5.4, 0.06, 0.62, PALETTE.darkMetal);
+  // Personnel door at the quiet end, with canopy and step.
+  b.box(5.82, 2.0, -3.9, 0.2, 2.2, 1.3, PALETTE.hullDark);
+  b.box(5.7, 1.98, -3.9, 0.14, 1.85, 1.05, PALETTE.glassDark);
+  b.box(5.92, 3.2, -3.9, 0.6, 0.14, 1.6, PALETTE.oliveDark);
+  b.box(6.0, 0.9, -3.9, 0.7, 0.16, 1.4, PALETTE.concreteDark);
+  // Yard: a siding under the gantry, drums, a pallet and a tyre stack.
+  for (const z of [-5.3, -5.9]) b.box(-1.0, 0.84, z, 9.0, 0.07, 0.12, PALETTE.metal);
+  for (let i = 0; i < 5; i++) b.box(-4.4 + i * 1.7, 0.77, -5.6, 0.5, 0.1, 1.1, PALETTE.track);
+  for (const [x, z] of [
+    [-6.6, -5.4],
+    [-6.6, -4.9],
+    [-6.6, -4.4],
+  ] as const) {
+    b.cylinder(x, 1.1, z, 0.3, 0.62, 8, PALETTE.hullDark);
+    b.cylinder(x, 1.44, z, 0.32, 0.08, 8, PALETTE.metal);
+  }
+  b.box(3.0, 0.88, -5.5, 1.7, 0.16, 1.1, PALETTE.canvas);
+  b.box(3.0, 1.2, -5.5, 1.4, 0.5, 0.9, PALETTE.oliveDark);
+  b.box(3.8, 1.05, -5.2, 0.8, 1.0, 0.8, PALETTE.track);
+  b.box(-2.6, 2.6, -4.5, 1.4, 0.2, 0.2, PALETTE.metal);
   return b.build();
 }
 
@@ -492,30 +697,46 @@ function buildAirfield(): MeshBuffers {
   b.box(3.6, 0.98, -6.45, 3.4, 0.14, 0.14, PALETTE.darkMetal);
   b.box(5.7, 0.95, -7.6, 0.9, 0.84, 0.9, PALETTE.oliveDark);
   b.box(5.7, 1.32, -7.6, 0.7, 0.18, 0.7, PALETTE.olive);
-  // A parked strike fighter on the apron: the clearest scale and role cue an
-  // airfield can carry without adding a moving aircraft entity.
-  const jetZ = 6.0;
-  b.box(2.6, 0.78, jetZ, 4.6, 0.52, 0.8, PALETTE.hullLight);
-  b.box(0.05, 0.73, jetZ, 0.7, 0.34, 0.5, PALETTE.hullLight);
-  b.box(-0.28, 0.72, jetZ, 0.25, 0.24, 0.34, PALETTE.hullLight);
-  b.box(3.1, 1.13, jetZ, 1.0, 0.22, 0.56, PALETTE.glassDark);
-  b.box(3.1, 1.17, jetZ, 0.9, 0.16, 0.46, PALETTE.glass);
-  for (const side of [-1, 1]) {
-    b.boxRot(2.0, 0.9, jetZ + side * 1.1, 1.7, 0.1, 1.6, side * 0.4, PALETTE.hullLight);
+  // No parked aircraft is baked into the model any more: the flight line is
+  // real airframes now (see `docks` in the simulation), and a painted-on jet
+  // would have a real one parked inside it. What the apron does carry is the
+  // stand paint, laid on the exact positions the simulation docks to, so each
+  // hull stands in a marked bay instead of loose on the concrete.
+  const standPaint = 0.505;
+  for (const [x, z] of [
+    [-3.3, -0.6],
+    [3.3, -0.6],
+    [-3.3, 5.4],
+    [3.3, 5.4],
+  ] as const) {
+    // Fuselage outline: two long edge stripes closed by end bars.
+    for (const dz of [-1.2, 1.2]) {
+      b.box(x, standPaint, z + dz, 5.4, 0.02, 0.12, PALETTE.white, 0.82);
+    }
+    for (const dx of [-2.75, 2.75]) {
+      b.box(x + dx, standPaint, z, 0.12, 0.02, 2.4, PALETTE.white, 0.82);
+    }
+    // Wingtip limits, the tie-down cross under the fuselage and the lead-in
+    // line out to the taxi lane.
+    for (const dz of [-2.7, 2.7]) {
+      b.box(x - 1.5, standPaint, z + dz, 1.6, 0.02, 0.14, PALETTE.warning, 0.9);
+    }
+    for (const dx of [-1.1, 1.1]) {
+      b.box(x + dx, standPaint, z, 0.62, 0.02, 0.16, PALETTE.warning, 0.9);
+    }
+    b.box(x + 3.9, standPaint, z, 2.0, 0.02, 0.16, PALETTE.warning, 0.9);
   }
-  b.box(4.45, 0.9, jetZ, 0.7, 0.08, 2.0, PALETTE.hullLight);
-  for (const side of [-1, 1]) {
-    b.box(4.45, 1.22, jetZ + side * 0.45, 0.16, 0.7, 0.5, PALETTE.hullLight);
+  // The recovery pad at the open west end of the apron, on the same position a
+  // helicopter is docked to when it sets down here.
+  // Small enough to stand clear of the flight-line bays and the servicing kit a
+  // parked fighter puts down behind its tail; a helicopter's rotor overhangs a
+  // pad this size, which is what a real one does.
+  b.cylinder(-8.9, standPaint, 3.2, 2.3, 0.02, 20, [0.14, 0.15, 0.16]);
+  b.cylinder(-8.9, standPaint + 0.02, 3.2, 1.75, 0.02, 20, [0.2, 0.21, 0.2]);
+  for (const dx of [-0.62, 0.62]) {
+    b.box(-8.9 + dx, standPaint + 0.04, 3.2, 0.26, 0.03, 1.35, PALETTE.white);
   }
-  // Team band around the fuselage, readable even without the flag.
-  b.box(1.2, 0.87, jetZ, 0.5, 0.18, 0.82, PALETTE.hull, 0.9);
-  for (const [x, side] of [
-    [1.3, 0],
-    [3.2, -0.8],
-    [3.2, 0.8],
-  ] as Array<[number, number]>) {
-    b.box(x, 0.63, jetZ + side, 0.22, 0.5, 0.22, PALETTE.darkMetal);
-  }
+  b.box(-8.9, standPaint + 0.04, 3.2, 1.1, 0.03, 0.26, PALETTE.white);
   // Windsock, a flag dais and a painted team line along the apron edge.
   b.box(-10.8, 2.0, 8.4, 0.1, 4.0, 0.1, PALETTE.metal);
   b.box(-10.45, 3.6, 8.4, 0.7, 0.3, 0.12, PALETTE.warning);
@@ -526,10 +747,11 @@ function buildAirfield(): MeshBuffers {
   for (const x of [-7.5, 7.5]) {
     b.box(x, 0.44, 7.6, 0.3, 0.04, 0.22, PALETTE.warning);
   }
-  // Towing tractor by the hangar apron.
-  b.box(-5.2, 0.65, -1.6, 1.6, 0.5, 0.9, PALETTE.oliveDark);
-  b.box(-5.7, 0.94, -1.6, 0.6, 0.4, 0.8, PALETTE.canvas);
-  b.box(-4.6, 0.86, -1.6, 0.35, 0.35, 0.85, PALETTE.warning);
+  // Towing tractor: parked between the hangar and the fuel farm rather than on
+  // the taxi lane, which is now the eastern stand's nose lead-in.
+  b.box(0.4, 0.65, -5.4, 1.6, 0.5, 0.9, PALETTE.oliveDark);
+  b.box(-0.1, 0.94, -5.4, 0.6, 0.4, 0.8, PALETTE.canvas);
+  b.box(1.0, 0.86, -5.4, 0.35, 0.35, 0.85, PALETTE.warning);
   return b.build();
 }
 
@@ -705,6 +927,46 @@ function buildSamBody(): MeshBuffers {
   b.box(2.6, 1.0, 2.6, 0.6, 0.4, 0.6, PALETTE.warning);
   // Team colour stays on the pad, so it does not swing with the launcher.
   ownershipPanel(b, 1.7, 1.03, -2.42, 2.4, 1.2);
+
+  // ---- Site work --------------------------------------------------------
+  // A SAM site is a launcher plus everything needed to keep it loaded. The
+  // revetment is deliberately open along +X so the engagement arc stays clear.
+  sandbagWall(b, 0.4, -3.0, 5.6, true, 0.42);
+  // Ladder and cable up the fire-control mast.
+  ladder(b, -2.36, 1.0, 4.45, 0, 'x');
+  ductRun(b, -2.9, 1.24, 0, 2.0, 'x');
+  b.box(-1.9, 1.3, 0, 0.3, 0.42, 0.3, PALETTE.oliveDark);
+  // Reload rail from the ready rack to the launcher, and two spares in their
+  // canisters under cover at the rear of the pad.
+  for (const z of [1.35, 2.05]) {
+    b.box(0.6, 0.92, z, 3.4, 0.07, 0.1, PALETTE.metal);
+  }
+  for (const [x, z] of [
+    [2.2, 2.9],
+    [1.0, 2.9],
+  ] as const) {
+    b.cylinder(x, 1.12, z, 0.19, 1.8, 7, PALETTE.hullLight);
+    b.box(x, 2.05, z, 0.44, 0.14, 0.44, PALETTE.warning);
+  }
+  b.box(1.6, 0.95, 2.9, 2.6, 0.14, 0.9, PALETTE.oliveDark);
+  // Generator trailer and its cable reel on the unsecured side.
+  b.box(-1.9, 1.15, -2.45, 1.9, 0.7, 1.1, PALETTE.oliveDark);
+  b.box(-1.9, 1.52, -2.45, 1.7, 0.1, 0.9, PALETTE.olive);
+  b.cylinder(-1.9, 1.95, -2.45, 0.34, 0.12, 8, PALETTE.darkMetal);
+  for (const x of [-2.7, -1.1]) {
+    b.box(x, 0.98, -2.45, 0.6, 0.3, 0.34, PALETTE.track);
+  }
+  b.cylinderX(2.4, 1.0, -2.5, 0.42, 0.5, 8, PALETTE.darkMetal);
+  b.box(2.4, 0.94, -2.5, 0.2, 0.9, 0.9, PALETTE.metal);
+  // Pad markings and the sentry post watching the open arc.
+  for (const z of [-1.9, 1.9]) {
+    b.box(-0.4, 1.02, z, 3.0, 0.05, 0.16, PALETTE.warning);
+  }
+  for (const x of [-1.9, 1.1]) {
+    b.box(x, 1.02, 0, 0.16, 0.05, 3.8, PALETTE.warning);
+  }
+  b.box(3.15, 1.35, 1.9, 0.1, 1.9, 0.1, PALETTE.metal);
+  b.box(3.15, 2.3, 1.9, 0.42, 0.3, 0.06, PALETTE.warning);
   return b.build();
 }
 
@@ -754,6 +1016,52 @@ function buildMgNestBody(): MeshBuffers {
   b.box(-2.0, 1.84, -2.0, 1.0, 0.14, 0.8, PALETTE.hull, 0.88);
   b.box(0, 1.15, -2.78, 2.6, 0.18, 0.2, PALETTE.hull, 0.86);
   b.box(1.6, 1.1, -2.5, 0.5, 0.5, 0.5, PALETTE.warning);
+
+  // ---- The position, from the crew's side of the parapet ---------------
+  // A nest with nothing in it is a ring of bags. The camo net over the pit is
+  // the strongest read from the tactical camera (it darkens the whole centre),
+  // and the stores underneath are what the net is protecting.
+  for (const [x, z] of [
+    [-2.1, -2.1],
+    [2.1, -2.1],
+    [-2.1, 2.1],
+    [2.1, 2.1],
+  ] as const) {
+    b.box(x, 1.55, z, 0.08, 1.95, 0.08, PALETTE.oliveDark);
+  }
+  b.addQuad(
+    [-2.1, 2.55, -2.1],
+    [2.1, 2.55, -2.1],
+    [2.1, 2.34, 2.1],
+    [-2.1, 2.34, 2.1],
+    PALETTE.canvas,
+  );
+  b.addQuad(
+    [2.1, 2.34, 2.1],
+    [-2.1, 2.34, 2.1],
+    [-2.1, 2.55, -2.1],
+    [2.1, 2.55, -2.1],
+    shade(PALETTE.canvas, 0.76),
+  );
+  // Duckboards across the pit floor: the crew stands on boards, not mud.
+  for (let i = 0; i < 4; i++) {
+    b.box(0.1, 1.27, -1.1 + i * 0.72, 3.1, 0.06, 0.55, PALETTE.darkMetal);
+    b.box(0.1, 1.24, -1.1 + i * 0.72, 3.1, 0.05, 0.12, PALETTE.metal);
+  }
+  // Ammunition within reach of the gun: belt boxes, spare barrels in their bag.
+  b.box(1.75, 1.34, 1.15, 0.62, 0.3, 0.42, PALETTE.oliveDark);
+  b.box(1.75, 1.53, 1.15, 0.6, 0.1, 0.36, PALETTE.olive, 0.9);
+  b.box(-2.15, 1.32, 1.3, 0.8, 0.34, 0.5, PALETTE.canvas);
+  b.box(-2.15, 1.32, 1.3, 0.78, 0.06, 0.1, PALETTE.oliveDark);
+  b.cylinder(-2.3, 1.35, -1.4, 0.19, 0.42, 7, PALETTE.oliveDark);
+  // Range card on a stake beside the gun, and the marker stakes that edge the
+  // firing gap so the crew does not walk into it.
+  b.box(1.95, 1.62, -2.15, 0.06, 0.9, 0.06, PALETTE.metal);
+  b.box(1.95, 2.0, -2.1, 0.34, 0.42, 0.05, PALETTE.white);
+  for (const z of [-1.05, 1.05]) {
+    b.box(2.72, 1.42, z, 0.06, 1.1, 0.06, PALETTE.warning);
+  }
+  b.box(2.72, 1.92, 0, 0.04, 0.04, 2.1, PALETTE.warning);
   return b.build();
 }
 
@@ -812,6 +1120,43 @@ function buildBunkerBody(): MeshBuffers {
   b.box(2.0, 1.0, -2.2, 1.2, 0.65, 0.8, PALETTE.oliveDark);
   b.box(2.0, 1.36, -2.2, 1.3, 0.12, 0.9, PALETTE.olive);
   b.box(-1.8, 0.95, 2.1, 0.6, 0.6, 0.6, PALETTE.warning);
+
+  // ---- Casemate fittings -----------------------------------------------
+  // Concrete alone is a soft, featureless mass. A bunker's identity is its
+  // openings and its services: vision blocks around the roof edge, the vent
+  // and exhaust that keep the crew alive, and the ladder that gets them up to
+  // the observation cupola.
+  for (const [x, z] of [
+    [-2.0, -2.85],
+    [0.5, -2.85],
+    [2.4, -1.4],
+    [-2.6, 1.4],
+  ] as const) {
+    b.box(x, 1.38, z, 0.55, 0.22, 0.2, PALETTE.concreteDark);
+    b.box(x, 1.38, z + Math.sign(z) * 0.02, 0.42, 0.11, 0.12, [0.035, 0.04, 0.04]);
+  }
+  // Vent cowl over the magazine, and the exhaust of the extractor fan.
+  b.cylinder(-1.5, 2.95, -2.5, 0.2, 0.5, 7, PALETTE.darkMetal);
+  b.cylinder(-1.5, 3.24, -2.5, 0.3, 0.14, 7, PALETTE.metal);
+  b.cylinderX(-2.9, 2.35, -1.6, 0.13, 0.7, 6, PALETTE.darkMetal);
+  b.box(-3.28, 2.35, -1.6, 0.1, 0.4, 0.4, PALETTE.metal);
+  // Concrete steps up the rear face to the roof deck: a casemate is entered
+  // from behind, and the crew has to be able to reach the cupola.
+  for (let i = 0; i < 3; i++) {
+    b.box(2.1, 1.78 + i * 0.16, -3.06 - i * 0.16, 0.9, 0.16, 0.32, PALETTE.concrete);
+  }
+  // Steel corner plates on the embrasure and a drain channel at the foot.
+  for (const [x, z] of [
+    [3.06, 2.1],
+    [3.06, -2.5],
+  ] as const) {
+    b.box(x, 1.05, z, 0.12, 0.9, 0.42, PALETTE.darkMetal);
+  }
+  b.box(2.9, 0.62, -0.2, 1.3, 0.1, 3.8, PALETTE.track);
+  // Ammunition hoist rail from the magazine out over the rear door.
+  b.box(-0.5, 1.72, 2.5, 4.0, 0.1, 0.1, PALETTE.metal);
+  b.box(1.4, 1.5, 2.5, 0.08, 0.36, 0.08, PALETTE.darkMetal);
+  b.box(1.4, 1.32, 2.5, 0.3, 0.14, 0.24, PALETTE.metal);
   return b.build();
 }
 
@@ -851,6 +1196,75 @@ function buildAtTurretBody(): MeshBuffers {
   b.box(2.35, 0.75, 2.35, 0.9, 0.5, 0.75, PALETTE.oliveDark);
   b.box(2.2, 1.72, -2.3, 0.1, 1.8, 0.1, PALETTE.metal);
   b.box(2.2, 2.2, -2.3, 0.55, 0.4, 0.07, PALETTE.warning);
+
+  // ---- The section, not just the gun -------------------------------------
+  // A towed gun in the open is a target. What makes an emplacement is the
+  // ammunition it can reach without standing up, the crew shelter beside it and
+  // the marks that tell a layer how far the trails may swing.
+  // Mirrored warning post on the far corner, so the two lamps bracket the arc.
+  b.box(2.2, 1.35, 2.3, 0.1, 1.4, 0.1, PALETTE.metal);
+  b.box(2.2, 2.1, 2.3, 0.5, 0.4, 0.07, PALETTE.warning);
+
+  // Ready-round niche: sandbagged on three sides, netted over the top, with the
+  // rack the ownership panel sits on inside it.
+  sandbagWall(b, -3.4, 2.55, 1.5, false, 0.5);
+  sandbagWall(b, -2.45, 3.35, 2.3, true, 0.5);
+  for (const [x, z] of [
+    [-3.45, 2.05],
+    [-1.55, 2.05],
+    [-3.45, 3.3],
+    [-1.55, 3.3],
+  ] as const) {
+    b.box(x, 1.3, z, 0.07, 1.5, 0.07, PALETTE.oliveDark);
+  }
+  b.addQuad(
+    [-3.45, 2.02, 2.05],
+    [-1.55, 2.02, 2.05],
+    [-1.55, 1.86, 3.3],
+    [-3.45, 1.86, 3.3],
+    PALETTE.canvas,
+  );
+  b.addQuad(
+    [-1.55, 1.86, 3.3],
+    [-3.45, 1.86, 3.3],
+    [-3.45, 2.02, 2.05],
+    [-1.55, 2.02, 2.05],
+    shade(PALETTE.canvas, 0.78),
+  );
+  // Loose rounds propped against the rack.
+  for (const z of [2.2, 2.9]) {
+    b.cylinderX(-1.75, 1.05, z, 0.13, 0.9, 6, PALETTE.hullLight);
+    b.box(-1.28, 1.05, z, 0.05, 0.24, 0.24, PALETTE.warning);
+  }
+
+  // Spare-barrel rack on the rear apron, both barrels chocked off the deck.
+  for (const z of [-2.55, -2.0]) {
+    b.cylinderX(2.35, 0.78, z, 0.11, 1.9, 6, PALETTE.darkMetal);
+  }
+  for (const x of [1.5, 3.15]) {
+    b.box(x, 0.68, -2.28, 0.18, 0.24, 1.0, PALETTE.metal);
+  }
+
+  // The layer's seat and sight post, behind the breech rather than beside the
+  // barrel, plus the deflection board on its two posts.
+  b.box(-2.6, 0.86, 0.0, 0.55, 0.16, 0.6, PALETTE.darkMetal);
+  b.box(-2.85, 0.62, 0.0, 0.12, 0.5, 0.4, PALETTE.metal);
+  b.box(-3.35, 0.72, -2.5, 0.9, 1.0, 0.06, PALETTE.darkMetal);
+  b.box(-3.35, 0.72, -2.44, 0.7, 0.78, 0.05, PALETTE.white);
+  for (const z of [-2.7, -2.3]) {
+    b.box(-3.35, 0.6, z, 0.08, 0.55, 0.08, PALETTE.metal);
+  }
+
+  // Shell crates and the water can at the trail spades.
+  for (const [x, z, y] of [
+    [3.0, -0.55, 0.62],
+    [3.0, 0.35, 0.62],
+    [3.0, -0.1, 1.02],
+  ] as const) {
+    b.box(x, y, z, 0.72, 0.32, 0.62, PALETTE.oliveDark);
+    b.box(x, y + 0.18, z, 0.78, 0.06, 0.68, PALETTE.olive);
+  }
+  b.cylinder(-1.2, 0.78, -2.6, 0.2, 0.42, 7, PALETTE.oliveDark);
   return b.build();
 }
 
@@ -896,6 +1310,59 @@ function buildCoastalBatteryBody(): MeshBuffers {
   // Fire-control box on the seaward edge.
   b.box(2.3, 1.05, -2.35, 1.25, 1.0, 1.2, PALETTE.hullLight);
   b.box(2.3, 1.25, -1.73, 0.7, 0.28, 0.08, PALETTE.glassDark);
+
+  // ---- The emplacement, not just the launcher ----------------------------
+  // A shore battery is a gun, a ready supply of rounds and the crew that feeds
+  // it. Everything below is the working half: the parapet the crew stands
+  // behind, the rail the rounds travel on, and the shelter they wait in.
+  for (const z of [-3.45, 3.45]) {
+    for (const x of [-2.6, -0.9, 0.8, 2.5]) {
+      b.box(x, 1.05, z, 0.09, 1.3, 0.09, PALETTE.metal);
+    }
+    b.box(0, 1.68, z, 5.2, 0.07, 0.07, PALETTE.metal);
+    b.box(0, 1.12, z, 5.2, 0.06, 0.06, PALETTE.metal);
+  }
+
+  // Rail spur from the magazine to the launcher, with a loaded trolley on it.
+  for (const z of [1.05, 1.75]) {
+    b.box(1.35, 0.54, z, 4.4, 0.08, 0.12, PALETTE.metal);
+  }
+  for (let i = 0; i < 4; i++) {
+    b.box(-0.7 + i * 1.35, 0.48, 1.4, 0.1, 0.14, 0.9, PALETTE.darkMetal);
+  }
+  b.box(1.5, 0.74, 1.4, 1.3, 0.26, 0.86, PALETTE.hullDark);
+  b.cylinderX(1.5, 0.98, 1.4, 0.2, 1.1, 6, PALETTE.hullLight);
+  b.box(1.5, 0.72, 1.86, 1.4, 0.1, 0.06, PALETTE.warning);
+
+  // Cable run from the fire-control box to the mount, clipped down the deck.
+  b.box(0.7, 0.86, -2.35, 2.4, 0.1, 0.2, PALETTE.darkMetal);
+  b.box(0.7, 0.94, -2.35, 2.2, 0.05, 0.1, PALETTE.metal);
+  for (const x of [-0.35, 0.75, 1.65]) {
+    b.box(x, 0.82, -2.35, 0.12, 0.09, 0.3, PALETTE.metal);
+  }
+  b.cylinder(1.95, 0.6, -2.35, 0.28, 0.16, 8, PALETTE.darkMetal);
+
+  // Searchlight on its pedestal, watching the approach water.
+  b.cylinder(-1.7, 1.05, 2.55, 0.16, 1.1, 6, PALETTE.metal);
+  b.box(-1.7, 1.66, 2.55, 0.42, 0.14, 0.42, PALETTE.darkMetal);
+  b.cylinderX(-1.7, 1.98, 2.55, 0.3, 0.5, 8, PALETTE.hullLight);
+  b.box(-1.44, 1.98, 2.55, 0.06, 0.36, 0.36, PALETTE.hullDark);
+
+  // Crew dugout behind the landward wall: sandbagged on three sides, open
+  // toward the gun so the crew can reach the rack without crossing the deck.
+  sandbagWall(b, -2.5, -1.9, 2.0, true, 0.5);
+  sandbagWall(b, -2.55, -0.9, 1.6, false, 0.5);
+  b.box(-2.5, 0.56, -1.2, 1.8, 0.08, 1.4, PALETTE.darkMetal);
+  // Hazard stripes along the two side deck edges, clear of the firing arc.
+  for (const x of [-3.4, 3.3]) {
+    b.box(x, 0.85, 2.5, 0.9, 0.06, 0.3, PALETTE.warning);
+    b.box(x, 0.85, -2.5, 0.9, 0.06, 0.3, PALETTE.warning);
+  }
+  // Sight head and the layer's seat, clear of the traversing rails.
+  b.box(-0.4, 1.32, -2.6, 0.12, 1.0, 0.12, PALETTE.metal);
+  b.box(-0.4, 1.88, -2.6, 0.4, 0.22, 0.3, PALETTE.darkMetal);
+  b.box(-2.3, 0.98, -2.55, 0.6, 0.3, 0.5, PALETTE.oliveDark);
+  b.box(-2.3, 1.2, -2.55, 0.5, 0.14, 0.42, PALETTE.olive);
   return b.build();
 }
 
@@ -959,6 +1426,29 @@ function buildRelay(): MeshBuffers {
   b.box(2.35, 0.9, 2.15, 1.6, 1.0, 1.5, PALETTE.oliveDark);
   b.box(2.3, 1.5, 2.15, 0.8, 0.2, 0.8, PALETTE.olive);
   b.cylinderZ(2.35, 1.2, 2.9, 0.5, 0.4, 8, PALETTE.darkMetal);
+  // Cable tray from the cabin to the mast foot, with a junction cabinet at
+  // each end: a relay is an appliance, and the wiring is what shows it.
+  ductRun(b, 0.6, 0.62, -1.6, 3.4, 'x');
+  ductRun(b, 0.6, 0.62, 0.2, 2.2, 'z');
+  b.box(1.5, 0.92, -2.3, 0.85, 0.85, 0.7, PALETTE.oliveDark);
+  b.box(1.5, 1.37, -2.3, 0.95, 0.1, 0.8, PALETTE.olive);
+  b.box(2.9, 0.8, 0.2, 0.8, 0.6, 0.7, PALETTE.oliveDark);
+  b.box(2.9, 1.12, 0.2, 0.88, 0.08, 0.78, PALETTE.olive);
+  // A climb to the service platform, and the guys that hold the mast.
+  ladder(b, -0.15, 1.2, 4.3, 0.2);
+  for (const [x, z] of [[-3.1, -3.1], [3.1, -3.1], [-3.1, 3.1], [3.1, 3.1]] as const) {
+    b.box(x, 0.4, z, 0.5, 0.5, 0.5, PALETTE.concreteDark);
+    b.boxRot(x * 0.34, 6.9, z * 0.34, 4.6, 0.045, 0.045, Math.atan2(z, x), PALETTE.darkMetal);
+  }
+  // Post-and-wire fence round the pad, open at the road end.
+  for (let i = 0; i < 5; i++) {
+    const x = -3.4 + i * 1.7;
+    b.box(x, 1.1, -3.45, 0.12, 1.6, 0.12, PALETTE.metal);
+    if (i < 4) {
+      b.box(x + 0.85, 1.55, -3.45, 1.7, 0.05, 0.04, PALETTE.darkMetal);
+      b.box(x + 0.85, 1.05, -3.45, 1.7, 0.05, 0.04, PALETTE.darkMetal);
+    }
+  }
   sandbagWall(b, 0, 3.15, 4.4, true, 0.28);
   return b.build();
 }
@@ -986,6 +1476,42 @@ function buildSupplyDepot(): MeshBuffers {
   b.box(-2.8, 6.6, 3.4, 3.5, 0.2, 0.2, PALETTE.metal);
   b.box(-1.1, 5.6, 3.4, 0.12, 2.0, 0.12, PALETTE.darkMetal);
   b.box(-1.1, 4.6, 3.4, 0.5, 0.5, 0.5, PALETTE.amber);
+  // Rail spur along the back of the yard: the depot is a railhead, and two
+  // rails with sleepers say so at a glance where a marking cannot.
+  for (const z of [-4.9, -4.35]) b.box(0.4, 0.79, z, 10.4, 0.12, 0.16, PALETTE.metal);
+  for (let i = 0; i < 6; i++) b.box(-4.2 + i * 1.9, 0.74, -4.63, 0.28, 0.1, 1.0, PALETTE.darkMetal);
+  b.box(5.5, 0.95, -4.63, 0.3, 0.5, 1.4, PALETTE.warning);
+  // Palletised stores, a drum cluster and the fuel bladder on the open apron.
+  for (const [x, z] of [
+    [1.4, 3.9],
+    [3.0, 3.6],
+  ] as const) {
+    b.box(x, 0.98, z, 1.3, 0.16, 1.3, PALETTE.canvas);
+    b.box(x, 1.3, z, 1.1, 0.5, 1.1, PALETTE.oliveDark);
+    b.box(x, 1.62, z, 0.9, 0.18, 0.9, PALETTE.canvas);
+  }
+  for (const [x, z] of [
+    [-5.0, 0.6],
+    [-4.2, 1.3],
+    [-5.1, 1.7],
+    [-4.4, 0.2],
+  ] as const) {
+    b.cylinder(x, 1.06, z, 0.36, 1.0, 10, PALETTE.oliveDark);
+    b.cylinder(x, 1.58, z, 0.38, 0.08, 10, PALETTE.darkMetal);
+  }
+  b.cylinder(4.4, 1.2, 5.0, 0.8, 2.4, 10, PALETTE.canvas);
+  b.box(4.4, 2.42, 5.0, 0.9, 0.12, 0.9, PALETTE.oliveDark);
+  // Floodlights on the yard corners so the working face is lit at night.
+  for (const [x, z] of [
+    [-5.5, -2.4],
+    [5.5, -5.2],
+  ] as const) {
+    b.box(x, 3.1, z, 0.14, 4.4, 0.14, PALETTE.metal);
+    b.box(x, 5.34, z, 0.7, 0.2, 0.36, PALETTE.hullDark);
+    b.box(x, 5.24, z, 0.5, 0.1, 0.24, PALETTE.white);
+  }
+  // Painted bay stripes on the apron, between the container rows.
+  for (let i = 0; i < 3; i++) b.box(-1.0 + i * 2.0, 0.92, 0.6, 0.14, 0.04, 4.6, PALETTE.white);
   // Perimeter sandbags.
   sandbagWall(b, 0, 5.6, 7.0, true);
   sandbagWall(b, 5.4, 0, 6.0, false);
@@ -1030,6 +1556,53 @@ function buildRadarStation(): MeshBuffers {
   b.box(3.6, 3.55, 3.1, 0.1, 0.5, 0.1, PALETTE.metal);
   sandbagWall(b, 0, 4.95, 6.0, true, 0.28);
   sandbagWall(b, 4.9, 0, 4.0, false, 0.28);
+
+  // ---- The station's working surfaces -----------------------------------
+  // Rooftop plant, a guard rail where the roof is used, the waveguide that
+  // feeds the array and the generator that keeps it turning when the grid is
+  // gone. Without these a radome on a slab reads as a prop, not a station.
+  roofPlant(b, -3.5, 4.42, 1.7, 1.6, 1.2);
+  for (let i = 0; i < 3; i++) {
+    b.box(3.1, 4.42 + i * 0.02, -1.2 + i * 0.9, 0.9, 0.6, 0.62, PALETTE.metal);
+    b.box(3.56, 4.62, -1.2 + i * 0.9, 0.06, 0.36, 0.44, PALETTE.hullDark);
+  }
+  // Guard rail along the two roof edges the crew actually walks.
+  for (const x of [-4.4, -2.4, -0.4, 1.6, 2.9]) {
+    b.box(x, 4.82, 3.0, 0.08, 0.8, 0.08, PALETTE.metal);
+  }
+  for (const z of [-3.9, -1.9, 0.1]) {
+    b.box(-4.6, 4.82, z, 0.08, 0.8, 0.08, PALETTE.metal);
+  }
+  b.box(-0.75, 5.2, 3.0, 7.4, 0.07, 0.07, PALETTE.metal);
+  b.box(-4.6, 5.2, -1.9, 0.07, 0.07, 4.0, PALETTE.metal);
+  // Waveguide from the cable head up the tower to the array feed.
+  b.box(0.74, 5.15, 0.74, 0.07, 1.5, 0.07, PALETTE.metal);
+  b.box(0.74, 4.62, 0.74, 0.3, 0.2, 0.3, PALETTE.darkMetal);
+  ladder(b, -0.8, 4.6, 5.9, -0.72);
+  // Trenched cable run from the operations block to the tower base.
+  b.box(-1.4, 0.6, 2.4, 5.2, 0.22, 0.3, PALETTE.darkMetal);
+  for (const x of [-3.6, -1.8, 0.0]) {
+    b.box(x, 0.74, 2.4, 0.34, 0.06, 0.42, PALETTE.concreteDark);
+  }
+  b.box(2.2, 0.78, 2.4, 0.5, 0.32, 0.5, PALETTE.metal);
+  // Generator set and its fuel drums on the rear apron.
+  b.box(-4.4, 1.05, -3.6, 2.2, 1.0, 1.4, PALETTE.oliveDark);
+  b.box(-4.4, 1.58, -3.6, 2.0, 0.1, 1.2, PALETTE.olive);
+  b.cylinder(-5.1, 1.62, -3.6, 0.24, 0.16, 8, PALETTE.darkMetal);
+  b.cylinder(-3.4, 1.75, -4.3, 0.34, 0.9, 8, PALETTE.oliveDark);
+  b.cylinder(-2.6, 1.75, -4.3, 0.34, 0.9, 8, PALETTE.hullDark);
+  b.cylinder(-3.4, 2.2, -4.3, 0.36, 0.1, 8, PALETTE.metal);
+  b.cylinder(-2.6, 2.2, -4.3, 0.36, 0.1, 8, PALETTE.metal);
+  // Floodlight posts and a cable reel by the annex door.
+  for (const [x, z] of [
+    [1.0, 4.6],
+    [5.2, 1.0],
+  ] as const) {
+    b.box(x, 1.6, z, 0.12, 2.6, 0.12, PALETTE.metal);
+    b.box(x, 2.95, z, 0.5, 0.16, 0.3, PALETTE.darkMetal);
+    b.box(x, 3.04, z, 0.4, 0.05, 0.22, PALETTE.hullLight);
+  }
+  b.cylinderX(2.6, 0.85, 4.5, 0.4, 0.42, 8, PALETTE.darkMetal);
   return b.build();
 }
 
@@ -1063,6 +1636,32 @@ function buildTenement(): MeshBuffers {
   b.box(3.2, 10.7, 0, 3.4, 0.3, 3.6, PALETTE.hullLight);
   b.cylinder(-3.6, 9.4, -3.2, 1.25, 2.4, 10, PALETTE.hullLight);
   b.cylinder(-3.6, 10.7, -3.2, 1.35, 0.3, 10, PALETTE.metal);
+  // Juliet balconies and window joinery on the street face: the slab edge and
+  // its rail are what give a tenement its scale, one floor at a time.
+  for (let floor = 0; floor < 3; floor++) {
+    const y = 2.1 + floor * 2.15;
+    for (const x of [-4.6, 1.6]) {
+      b.box(x, y - 0.62, 5.15, 2.2, 0.14, 0.9, PALETTE.concrete);
+      b.box(x, y - 0.06, 5.58, 2.2, 0.06, 0.06, PALETTE.metal);
+      b.box(x, y - 0.34, 5.58, 2.2, 0.05, 0.05, PALETTE.metal);
+      for (const dx of [-1.05, 1.05]) b.box(x + dx, y - 0.31, 5.15, 0.07, 0.7, 0.9, PALETTE.metal);
+    }
+    // Window frames: jambs, heads and the mullion between the two lights. They
+    // sit proud of the recessed glazing, so the opening keeps its depth.
+    for (let i = 0; i < 4; i++) {
+      const x = -4.6 + i * 2.7;
+      for (const z of [4.68, -4.68]) {
+        b.box(x, y, z, 1.72, 0.12, 0.22, PALETTE.concreteDark);
+        b.box(x, y + 0.5, z, 1.72, 0.1, 0.2, PALETTE.concrete);
+        b.box(x, y, z, 0.08, 0.96, 0.12, PALETTE.concreteDark);
+      }
+    }
+  }
+  for (const x of [-5.4, 4.2]) downpipe(b, x, 4.86, 7.8, 1.0);
+  // Entrance steps, a canopy and the light over the door.
+  for (let i = 0; i < 3; i++) b.box(-0.6, 0.78 + i * 0.16, 5.9 + i * 0.22, 3.0, 0.16, 0.5, PALETTE.concreteDark);
+  b.box(-0.6, 3.0, 5.35, 2.2, 0.12, 0.7, PALETTE.hullDark);
+  b.box(-0.6, 2.85, 5.24, 0.24, 0.16, 0.16, PALETTE.amber);
   // Ground-floor barricade and rubble.
   sandbagWall(b, -1.0, 6.5, 5.0, true);
   b.box(5.2, 0.9, 5.4, 1.2, 0.8, 1.2, PALETTE.concreteDark);
@@ -1072,6 +1671,10 @@ function buildTenement(): MeshBuffers {
 
 function buildRuin(): MeshBuffers {
   const b = new MeshBuilder();
+  // Burnt material. The ash has to be dark without falling into the rubber
+  // family: the tracker keys off a near-neutral value, and a scorched floor
+  // that renders as a tyre tread is worse than a plain one.
+  const soot: Color = [0.17, 0.162, 0.145];
   b.box(0, 0.25, 0, 11.6, 0.5, 11.6, PALETTE.concreteDark);
   b.box(0, 0.62, 0, 10.8, 0.35, 10.8, PALETTE.concrete);
   // Broken shell: surviving corners at different heights.
@@ -1094,6 +1697,124 @@ function buildRuin(): MeshBuffers {
     b.box(x + 0.35, 1.25, z - 0.25, s * 0.55, 0.35, s * 0.55, PALETTE.concrete);
   }
   sandbagWall(b, -0.6, 5.2, 4.2, true);
+  // The interior. A ruin that is only four broken corners reads as a model of a
+  // ruin from above; a surviving partition, a slab edge and the stair flight
+  // that used to reach the upper floor make it a house that was hit.
+  b.box(0.2, 1.15, -1.4, 4.4, 1.9, 0.45, PALETTE.concreteDark);
+  b.box(0.2, 2.18, -1.4, 4.6, 0.16, 0.55, PALETTE.concrete);
+  b.box(1.0, 2.45, 1.6, 4.2, 0.26, 3.0, PALETTE.concreteDark);
+  for (let i = 0; i < 4; i++) {
+    const y = 0.8 + i * 0.42;
+    b.box(-2.6 + i * 0.62, y, 2.4, 0.62, 0.42, 1.1, PALETTE.concrete);
+  }
+  // Window opening in the tallest surviving corner, its lintel still in place.
+  b.box(-4.4, 2.15, -3.05, 2.1, 1.35, 0.3, PALETTE.hullDark);
+  b.box(-4.4, 2.92, -3.08, 2.4, 0.18, 0.34, PALETTE.concrete);
+  // Rebar torn out of the broken edge, and brick rubble under the old wall.
+  for (const [x, z, yaw] of [
+    [-2.9, -3.1, 0.3],
+    [-3.6, -3.0, -0.4],
+    [2.0, 2.3, 0.9],
+    [2.6, 2.1, 1.3],
+  ] as const) {
+    b.boxRot(x, 3.05, z, 1.1, 0.05, 0.05, yaw, PALETTE.metal);
+  }
+  for (const [x, z] of [
+    [-0.8, 3.4],
+    [0.4, 3.9],
+    [1.9, 3.2],
+    [2.8, -1.8],
+  ] as const) {
+    b.box(x, 0.95, z, 0.42, 0.22, 0.3, PALETTE.canvas);
+  }
+
+  // The chimney stack. A domestic chimney is the one element that survives a
+  // direct hit, and it is the difference between "a house that was bombed" and
+  // "four broken walls": it carries a vertical against a silhouette that is
+  // otherwise all low rubble. Its sooted flue and string course also give the
+  // eye a scale reference for the storey height that has been lost.
+  b.box(4.2, 3.9, -4.4, 0.95, 2.6, 0.95, PALETTE.concreteDark);
+  b.box(4.2, 4.78, -4.4, 1.06, 0.16, 1.06, PALETTE.concrete);
+  b.box(4.2, 5.28, -4.4, 1.2, 0.18, 1.2, PALETTE.concreteDark);
+  b.box(4.2, 5.38, -4.4, 0.62, 0.06, 0.62, soot);
+  // Soot staining below the cap, where the flue has been drawing for years.
+  b.box(4.2, 5.08, -3.9, 0.7, 0.34, 0.06, soot);
+
+  // A doorway still hanging in its frame, its lintel dropped and its door gone.
+  // The reveal is cut into the wall face, so the opening reads as depth rather
+  // than a dark rectangle drawn on the elevation.
+  b.box(3.8, 1.55, 4.93, 1.5, 1.95, 0.2, PALETTE.hullDark);
+  // The void behind the frame is a shade of the frame's steel rather than pure
+  // black: a near-neutral this dark classifies as rubber, and a rubber doorway
+  // picks up the tyre shader.
+  b.box(3.8, 1.5, 4.86, 1.2, 1.7, 0.14, [0.15, 0.144, 0.131]);
+  b.box(3.8, 2.44, 4.95, 1.7, 0.18, 0.34, PALETTE.concrete);
+  b.box(3.8, 0.9, 5.18, 1.9, 0.16, 0.55, PALETTE.concreteDark);
+  // Paving slabs on the approach, each one a little further out of true.
+  for (const [x, z, w] of [
+    [3.7, 5.62, 1.7],
+    [3.55, 5.86, 1.5],
+  ] as const) {
+    b.box(x, 0.83, z, w, 0.07, 0.42, PALETTE.concrete);
+  }
+
+  // The first floor came down in pieces. Three slabs of different sizes, each
+  // turned where it fell, leave the ground floor legible; one large plate read
+  // as a roof the ruin does not have, and hid the interior work underneath.
+  for (const [x, z, w, d, yaw, y] of [
+    [2.5, -2.2, 1.7, 1.0, -0.9, 1.02],
+    [1.3, -1.0, 1.1, 0.8, 0.55, 0.94],
+    [3.4, -0.6, 1.2, 0.75, -0.25, 1.08],
+  ] as const) {
+    b.boxRot(x, y, z, w, 0.2, d, yaw, PALETTE.concreteDark);
+    b.boxRot(x, y + 0.11, z, w * 0.86, 0.06, d * 0.82, yaw, PALETTE.concrete);
+  }
+  // Torn reinforcement standing out of the broken edges.
+  for (const [x, z, yaw] of [
+    [1.9, -2.6, 0.5],
+    [2.2, -1.7, -0.3],
+    [3.6, -0.9, 0.9],
+  ] as const) {
+    b.boxRot(x, 1.34, z, 0.9, 0.045, 0.045, yaw, PALETTE.metal);
+  }
+
+  // Stair flight: the handrail posts are what tell a viewer walking past the
+  // steps are a stair and not a stack of boxes.
+  for (const [x, y] of [
+    [-2.35, 1.85],
+    [-0.45, 2.45],
+  ] as const) {
+    b.box(x, y, 1.72, 0.07, 1.5, 0.07, PALETTE.metal);
+  }
+  b.boxRot(-1.4, 2.62, 1.72, 2.2, 0.06, 0.06, 0.3, PALETTE.metal);
+
+  // Burnt patch under the fallen joists: a scorched floor is the cheapest way
+  // to say the fire happened here, and it stays dark under the day/night pass.
+  b.box(1.6, 0.83, -1.5, 2.8, 0.03, 2.2, soot);
+  b.boxRot(-0.2, 1.05, -2.0, 4.2, 0.16, 0.22, 0.62, soot);
+  b.boxRot(0.9, 1.02, -0.9, 3.4, 0.14, 0.2, -0.42, soot);
+
+  // Services: the gas meter and its riser are still on the wall, and the
+  // household junk is where the cupboards were.
+  b.box(5.62, 1.32, 0.2, 0.24, 0.55, 0.7, PALETTE.metal);
+  b.cylinder(5.5, 0.95, 0.2, 0.055, 0.95, 5, PALETTE.darkMetal);
+  b.box(5.62, 1.62, 0.2, 0.28, 0.06, 0.78, PALETTE.darkMetal);
+  b.box(-1.4, 0.98, -0.6, 1.1, 0.34, 0.7, PALETTE.canvas);
+  b.box(-1.9, 0.92, -2.2, 0.5, 0.22, 0.44, PALETTE.metal);
+  b.cylinder(1.2, 0.92, 2.9, 0.26, 0.42, 7, PALETTE.darkMetal);
+
+  // Broken garden wall along the east edge, stepped down where it was hit.
+  for (const [z, h, y] of [
+    [-2.0, 0.75, 1.05],
+    [0.5, 0.5, 0.92],
+    [2.4, 0.3, 0.82],
+  ] as const) {
+    b.box(5.55, y, z, 0.34, h, 1.1, PALETTE.concreteDark);
+    b.box(5.55, y + h / 2 + 0.03, z, 0.42, 0.08, 1.18, PALETTE.concrete);
+  }
+  // Gate piers at the front, one of them knocked over.
+  b.box(-2.9, 1.15, 5.5, 0.55, 1.5, 0.55, PALETTE.concreteDark);
+  b.boxRot(0.4, 0.95, 5.45, 0.55, 1.3, 0.55, 1.35, PALETTE.concreteDark);
   return b.build();
 }
 
@@ -1217,7 +1938,38 @@ function buildOfficeBlock(): MeshBuffers {
   // Fire escape landings down the east face.
   for (let floor = 0; floor < 4; floor++) {
     b.box(4.95, 3.0 + floor * 2.4, 2.4, 1.3, 0.14, 2.6, PALETTE.darkMetal);
+    b.box(4.95, 3.75 + floor * 2.4, 2.4, 0.08, 0.08, 2.6, PALETTE.metal);
   }
+  // Curtain-wall structure: piers between the glazing bands and a spandrel
+  // under each one. Without them the elevation is six uninterrupted ribbons,
+  // which is why the tallest building on the map read as the flattest.
+  for (const x of [-4.1, -1.9, 0.3, 2.5]) {
+    b.box(x, 6.6, 6.18, 0.38, 11.4, 0.24, PALETTE.concrete);
+    b.box(x, 6.6, -6.18, 0.38, 11.4, 0.24, PALETTE.concrete);
+  }
+  for (const z of [-3.4, 0.2, 3.8]) {
+    b.box(-5.02, 6.6, z, 0.24, 11.4, 0.38, PALETTE.concrete);
+    b.box(4.62, 6.6, z, 0.24, 11.4, 0.38, PALETTE.concrete);
+  }
+  for (let floor = 0; floor < 6; floor++) {
+    const y = 2.45 + floor * 1.85;
+    b.box(-0.2, y, 6.2, 8.7, 0.22, 0.3, PALETTE.concreteDark);
+    b.box(-0.2, y, -6.2, 8.7, 0.22, 0.3, PALETTE.concreteDark);
+    b.box(-5.06, y, 0, 0.3, 0.22, 10.7, PALETTE.concreteDark);
+    b.box(4.66, y, 0, 0.3, 0.22, 10.7, PALETTE.concreteDark);
+  }
+  // Split air conditioners hung off the third and fourth floors.
+  for (const [x, y, z] of [
+    [-3.5, 4.3, 6.4],
+    [1.6, 6.2, 6.4],
+    [-2.9, 9.9, -6.4],
+  ] as const) {
+    const side = Math.sign(z);
+    b.box(x, y, z, 0.9, 0.6, 0.42, PALETTE.metal);
+    b.box(x, y - 0.36, z - side * 0.05, 0.94, 0.1, 0.5, PALETTE.darkMetal);
+  }
+  downpipe(b, -5.1, 6.36, 12.4, 1.0);
+  downpipe(b, 4.6, 6.36, 12.4, 1.0);
   sandbagWall(b, 0, 8.6, 4.6, true);
   return b.build();
 }
@@ -1483,6 +2235,76 @@ function buildRadar(): MeshBuffers {
   b.box(-2.4, 1.4, 2.3, 0.8, 0.2, 0.8, PALETTE.olive);
   b.box(0.6, 1.35, 1.42, 2.8, 0.6, 0.12, PALETTE.hull, 0.86);
   ownershipPanel(b, -0.7, 2.98, 0, 4.2, 3.4);
+  // The equipment the dish is useless without: a service door, a ladder to the
+  // platform, its guard rail and the conduit that feeds the feedhorn.
+  b.box(-0.7, 1.5, 1.92, 1.0, 1.9, 0.12, PALETTE.hullDark);
+  b.box(-0.7, 1.9, 1.98, 0.82, 0.9, 0.06, PALETTE.glassDark);
+  b.box(2.0, 1.55, 1.42, 0.9, 0.9, 0.1, PALETTE.hullDark);
+  for (let i = 0; i < 3; i++) b.box(2.0, 1.25 + i * 0.26, 1.48, 0.7, 0.06, 0.04, PALETTE.metal);
+  ladder(b, 0.72, 0.9, 3.5, 0.86);
+  for (const [x, z] of [[-1.2, -1.2], [1.2, -1.2], [-1.2, 1.2], [1.2, 1.2]] as const) {
+    b.box(x, 3.7, z, 0.09, 0.9, 0.09, PALETTE.metal);
+  }
+  for (const z of [-1.2, 1.2]) b.box(0, 4.1, z, 2.4, 0.06, 0.06, PALETTE.metal);
+  for (const x of [-1.2, 1.2]) b.box(x, 4.1, 0, 0.06, 0.06, 2.4, PALETTE.metal);
+  ductRun(b, -2.4, 1.2, 0.6, 2.4, 'x');
+  b.cylinder(2.0, 2.55, 0, 0.3, 0.35, 10, PALETTE.metal);
+  b.box(0, 5.42, 0, 0.5, 0.16, 0.16, PALETTE.darkMetal);
+
+  // ---- The site around the array ----------------------------------------
+  // A listening station is a mast, a plant room and a fence. The fence is what
+  // gives the site its footprint from above; the plant room is what proves the
+  // mast is powered by something.
+  for (const [x, z] of [
+    [-3.2, -3.2],
+    [-0.6, -3.4],
+    [3.2, -3.2],
+    [3.4, 0],
+    [3.2, 3.2],
+    [0, 3.4],
+    [-3.2, 3.2],
+    [-3.4, 0],
+  ] as const) {
+    b.box(x, 0.98, z, 0.09, 1.1, 0.09, PALETTE.metal);
+    b.box(x, 1.24, z, 0.16, 0.08, 0.16, PALETTE.warning);
+  }
+  for (const [ax, az, bx, bz] of [
+    [-3.2, -3.2, -0.6, -3.4],
+    [-0.6, -3.4, 3.2, -3.2],
+    [3.2, -3.2, 3.4, 0],
+    [3.4, 0, 3.2, 3.2],
+    [3.2, 3.2, 0, 3.4],
+    [0, 3.4, -3.2, 3.2],
+    [-3.2, 3.2, -3.4, 0],
+    [-3.4, 0, -3.2, -3.2],
+  ] as const) {
+    const len = Math.hypot(bx - ax, bz - az);
+    b.boxRot((ax + bx) / 2, 1.22, (az + bz) / 2, len, 0.03, 0.03, Math.atan2(bz - az, bx - ax), PALETTE.track);
+    b.boxRot((ax + bx) / 2, 0.94, (az + bz) / 2, len, 0.03, 0.03, Math.atan2(bz - az, bx - ax), PALETTE.track);
+  }
+  // Plant room: generator, fuel drums, its exhaust and the cable that feeds the
+  // mast. These sit on the rear apron, clear of the mast's shadow.
+  b.box(-2.2, 1.05, -2.6, 2.0, 0.9, 1.2, PALETTE.oliveDark);
+  b.box(-2.2, 1.55, -2.6, 1.8, 0.1, 1.0, PALETTE.olive);
+  b.cylinder(-3.0, 1.62, -2.6, 0.2, 0.16, 8, PALETTE.darkMetal);
+  b.cylinder(-0.9, 1.4, -2.6, 0.3, 0.8, 8, PALETTE.hullDark);
+  b.cylinder(-0.9, 1.84, -2.6, 0.32, 0.1, 8, PALETTE.metal);
+  b.box(-1.5, 0.62, -1.6, 1.6, 0.2, 0.24, PALETTE.darkMetal);
+  // Roof plant and vents on the equipment block.
+  roofPlant(b, -2.3, 2.85, -1.2, 1.3, 1.0);
+  for (const x of [0.4, 1.2]) {
+    b.cylinder(x, 3.0, 1.2, 0.16, 0.42, 7, PALETTE.darkMetal);
+    b.cylinder(x, 3.24, 1.2, 0.22, 0.1, 7, PALETTE.metal);
+  }
+  // Obstruction lamps at the head of the mast and the mast's base plate.
+  b.box(-1.05, 5.6, -1.05, 0.16, 0.16, 0.16, PALETTE.red);
+  b.box(1.05, 5.6, 1.05, 0.16, 0.16, 0.16, PALETTE.red);
+  b.box(0, 3.62, 0, 0.9, 0.1, 0.9, PALETTE.darkMetal);
+  // Cable reel and a service cabinet by the door.
+  b.cylinderX(1.0, 0.9, 2.4, 0.38, 0.4, 8, PALETTE.darkMetal);
+  b.box(1.0, 0.9, 2.4, 0.18, 0.8, 0.8, PALETTE.metal);
+  b.box(-2.6, 1.1, 2.1, 0.9, 1.3, 0.7, PALETTE.oliveDark);
+  b.box(-2.6, 1.78, 2.1, 1.0, 0.12, 0.8, PALETTE.olive);
   return b.build();
 }
 
@@ -1684,10 +2506,48 @@ function buildFarmhouse(): MeshBuffers {
     b.box(x, 4.6, 3.75, 1.2, 1.0, 0.16, PALETTE.glassDark);
   }
   b.box(-1.4, 1.5, 3.8, 1.2, 2.4, 0.2, PALETTE.hullDark);
+  // Timber shutters either side of every window and a stone sill under each.
+  for (let i = 0; i < 3; i++) {
+    const x = -3.4 + i * 2.0;
+    for (const y of [2.2, 4.6]) {
+      b.box(x - 0.78, y, 3.82, 0.34, 1.12, 0.12, PALETTE.canvas);
+      b.box(x + 0.78, y, 3.82, 0.34, 1.12, 0.12, PALETTE.canvas);
+      b.box(x, y - 0.6, 3.86, 1.6, 0.12, 0.26, PALETTE.concrete);
+    }
+  }
+  // Barn: sliding door on its rail, with the lean-to that shelters the yard.
+  b.box(3.6, 2.0, 2.72, 3.0, 3.0, 0.12, PALETTE.canvas);
+  for (let i = 0; i < 4; i++) b.box(3.6, 0.9 + i * 0.72, 2.82, 2.7, 0.1, 0.05, PALETTE.oliveDark);
+  b.box(3.6, 3.55, 2.86, 3.6, 0.16, 0.18, PALETTE.darkMetal);
+  b.box(2.4, 2.0, 2.98, 0.16, 0.16, 0.16, PALETTE.metal);
+  // Hay bales, a woodpile and the milk churns by the kitchen door.
+  for (const [x, z] of [
+    [4.6, -4.2],
+    [4.6, -2.6],
+  ] as const) {
+    b.cylinder(x, 1.15, z, 0.62, 1.3, 10, PALETTE.sandbag);
+    b.cylinder(x, 1.82, z, 0.66, 0.12, 10, PALETTE.canvas);
+  }
+  for (let i = 0; i < 5; i++) {
+    b.box(-4.9 + (i % 2) * 0.34, 0.62 + Math.floor(i / 2) * 0.3, 2.4, 1.5, 0.28, 0.5, PALETTE.oliveDark);
+  }
+  for (const x of [-2.1, -1.4]) b.cylinder(x, 1.0, 4.5, 0.22, 1.0, 8, PALETTE.metal);
   // Yard wall, water butt and crates.
   sandbagWall(b, -1.4, 4.9, 5.4, true, 0.85);
   b.cylinder(-4.4, 1.35, 4.6, 0.55, 1.5, 8, PALETTE.darkMetal);
   b.box(3.0, 1.0, 4.4, 1.0, 0.9, 1.0, PALETTE.concreteDark);
+  // Post-and-rail fence along the lane edge.
+  for (let i = 0; i < 5; i++) {
+    const x = -5.0 + i * 2.5;
+    b.box(x, 1.05, -5.35, 0.16, 1.7, 0.16, PALETTE.canvas);
+    if (i < 4) {
+      b.box(x + 1.25, 1.4, -5.35, 2.5, 0.12, 0.08, PALETTE.canvas);
+      b.box(x + 1.25, 0.85, -5.35, 2.5, 0.12, 0.08, PALETTE.canvas);
+    }
+  }
+  // Weather vane on the barn ridge.
+  b.box(3.6, 5.0, -1.6, 0.08, 0.7, 0.08, PALETTE.darkMetal);
+  b.box(3.85, 5.22, -1.6, 0.5, 0.06, 0.22, PALETTE.metal);
   return b.build();
 }
 
@@ -1719,6 +2579,47 @@ function buildChapel(): MeshBuffers {
     const z = -2.4 + i * 3.2;
     b.box(4.65, 4.2, z, 0.16, 2.2, 1.1, PALETTE.glassDark);
     b.box(-2.65, 4.2, z, 0.16, 2.2, 1.1, PALETTE.glassDark);
+    // Lancets get a surround: jambs, sill and a pointed head, so the openings
+    // are cut into the masonry instead of painted on it.
+    for (const x of [4.72, -2.72]) {
+      b.box(x, 4.2, z - 0.78, 0.26, 2.4, 0.16, PALETTE.concrete);
+      b.box(x, 4.2, z + 0.78, 0.26, 2.4, 0.16, PALETTE.concrete);
+      b.box(x, 3.08, z, 0.3, 0.16, 1.9, PALETTE.concrete);
+      b.addTriangle(
+        [x, 5.35, z - 0.9],
+        [x, 5.35, z + 0.9],
+        [x, 6.0, z],
+        PALETTE.concrete,
+      );
+    }
+  }
+  // Buttresses down both flanks carry the nave and give the walls a rhythm.
+  for (const z of [-3.4, -0.2, 3.0]) {
+    for (const x of [5.0, -3.0]) {
+      b.box(x, 3.2, z, 0.6, 6.0, 0.7, PALETTE.concrete);
+      b.box(x, 6.3, z, 0.72, 0.3, 0.82, PALETTE.concreteDark);
+    }
+  }
+  // Plinth course plus the bell itself, hanging in its louvred belfry.
+  stringCourse(b, 1.0, 1.15, 1.2, 7.4, 10.6);
+  b.box(-3.6, 9.95, -4.6, 2.0, 0.16, 0.24, PALETTE.darkMetal);
+  b.cylinder(-3.6, 9.4, -4.6, 0.62, 0.9, 10, PALETTE.darkMetal);
+  b.cylinder(-3.6, 9.9, -4.6, 0.4, 0.22, 10, PALETTE.metal);
+  // Cross on the rear gable and the lychgate at the churchyard edge. The
+  // gable, not the ridge centre: the ridge is where the standard mounts.
+  b.box(1.0, 7.62, -3.4, 0.1, 0.9, 0.1, PALETTE.darkMetal);
+  b.box(1.0, 7.8, -3.4, 0.6, 0.1, 0.1, PALETTE.darkMetal);
+  for (const x of [-1.9, 3.1]) b.box(x, 1.5, 7.15, 0.26, 2.4, 0.26, PALETTE.canvas);
+  b.box(0.6, 2.75, 7.15, 4.2, 0.24, 0.3, PALETTE.canvas);
+  // Headstones in the churchyard, leaning at slightly different angles.
+  for (const [x, z, yaw] of [
+    [-5.1, -1.8, 0.08],
+    [-4.6, 0.6, -0.12],
+    [-5.0, 2.6, 0.16],
+    [-3.6, 3.6, -0.06],
+    [5.0, -5.2, 0.1],
+  ] as const) {
+    b.boxRot(x, 1.1, z, 0.62, 1.0, 0.16, yaw, PALETTE.concreteDark);
   }
   sandbagWall(b, 1.0, 7.4, 4.6, true, 0.9);
   return b.build();
@@ -1746,14 +2647,44 @@ function buildConstabulary(): MeshBuffers {
   // Barred windows across the street face and the lobby canopy.
   for (let i = 0; i < 4; i++) {
     const x = -5.0 + i * 2.4;
-    b.box(x, 2.6, 4.45, 1.3, 1.1, 0.16, PALETTE.glassDark);
-    b.box(x, 5.2, 4.45, 1.3, 1.1, 0.16, PALETTE.glassDark);
+    for (const y of [2.6, 5.2]) {
+      b.box(x, y, 4.45, 1.3, 1.1, 0.16, PALETTE.glassDark);
+      // Security glazing: the bars are what identify a police station, not the
+      // sign. Three uprights and a transom per opening.
+      b.box(x, y, 4.53, 1.42, 1.2, 0.1, PALETTE.concrete);
+      for (const dx of [-0.42, 0, 0.42]) b.box(x + dx, y, 4.58, 0.07, 1.16, 0.07, PALETTE.darkMetal);
+      b.box(x, y + 0.34, 4.58, 1.36, 0.07, 0.07, PALETTE.darkMetal);
+      b.box(x, y - 0.62, 4.5, 1.6, 0.12, 0.3, PALETTE.concrete);
+    }
   }
   b.box(-1.4, 2.4, 4.9, 3.4, 0.25, 1.4, PALETTE.hullDark);
   b.box(-1.4, 1.5, 4.5, 1.4, 2.4, 0.2, PALETTE.hullDark);
+  // Roof deck: a service hatch and the plant that serves the cells below. The
+  // parapet is the tallest thing on the building, so nothing here breaks it.
+  b.box(-3.4, 7.35, -1.4, 1.9, 0.3, 1.6, PALETTE.metal);
+  b.box(-3.4, 7.44, -1.4, 1.5, 0.12, 1.2, PALETTE.darkMetal);
+  roofPlant(b, 1.6, 7.25, 2.2, 1.7, 1.4);
+  ductRun(b, -1.4, 7.3, -2.6, 7.4, 'x');
+  // Rainwater goods and the noticeboard beside the lobby canopy.
+  for (const x of [-6.82, 3.96]) downpipe(b, x, 4.48, 6.95, 0.8);
+  b.box(1.5, 2.05, 4.58, 1.1, 0.9, 0.16, PALETTE.hullDark);
+  b.box(1.5, 2.05, 4.66, 0.92, 0.7, 0.05, PALETTE.canvas);
+  // Raised yard: kerbs round the vehicle apron and a gate in the fence line.
+  for (let i = 0; i < 4; i++) b.box(3.0 + i * 1.35, 0.82, 5.0, 0.12, 0.1, 1.9, PALETTE.warning);
+  for (let i = 0; i < 4; i++) {
+    const x = 2.8 + i * 1.5;
+    b.box(x, 1.15, -5.15, 0.15, 1.6, 0.15, PALETTE.metal);
+    if (i < 3) b.box(x + 0.75, 1.5, -5.15, 1.5, 0.1, 0.06, PALETTE.metal);
+  }
+  b.box(8.0, 1.25, -1.0, 0.16, 1.8, 0.16, PALETTE.metal);
+  b.box(8.0, 1.25, 1.9, 0.16, 1.8, 0.16, PALETTE.metal);
   // Radio mast, yard sandbags and a parked drum.
   b.box(-5.2, 9.35, -3.2, 0.18, 4.2, 0.18, PALETTE.metal);
   b.box(-5.2, 11.4, -3.2, 1.0, 0.1, 0.1, PALETTE.metal);
+  for (const y of [8.6, 9.6, 10.6]) {
+    b.box(-5.2, y, -3.2, 0.9, 0.06, 0.06, PALETTE.metal);
+    b.box(-5.2, y, -3.2, 0.06, 0.06, 0.9, PALETTE.metal);
+  }
   sandbagWall(b, 4.9, 4.2, 3.4, true, 0.9);
   b.cylinder(6.6, 0.9, -3.3, 0.6, 1.2, 8, PALETTE.darkMetal);
   return b.build();
@@ -1787,6 +2718,31 @@ function buildWatchtower(): MeshBuffers {
   b.box(0, 7.65, 0, 4.6, 0.3, 4.6, PALETTE.hullDark);
   // Ladder up the seaward face and the lookout lamp on the rail.
   for (let i = 0; i < 8; i++) b.box(0, 0.8 + i * 0.55, 1.9 - i * 0.06, 0.7, 0.1, 0.12, PALETTE.metal);
+  // A climb of that height needs a cage: hoops every metre behind the rungs.
+  for (let i = 0; i < 5; i++) {
+    const y = 1.2 + i * 0.95;
+    b.box(0, y, 2.32, 1.0, 0.06, 0.06, PALETTE.metal);
+    b.box(-0.5, y, 2.1, 0.06, 0.06, 0.44, PALETTE.metal);
+    b.box(0.5, y, 2.1, 0.06, 0.06, 0.44, PALETTE.metal);
+  }
+  // Mid-rails round the deck so the rail reads as a railing, not four posts.
+  for (const y of [5.62, 6.0]) {
+    for (const z of [-2.7, 2.7]) b.box(0, y, z, 5.4, 0.06, 0.06, PALETTE.metal);
+    for (const x of [-2.7, 2.7]) b.box(x, y, 0, 0.06, 0.06, 5.4, PALETTE.metal);
+  }
+  // Cab frame: a mullion at each corner and a transom across the glass band.
+  for (const [x, z] of [[-2.02, -2.02], [2.02, -2.02], [-2.02, 2.02], [2.02, 2.02]] as const) {
+    b.box(x, 6.9, z, 0.12, 0.96, 0.12, PALETTE.hullDark);
+  }
+  b.box(0, 6.62, 2.04, 4.06, 0.07, 0.07, PALETTE.hullDark);
+  b.box(0, 6.62, -2.04, 4.06, 0.07, 0.07, PALETTE.hullDark);
+  // Anchor blocks for the guy wires, plus a drum and a water can at the foot.
+  for (const [x, z] of [[-3.3, -3.3], [3.3, -3.3], [-3.3, 3.3], [3.3, 3.3]] as const) {
+    b.box(x, 0.38, z, 0.8, 0.76, 0.8, PALETTE.concreteDark);
+    b.boxRot(x * 0.72, 3.1, z * 0.72, 3.9, 0.07, 0.07, Math.atan2(z, x), PALETTE.darkMetal);
+  }
+  b.cylinder(-3.2, 0.62, 1.4, 0.42, 1.24, 10, PALETTE.oliveDark);
+  b.cylinder(-2.2, 0.5, 1.6, 0.26, 1.0, 8, PALETTE.metal);
   b.box(2.3, 5.9, 2.3, 0.3, 0.3, 0.3, PALETTE.amber);
   return b.build();
 }
@@ -1833,6 +2789,65 @@ function buildBridge(): MeshBuffers {
     b.cylinder(x, 1.72, -3.5, 0.08, 0.9, 5, PALETTE.metal);
     b.box(x, 2.2, -3.5, 0.24, 0.16, 0.24, PALETTE.amber);
   }
+
+  // ---- Structure under the deck ------------------------------------------
+  // The top of a slab is all a camera sees of a bridge until it looks along the
+  // channel: the soffit is where the span has to be built, not cast as one
+  // flat plane. Two edge girders carry the deck, cross-bearings tie them
+  // together, and the pier caps sit on visible bearing pads.
+  for (const z of [-3.05, 3.05]) {
+    b.box(0, 0.62, z, span - 0.4, 0.42, 0.38, PALETTE.concreteDark);
+    b.box(0, 0.42, z, span - 0.9, 0.1, 0.5, PALETTE.concreteDark);
+  }
+  for (let i = -3; i <= 3; i++) {
+    b.box(i * 2.15, 0.56, 0, 0.2, 0.26, 5.9, PALETTE.darkMetal);
+  }
+  for (const x of [0, -4.6, 4.6]) {
+    b.box(x, 0.74, 0, x === 0 ? 2.4 : 1.7, 0.18, x === 0 ? 6.6 : 6.4, PALETTE.track);
+  }
+  // Expansion joints across the carriageway at each abutment: a steel strip
+  // between two slab ends, not a painted line.
+  for (const x of [-5.5, 5.5]) {
+    b.box(x, 1.19, 0, 0.16, 0.07, 6.4, PALETTE.darkMetal);
+    b.box(x, 1.23, 0, 0.06, 0.04, 6.4, PALETTE.metal);
+  }
+
+  // ---- Deck furniture -----------------------------------------------------
+  // Lower rail under the handrail, so the parapet reads as a rail on a wall.
+  for (const z of [-3.5, 3.5]) b.box(0, 1.5, z, span - 0.4, 0.07, 0.07, PALETTE.metal);
+  // Kerb reflectors: the small bright marks are what give the deck its length.
+  for (let i = -3; i <= 3; i++) {
+    for (const z of [-3.16, 3.16]) b.box(i * 2.15, 1.18, z, 0.16, 0.06, 0.12, PALETTE.white);
+  }
+  // Scuppers at the low points, each with a downpipe under the deck edge.
+  for (const x of [-2.3, 2.3]) {
+    for (const z of [-3.2, 3.2]) {
+      b.box(x, 1.14, z, 0.44, 0.1, 0.3, PALETTE.darkMetal);
+      b.cylinder(x, 0.55, z + Math.sign(z) * 0.2, 0.075, 1.0, 5, PALETTE.darkMetal);
+    }
+  }
+  // Utility conduit clipped along the near parapet, with two junction boxes.
+  ductRun(b, 0, 1.44, 3.24, span - 2.4, 'x');
+  for (const x of [-4.2, 3.8]) {
+    b.box(x, 1.36, 3.16, 0.42, 0.52, 0.16, PALETTE.oliveDark);
+    b.box(x, 1.36, 3.08, 0.3, 0.34, 0.06, PALETTE.metal);
+  }
+  // Lamp heads on the two posts, with the lens under the hood.
+  for (const x of [-5.2, 5.2]) {
+    b.box(x, 2.34, -3.5, 0.46, 0.16, 0.34, PALETTE.darkMetal);
+    b.box(x, 2.24, -3.5, 0.3, 0.06, 0.22, PALETTE.hullLight);
+    b.box(x, 2.46, -3.5, 0.5, 0.05, 0.38, PALETTE.metal);
+  }
+  // Bridge identification plate on the near parapet, and the height-limit
+  // gantry over the near mouth that every road crossing has at its entry.
+  b.box(-1.0, 1.36, 3.7, 1.5, 0.6, 0.06, PALETTE.white);
+  b.box(-1.0, 1.36, 3.74, 1.2, 0.34, 0.05, PALETTE.darkMetal);
+  for (const z of [-3.4, 3.4]) {
+    b.box(-6.4, 2.0, z, 0.14, 2.0, 0.14, PALETTE.metal);
+  }
+  b.box(-6.4, 3.02, 0, 0.18, 0.34, 7.1, PALETTE.metal);
+  b.box(-6.4, 3.02, 0, 0.1, 0.5, 1.7, PALETTE.warning);
+  b.box(-6.4, 3.02, 0, 0.1, 0.22, 1.9, PALETTE.track);
   return b.build();
 }
 
@@ -2023,6 +3038,101 @@ function buildForwardPost(): MeshBuffers {
   b.box(-1.9, 1.18, -1.6, 1.1, 0.10, 1.1, PALETTE.olive);
   b.box(0.2, 0.58, 0, 2.2, 0.02, 2.2, PALETTE.hull, 0.82);
   ownershipPanel(b, 0.4, 0.66, -1.9, 2.0, 2.0);
+  // A light observation post is mostly what is lying around it: a berm of
+  // filled barriers, matting on the mud, crates at the dugout mouth and a net
+  // over the crew. All of it sits below the sensor head, so the mast still
+  // carries the silhouette.
+  for (const [x, z] of [
+    [2.6, -1.6],
+    [2.6, 0.0],
+    [-2.6, -2.6],
+  ] as const) {
+    b.box(x, 0.72, z, 1.5, 0.9, 0.9, PALETTE.sandbag);
+    b.box(x, 1.18, z, 1.3, 0.16, 0.72, PALETTE.canvas);
+  }
+  for (const z of [-1.0, 0.2]) b.box(0.2, 0.5, z, 2.4, 0.04, 0.9, PALETTE.darkMetal);
+  b.box(0.9, 0.86, -2.1, 0.8, 0.6, 0.6, PALETTE.oliveDark);
+  b.box(0.9, 1.18, -2.1, 0.9, 0.1, 0.7, PALETTE.olive);
+  b.box(-1.5, 0.92, -2.3, 0.7, 0.72, 0.5, PALETTE.canvas);
+  // Camo net on four poles, sagging over the dugout.
+  for (const [x, z] of [[-2.8, -2.8], [0.2, -2.8], [-2.8, -0.6], [0.2, -0.6]] as const) {
+    b.box(x, 1.35, z, 0.08, 1.6, 0.08, PALETTE.oliveDark);
+  }
+  b.addQuad(
+    [-2.8, 2.15, -2.8],
+    [0.2, 2.15, -2.8],
+    [0.2, 1.95, -0.6],
+    [-2.8, 1.95, -0.6],
+    PALETTE.canvas,
+  );
+  b.addQuad(
+    [0.2, 1.95, -0.6],
+    [-2.8, 1.95, -0.6],
+    [-2.8, 2.15, -2.8],
+    [0.2, 2.15, -2.8],
+    shade(PALETTE.canvas, 0.8),
+  );
+  for (const [x, z] of [[-2.2, -2.6], [2.1, -0.4], [-0.4, 0.9]] as const) {
+    b.boxRot(x, 0.62, z, 1.0, 0.05, 0.05, Math.atan2(z, x), PALETTE.metal);
+  }
+
+  // ---- What a two-man post actually carries ----------------------------
+  // Guy wires on the mast (a tall lattice without them reads as a floating
+  // pole), the ground matting under the generator, the tripwire stakes and the
+  // supply pallet. All of it stays below the sensor head.
+  for (const [x, z] of [
+    [-2.6, 2.4],
+    [2.4, 2.4],
+    [2.4, -2.4],
+  ] as const) {
+    b.box(x, 0.85, z, 0.1, 0.9, 0.1, PALETTE.metal);
+    b.box(x, 0.48, z, 0.34, 0.12, 0.34, PALETTE.concreteDark);
+    b.box(x, 1.28, z, 0.18, 0.14, 0.18, PALETTE.darkMetal);
+  }
+  for (const z of [-1.4, -0.6]) {
+    b.box(1.9, 0.54, z, 2.0, 0.05, 0.6, PALETTE.darkMetal);
+  }
+  b.box(1.9, 1.05, -1.0, 1.2, 0.9, 0.9, PALETTE.oliveDark);
+  b.box(1.9, 1.44, -1.0, 1.1, 0.1, 0.8, PALETTE.olive);
+  // Tripwire stakes along the exposed approach, with the wire between them.
+  for (const [x, z] of [
+    [2.9, 0.4],
+    [2.9, 2.9],
+    [0.4, 2.9],
+    [-1.6, 2.9],
+  ] as const) {
+    b.box(x, 0.78, z, 0.07, 0.6, 0.07, PALETTE.warning);
+  }
+  for (const [ax, az, bx, bz] of [
+    [2.9, 0.4, 2.9, 2.9],
+    [2.9, 2.9, -1.6, 2.9],
+  ] as const) {
+    const len = Math.hypot(bx - ax, bz - az);
+    b.boxRot((ax + bx) / 2, 0.94, (az + bz) / 2, len, 0.03, 0.03, Math.atan2(bz - az, bx - ax), PALETTE.track);
+  }
+  // Thermal sight on its tripod, and a windsock on the mast top: the two things
+  // that tell a viewer this position is watching, not just hiding.
+  for (const [x, z] of [
+    [-1.3, -1.0],
+    [-0.7, -1.0],
+    [-1.0, -0.45],
+  ] as const) {
+    b.box(x, 0.72, z, 0.05, 0.75, 0.05, PALETTE.metal);
+  }
+  b.box(-1.0, 1.12, -0.85, 0.34, 0.26, 0.46, PALETTE.darkMetal);
+  b.box(-0.82, 1.12, -0.85, 0.08, 0.18, 0.34, PALETTE.glass);
+  b.box(0.05, 4.5, 0.1, 0.05, 0.9, 0.05, PALETTE.metal);
+  b.addQuad(
+    [0.08, 4.92, 0.1],
+    [0.08, 4.35, 0.1],
+    [0.08, 4.42, 0.85],
+    [0.08, 4.9, 0.72],
+    PALETTE.warning,
+  );
+  // Crate of batteries and a water can at the dugout mouth.
+  b.box(-2.3, 0.86, 2.2, 0.8, 0.5, 0.6, PALETTE.oliveDark);
+  b.box(-2.3, 1.13, 2.2, 0.86, 0.08, 0.66, PALETTE.olive);
+  b.cylinder(-1.5, 0.72, 2.3, 0.19, 0.4, 7, PALETTE.oliveDark);
   return b.build();
 }
 
@@ -2058,6 +3168,32 @@ function buildResearchCentre(): MeshBuffers {
   // Cable duct and a warning beacon at the service door.
   b.box(0.4, 0.66, -4.9, 5.4, 0.22, 0.26, PALETTE.darkMetal);
   b.box(4.9, 3.2, 4.1, 0.2, 0.2, 0.2, PALETTE.warning);
+  // The hall is a laboratory, not a box: its roof carries the chiller bank and
+  // duct runs that make the building read as working plant from the air.
+  roofPlant(b, -3.6, 4.65, -2.4, 2.0, 1.5);
+  roofPlant(b, -0.4, 4.65, 1.4, 1.5, 1.2);
+  roofPlant(b, 5.6, 3.1, 1.2, 1.4, 1.1);
+  ductRun(b, -2.6, 2.0, 3.78, 8.4, 'x');
+  ductRun(b, 4.9, 1.5, 4.66, 6.6, 'x');
+  ladder(b, 7.06, 0.6, 3.0, 2.2);
+  // Instrument cabinets beside the service door and bollards on the apron.
+  for (const z of [4.9, 5.4]) {
+    b.box(-5.6, 0.95, z, 0.8, 0.7, 0.4, PALETTE.oliveDark);
+    b.box(-5.6, 1.34, z, 0.88, 0.08, 0.46, PALETTE.olive);
+  }
+  for (let i = 0; i < 5; i++) {
+    const x = -5.2 + i * 2.6;
+    b.box(x, 0.82, 5.45, 0.3, 0.44, 0.3, PALETTE.concrete);
+    b.box(x, 1.06, 5.45, 0.34, 0.08, 0.34, PALETTE.white);
+  }
+  // Painted approach hatching across the apron.
+  for (let i = 0; i < 4; i++) b.box(-3.4 + i * 2.2, 0.62, 4.5, 1.2, 0.04, 1.5, PALETTE.white);
+  // Guys on the instrument mast, taken to three ground anchors.
+  for (const [x, z] of [[-7.2, -5.4], [-5.4, -5.4], [-7.2, -3.2]] as const) {
+    b.box(x, 0.42, z, 0.4, 0.4, 0.4, PALETTE.concreteDark);
+  }
+  b.boxRot(-6.85, 4.6, -4.85, 2.3, 0.04, 0.04, 0.9, PALETTE.darkMetal);
+  b.boxRot(-5.95, 4.6, -4.85, 2.4, 0.04, 0.04, -0.9, PALETTE.darkMetal);
   ownershipPanel(b, -2.6, 4.92, -0.4, 4.6, 3.0);
   return b.build();
 }
@@ -2069,7 +3205,26 @@ function buildSignalsBureau(): MeshBuffers {
   b.box(0, 0.44, 0, 6.0, 0.20, 6.0, PALETTE.concrete);
   b.box(0, 0.88, 0, 2.6, 0.70, 2.6, PALETTE.oliveDark);
   b.box(0, 1.36, 0, 2.2, 0.26, 2.2, PALETTE.olive);
-  b.box(1.42, 1.02, 0, 0.05, 0.42, 0.8, PALETTE.glassDark);
+  windowBay(b, 1.34, 1.0, 0, 0.66, 0.42, 'x', PALETTE.olive);
+  // The hut is a signals office, so the site reads as wired: cable tray out to
+  // the mast, a generator on the pad and a drum beside it.
+  ductRun(b, 1.05, 0.62, -1.15, 2.4, 'z');
+  ductRun(b, 0, 0.62, 1.16, 1.5, 'x');
+  b.box(2.05, 0.86, -1.95, 1.15, 1.0, 0.95, PALETTE.oliveDark);
+  b.box(2.05, 1.39, -1.95, 1.25, 0.1, 1.05, PALETTE.olive);
+  for (let i = 0; i < 3; i++) b.box(2.64, 0.7 + i * 0.2, -1.95, 0.04, 0.12, 0.62, PALETTE.darkMetal);
+  b.cylinder(2.05, 0.72, -2.95, 0.34, 0.9, 10, PALETTE.metal);
+  // Printed antenna fins on the mast head and a guy line to each anchor.
+  for (const y of [5.0, 5.4]) {
+    b.box(0.82, y, 0, 0.7, 0.34, 0.05, PALETTE.hullDark);
+    b.box(0.82, y, 0.03, 0.6, 0.26, 0.02, PALETTE.glass);
+  }
+  for (const [x, z] of [[-2.3, -2.3], [2.3, -2.3], [-2.3, 2.3], [2.3, 2.3]] as const) {
+    b.box(x, 0.36, z, 0.6, 0.56, 0.6, PALETTE.concreteDark);
+    b.boxRot(x * 0.5, 3.4, z * 0.5, 4.4, 0.05, 0.05, Math.atan2(z, x), PALETTE.darkMetal);
+  }
+  ladder(b, 0, 1.4, 5.8, 0.78);
+  sandbagWall(b, 0, -2.9, 3.4, true, 0.3);
   // Four-legged lattice with cross-bracing and three antenna fins.
   for (const x of [-0.66, 0.66]) {
     for (const z of [-0.66, 0.66]) b.box(x, 3.5, z, 0.12, 5.0, 0.12, PALETTE.metal);
@@ -2110,11 +3265,14 @@ function expeditionaryDressing(): MeshBuffers {
     gableRoof(b, x, 1.22, -6.2, 3.4, 3.8, 1.0, PALETTE.canvas);
     b.box(x, 0.55, -4.3, 3.6, 0.3, 0.2, PALETTE.oliveDark);
   }
-  for (const x of [4.0, 6.0]) {
-    b.cylinder(x, 1.1, 6.0, 1.1, 1.8, 10, PALETTE.olive);
-    b.cylinder(x, 2.05, 6.0, 1.15, 0.16, 10, PALETTE.hullDark);
+  // The fuel point sits on the open margin east of the flight line. Between
+  // the two columns it would now stand under the southern pair's wingtips,
+  // which is where the tanker that fills it would also have to drive.
+  for (const x of [8.0, 10.1]) {
+    b.cylinder(x, 1.1, 5.8, 1.1, 1.8, 10, PALETTE.olive);
+    b.cylinder(x, 2.05, 5.8, 1.15, 0.16, 10, PALETTE.hullDark);
   }
-  b.box(2.4, 0.62, 6.0, 5.0, 0.2, 0.2, PALETTE.metal);
+  b.box(9.05, 0.62, 5.8, 2.8, 0.2, 0.2, PALETTE.metal);
   b.box(8.6, 0.62, 1.4, 2.3, 0.02, 2.3, PALETTE.hull, 0.84);
   b.box(8.6, 0.44, 1.4, 2.6, 0.18, 2.6, PALETTE.hullDark);
   return b.build();
@@ -2237,6 +3395,477 @@ function strategicOpsDressing(): MeshBuffers {
   return b.build();
 }
 
+/**
+ * A rotary-wing facility: two painted pads, a low servicing shelter and a fuel
+ * point. Deliberately unlike the airfield's long runway so the two strategic
+ * sites read apart at tactical zoom, and compact enough for its 4x4 footprint.
+ */
+function buildHeliport(): MeshBuffers {
+  const b = new MeshBuilder();
+  // Concrete apron and a slightly darker working surface.
+  b.box(0, 0.15, 0, 15.2, 0.3, 15.2, [0.31, 0.32, 0.3]);
+  b.box(0, 0.34, 0, 14.4, 0.12, 14.4, [0.36, 0.37, 0.34]);
+  // Two touchdown circles with their H markings.
+  for (const x of [-3.6, 3.6]) {
+    b.cylinder(x, 0.44, 1.6, 2.9, 0.08, 20, [0.13, 0.14, 0.15]);
+    b.cylinder(x, 0.47, 1.6, 2.2, 0.04, 20, [0.2, 0.21, 0.2]);
+    for (const dx of [-0.85, 0.85]) b.box(x + dx, 0.51, 1.6, 0.34, 0.04, 1.7, PALETTE.white);
+    b.box(x, 0.51, 1.6, 1.36, 0.04, 0.34, PALETTE.white);
+  }
+  // Perimeter tie-down and approach lights.
+  for (const x of [-6.4, -2.2, 2.2, 6.4]) {
+    b.box(x, 0.52, 6.6, 0.18, 0.08, 0.18, PALETTE.amber);
+    b.box(x, 0.52, -1.4, 0.18, 0.08, 0.18, PALETTE.amber);
+  }
+  // Low servicing shelter across the back of the apron.
+  b.box(0, 1.5, -6.0, 9.6, 2.6, 3.4, PALETTE.hull);
+  b.box(0, 2.86, -6.0, 10.2, 0.2, 3.9, PALETTE.hullDark);
+  // Open bay mouth, roller door and hazard sill.
+  b.box(0, 1.25, -4.24, 5.6, 2.2, 0.16, [0.05, 0.055, 0.06]);
+  b.box(0, 2.5, -4.3, 6.0, 0.26, 0.2, PALETTE.warning);
+  b.box(0, 0.42, -4.2, 5.8, 0.2, 0.36, PALETTE.warning);
+  // Control cabin on one corner, with its glazing and a roof mast.
+  b.box(-5.9, 1.35, -5.4, 2.4, 2.4, 2.4, PALETTE.hullLight);
+  b.box(-5.9, 2.6, -5.4, 2.7, 0.16, 2.7, PALETTE.hullDark);
+  b.box(-5.9, 1.9, -4.14, 1.9, 0.9, 0.1, PALETTE.glass);
+  b.cylinder(-5.9, 3.5, -5.4, 0.07, 1.8, 6, PALETTE.metal);
+  b.box(-5.9, 4.4, -5.4, 0.7, 0.08, 0.08, PALETTE.metal);
+  // Team panel over the shelter, and the fuel point beside it.
+  ownershipPanel(b, 0, 3.1, -6.0, 4.2, 1.1);
+  b.box(4.9, 0.75, -5.2, 1.8, 1.1, 1.8, PALETTE.oliveDark);
+  b.cylinder(4.9, 0.95, -5.2, 0.62, 1.0, 10, PALETTE.olive);
+  b.box(4.9, 1.5, -5.2, 0.34, 0.2, 1.0, PALETTE.metal);
+  // Ground-support trolley and a stack of ready rounds.
+  b.box(2.2, 0.6, -4.6, 1.4, 0.55, 0.9, PALETTE.hullDark);
+  for (const x of [1.7, 2.7]) b.cylinder(x, 0.3, -4.6, 0.28, 0.2, 8, PALETTE.rubber);
+  for (const z of [-3.9, -3.4]) b.box(5.9, 0.55, z, 0.9, 0.5, 0.34, PALETTE.olive);
+  return b.build();
+}
+
+/**
+ * A two-storey brick school: a long classroom block, a bell cupola, a walled
+ * playground and an entrance canopy. Its identity from the tactical camera is
+ * the tall window rhythm and the cupola, not a landmark dome.
+ */
+function buildSchoolhouse(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.concrete;
+  b.box(0, 0.25, 0, 15.4, 0.5, 15.4, PALETTE.concreteDark);
+  b.material = MATERIAL.painted;
+  b.box(0, 3.4, 0, 14.2, 5.8, 14.2, [0.46, 0.36, 0.29]);
+  b.box(0, 1.9, 0, 14.4, 0.14, 14.4, [0.38, 0.3, 0.25]);
+  b.box(0, 4.6, 0, 14.4, 0.12, 14.4, [0.38, 0.3, 0.25]);
+  b.box(0, 6.36, 0, 14.4, 0.12, 14.4, PALETTE.concrete);
+  for (const [x, z, w, d] of [
+    [0, 7.1, 14.6, 0.4],
+    [0, -7.1, 14.6, 0.4],
+    [7.1, 0, 0.4, 14.6],
+    [-7.1, 0, 0.4, 14.6],
+  ] as const) {
+    b.box(x, 6.62, z, w, 0.4, d, PALETTE.concreteDark);
+  }
+  // Bell cupola, set back from the flag deck.
+  b.box(3.8, 7.0, -3.8, 2.0, 1.2, 2.0, [0.44, 0.34, 0.27]);
+  b.box(3.8, 7.66, -3.8, 2.2, 0.16, 2.2, PALETTE.concreteDark);
+  b.material = MATERIAL.bareMetal;
+  b.box(3.8, 7.9, -3.8, 0.3, 0.34, 0.3, PALETTE.metal);
+  // Two storeys of tall classroom windows on both street faces.
+  b.material = null;
+  for (const y of [2.6, 5.2]) {
+    for (let i = 0; i < 4; i++) {
+      const x = -4.6 + i * 3.1;
+      windowBay(b, x, y, 7.12, 1.5, 1.2, 'z');
+      windowBay(b, x, y, -7.12, 1.5, 1.2, 'z');
+    }
+    windowBay(b, 7.12, y, 0, 1.4, 1.2, 'x');
+  }
+  // Entrance: canopy, posts, doors and a low playground wall.
+  b.material = MATERIAL.concrete;
+  b.box(7.4, 2.7, 0, 1.2, 0.18, 4.2, PALETTE.concrete);
+  for (const z of [-1.8, 1.8]) b.box(7.5, 1.5, z, 0.16, 2.4, 0.16, PALETTE.concreteDark);
+  b.material = MATERIAL.glass;
+  b.box(6.98, 1.6, 0, 0.08, 2.4, 2.4, PALETTE.glassDark);
+  b.material = MATERIAL.painted;
+  b.box(7.0, 1.6, 2.4, 0.12, 2.4, 1.0, [0.4, 0.3, 0.24]);
+  b.box(-3.0, 0.75, 7.6, 6.0, 1.0, 0.3, PALETTE.concreteDark);
+  return b.build();
+}
+
+/**
+ * A four-storey apartment slab: balcony runs on two faces, a string course at
+ * every third floor and a stair core that breaks the roofline.
+ */
+function buildApartmentBlock(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.concrete;
+  b.box(0, 0.3, 0, 19.2, 0.6, 19.2, PALETTE.concreteDark);
+  b.material = MATERIAL.painted;
+  b.box(0, 6.8, 0, 18.0, 12.6, 18.0, [0.55, 0.54, 0.5]);
+  for (const y of [3.9, 7.2, 10.5]) b.box(0, y, 0, 18.2, 0.18, 18.2, PALETTE.concrete);
+  b.box(0, 13.18, 0, 18.2, 0.2, 18.2, PALETTE.concrete);
+  for (const [x, z, w, d] of [
+    [0, 9.0, 18.4, 0.5],
+    [0, -9.0, 18.4, 0.5],
+    [9.0, 0, 0.5, 18.4],
+    [-9.0, 0, 0.5, 18.4],
+  ] as const) {
+    b.box(x, 13.65, z, w, 0.75, d, PALETTE.concrete);
+  }
+  b.box(-7.0, 7.2, -6.8, 4.0, 14.4, 4.0, PALETTE.concreteDark);
+  b.box(-7.0, 14.46, -6.8, 4.2, 0.18, 4.2, PALETTE.concrete);
+  // Balcony runs, a slab and a rail on two faces.
+  for (const y of [3.9, 7.2, 10.5, 12.6]) {
+    b.box(9.3, y - 0.9, 0, 1.0, 0.18, 12.0, PALETTE.concrete);
+    b.box(9.76, y - 0.45, 0, 0.08, 0.9, 12.0, PALETTE.metal);
+    b.box(0, y - 0.9, 9.3, 12.0, 0.18, 1.0, PALETTE.concrete);
+    b.box(0, y - 0.45, 9.76, 12.0, 0.9, 0.08, PALETTE.metal);
+  }
+  b.material = null;
+  for (const y of [2.6, 5.9, 9.2, 11.8]) {
+    for (let i = 0; i < 5; i++) {
+      const z = -7.2 + i * 3.6;
+      windowBay(b, 9.05, y, z, 1.5, 1.2, 'x');
+      const x = -7.2 + i * 3.6;
+      windowBay(b, x, y, 9.05, 1.5, 1.2, 'z');
+    }
+    windowBay(b, -9.05, y, 0, 1.6, 1.2, 'x');
+  }
+  roofPlant(b, 3.6, 13.28, -5.4, 2.4, 1.8);
+  b.material = MATERIAL.bareMetal;
+  b.box(5.4, 13.7, -1.0, 2.2, 1.5, 2.2, PALETTE.metal);
+  b.cylinder(5.4, 14.6, -1.0, 0.2, 0.3, 8, PALETTE.darkMetal);
+  return b.build();
+}
+
+/**
+ * A roadside motel: one long two-storey block, an external walkway on posts,
+ * a stair tower and a vacancy sign on a mast.
+ */
+function buildMotelBlock(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.concrete;
+  b.box(0, 0.25, -1.0, 19.6, 0.5, 13.4, PALETTE.concreteDark);
+  b.material = MATERIAL.painted;
+  b.box(0, 3.4, -1.4, 18.4, 6.0, 11.0, [0.52, 0.47, 0.4]);
+  b.box(0, 6.5, -1.4, 18.6, 0.2, 11.2, PALETTE.concrete);
+  for (const [x, z, w, d] of [
+    [0, 4.0, 18.8, 0.4],
+    [0, -6.8, 18.8, 0.4],
+    [9.1, -1.4, 0.4, 11.2],
+    [-9.1, -1.4, 0.4, 11.2],
+  ] as const) {
+    b.box(x, 6.85, z, w, 0.5, d, PALETTE.concreteDark);
+  }
+  // External walkway on a row of posts, with rails on both edges.
+  b.box(0, 3.35, 4.9, 18.2, 0.18, 2.4, PALETTE.concrete);
+  for (let i = 0; i < 7; i++) {
+    b.cylinder(-8.4 + i * 2.8, 1.7, 4.9, 0.16, 3.4, 6, PALETTE.concreteDark);
+  }
+  b.box(0, 4.2, 6.0, 18.2, 0.8, 0.1, PALETTE.metal);
+  b.box(0, 4.2, 3.8, 18.2, 0.8, 0.1, PALETTE.metal);
+  b.box(8.4, 1.8, 4.9, 2.6, 3.6, 2.8, PALETTE.concreteDark);
+  b.box(8.4, 3.68, 4.9, 2.8, 0.16, 3.0, PALETTE.concrete);
+  // Doors, windows and a vacancy sign on a mast.
+  for (let i = 0; i < 6; i++) {
+    const x = -7.6 + i * 3.0;
+    b.material = MATERIAL.glass;
+    b.box(x, 2.0, 4.02, 1.1, 1.1, 0.06, PALETTE.glassDark);
+    b.material = MATERIAL.canvas;
+    b.box(x + 1.5, 1.9, 4.02, 0.8, 3.0, 0.08, PALETTE.hullDark);
+    b.material = null;
+    windowBay(b, x, 5.4, 4.05, 1.4, 1.0, 'z');
+  }
+  windowBay(b, 9.05, 2.4, -1.4, 2.0, 1.2, 'x');
+  b.material = MATERIAL.bareMetal;
+  b.cylinder(9.2, 8.0, -6.4, 0.12, 3.4, 6, PALETTE.metal);
+  b.material = MATERIAL.painted;
+  b.box(9.2, 9.1, -6.4, 0.9, 1.1, 0.16, PALETTE.amber);
+  return b.build();
+}
+
+/**
+ * An art-deco cinema: a tall entrance block under a marquee with the long
+ * auditorium behind it, and a red sign blade on the corner.
+ */
+function buildCinema(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.concrete;
+  b.box(0, 0.3, 0, 19.4, 0.6, 19.4, PALETTE.concreteDark);
+  b.material = MATERIAL.painted;
+  b.box(0, 3.5, -3.0, 18.0, 6.4, 12.0, [0.42, 0.32, 0.26]);
+  b.box(0, 6.78, -3.0, 18.2, 0.28, 12.2, PALETTE.hullDark);
+  b.box(0, 5.4, 6.2, 17.8, 10.4, 6.2, [0.55, 0.45, 0.34]);
+  b.box(0, 10.66, 6.2, 18.0, 0.2, 6.4, PALETTE.concrete);
+  b.box(0, 10.9, 6.2, 18.2, 0.3, 6.6, PALETTE.concreteDark);
+  for (const x of [-6.0, -2.0, 2.0, 6.0]) b.box(x, 11.25, 9.0, 1.6, 0.5, 0.8, PALETTE.concrete);
+  // Marquee on two masts, with its under-lights.
+  b.box(0, 4.3, 8.9, 12.4, 0.3, 2.0, PALETTE.white);
+  for (const x of [-5.6, 5.6]) b.box(x, 2.6, 9.0, 0.16, 3.4, 0.16, PALETTE.metal);
+  for (let i = 0; i < 4; i++) b.box(-3.6 + i * 2.4, 4.3, 8.0, 0.9, 0.12, 0.12, PALETTE.amber);
+  // Sign blade and poster cases.
+  b.box(7.4, 7.6, 9.0, 0.5, 5.6, 1.8, PALETTE.red);
+  for (let i = 0; i < 3; i++) b.box(7.42, 9.4 - i * 1.5, 9.0, 0.54, 0.5, 1.3, PALETTE.white);
+  b.material = MATERIAL.glass;
+  b.box(0, 1.9, 9.24, 3.2, 2.6, 0.08, PALETTE.glassDark);
+  for (const x of [-4.6, 4.6]) b.box(x, 2.2, 9.24, 1.6, 1.8, 0.08, PALETTE.glassDark);
+  b.material = null;
+  for (let i = 0; i < 5; i++) windowBay(b, -6.4 + i * 3.2, 6.4, 9.22, 1.6, 1.4, 'z');
+  return b.build();
+}
+
+/**
+ * A stone bank: string courses, a columned portico and a corner turret with a
+ * weather vane. The heaviest walls of any street building.
+ */
+function buildBankHouse(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.concrete;
+  b.box(0, 0.3, 0, 15.4, 0.6, 15.4, PALETTE.concreteDark);
+  b.material = MATERIAL.painted;
+  b.box(0, 4.3, 0, 14.2, 8.0, 14.2, [0.5, 0.48, 0.42]);
+  stringCourse(b, 0, 3.2, 0, 14.2, 14.2, PALETTE.concrete);
+  stringCourse(b, 0, 6.4, 0, 14.2, 14.2, PALETTE.concrete);
+  b.box(0, 8.42, 0, 14.4, 0.24, 14.4, PALETTE.concrete);
+  for (const [x, z, w, d] of [
+    [0, 7.15, 14.6, 0.4],
+    [0, -7.15, 14.6, 0.4],
+    [7.15, 0, 0.4, 14.6],
+    [-7.15, 0, 0.4, 14.6],
+  ] as const) {
+    b.box(x, 8.72, z, w, 0.4, d, PALETTE.concreteDark);
+  }
+  // Portico on the street face.
+  for (const z of [-3.6, -1.2, 1.2, 3.6]) {
+    b.cylinder(7.5, 2.0, z, 0.32, 4.0, 8, PALETTE.white);
+    b.box(7.5, 4.1, z, 0.9, 0.24, 0.9, PALETTE.concrete);
+  }
+  b.box(7.0, 4.5, 0, 1.4, 0.5, 8.8, PALETTE.concrete);
+  b.box(7.0, 4.85, 0, 1.6, 0.2, 9.2, PALETTE.concreteDark);
+  b.material = null;
+  for (const z of [-5.4, -2.8, 2.8, 5.4]) windowBay(b, 7.12, 1.9, z, 1.2, 2.4, 'x', PALETTE.concrete);
+  b.material = MATERIAL.bareMetal;
+  b.box(7.1, 1.5, 0, 0.1, 2.6, 1.8, PALETTE.darkMetal);
+  b.material = MATERIAL.painted;
+  b.box(0, 4.9, 7.12, 2.4, 0.5, 0.12, PALETTE.white);
+  b.box(-4.6, 9.0, -4.6, 3.0, 1.2, 3.0, PALETTE.concreteDark);
+  b.box(-4.6, 9.66, -4.6, 3.2, 0.16, 3.2, PALETTE.concrete);
+  b.material = MATERIAL.bareMetal;
+  b.cylinder(-4.6, 10.2, -4.6, 0.05, 1.0, 6, PALETTE.metal);
+  b.box(-4.6, 10.5, -4.6, 0.4, 0.06, 0.06, PALETTE.metal);
+  return b.build();
+}
+
+/**
+ * A country station: a low brick building, a platform canopy on posts and a
+ * clock tower that marks the down line.
+ */
+function buildStationHouse(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.concrete;
+  b.box(0, 0.3, 5.0, 19.0, 0.6, 5.6, PALETTE.concreteDark);
+  b.box(0, 0.14, -3.0, 19.0, 0.28, 9.4, PALETTE.concreteDark);
+  b.material = MATERIAL.painted;
+  b.box(-1.6, 3.2, -1.4, 14.0, 5.8, 8.6, [0.5, 0.4, 0.31]);
+  b.box(-1.6, 6.24, -1.4, 14.2, 0.28, 8.8, PALETTE.hullDark);
+  b.box(-1.6, 4.7, 5.0, 14.4, 0.2, 5.0, PALETTE.hullDark);
+  for (let i = 0; i < 5; i++) {
+    b.cylinder(-7.8 + i * 2.6, 2.4, 6.6, 0.14, 4.6, 6, PALETTE.metal);
+  }
+  // Clock tower, set at the east end of the platform.
+  b.box(5.4, 4.6, -2.2, 3.2, 8.8, 3.2, [0.44, 0.34, 0.27]);
+  b.box(5.4, 9.08, -2.2, 3.4, 0.16, 3.4, PALETTE.concreteDark);
+  b.box(5.4, 9.6, -2.2, 2.2, 0.9, 2.2, PALETTE.concreteDark);
+  b.box(5.4, 10.1, -2.2, 2.4, 0.12, 2.4, PALETTE.hullDark);
+  b.material = MATERIAL.glass;
+  b.box(5.4, 8.3, -0.58, 1.2, 1.2, 0.06, PALETTE.glassDark);
+  // Windows to the forecourt, the platform doors and a nameboard.
+  b.material = MATERIAL.painted;
+  b.material = null;
+  for (let i = 0; i < 4; i++) windowBay(b, -7.0 + i * 3.0, 3.4, 2.32, 1.6, 1.4, 'z');
+  b.material = MATERIAL.glass;
+  b.box(-1.6, 1.7, 2.32, 3.6, 2.6, 0.08, PALETTE.glassDark);
+  b.material = MATERIAL.painted;
+  b.box(-1.6, 3.2, 2.4, 4.2, 0.3, 0.2, PALETTE.amber);
+  b.box(-1.6, 4.2, 7.4, 8.0, 0.7, 0.14, PALETTE.white);
+  return b.build();
+}
+
+/**
+ * A repair garage: two roller bays under a shallow roof, a corner office and a
+ * forecourt canopy over the pumps.
+ */
+function buildAutoGarage(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.concrete;
+  b.box(0, 0.28, 0, 15.4, 0.56, 15.4, PALETTE.concreteDark);
+  b.material = MATERIAL.painted;
+  b.box(0, 2.6, -1.6, 14.2, 4.8, 11.6, [0.33, 0.36, 0.32]);
+  b.box(0, 5.12, -1.6, 14.4, 0.24, 11.8, PALETTE.hullDark);
+  for (const x of [-3.4, 3.4]) {
+    b.box(x, 2.0, 4.3, 5.0, 3.6, 0.12, PALETTE.darkMetal);
+    for (let i = 0; i < 8; i++) b.box(x, 0.5 + i * 0.44, 4.38, 4.9, 0.07, 0.06, PALETTE.metal);
+    b.box(x, 0.24, 4.5, 5.2, 0.2, 0.4, PALETTE.warning);
+  }
+  b.box(-5.6, 2.2, 4.4, 3.6, 4.0, 3.2, PALETTE.hullLight);
+  b.box(-5.6, 4.28, 4.4, 3.8, 0.16, 3.4, PALETTE.concreteDark);
+  b.material = MATERIAL.glass;
+  b.box(-5.6, 2.6, 6.02, 2.6, 1.2, 0.08, PALETTE.glass);
+  // Forecourt canopy and its two pump islands.
+  b.material = MATERIAL.painted;
+  b.box(2.6, 4.4, 5.2, 6.6, 0.2, 4.2, PALETTE.hullDark);
+  b.material = MATERIAL.bareMetal;
+  for (const x of [0.2, 5.0]) {
+    for (const z of [3.6, 6.8]) b.box(x, 2.2, z, 0.16, 4.4, 0.16, PALETTE.metal);
+  }
+  b.material = MATERIAL.painted;
+  b.box(2.6, 4.65, 5.2, 5.2, 0.14, 0.14, PALETTE.amber);
+  for (const x of [1.6, 3.6]) {
+    b.box(x, 0.75, 5.2, 0.5, 1.1, 0.4, PALETTE.white);
+    b.box(x, 1.0, 5.42, 0.36, 0.4, 0.06, PALETTE.darkMetal);
+  }
+  for (let i = 0; i < 3; i++) b.cylinder(-2.0 + i * 0.6, 0.4, 6.9, 0.28, 0.8, 8, PALETTE.oliveDark);
+  return b.build();
+}
+
+/**
+ * A cold store: a sealed, ribbed insulated box with two dock doors and a
+ * rooftop chiller bank. No windows: the mass is the identity.
+ */
+function buildColdStore(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.concrete;
+  b.box(0, 0.3, 0, 19.4, 0.6, 19.4, PALETTE.concreteDark);
+  b.material = MATERIAL.painted;
+  b.box(0, 4.6, 0, 18.4, 8.4, 18.4, [0.62, 0.63, 0.6]);
+  b.box(0, 8.9, 0, 18.6, 0.24, 18.6, PALETTE.concrete);
+  for (let i = 0; i < 12; i++) {
+    const p = -8.6 + i * 1.55;
+    b.box(p, 4.6, 9.24, 0.28, 8.2, 0.1, [0.55, 0.56, 0.53]);
+    b.box(9.24, 4.6, p, 0.1, 8.2, 0.28, [0.55, 0.56, 0.53]);
+  }
+  for (const z of [-4.4, 0.6]) {
+    b.box(9.2, 2.2, z, 0.3, 3.8, 3.4, PALETTE.darkMetal);
+    b.box(9.26, 2.2, z, 0.12, 3.5, 3.1, [0.72, 0.73, 0.7]);
+    for (const dz of [-1.6, 1.6]) b.box(9.3, 2.2, z + dz, 0.16, 3.6, 0.2, PALETTE.rubber);
+    b.box(9.34, 0.9, z, 0.1, 0.2, 3.2, PALETTE.warning);
+  }
+  roofPlant(b, -5.4, 9.02, -5.4, 3.2, 2.2);
+  roofPlant(b, 5.2, 9.02, -5.4, 2.6, 2.0);
+  b.material = MATERIAL.bareMetal;
+  b.box(0, 9.3, -8.2, 18.0, 0.2, 0.2, PALETTE.metal);
+  for (const x of [-6.0, 6.0]) b.cylinder(x, 9.5, -5.4, 0.16, 0.9, 6, PALETTE.metal);
+  b.material = MATERIAL.painted;
+  b.box(9.22, 1.4, 4.2, 0.14, 2.4, 1.2, PALETTE.hullDark);
+  b.material = MATERIAL.glass;
+  b.box(9.24, 2.6, 6.6, 0.06, 0.9, 1.6, PALETTE.glassDark);
+  return b.build();
+}
+
+/**
+ * Three attached houses with different heights, gables, chimneys, bay windows
+ * and a railing along the front: the block that makes a street read inhabited.
+ */
+function buildTownhouseTerrace(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.concrete;
+  b.box(0, 0.24, 0, 15.4, 0.48, 15.4, PALETTE.concreteDark);
+  const houses: Array<[number, number, Color]> = [
+    [-4.8, 5.4, [0.48, 0.36, 0.28]],
+    [0, 6.4, [0.42, 0.32, 0.26]],
+    [4.8, 5.0, [0.52, 0.42, 0.33]],
+  ];
+  for (const [x, height, color] of houses) {
+    b.material = MATERIAL.painted;
+    b.box(x, 0.24 + height / 2, 0, 4.4, height, 13.0, color);
+    b.box(x, 0.3 + height, 0, 4.6, 0.12, 13.2, PALETTE.concrete);
+    gableRoof(b, x, 0.36 + height, 0, 4.6, 13.0, 1.4, color);
+    b.box(x - 1.6, height + 1.1, 2.6, 0.7, 1.4, 0.7, [0.38, 0.28, 0.22]);
+    b.material = MATERIAL.glass;
+    b.box(x, 1.5, 6.52, 1.8, 1.4, 0.08, PALETTE.glassDark);
+    b.material = MATERIAL.painted;
+    b.box(x - 1.4, 1.4, 6.56, 0.9, 2.2, 0.1, PALETTE.hullDark);
+    b.box(x - 1.4, 2.55, 7.1, 1.3, 0.12, 1.1, PALETTE.hullDark);
+    b.material = null;
+    windowBay(b, x + 1.0, 0.9 + height * 0.72, 6.52, 1.0, 1.0, 'z');
+  }
+  b.material = MATERIAL.bareMetal;
+  for (let i = 0; i < 18; i++) b.box(-7.6 + i * 0.9, 0.5, 7.3, 0.05, 1.0, 0.05, PALETTE.darkMetal);
+  b.box(0, 0.98, 7.3, 14.8, 0.05, 0.05, PALETTE.darkMetal);
+  return b.build();
+}
+
+/** Wire and a held schoolyard for an occupied schoolhouse. */
+function schoolhouseDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  garrisonDressing(b, { halfX: 7.6, halfZ: 7.6, groundY: 0, roofY: 6.42, roofHalfX: 5.6, roofHalfZ: 5.6 });
+  sandbagWall(b, 0, 7.5, 5.0, true, 0.9);
+  return b.build();
+}
+
+/** Wire, roof sandbags and a held balcony for an occupied apartment block. */
+function apartmentBlockDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  garrisonDressing(b, { halfX: 9.2, halfZ: 9.2, groundY: 0, roofY: 13.28, roofHalfX: 7.2, roofHalfZ: 7.2 });
+  sandbagWall(b, 9.3, 0, 5.0, false, 13.4);
+  return b.build();
+}
+
+/** Wire and a blocked walkway for an occupied motel. */
+function motelBlockDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  garrisonDressing(b, { halfX: 9.2, halfZ: 6.8, groundY: 0, roofY: 6.6, roofHalfX: 7.2, roofHalfZ: 4.8 });
+  sandbagWall(b, 0, 4.9, 4.0, true, 3.5);
+  return b.build();
+}
+
+/** Wire and a sandbagged marquee for an occupied cinema. */
+function cinemaDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  garrisonDressing(b, { halfX: 9.2, halfZ: 9.2, groundY: 0, roofY: 10.76, roofHalfX: 7.0, roofHalfZ: 2.4 });
+  sandbagWall(b, 0, 9.0, 4.0, true, 4.5);
+  return b.build();
+}
+
+/** Wire and a barricaded portico for an occupied bank. */
+function bankHouseDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  garrisonDressing(b, { halfX: 7.6, halfZ: 7.6, groundY: 0, roofY: 8.54, roofHalfX: 5.6, roofHalfZ: 5.6 });
+  sandbagWall(b, 0, 7.4, 4.4, true, 0.9);
+  return b.build();
+}
+
+/** Wire and a held platform for an occupied station. */
+function stationHouseDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  garrisonDressing(b, { halfX: 9.2, halfZ: 7.4, groundY: 0, roofY: 6.38, roofHalfX: 6.8, roofHalfZ: 4.2 });
+  sandbagWall(b, -1.6, 6.6, 4.2, true, 0.9);
+  return b.build();
+}
+
+/** Wire and a sandbagged forecourt for an occupied garage. */
+function autoGarageDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  garrisonDressing(b, { halfX: 7.6, halfZ: 7.6, groundY: 0, roofY: 5.24, roofHalfX: 5.6, roofHalfZ: 4.8 });
+  sandbagWall(b, 0, 4.3, 4.4, true, 0.9);
+  return b.build();
+}
+
+/** Wire and a barricaded dock for an occupied cold store. */
+function coldStoreDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  garrisonDressing(b, { halfX: 9.2, halfZ: 9.2, groundY: 0, roofY: 9.02, roofHalfX: 7.2, roofHalfZ: 7.2 });
+  sandbagWall(b, 0, 9.2, 4.6, true, 0.9);
+  return b.build();
+}
+
+/** Wire and a barricaded front garden for an occupied terrace row. */
+function townhouseTerraceDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  garrisonDressing(b, { halfX: 6.9, halfZ: 7.6, groundY: 0, roofY: 8.14, roofHalfX: 4.8, roofHalfZ: 2.6 });
+  sandbagWall(b, 0, 7.0, 5.0, true, 0.9);
+  return b.build();
+}
+
 const STYLES: Record<string, BuildingStyle> = {
   commandPost: {
     body: buildCommandPost(),
@@ -2256,6 +3885,7 @@ const STYLES: Record<string, BuildingStyle> = {
     door: { mesh: buildHangarDoor(), offset: [-8.2, 3.85, -3.36], retract: 0.9 },
     rotor: { mesh: buildAirfieldRadar(), offset: [8.4, 8.35, -7.0], rate: 1.5 },
   },
+  heliport: { body: buildHeliport() },
   shipyard: { body: buildShipyard() },
   researchCentre: { body: buildResearchCentre() },
   strategicOps: {
@@ -2383,6 +4013,42 @@ const STYLES: Record<string, BuildingStyle> = {
   watchtower: {
     body: buildWatchtower(),
     garrisoned: mergeMeshes(buildWatchtower(), watchtowerDressing()),
+  },
+  schoolhouse: {
+    body: buildSchoolhouse(),
+    garrisoned: mergeMeshes(buildSchoolhouse(), schoolhouseDressing()),
+  },
+  apartmentBlock: {
+    body: buildApartmentBlock(),
+    garrisoned: mergeMeshes(buildApartmentBlock(), apartmentBlockDressing()),
+  },
+  motelBlock: {
+    body: buildMotelBlock(),
+    garrisoned: mergeMeshes(buildMotelBlock(), motelBlockDressing()),
+  },
+  cinema: {
+    body: buildCinema(),
+    garrisoned: mergeMeshes(buildCinema(), cinemaDressing()),
+  },
+  bankHouse: {
+    body: buildBankHouse(),
+    garrisoned: mergeMeshes(buildBankHouse(), bankHouseDressing()),
+  },
+  stationHouse: {
+    body: buildStationHouse(),
+    garrisoned: mergeMeshes(buildStationHouse(), stationHouseDressing()),
+  },
+  autoGarage: {
+    body: buildAutoGarage(),
+    garrisoned: mergeMeshes(buildAutoGarage(), autoGarageDressing()),
+  },
+  coldStore: {
+    body: buildColdStore(),
+    garrisoned: mergeMeshes(buildColdStore(), coldStoreDressing()),
+  },
+  townhouseTerrace: {
+    body: buildTownhouseTerrace(),
+    garrisoned: mergeMeshes(buildTownhouseTerrace(), townhouseTerraceDressing()),
   },
 };
 

@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import {
+  MAX_CURSOR_DPR,
   NATIVE_CURSORS,
   UI_CURSOR_TARGETS,
   battleCursor,
   cursorProperty,
+  cursorSurface,
   drawBattleCursor,
   editorCursor,
   drawOrderGhostGlyph,
+  snapToDevice,
   uiCursorFor,
   type BattleCursor,
 } from '../src/ui/cursors';
@@ -134,6 +137,38 @@ describe('UI pointer states', () => {
   });
 });
 
+describe('pointer resolution', () => {
+  it('rasterises at the display\u2019s real density instead of capping at 2×', () => {
+    expect([cursorSurface(1920, 1080, 1).width, cursorSurface(1920, 1080, 1).height]).toEqual([
+      1920,
+      1080,
+    ]);
+    const retina = cursorSurface(1920, 1080, 2);
+    expect([retina.width, retina.height]).toEqual([3840, 2160]);
+    // A 3× panel is the case the old ceiling ruined: it drew at two-thirds of
+    // native and let the compositor resample the pointer.
+    const phone = cursorSurface(430, 932, 3);
+    expect(phone.width).toBe(1290);
+    expect(phone.scaleX).toBeCloseTo(3, 6);
+    // The ceiling is a guard against an absurd backing store, not a cap at 2.
+    expect(MAX_CURSOR_DPR).toBeGreaterThanOrEqual(3);
+    expect(cursorSurface(1920, 1080, 8).width).toBe(1920 * MAX_CURSOR_DPR);
+  });
+
+  it('maps CSS space onto whole device pixels on fractional ratios', () => {
+    const surface = cursorSurface(1536.5, 864, 1.5);
+    expect(surface.width).toBe(2305);
+    expect(surface.scaleX).toBeCloseTo(2305 / 1536.5, 6);
+    expect(surface.scaleY).toBeCloseTo(surface.height / 864, 6);
+    // Snapping is what stops a hairline ring shivering between subpixels while
+    // the pointer is nearly still, which is far more visible at 120 Hz and up.
+    expect(snapToDevice(10.4, 2)).toBe(10.5);
+    expect(snapToDevice(10.1, 2)).toBe(10);
+    expect(snapToDevice(10.1, 3)).toBeCloseTo(10, 6);
+    expect(snapToDevice(10.1, 0)).toBe(10.1);
+  });
+});
+
 describe('pointer presentation', () => {
   it('hides the OS pointer while the canvas draws the reticle', () => {
     for (const name of ALL) {
@@ -243,6 +278,14 @@ describe('cursor integration', () => {
     expect(cursors).toContain('export function wantsNativeCursor(');
     expect(cursors).toContain('export function uiCursorFor(');
     expect(cursors).toContain('function drawActionHand(');
+    // The pointer is a small box moved by transform, not a full-screen canvas
+    // repainted every frame, which is what keeps it smooth above 60 Hz.
+    expect(cursors).toContain('export const CURSOR_BOX');
+    expect(cursors).toContain('this.place(x, y)');
+    expect(cursors).toContain('translate3d(');
+    // Moving the window to another monitor must not leave a stale density.
+    expect(cursors).toContain('this.ratio');
+    expect(cursors).toContain('cursorSurface(');
 
     const overlay = readFileSync(new URL('../src/ui/overlay.ts', import.meta.url), 'utf8');
     expect(overlay).toContain('drawOrderGhosts(');
@@ -257,6 +300,9 @@ describe('cursor integration', () => {
     const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
     expect(css).toContain('#cursor-layer');
     expect(css).toContain('html.custom-cursors');
+    // The pointer canvas is a small composited box, not a screen-sized layer.
+    expect(css).toMatch(/#cursor-layer \{[^}]*width: 56px/);
+    expect(css).toContain('will-change: transform');
   });
 
   it('offers a settings switch for the native pointers', () => {

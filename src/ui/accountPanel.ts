@@ -20,7 +20,15 @@ import {
 } from '../accounts/client';
 import type { ProviderId } from '../accounts/types';
 import type { CareerService, CareerSnapshot } from '../accounts/careerService';
-import { careerHistoryMarkup, careerSummaryMarkup, serviceRecordMarkup } from './careerView';
+import {
+  careerHistoryMarkup,
+  careerSummaryMarkup,
+  identityBannerMarkup,
+  matchDetailMarkup,
+  serviceRecordMarkup,
+} from './careerView';
+import { AVATARS, CALLSIGN_CHANGES_PER_DAY } from '../accounts/identity';
+import type { MatchHistoryItem } from '../accounts/client';
 import { rankInsigniaSvg } from './rankInsignia';
 import { RANKS, rankForXp } from '../accounts/ranks';
 import {
@@ -119,6 +127,11 @@ export class AccountPanel {
   /** Which section the screen is showing. */
   private view: AccountTab = 'account';
   private disposed = false;
+  /** Paged service record, newest first. Empty until the record is opened. */
+  private history: { items: MatchHistoryItem[]; hasMore: boolean } = { items: [], hasMore: false };
+  private historyLoading = false;
+  /** Draft identity while the player edits it. */
+  private identityDraft: { callsign: string; avatar: string } | null = null;
 
   constructor(options: AccountPanelOptions) {
     this.options = options;
@@ -314,7 +327,12 @@ export class AccountPanel {
     if (this.view === 'record') {
       return `<div class="account-record-view">
         ${this.renderNotice()}
-        ${serviceRecordMarkup(this.careerSnapshot)}
+        ${serviceRecordMarkup(this.careerSnapshot, {
+          stats: this.careerSnapshot?.view.stats ?? null,
+          history: this.history.items.length > 0 ? this.history.items : null,
+          hasMore: this.history.hasMore,
+        })}
+        ${this.historyLoading ? '<p class="account-loading" role="status">Reading match history…</p>' : ''}
       </div>`;
     }
     const account = this.account;
@@ -387,6 +405,7 @@ export class AccountPanel {
       );
     }
 
+    parts.push(this.renderIdentityEditor());
     parts.push(this.renderGuestImport(account));
     parts.push(this.renderCareer());
 
@@ -410,6 +429,72 @@ export class AccountPanel {
       `<p class="account-fineprint">Account id ${escapeHtml(account.id.slice(0, 8))}… · career XP, rank and match history are stored with this account.</p>`,
     );
     return parts.join('');
+  }
+
+  /**
+   * Callsign and avatar editing.
+   *
+   * The draft lives in the panel so choosing an avatar does not discard a
+   * half-typed callsign; only Save writes, and the server re-validates every
+   * field including uniqueness and the daily rename budget.
+   */
+  private renderIdentityEditor(): string {
+    if (!this.account) return '';
+    const current = this.identityDraft ?? {
+      callsign: this.state?.identity?.callsign ?? '',
+      avatar: this.state?.identity?.avatar ?? 'insignia',
+    };
+    const avatars = AVATARS.map(
+      (avatar) =>
+        `<button type="button" class="avatar-choice${avatar.id === current.avatar ? ' on' : ''}"
+          data-account-action="avatar" data-avatar="${avatar.id}"
+          aria-pressed="${avatar.id === current.avatar ? 'true' : 'false'}">
+          <span aria-hidden="true">${avatar.glyph}</span><small>${avatar.label}</small>
+        </button>`,
+    ).join('');
+    return `<section class="account-identity-editor" aria-label="Player identity">
+      ${identityBannerMarkup(
+        this.state?.identity ?? null,
+        this.careerSnapshot?.view.rank.name ?? 'Unranked',
+        this.careerSnapshot?.view.rank.grade ?? '',
+        this.careerSnapshot?.view.totals.xp ?? 0,
+      )}
+      <label class="account-field"><span>CALLSIGN</span>
+        <input id="account-callsign" type="text" maxlength="20" minlength="3"
+          autocomplete="off" spellcheck="false" value="${escapeHtml(current.callsign)}" />
+      </label>
+      <div class="account-avatars" role="group" aria-label="Avatar">${avatars}</div>
+      <button type="button" class="account-primary" data-account-action="save-identity">Save identity</button>
+      <p class="account-note">Your callsign is how opponents see you in a lobby: 3–20 letters, digits, spaces, hyphens or underscores, up to ${CALLSIGN_CHANGES_PER_DAY} changes a day.</p>
+    </section>`;
+  }
+
+  private async loadHistory(reset: boolean): Promise<void> {
+    if (!this.account || this.historyLoading) return;
+    this.historyLoading = true;
+    if (reset) this.history = { items: [], hasMore: false };
+    this.render();
+    try {
+      const page = await this.options.api.history(reset ? 0 : this.history.items.length);
+      const seen = new Set(this.history.items.map((item) => item.match.ref));
+      const items = reset
+        ? page.items
+        : [...this.history.items, ...page.items.filter((item) => !seen.has(item.match.ref))];
+      this.history = { items, hasMore: page.hasMore };
+    } catch (error) {
+      this.notice = { level: 'warning', text: messageFor(error) };
+    } finally {
+      this.historyLoading = false;
+      this.render();
+    }
+  }
+
+  private openMatchDetail(ref: string): void {
+    const box = this.body?.querySelector<HTMLElement>('#account-match-detail');
+    const item = this.history.items.find((entry) => entry.match.ref === ref);
+    if (!box || !item) return;
+    box.innerHTML = matchDetailMarkup(item);
+    box.scrollIntoView?.({ block: 'nearest' });
   }
 
   private renderCareer(): string {
@@ -455,7 +540,34 @@ export class AccountPanel {
     if (action === 'record') {
       this.view = 'record';
       this.render();
+      void this.loadHistory(true);
       return;
+    }
+    if (action === 'history-more') {
+      void this.loadHistory(false);
+      return;
+    }
+    if (action === 'match') {
+      this.openMatchDetail(target.dataset.matchRef ?? '');
+      return;
+    }
+    if (action === 'avatar') {
+      const callsign =
+        this.body?.querySelector<HTMLInputElement>('#account-callsign')?.value ??
+        this.state?.identity?.callsign ??
+        '';
+      this.identityDraft = { callsign, avatar: target.dataset.avatar ?? 'insignia' };
+      this.render();
+      return;
+    }
+    if (action === 'save-identity') {
+      this.identityDraft = {
+        callsign:
+          this.body?.querySelector<HTMLInputElement>('#account-callsign')?.value ??
+          this.identityDraft?.callsign ??
+          '',
+        avatar: this.identityDraft?.avatar ?? this.state?.identity?.avatar ?? 'insignia',
+      };
     }
     if (action === 'signin-google' || action === 'signin-discord') {
       const provider: ProviderId = action === 'signin-google' ? 'google' : 'discord';
@@ -499,6 +611,14 @@ export class AccountPanel {
       } else if (action === 'confirm-revoke-all') {
         const revoked = await this.options.api.revokeAll();
         this.notice = { level: 'info', text: `Signed out of ${revoked} session${revoked === 1 ? '' : 's'}.` };
+      } else if (action === 'save-identity') {
+        const draft = this.identityDraft;
+        if (!draft) return;
+        await this.options.api.updateIdentity({ callsign: draft.callsign, avatar: draft.avatar });
+        this.identityDraft = null;
+        this.notice = { level: 'success', text: 'Identity saved.' };
+        await this.refresh();
+        return;
       } else if (action === 'unlink-google' || action === 'unlink-discord') {
         const provider: ProviderId = action === 'unlink-google' ? 'google' : 'discord';
         await this.options.api.unlink(provider);

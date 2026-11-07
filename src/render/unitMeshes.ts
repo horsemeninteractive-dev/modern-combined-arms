@@ -1,11 +1,37 @@
 import { MeshBuilder, PALETTE, shade, type Color } from './geometry';
+import { beam } from './meshKit';
+import { ALLIANCE_GROUND_STYLES } from './meshes/allianceGround';
+import { ALLIANCE_SUPPORT_STYLES } from './meshes/allianceSupport';
+import { CANONICAL_HULL_STYLES } from './meshes/canonicalHulls';
+import { NATIONAL_STYLES } from './meshes/nationalStyles';
+import { VARIANT_HULL_STYLES } from './meshes/variantHulls';
 import type { MeshBuffers } from './gl';
 import type { Vec3 } from './math';
+
+/**
+ * A part that turns while the aircraft is under power.
+ *
+ * Rotors are authored at their mount and split out of the airframe so the
+ * renderer can spin them without rebuilding the model. The sim neither knows
+ * nor cares: this is a presentation part, and a parked hull merely winds it
+ * down instead of stopping dead.
+ */
+export interface RotorPart {
+  mesh: MeshBuffers;
+  /** Mount in the airframe's own local units. */
+  offset: Vec3;
+  /** Radians per second at full power. */
+  rate: number;
+}
 
 export interface EntityStyle {
   body: MeshBuffers;
   turret?: MeshBuffers;
   turretOffset: Vec3;
+  /** Main rotor or propeller, spinning about the airframe's vertical axis. */
+  rotor?: RotorPart;
+  /** Tail rotor, spinning about the airframe's lateral axis (local +Z). */
+  tailRotor?: RotorPart;
   /** Optional cargo mesh scaled vertically by a 0..1 fill fraction. */
   load?: MeshBuffers;
   /**
@@ -30,60 +56,6 @@ const SKIN: Color = [0.55, 0.44, 0.33];
 // A lighter khaki than the old dark olive: it separates the human silhouette
 // from the Phase 3 grass without relying on team colour alone.
 const INFANTRY_UNIFORM: Color = [0.43, 0.43, 0.31];
-
-/**
- * Rectangular limb between two points. Boxes only rotate in yaw, so arms need
- * a small oriented prism rather than a chain of axis-aligned blocks. The
- * winding keeps every face outward as the limb changes direction.
- */
-function beam(
-  b: MeshBuilder,
-  from: Vec3,
-  to: Vec3,
-  width: number,
-  height: number,
-  color: Color,
-  team = 0,
-): void {
-  const dx = to[0] - from[0];
-  const dy = to[1] - from[1];
-  const dz = to[2] - from[2];
-  const length = Math.hypot(dx, dy, dz);
-  if (length < 1e-5) return;
-  const d: Vec3 = [dx / length, dy / length, dz / length];
-  const ref: Vec3 = Math.abs(d[1]) > 0.85 ? [0, 0, 1] : [0, 1, 0];
-  const sx = d[1] * ref[2] - d[2] * ref[1];
-  const sy = d[2] * ref[0] - d[0] * ref[2];
-  const sz = d[0] * ref[1] - d[1] * ref[0];
-  const sl = Math.hypot(sx, sy, sz) || 1;
-  const s: Vec3 = [sx / sl, sy / sl, sz / sl];
-  const u: Vec3 = [
-    s[1] * d[2] - s[2] * d[1],
-    s[2] * d[0] - s[0] * d[2],
-    s[0] * d[1] - s[1] * d[0],
-  ];
-  const sw = width / 2;
-  const uh = height / 2;
-  const at = (p: Vec3, side: number, up: number): Vec3 => [
-    p[0] + s[0] * sw * side + u[0] * uh * up,
-    p[1] + s[1] * sw * side + u[1] * uh * up,
-    p[2] + s[2] * sw * side + u[2] * uh * up,
-  ];
-  const a0 = at(from, -1, -1);
-  const a1 = at(from, 1, -1);
-  const a2 = at(from, 1, 1);
-  const a3 = at(from, -1, 1);
-  const b0 = at(to, -1, -1);
-  const b1 = at(to, 1, -1);
-  const b2 = at(to, 1, 1);
-  const b3 = at(to, -1, 1);
-  b.addQuad(a0, a3, a2, a1, color, team);
-  b.addQuad(b0, b1, b2, b3, color, team);
-  b.addQuad(a0, a1, b1, b0, shade(color, 0.72), team);
-  b.addQuad(a3, b3, b2, a2, color, team);
-  b.addQuad(a0, b0, b3, a3, shade(color, 0.86), team);
-  b.addQuad(a1, a2, b2, b1, shade(color, 0.94), team);
-}
 
 interface InfantryOptions {
   helmet?: Color;
@@ -1251,49 +1223,132 @@ function buildFighter(): MeshBuffers {
   const b = new MeshBuilder();
   const body: Color = [0.43, 0.47, 0.46];
   const panel: Color = [0.36, 0.40, 0.39];
+  const panelLight: Color = [0.50, 0.53, 0.51];
+  const navRed: Color = [0.62, 0.15, 0.13];
+  const navGreen: Color = [0.16, 0.52, 0.24];
+  // ── Fuselage ───────────────────────────────────────────────────────────
   // Fore/aft fuselage with a tapered nose instead of one long rectangular bar.
   b.box(0.10, 0, 0, 4.40, 0.48, 0.84, body);
   b.addQuad([2.30, 0.22, -0.42], [2.30, 0.22, 0.42], [2.95, 0.08, 0.16], [2.95, 0.08, -0.16], body);
   b.addQuad([2.30, -0.22, -0.42], [2.30, -0.22, 0.42], [2.95, 0.08, 0.16], [2.95, 0.08, -0.16], panel);
   b.addTriangle([2.30, 0.22, -0.42], [2.95, 0.08, -0.16], [2.30, -0.22, -0.42], panel);
   b.addTriangle([2.30, 0.22, 0.42], [2.30, -0.22, 0.42], [2.95, 0.08, 0.16], panel);
+  // Radome join band, so the nose reads as a separate moulding.
+  b.box(2.28, 0.02, 0, 0.07, 0.46, 0.82, panelLight);
   b.box(-1.60, 0.02, 0, 2.10, 0.52, 1.02, body);
   b.box(-2.74, 0.04, 0, 0.52, 0.44, 1.16, panel);
-  // Canopy and cockpit spine, split into a windscreen and two side panes.
-  b.box(0.94, 0.35, 0, 1.14, 0.30, 0.64, PALETTE.glassDark);
-  b.box(0.98, 0.39, 0, 0.98, 0.22, 0.52, PALETTE.glass);
-  b.box(1.30, 0.34, 0, 0.34, 0.24, 0.58, PALETTE.glassDark);
+  // Pitot boom, AoA vanes and the refuelling probe.
+  b.cylinderX(3.14, 0.05, 0, 0.018, 0.42, 5, PALETTE.metal);
+  b.box(2.94, 0.05, 0, 0.10, 0.02, 0.26, PALETTE.darkMetal);
+  for (const z of [-0.18, 0.18]) b.box(2.60, -0.15, z, 0.20, 0.02, 0.03, PALETTE.darkMetal);
+  beam(b, [1.24, 0.26, 0.30], [1.84, 0.42, 0.34], 0.035, 0.035, PALETTE.metal);
+  b.box(1.86, 0.42, 0.34, 0.05, 0.05, 0.05, PALETTE.darkMetal);
+  // Plate-work seams along the spine and belly.
+  for (const x of [1.02, 0.08, -0.92]) b.box(x, 0.242, 0, 0.03, 0.012, 0.60, panelLight);
+  for (const x of [0.62, -0.40, -1.24]) b.box(x, -0.242, 0, 0.03, 0.012, 0.50, PALETTE.darkMetal);
+  // ── Cockpit ────────────────────────────────────────────────────────────
+  // Canopy sill, raked windscreen and the two side panes.
+  b.box(0.94, 0.315, 0, 1.30, 0.15, 0.66, PALETTE.glassDark);
+  b.box(0.92, 0.375, 0, 1.12, 0.13, 0.50, PALETTE.glass);
+  b.addQuad([1.62, 0.235, -0.30], [1.62, 0.235, 0.30], [1.36, 0.44, 0.26], [1.36, 0.44, -0.26], PALETTE.glass);
+  b.addTriangle([1.62, 0.235, -0.30], [1.36, 0.44, -0.26], [1.46, 0.30, -0.32], panel);
+  b.addTriangle([1.62, 0.235, 0.30], [1.46, 0.30, 0.32], [1.36, 0.44, 0.26], panel);
+  // Canopy frames, centre rail, glare shield and the seat behind the glass.
+  for (const z of [-0.32, 0.32]) b.box(0.86, 0.245, z, 1.52, 0.03, 0.04, panel);
+  b.box(0.86, 0.44, 0, 1.06, 0.025, 0.05, panel);
+  b.box(0.30, 0.40, 0, 0.06, 0.20, 0.50, panel);
+  b.box(1.30, 0.40, 0, 0.24, 0.045, 0.44, panel);
+  b.box(1.19, 0.44, 0, 0.05, 0.10, 0.22, PALETTE.darkMetal);
+  b.box(1.17, 0.45, 0, 0.02, 0.07, 0.18, PALETTE.glass);
+  b.box(0.40, 0.44, 0, 0.16, 0.16, 0.20, PALETTE.oliveDark);
   b.box(-0.08, 0.33, 0, 0.82, 0.18, 0.48, panel);
-  // Intakes, wing roots and swept wings.
+  b.box(-0.86, 0.31, 0, 1.00, 0.14, 0.40, panel);
+  b.box(-1.34, 0.34, 0, 0.05, 0.10, 0.24, PALETTE.darkMetal);
+  // ── Intakes ────────────────────────────────────────────────────────────
   for (const z of [-0.52, 0.52]) {
     b.box(0.20, -0.10, z, 1.52, 0.40, 0.30, panel);
     b.box(0.96, -0.10, z, 0.10, 0.30, 0.24, PALETTE.darkMetal);
+    // Splitter plate and a dark duct mouth with a bright lip.
+    b.box(0.98, -0.10, z * 1.30, 0.40, 0.30, 0.02, panelLight);
+    b.box(0.56, -0.10, z, 0.10, 0.26, 0.22, PALETTE.track);
   }
+  // ── Wings ──────────────────────────────────────────────────────────────
   b.boxRot(-0.30, -0.02, -1.72, 2.90, 0.14, 3.10, 0.40, body);
   b.boxRot(-0.30, -0.02, 1.72, 2.90, 0.14, 3.10, -0.40, body);
   b.boxRot(-0.78, 0.01, -1.30, 1.10, 0.05, 1.60, 0.40, panel);
   b.boxRot(-0.78, 0.01, 1.30, 1.10, 0.05, 1.60, -0.40, panel);
-  // Canted twin tails and all-moving stabilators.
-  beam(b, [-2.22, 0.16, -0.66], [-2.60, 1.12, -1.02], 0.50, 0.12, body);
-  beam(b, [-2.22, 0.16, 0.66], [-2.60, 1.12, 1.02], 0.50, 0.12, body);
-  b.boxRot(-2.48, 0.06, -1.30, 0.72, 0.08, 1.10, 0.36, panel);
-  b.boxRot(-2.48, 0.06, 1.30, 0.72, 0.08, 1.10, -0.36, panel);
-  // Twin afterburner nozzles.
+  for (const side of [-1, 1]) {
+    // Leading-edge root extension into the wing.
+    b.addQuad(
+      [0.96, -0.035, side * 0.42],
+      [0.96, -0.035, side * 0.66],
+      [-0.34, -0.035, side * 1.34],
+      [-0.06, -0.035, side * 1.12],
+      panel,
+    );
+    // Flap hinge line and the outer aileron, proud of the upper surface.
+    b.boxRot(-0.80, 0.052, side * 1.24, 0.86, 0.02, 1.42, side * 0.40, panelLight);
+    b.boxRot(-1.24, 0.054, side * 1.62, 0.52, 0.02, 1.06, side * 0.40, panel);
+    // Wingtip launch rail, its missile and the navigation light.
+    b.boxRot(-0.50, 0.0, side * 2.98, 0.78, 0.06, 0.08, side * 0.40, PALETTE.metal);
+    b.boxRot(-0.50, 0.0, side * 3.04, 0.09, 0.06, 0.09, side * 0.40, side < 0 ? navRed : navGreen);
+    b.cylinderX(-0.66, -0.14, side * 2.98, 0.055, 1.30, 6, PALETTE.white);
+    b.box(-1.26, -0.14, side * 2.98, 0.16, 0.20, 0.02, PALETTE.white);
+    b.box(-1.26, -0.14, side * 2.98, 0.16, 0.02, 0.20, PALETTE.white);
+  }
+  // ── Tails ──────────────────────────────────────────────────────────────
+  for (const side of [-1, 1]) {
+    beam(b, [-2.22, 0.16, side * 0.66], [-2.60, 1.10, side * 1.00], 0.50, 0.12, body);
+    // Rudder hinge line, fin cap and the serial band.
+    beam(b, [-2.44, 0.30, side * 0.80], [-2.64, 1.06, side * 1.00], 0.10, 0.09, panelLight);
+    beam(b, [-2.56, 1.08, side * 1.00], [-2.62, 1.18, side * 1.03], 0.32, 0.08, panel);
+    b.box(-2.58, 0.96, side * 1.05, 0.22, 0.06, 0.02, PALETTE.white);
+    b.box(-2.62, 0.62, side * 1.06, 0.10, 0.05, 0.02, side < 0 ? navRed : navGreen);
+    // All-moving stabilator with its actuator fairing.
+    b.boxRot(-2.48, 0.06, side * 1.30, 0.72, 0.08, 1.10, side * 0.36, panel);
+    b.box(-2.26, 0.06, side * 1.08, 0.34, 0.14, 0.26, body);
+    b.box(-2.66, 0.06, side * 1.62, 0.10, 0.10, 0.10, PALETTE.metal);
+  }
+  // Ventral strakes under the tail.
+  for (const side of [-1, 1]) beam(b, [-2.06, -0.20, side * 0.30], [-2.50, -0.44, side * 0.40], 0.06, 0.26, panel);
+  // ── Engines ────────────────────────────────────────────────────────────
   for (const z of [-0.34, 0.34]) {
-    b.cylinderX(-2.94, 0, z, 0.22, 0.56, 8, PALETTE.darkMetal);
-    b.cylinderX(-3.16, 0, z, 0.17, 0.12, 8, PALETTE.track);
+    b.box(-2.90, 0.0, z, 0.24, 0.46, 0.44, panel);
+    b.cylinderX(-2.96, 0, z, 0.22, 0.54, 10, PALETTE.darkMetal);
+    b.cylinderX(-3.22, 0, z, 0.17, 0.12, 10, PALETTE.track);
+    // Nozzle petals and their metal straps.
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      b.box(-3.06, Math.cos(a) * 0.20, z + Math.sin(a) * 0.20, 0.22, 0.06, 0.06, PALETTE.metal);
+    }
+    b.box(-3.10, 0, z, 0.05, 0.30, 0.30, PALETTE.darkMetal);
   }
-  // Wing pylons and four missiles; the outboard pair is visibly longer.
+  // Tail sting between the nozzles, with a brake-chute housing.
+  b.box(-2.90, 0.02, 0, 0.36, 0.20, 0.26, panel);
+  b.box(-3.10, 0.02, 0, 0.14, 0.14, 0.18, PALETTE.darkMetal);
+  // ── Stores ─────────────────────────────────────────────────────────────
   for (const z of [-1.90, -1.28, 1.28, 1.90]) {
+    const long = Math.abs(z) > 1.6;
     b.box(-0.34, -0.18, z, 0.54, 0.10, 0.10, PALETTE.metal);
-    b.cylinderX(0.10, -0.26, z, Math.abs(z) > 1.6 ? 0.075 : 0.095, 1.66, 6, PALETTE.white);
+    b.cylinderX(0.10, -0.26, z, long ? 0.075 : 0.095, 1.66, 6, PALETTE.white);
     b.box(0.92, -0.26, z, 0.12, 0.15, 0.15, PALETTE.warning);
+    // Rear fins in both planes, so a loaded wing reads as ordnance.
+    b.box(-0.56, -0.26, z, 0.18, 0.30, 0.02, PALETTE.white);
+    b.box(-0.56, -0.26, z, 0.18, 0.02, 0.30, PALETTE.white);
   }
-  // Team identification panels on both wings and the fin.
+  // ── Markings and doors ─────────────────────────────────────────────────
   for (const z of [-1.62, 1.62]) {
     b.box(-0.34, 0.06, z, 0.54, 0.02, 0.46, PALETTE.hull, 0.88);
   }
   b.box(-2.52, 0.70, 0, 0.52, 0.36, 0.02, PALETTE.hull, 0.90);
+  b.box(-2.70, 0.70, 0, 0.02, 0.30, 0.02, PALETTE.white);
+  // Closed nose and main gear doors along the belly.
+  b.box(1.52, -0.246, 0, 0.52, 0.02, 0.30, panelLight);
+  for (const z of [-0.28, 0.28]) b.box(-0.62, -0.246, z, 0.92, 0.02, 0.26, panelLight);
+  b.box(-1.24, -0.246, 0, 0.30, 0.02, 0.20, PALETTE.darkMetal);
+  // Spine and belly antennas.
+  b.box(-1.34, 0.36, 0, 0.02, 0.18, 0.10, PALETTE.metal);
+  b.box(-0.42, -0.30, 0, 0.14, 0.12, 0.03, PALETTE.darkMetal);
   return b.build();
 }
 
@@ -1306,40 +1361,101 @@ function buildInterceptor(): MeshBuffers {
   const b = new MeshBuilder();
   const body: Color = [0.48, 0.51, 0.50];
   const panel: Color = [0.40, 0.44, 0.43];
+  const panelLight: Color = [0.55, 0.58, 0.57];
+  const navRed: Color = [0.62, 0.15, 0.13];
+  const navGreen: Color = [0.16, 0.52, 0.24];
+  // ── Fuselage ───────────────────────────────────────────────────────────
   b.box(0.00, 0, 0, 4.90, 0.46, 0.78, body);
   b.addQuad([2.45, 0.20, -0.39], [2.45, 0.20, 0.39], [3.45, 0.02, 0.10], [3.45, 0.02, -0.10], body);
   b.addQuad([2.45, -0.20, -0.39], [2.45, -0.20, 0.39], [3.45, 0.02, 0.10], [3.45, 0.02, -0.10], panel);
   b.addTriangle([2.45, 0.20, -0.39], [3.45, 0.02, -0.10], [2.45, -0.20, -0.39], panel);
   b.addTriangle([2.45, 0.20, 0.39], [2.45, -0.20, 0.39], [3.45, 0.02, 0.10], panel);
+  b.box(2.43, 0.01, 0, 0.06, 0.44, 0.76, panelLight);
   b.box(-1.30, 0.02, 0, 2.10, 0.44, 0.94, body);
   b.box(-2.55, 0.04, 0, 0.60, 0.36, 1.02, panel);
-  // Long bubble canopy and ventral intake.
-  b.box(0.98, 0.33, 0, 1.48, 0.26, 0.58, PALETTE.glassDark);
-  b.box(1.00, 0.37, 0, 1.26, 0.18, 0.46, PALETTE.glass);
+  // Long pitot boom and the two AoA vanes on the nose.
+  b.cylinderX(3.66, 0.02, 0, 0.016, 0.46, 5, PALETTE.metal);
+  b.box(3.44, 0.02, 0, 0.10, 0.02, 0.22, PALETTE.darkMetal);
+  for (const z of [-0.14, 0.14]) b.box(3.02, -0.14, z, 0.22, 0.02, 0.03, PALETTE.darkMetal);
+  // Plate-work seams along the spine.
+  for (const x of [1.20, 0.24, -0.72]) b.box(x, 0.232, 0, 0.03, 0.012, 0.54, panelLight);
+  for (const x of [0.72, -0.30]) b.box(x, -0.232, 0, 0.03, 0.012, 0.46, PALETTE.darkMetal);
+  // ── Cockpit ────────────────────────────────────────────────────────────
+  // Long bubble canopy, framed along both rails and across the arch.
+  b.box(0.98, 0.325, 0, 1.48, 0.14, 0.58, PALETTE.glassDark);
+  b.box(1.00, 0.375, 0, 1.26, 0.13, 0.46, PALETTE.glass);
+  b.addQuad([1.72, 0.225, -0.26], [1.72, 0.225, 0.26], [1.50, 0.42, 0.23], [1.50, 0.42, -0.23], PALETTE.glass);
+  for (const z of [-0.28, 0.28]) b.box(1.00, 0.238, z, 1.42, 0.03, 0.035, panel);
+  b.box(1.06, 0.42, 0, 0.90, 0.025, 0.045, panel);
+  b.box(0.44, 0.40, 0, 0.06, 0.16, 0.44, panel);
+  b.box(1.40, 0.38, 0, 0.22, 0.04, 0.40, panel);
+  b.box(1.31, 0.42, 0, 0.05, 0.09, 0.20, PALETTE.darkMetal);
+  b.box(0.52, 0.42, 0, 0.15, 0.14, 0.18, PALETTE.oliveDark);
+  // IRST ball ahead of the windscreen, on its own faired mount.
+  b.sphere(1.86, 0.10, 0, 0.13, 4, 8, PALETTE.darkMetal);
+  b.sphere(1.88, 0.10, 0, 0.085, 4, 8, PALETTE.glassDark);
+  // ── Intake ─────────────────────────────────────────────────────────────
   b.box(0.38, -0.20, 0, 1.88, 0.22, 0.68, PALETTE.darkMetal);
   b.box(1.22, -0.20, 0, 0.16, 0.14, 0.54, PALETTE.track);
-  // Broad delta wings and a single canted fin.
+  b.box(0.62, -0.20, 0, 0.10, 0.24, 0.62, PALETTE.track);
+  for (const z of [-0.36, 0.36]) b.box(1.24, -0.20, z, 0.14, 0.20, 0.03, panelLight);
+  // ── Delta wing ─────────────────────────────────────────────────────────
   b.addQuad([0.92, -0.02, -0.36], [1.00, -0.02, -0.36], [-2.18, -0.02, -2.72], [-2.18, -0.02, -2.72], body);
   b.addTriangle([0.98, -0.02, -0.34], [-2.20, -0.02, -2.80], [-2.10, -0.02, -0.38], body);
   b.addTriangle([0.98, -0.02, 0.34], [-2.10, -0.02, 0.38], [-2.20, -0.02, 2.80], body);
   b.addQuad([-0.20, -0.02, -0.38], [-2.18, -0.02, -2.62], [-2.08, 0.06, -2.58], [-0.20, 0.06, -0.38], panel);
   b.addQuad([-0.20, -0.02, 0.38], [-0.20, 0.06, 0.38], [-2.08, 0.06, 2.58], [-2.18, -0.02, 2.62], panel);
+  for (const side of [-1, 1]) {
+    // Elevon hinge line along the trailing edge.
+    b.addQuad(
+      [-1.62, 0.005, side * 0.52],
+      [-1.62, 0.005, side * 0.58],
+      [-2.16, 0.005, side * 2.42],
+      [-2.16, 0.005, side * 2.36],
+      panelLight,
+    );
+    // Wingtip pylon, missile and navigation light.
+    b.box(-0.40, -0.02, side * 2.58, 0.52, 0.06, 0.10, PALETTE.metal);
+    b.box(-0.16, -0.02, side * 2.66, 0.09, 0.06, 0.09, side < 0 ? navRed : navGreen);
+  }
+  // ── Fin ────────────────────────────────────────────────────────────────
   beam(b, [-1.78, 0.16, 0.20], [-2.20, 1.34, 0.30], 0.56, 0.10, body);
-  // Tailplanes, nozzle and wingtip missiles.
+  beam(b, [-1.90, 0.40, 0.23], [-2.22, 1.30, 0.30], 0.10, 0.08, panelLight);
+  beam(b, [-2.16, 1.30, 0.29], [-2.22, 1.44, 0.30], 0.30, 0.07, panel);
+  b.box(-2.20, 1.18, 0.30, 0.24, 0.05, 0.02, PALETTE.white);
+  b.box(-2.24, 0.86, 0.31, 0.09, 0.05, 0.02, PALETTE.red);
+  // ── Tail ───────────────────────────────────────────────────────────────
   b.boxRot(-2.24, 0.02, -0.78, 0.62, 0.07, 0.92, 0.46, panel);
   b.boxRot(-2.24, 0.02, 0.78, 0.62, 0.07, 0.92, -0.46, panel);
-  b.cylinderX(-2.80, 0, 0, 0.24, 0.46, 8, PALETTE.darkMetal);
-  b.cylinderX(-3.02, 0, 0, 0.19, 0.10, 8, PALETTE.track);
+  for (const z of [-0.66, 0.66]) b.box(-2.02, 0.02, z, 0.26, 0.12, 0.22, body);
+  b.box(-2.74, 0.0, 0, 0.30, 0.40, 0.44, panel);
+  b.cylinderX(-2.82, 0, 0, 0.24, 0.46, 10, PALETTE.darkMetal);
+  b.cylinderX(-3.04, 0, 0, 0.19, 0.10, 10, PALETTE.track);
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    b.box(-2.98, Math.cos(a) * 0.21, Math.sin(a) * 0.21, 0.20, 0.06, 0.06, PALETTE.metal);
+  }
+  // ── Stores ─────────────────────────────────────────────────────────────
   for (const z of [-1.42, 1.42]) {
     b.box(-0.48, -0.14, z, 0.44, 0.08, 0.09, PALETTE.metal);
     b.cylinderX(-0.10, -0.22, z, 0.065, 1.34, 6, PALETTE.white);
     b.box(0.55, -0.22, z, 0.09, 0.10, 0.10, PALETTE.warning);
+    b.box(-0.70, -0.22, z, 0.16, 0.22, 0.02, PALETTE.white);
+    b.box(-0.70, -0.22, z, 0.16, 0.02, 0.22, PALETTE.white);
   }
-  // Team panels: both wing tops and the fin, so ownership reads from above.
+  // Semi-recessed belly stations, which is what makes a heavy interceptor
+  // read as a missile carrier rather than a clean airframe.
+  for (const z of [-0.28, 0.28]) {
+    b.box(-0.55, -0.25, z, 0.66, 0.10, 0.22, PALETTE.darkMetal);
+  }
+  // ── Markings and doors ─────────────────────────────────────────────────
   for (const z of [-1.50, 1.50]) {
     b.box(-0.50, -0.005, z, 0.46, 0.02, 0.34, PALETTE.hull, 0.88);
   }
   b.box(-2.12, 0.86, 0.25, 0.34, 0.32, 0.02, PALETTE.hull, 0.90);
+  b.box(1.62, -0.234, 0, 0.50, 0.02, 0.26, panelLight);
+  b.box(-0.86, -0.234, 0, 0.60, 0.02, 0.24, panelLight);
+  b.box(-0.34, -0.34, 0, 0.12, 0.10, 0.03, PALETTE.darkMetal);
   return b.build();
 }
 
@@ -1351,36 +1467,75 @@ function buildInterceptor(): MeshBuffers {
 function buildUav(): MeshBuffers {
   const b = new MeshBuilder();
   const airframe: Color = [0.50, 0.53, 0.51];
+  const skin: Color = [0.58, 0.60, 0.58];
+  const navRed: Color = [0.62, 0.15, 0.13];
+  const navGreen: Color = [0.16, 0.52, 0.24];
+  // ── Fuselage ───────────────────────────────────────────────────────────
   b.box(0.00, 0, 0, 2.60, 0.30, 0.56, airframe);
   b.box(1.44, 0, 0, 0.34, 0.23, 0.40, PALETTE.hullDark);
   b.sphere(1.56, 0.02, 0, 0.18, 4, 6, PALETTE.darkMetal);
-  // Long straight wing with tip pods and team panels.
+  // Nose cap, avionics bay hatch and the cooling louvres behind it.
+  b.box(1.20, 0.02, 0, 0.22, 0.26, 0.44, skin);
+  b.box(1.20, 0.155, 0, 0.20, 0.02, 0.34, PALETTE.darkMetal);
+  for (const x of [0.86, 0.74]) b.box(x, 0.16, 0, 0.05, 0.02, 0.30, PALETTE.track);
+  // Dorsal blade antenna and a belly drain mast.
+  b.box(0.10, 0.20, 0, 0.02, 0.14, 0.06, PALETTE.metal);
+  b.box(0.34, -0.18, 0, 0.05, 0.08, 0.05, PALETTE.darkMetal);
+  // ── Wing ───────────────────────────────────────────────────────────────
   b.box(0.08, 0.035, 0, 0.92, 0.10, 6.10, airframe);
+  // Flap and aileron hinge lines, plus the wing-root fairing.
+  b.box(-0.30, 0.09, 0, 0.26, 0.025, 5.60, skin);
+  for (const z of [-2.06, 2.06]) b.box(-0.02, 0.092, z, 0.80, 0.02, 0.90, skin);
   for (const z of [-1.76, 1.76]) {
     b.box(0.02, 0.10, z, 0.44, 0.014, 0.50, PALETTE.hull, 0.86);
   }
   for (const z of [-2.94, 2.94]) {
     b.box(0.06, 0.02, z, 0.28, 0.18, 0.42, PALETTE.oliveDark);
   }
-  // Twin tail booms and a high horizontal stabiliser.
+  for (const z of [-3.12, 3.12]) {
+    b.box(0.06, 0.02, z, 0.16, 0.10, 0.10, z < 0 ? navRed : navGreen);
+  }
+  // ── Booms and tail ─────────────────────────────────────────────────────
   for (const z of [-0.30, 0.30]) {
     beam(b, [-0.70, 0.02, z], [-2.00, 0.22, z * 1.5], 0.10, 0.10, airframe);
+    // Boom fairing where it leaves the fuselage.
+    b.box(-0.78, 0.04, z, 0.34, 0.16, 0.18, skin);
   }
   b.box(-2.04, 0.28, 0, 0.42, 0.07, 2.10, airframe);
+  b.box(-2.04, 0.32, 0, 0.20, 0.02, 1.90, skin);
   for (const z of [-0.76, 0.76]) {
     b.box(-2.04, 0.40, z, 0.08, 0.40, 0.02, PALETTE.hull, 0.88);
   }
-  // Pusher propeller, sensor ball and relay dish.
+  // Endplate fins under the stabiliser tips.
+  for (const z of [-1.02, 1.02]) {
+    b.box(-2.04, 0.24, z, 0.34, 0.30, 0.03, skin);
+    b.box(-2.18, 0.30, z, 0.08, 0.16, 0.04, PALETTE.darkMetal);
+  }
+  // ── Propulsion ─────────────────────────────────────────────────────────
   b.cylinderX(-1.28, 0.10, 0, 0.05, 0.30, 5, PALETTE.darkMetal);
   for (let i = 0; i < 3; i++) {
     const a = (i / 3) * Math.PI * 2;
     b.boxRot(-1.45, 0.10 + Math.sin(a) * 0.38, Math.cos(a) * 0.38, 0.03, 0.62, 0.10, i * 0.9, PALETTE.darkMetal);
   }
-  b.sphere(0.58, -0.24, 0, 0.23, 4, 7, PALETTE.glassDark);
-  b.sphere(0.58, -0.24, 0, 0.14, 4, 7, PALETTE.glass);
-  b.cylinder(0.62, -0.42, 0, 0.08, 0.14, 7, PALETTE.metal);
-  b.cylinder(-0.54, 0.24, 0, 0.14, 0.07, 8, PALETTE.metal);
-  b.box(-0.43, 0.31, 0, 0.010, 0.24, 0.010, PALETTE.darkMetal);
+  b.box(-1.20, 0.10, 0, 0.10, 0.20, 0.20, PALETTE.darkMetal);
+  // ── Sensors ────────────────────────────────────────────────────────────
+  // Ventral EO/IR turret: a yoke, two glass windows and the laser aperture.
+  b.box(0.58, -0.20, 0, 0.34, 0.12, 0.30, PALETTE.darkMetal);
+  b.sphere(0.58, -0.26, 0, 0.24, 4, 8, PALETTE.darkMetal);
+  b.sphere(0.58, -0.26, 0, 0.17, 4, 8, PALETTE.glassDark);
+  b.box(0.58, -0.26, 0, 0.10, 0.12, 0.30, PALETTE.glass);
+  b.box(0.78, -0.26, 0, 0.06, 0.10, 0.10, PALETTE.glass);
+  // Satcom blister on the spine and its coax run.
+  b.sphere(0.02, 0.16, 0, 0.18, 4, 8, skin);
+  b.sphere(0.02, 0.16, 0, 0.10, 4, 8, PALETTE.glassDark);
+  b.box(-0.10, 0.19, 0, 0.30, 0.02, 0.02, PALETTE.darkMetal);
+  // ── Ground contact ─────────────────────────────────────────────────────
+  // Skids and a tail bumper, so a parked drone does not hover over the apron.
+  for (const z of [-0.24, 0.24]) {
+    b.box(0.30, -0.30, z, 0.80, 0.05, 0.06, PALETTE.metal);
+  }
+  b.box(0.30, -0.24, 0, 0.06, 0.14, 0.44, PALETTE.darkMetal);
+  b.box(-1.94, -0.10, 0, 0.10, 0.18, 0.08, PALETTE.darkMetal);
   return b.build();
 }
 
@@ -1392,34 +1547,86 @@ function buildUav(): MeshBuffers {
 function buildDeepReconUav(): MeshBuffers {
   const b = new MeshBuilder();
   const airframe: Color = [0.45, 0.49, 0.46];
+  const skin: Color = [0.54, 0.57, 0.53];
+  const navRed: Color = [0.62, 0.15, 0.13];
+  const navGreen: Color = [0.16, 0.52, 0.24];
+  // ── Fuselage ───────────────────────────────────────────────────────────
   b.box(0.00, 0, 0, 3.30, 0.36, 0.68, airframe);
   b.box(1.74, 0.02, 0, 0.34, 0.26, 0.46, PALETTE.hullDark);
   b.sphere(1.88, 0.03, 0, 0.20, 4, 6, PALETTE.darkMetal);
+  // Forward equipment bay hatch, louvres and the dorsal spine fairing.
+  b.box(1.46, 0.03, 0, 0.26, 0.30, 0.52, skin);
+  b.box(1.46, 0.185, 0, 0.24, 0.02, 0.40, PALETTE.darkMetal);
+  for (const x of [1.10, 0.96, 0.82]) b.box(x, 0.185, 0, 0.05, 0.02, 0.34, PALETTE.track);
+  b.box(0.55, 0.20, 0, 0.90, 0.05, 0.30, skin);
+  // ── Wing ───────────────────────────────────────────────────────────────
   b.box(0.10, 0.04, 0, 1.00, 0.12, 8.20, airframe);
+  // Spar cover, flap hinge line and the outboard panel joints.
+  b.box(0.10, 0.098, 0, 1.10, 0.02, 0.36, skin);
+  b.box(-0.34, 0.098, 0, 0.28, 0.025, 7.60, skin);
+  for (const z of [-2.98, 2.98]) b.box(0.02, 0.10, z, 0.92, 0.02, 0.10, skin);
   for (const z of [-2.50, 2.50]) {
     b.box(0.04, 0.11, z, 0.58, 0.016, 0.64, PALETTE.hull, 0.86);
   }
   for (const z of [-3.96, 3.96]) {
     b.box(0.08, 0.02, z, 0.34, 0.20, 0.48, PALETTE.oliveDark);
   }
+  for (const z of [-4.16, 4.16]) {
+    b.box(0.08, 0.02, z, 0.18, 0.12, 0.12, z < 0 ? navRed : navGreen);
+  }
+  // Hardpoint pods: the signals-intelligence fit is what this airframe is for.
+  for (const z of [-1.62, 1.62]) {
+    b.box(0.10, -0.05, z, 0.50, 0.10, 0.20, PALETTE.metal);
+    b.box(0.34, -0.09, z, 0.14, 0.08, 0.16, PALETTE.darkMetal);
+  }
+  // ── Booms and tail ─────────────────────────────────────────────────────
   for (const z of [-0.42, 0.42]) {
     beam(b, [-0.90, 0.02, z], [-2.42, 0.26, z * 1.6], 0.12, 0.12, airframe);
+    b.box(-1.00, 0.05, z, 0.44, 0.20, 0.22, skin);
   }
   b.box(-2.45, 0.32, 0, 0.46, 0.08, 2.62, airframe);
+  b.box(-2.45, 0.36, 0, 0.22, 0.02, 2.40, skin);
   for (const z of [-0.92, 0.92]) {
     b.box(-2.45, 0.44, z, 0.09, 0.46, 0.02, PALETTE.hull, 0.88);
   }
-  // Twin pusher props and a large satcom fairing.
+  // Endplate fins, angled to the boom to read as a V-tail in silhouette.
+  for (const z of [-1.20, 1.20]) {
+    beam(b, [-2.40, 0.28, z], [-2.52, 0.62, z * 1.04], 0.34, 0.03, skin);
+    b.box(-2.56, 0.50, z * 1.05, 0.10, 0.16, 0.04, PALETTE.darkMetal);
+  }
+  // ── Propulsion ─────────────────────────────────────────────────────────
   for (const z of [-0.42, 0.42]) {
     b.cylinderX(-1.52, 0.12, z, 0.06, 0.40, 5, PALETTE.darkMetal);
-    b.boxRot(-1.78, 0.12, z, 0.03, 0.72, 0.10, 0.35, PALETTE.darkMetal);
+    b.cylinderX(-1.72, 0.12, z, 0.09, 0.10, 7, PALETTE.metal);
+    b.boxRot(-1.86, 0.12, z, 0.03, 0.72, 0.10, 0.35, PALETTE.darkMetal);
+    b.boxRot(-1.86, 0.12, z, 0.03, 0.10, 0.72, 0.35, PALETTE.darkMetal);
   }
+  // ── Sensors ────────────────────────────────────────────────────────────
+  // Large satcom fairing and its feed horn.
   b.sphere(-0.25, 0.28, 0, 0.30, 5, 8, PALETTE.hull);
   b.sphere(-0.25, 0.28, 0, 0.22, 5, 8, PALETTE.glassDark);
-  b.sphere(0.68, -0.27, 0, 0.30, 4, 8, PALETTE.glassDark);
-  b.sphere(0.68, -0.27, 0, 0.19, 4, 8, PALETTE.glass);
-  b.cylinder(0.74, -0.50, 0, 0.10, 0.20, 7, PALETTE.metal);
-  b.box(0.65, -0.50, 0, 0.22, 0.03, 0.04, PALETTE.glass);
+  b.cylinder(-0.25, 0.44, 0, 0.05, 0.10, 6, PALETTE.metal);
+  // Second, smaller datalink dome aft on the spine.
+  b.sphere(-1.10, 0.20, 0, 0.16, 4, 8, skin);
+  b.sphere(-1.10, 0.20, 0, 0.09, 4, 8, PALETTE.glassDark);
+  // Belly sensor turret with an EO window, an IR aperture and a laser lens.
+  b.box(0.68, -0.22, 0, 0.42, 0.14, 0.36, PALETTE.darkMetal);
+  b.sphere(0.68, -0.30, 0, 0.30, 5, 10, PALETTE.darkMetal);
+  b.sphere(0.68, -0.30, 0, 0.22, 5, 10, PALETTE.glassDark);
+  b.box(0.68, -0.30, 0, 0.12, 0.16, 0.38, PALETTE.glass);
+  b.box(0.90, -0.30, 0, 0.08, 0.12, 0.12, PALETTE.glass);
+  b.cylinder(0.74, -0.56, 0, 0.10, 0.16, 7, PALETTE.metal);
+  b.box(0.65, -0.56, 0, 0.22, 0.03, 0.04, PALETTE.glass);
+  // Antenna farm on the belly: two blade antennas and a pitot under the nose.
+  b.box(0.30, -0.24, 0, 0.04, 0.14, 0.10, PALETTE.metal);
+  b.box(-0.60, -0.24, 0, 0.04, 0.12, 0.08, PALETTE.metal);
+  b.cylinderX(2.00, 0.03, 0, 0.02, 0.28, 5, PALETTE.metal);
+  // ── Ground contact ─────────────────────────────────────────────────────
+  for (const z of [-0.48, 0.48]) {
+    b.box(0.40, -0.34, z, 1.00, 0.06, 0.08, PALETTE.metal);
+  }
+  b.box(0.40, -0.26, 0, 0.08, 0.18, 0.56, PALETTE.darkMetal);
+  b.box(-2.30, -0.10, 0, 0.12, 0.20, 0.10, PALETTE.darkMetal);
   return b.build();
 }
 
@@ -1842,6 +2049,39 @@ function buildCorvetteTurret(): MeshBuffers {
 }
 
 /**
+ * Frigate main mount. Deliberately taller and heavier than the corvette's low
+ * 76 mm turret: a barbette, a slab-sided enclosed gunhouse with a sloped roof,
+ * a longer sleeved 100 mm barrel and a rangefinder dome on the roof. At battle
+ * zoom the frigate should read as the escort, not as a bigger corvette.
+ */
+function buildFrigateTurret(): MeshBuffers {
+  const b = new MeshBuilder();
+  // Barbette down to the forecastle, then the rotating gunhouse.
+  b.cylinder(0, -0.20, 0, 0.34, 0.38, 10, PALETTE.darkMetal);
+  b.cylinder(0, 0.00, 0, 0.42, 0.05, 12, PALETTE.hullDark);
+  b.box(-0.04, 0.16, 0, 0.92, 0.30, 0.86, PALETTE.hull);
+  b.addQuad([-0.50, 0.15, -0.43], [0.42, 0.15, -0.43], [0.30, 0.44, -0.33], [-0.46, 0.44, -0.33], PALETTE.hull);
+  b.addQuad([-0.50, 0.15, 0.43], [-0.46, 0.44, 0.33], [0.30, 0.44, 0.33], [0.42, 0.15, 0.43], PALETTE.hull);
+  b.addQuad([0.42, 0.15, -0.43], [0.42, 0.15, 0.43], [0.30, 0.44, 0.33], [0.30, 0.44, -0.33], PALETTE.hullLight);
+  b.addQuad([-0.50, 0.15, -0.43], [-0.46, 0.44, -0.33], [-0.46, 0.44, 0.33], [-0.50, 0.15, 0.43], PALETTE.hullDark);
+  // Sloped roof plate, painted with the owner's colour so the escort's turret
+  // carries the same ownership cue as its hull bands.
+  b.addQuad([-0.46, 0.44, -0.33], [-0.46, 0.44, 0.33], [0.28, 0.40, 0.28], [0.28, 0.40, -0.28], PALETTE.hull, 0.9);
+  // Gunhouse face, mantlet and the sleeved barrel.
+  b.box(0.36, 0.29, 0, 0.22, 0.24, 0.52, PALETTE.hullLight);
+  b.box(0.46, 0.27, 0, 0.10, 0.18, 0.30, PALETTE.darkMetal);
+  b.cylinderX(0.62, 0.26, 0, 0.045, 0.30, 8, PALETTE.darkMetal);
+  b.cylinderX(1.10, 0.26, 0, 0.055, 0.60, 8, PALETTE.hullDark);
+  b.cylinderX(1.33, 0.26, 0, 0.075, 0.14, 8, PALETTE.hullDark);
+  // Rangefinder dome, sight hood and the ready-round locker on the rear face.
+  b.sphere(-0.06, 0.52, 0.14, 0.11, 4, 7, PALETTE.darkMetal);
+  b.box(-0.02, 0.46, -0.20, 0.14, 0.06, 0.10, PALETTE.glassDark);
+  b.box(-0.40, 0.32, 0, 0.20, 0.14, 0.62, PALETTE.hullLight);
+  for (const z of [-0.34, 0.34]) b.cylinderX(0.24, 0.44, z, 0.022, 0.12, 4, PALETTE.darkMetal);
+  return b.build();
+}
+
+/**
  * Fast attack craft. A short planing hull, low bridge and two light missile
  * canisters: deliberately smaller and flatter than the corvette so a pair reads
  * as a swarm rather than a second capital ship. The deck gun is separate.
@@ -2211,21 +2451,146 @@ function buildGhadirPeriscope(): MeshBuffers {
  */
 function buildAttackHelo(): MeshBuffers {
   const b = new MeshBuilder();
-  b.box(0, 0.9, 0, 3.0, 0.9, 1.0, PALETTE.hull, 0.55);
-  b.box(0.9, 1.2, 0, 1.1, 0.5, 0.85, PALETTE.glass, 0.2);
-  b.box(1.6, 0.95, 0, 0.5, 0.4, 0.45, PALETTE.darkMetal, 0.3);
-  b.box(1.45, 0.45, 0, 0.9, 0.22, 0.22, PALETTE.darkMetal);
-  b.box(-2.4, 1.05, 0, 2.2, 0.28, 0.3, PALETTE.hull, 0.45);
-  b.box(-3.4, 1.35, 0, 0.5, 0.75, 0.16, PALETTE.darkMetal, 0.3);
-  b.box(-0.1, 0.95, 0, 0.9, 0.16, 3.4, PALETTE.hull, 0.4);
-  b.box(-0.1, 0.75, 1.5, 0.8, 0.3, 0.34, PALETTE.darkMetal);
-  b.box(-0.1, 0.75, -1.5, 0.8, 0.3, 0.34, PALETTE.darkMetal);
-  b.cylinder(0, 1.55, 0, 0.12, 0.5, 8, PALETTE.darkMetal);
-  b.box(0, 1.8, 0, 7.6, 0.07, 0.34, PALETTE.darkMetal, 0.2);
-  b.box(0, 1.8, 0, 0.34, 0.07, 7.6, PALETTE.darkMetal, 0.2);
-  b.box(-3.45, 1.35, 0.35, 0.1, 0.1, 1.2, PALETTE.darkMetal);
-  b.box(0, 0.28, 0.55, 2.4, 0.12, 0.14, PALETTE.darkMetal);
-  b.box(0, 0.28, -0.55, 2.4, 0.12, 0.14, PALETTE.darkMetal);
+  const hull: Color = PALETTE.hull;
+  const skin: Color = [0.37, 0.40, 0.35];
+  const navRed: Color = [0.62, 0.15, 0.13];
+  const navGreen: Color = [0.16, 0.52, 0.24];
+  // ── Forward fuselage and tandem cockpit ────────────────────────────────
+  // Nose, chin sensor fairing and the gunners' station ahead of the pilot.
+  b.box(1.62, 0.98, 0, 0.62, 0.44, 0.62, hull, 0.4);
+  b.box(1.90, 0.92, 0, 0.16, 0.30, 0.44, PALETTE.darkMetal);
+  b.box(1.58, 0.80, 0, 0.70, 0.14, 0.72, skin);
+  // Chin gun: mount, trunnion, barrel and muzzle.
+  b.box(1.30, 0.56, 0, 0.30, 0.20, 0.26, PALETTE.darkMetal);
+  b.cylinderX(1.52, 0.54, 0, 0.055, 0.62, 7, PALETTE.darkMetal);
+  b.cylinderX(1.84, 0.54, 0, 0.035, 0.12, 6, PALETTE.metal);
+  // Stepped canopies: gunner low forward, pilot behind and above, separated by
+  // an armoured blast shield.
+  b.box(1.10, 1.34, 0, 0.86, 0.42, 0.72, PALETTE.glass, 0.15);
+  b.box(1.42, 1.28, 0, 0.20, 0.30, 0.60, PALETTE.glassDark, 0.1);
+  b.box(0.58, 1.30, 0, 0.10, 0.50, 0.76, skin);
+  b.box(-0.10, 1.46, 0, 0.80, 0.40, 0.68, PALETTE.glass, 0.15);
+  b.box(0.28, 1.42, 0, 0.18, 0.28, 0.56, PALETTE.glassDark, 0.1);
+  // Canopy frames and the pilot's armoured seat back.
+  for (const z of [-0.32, 0.32]) {
+    b.box(1.10, 1.16, z, 0.86, 0.04, 0.04, skin);
+    b.box(-0.10, 1.28, z, 0.80, 0.04, 0.04, skin);
+  }
+  b.box(0.52, 1.60, 0, 0.06, 0.20, 0.66, skin);
+  b.box(-0.52, 1.56, 0, 0.06, 0.20, 0.62, skin);
+  // Crew compartment floor and the two step plates below the doors.
+  b.box(0.70, 1.06, 0, 2.10, 0.20, 0.86, hull, 0.3);
+  for (const z of [-0.52, 0.52]) b.box(0.70, 0.94, z, 0.34, 0.05, 0.18, PALETTE.metal);
+  // ── Main body ──────────────────────────────────────────────────────────
+  b.box(-0.10, 1.02, 0, 1.60, 0.78, 1.00, hull, 0.45);
+  // Engine nacelles with exhausts canted outboard, and the intake sand filters.
+  for (const z of [-0.62, 0.62]) {
+    b.box(-0.42, 1.30, z, 1.30, 0.50, 0.44, skin);
+    b.box(0.30, 1.36, z, 0.24, 0.34, 0.36, PALETTE.darkMetal);
+    b.box(0.40, 1.36, z, 0.06, 0.26, 0.30, PALETTE.track);
+    b.cylinderX(-1.12, 1.28, z * 1.06, 0.16, 0.26, 8, PALETTE.darkMetal);
+    b.box(-1.24, 1.28, z * 1.10, 0.06, 0.22, 0.22, PALETTE.track);
+    // Exhaust staining plate under the nozzle.
+    b.box(-1.18, 1.12, z * 1.06, 0.10, 0.20, 0.26, PALETTE.track);
+  }
+  // Rotor gearbox fairing and the mast base.
+  b.box(-0.12, 1.48, 0, 0.86, 0.28, 0.72, skin);
+  b.cylinder(-0.12, 1.66, 0, 0.16, 0.20, 8, PALETTE.darkMetal);
+  // ── Stub wings ─────────────────────────────────────────────────────────
+  b.box(-0.10, 0.95, 0, 0.90, 0.16, 3.40, hull, 0.4);
+  for (const z of [-0.90, 0.90]) b.box(-0.10, 0.86, z * 1.6, 0.60, 0.10, 0.24, skin);
+  // Rocket pods on the inboard stations: tube mouths read as ordnance.
+  for (const z of [-1.28, 1.28]) {
+    b.cylinderX(-0.24, 0.72, z, 0.20, 0.78, 9, PALETTE.hullDark);
+    b.cylinderX(0.16, 0.72, z, 0.20, 0.06, 9, PALETTE.darkMetal);
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      b.cylinderX(0.19, 0.72 + Math.cos(a) * 0.11, z + Math.sin(a) * 0.11, 0.045, 0.05, 6, PALETTE.track);
+    }
+  }
+  // Anti-tank rails on the outboard stations, each with two rails of missiles.
+  for (const z of [-1.56, 1.56]) {
+    b.box(-0.10, 0.74, z, 0.74, 0.08, 0.12, PALETTE.metal);
+    for (const dz of [-0.10, 0.10]) {
+      b.cylinderX(0.10, 0.80, z + dz, 0.05, 0.86, 6, PALETTE.white);
+      b.box(0.52, 0.80, z + dz, 0.10, 0.10, 0.10, PALETTE.warning);
+      b.box(-0.30, 0.80, z + dz, 0.14, 0.16, 0.02, PALETTE.white);
+    }
+  }
+  // Wingtip formation lights.
+  for (const z of [-1.74, 1.74]) b.box(-0.10, 1.04, z, 0.12, 0.06, 0.10, z < 0 ? navRed : navGreen);
+  // ── Tail ───────────────────────────────────────────────────────────────
+  b.box(-1.50, 1.22, 0, 1.60, 0.36, 0.52, hull, 0.4);
+  b.box(-2.40, 1.18, 0, 1.60, 0.26, 0.30, hull, 0.35);
+  b.box(-2.60, 1.24, 0, 0.60, 0.10, 0.22, skin);
+  // Fin with a swept leading edge, the tail rotor gearbox and a stabilator.
+  b.box(-3.34, 1.42, 0, 0.60, 0.86, 0.14, PALETTE.darkMetal, 0.3);
+  b.addQuad([-3.02, 1.02, -0.07], [-3.02, 1.02, 0.07], [-3.30, 1.86, 0.07], [-3.30, 1.86, -0.07], hull, 0.3);
+  b.box(-3.40, 1.42, 0.16, 0.20, 0.26, 0.20, PALETTE.darkMetal);
+  b.box(-3.74, 1.20, 0, 0.24, 0.10, 1.10, skin);
+  for (const z of [-0.56, 0.56]) b.box(-3.74, 1.22, z, 0.20, 0.14, 0.10, PALETTE.darkMetal);
+  // Tail bumper and the anti-collision beacon on the fin tip.
+  b.box(-3.34, 0.96, 0, 0.10, 0.22, 0.10, PALETTE.darkMetal);
+  b.box(-3.30, 1.90, 0, 0.10, 0.08, 0.08, PALETTE.red);
+  // ── Skids ──────────────────────────────────────────────────────────────
+  for (const z of [-0.55, 0.55]) {
+    b.box(-0.10, 0.26, z, 2.60, 0.12, 0.14, PALETTE.darkMetal);
+    b.box(-0.10, 0.34, z, 2.20, 0.06, 0.08, PALETTE.metal);
+    for (const x of [0.76, -0.94]) beam(b, [x, 0.92, z], [x, 0.34, z], 0.08, 0.08, PALETTE.metal);
+    // Front skid tip, curved up so a parked hull does not look bolted down.
+    b.box(1.24, 0.34, z, 0.30, 0.10, 0.10, PALETTE.metal);
+  }
+  // ── Markings ───────────────────────────────────────────────────────────
+  b.box(-0.10, 1.42, 0, 0.70, 0.03, 0.90, PALETTE.hull, 0.85);
+  for (const z of [-0.53, 0.53]) b.box(-0.10, 1.22, z, 0.60, 0.12, 0.02, PALETTE.hull, 0.85);
+  b.box(-2.10, 1.34, 0.16, 0.26, 0.12, 0.02, PALETTE.white);
+  return b.build();
+}
+
+/**
+ * Main rotor: two blades and a hub, authored flat around their own mount.
+ *
+ * A two-blade disc this long strobes at a real rotor's speed on a 60 Hz frame,
+ * so it turns at a rate the eye can follow instead — the cross reads as turning
+ * from any camera distance, which is the point of animating it at all.
+ */
+function buildHeloRotor(): MeshBuffers {
+  const b = new MeshBuilder();
+  // Hub, swashplate ring and the four blade grips.
+  b.cylinder(0, 0, 0, 0.20, 0.22, 8, PALETTE.darkMetal);
+  b.cylinder(0, -0.10, 0, 0.11, 0.10, 8, PALETTE.metal);
+  for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+    b.box(ax * 0.34, 0, az * 0.34, ax ? 0.30 : 0.10, 0.08, az ? 0.30 : 0.10, PALETTE.metal);
+  }
+  // Two blade pairs left as a cross: the shape still reads as a turning disc
+  // from the battle camera without strobing on a 60 Hz frame.
+  b.box(0, 0, 0, 7.6, 0.07, 0.34, PALETTE.darkMetal, 0.2);
+  b.box(0, 0, 0, 0.34, 0.07, 7.6, PALETTE.darkMetal, 0.2);
+  for (const end of [-1, 1]) {
+    // Painted tips, plus the pitch horn at each blade root.
+    b.box(end * 3.6, 0, 0, 0.42, 0.06, 0.32, PALETTE.warning);
+    b.box(0, 0, end * 3.6, 0.32, 0.06, 0.42, PALETTE.warning);
+    b.box(end * 1.10, 0.01, 0, 0.22, 0.05, 0.44, PALETTE.metal);
+    b.box(0, 0.01, end * 1.10, 0.44, 0.05, 0.22, PALETTE.metal);
+  }
+  return b.build();
+}
+
+/**
+ * Tail rotor: two blades in the disc plane, spinning about the tail boom's
+ * lateral axis. The fin carries the gearbox, so only the disc moves.
+ */
+function buildHeloTailRotor(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.cylinderZ(0, 0, 0, 0.10, 0.12, 8, PALETTE.darkMetal);
+  b.cylinderZ(0, 0, 0.08, 0.05, 0.06, 6, PALETTE.metal);
+  b.box(0, 0, 0, 1.15, 0.09, 0.05, PALETTE.darkMetal, 0.2);
+  b.box(0, 0, 0, 0.09, 1.15, 0.05, PALETTE.darkMetal, 0.2);
+  // Painted blade tips, so the disc reads as motion rather than a grey cross.
+  for (const end of [-1, 1]) {
+    b.box(end * 0.50, 0, 0, 0.16, 0.10, 0.06, PALETTE.warning);
+    b.box(0, end * 0.50, 0, 0.10, 0.16, 0.06, PALETTE.warning);
+  }
   return b.build();
 }
 
@@ -2511,8 +2876,12 @@ const SHADOW_RADIUS: Record<string, [number, number]> = {
   hedgehogTeam: [0.32, 0.22],
   taszar: [0.30, 0.22],
   spikeTeam: [0.34, 0.24],
+  fighterEC: [2.50, 1.05],
   gripen: [2.40, 1.00],
+  interceptorEC: [2.60, 1.10],
+  uavEC: [1.80, 1.00],
   mohajer6: [1.60, 0.90],
+  attackHeloEC: [2.20, 0.95],
   bulsae4: [1.55, 0.95],
   khordadSam: [1.50, 0.95],
   wilk: [1.95, 0.98],
@@ -2525,6 +2894,34 @@ const SHADOW_RADIUS: Record<string, [number, number]> = {
   frigate: [4.40, 1.30],
   visby: [3.20, 0.72],
   ghadir: [1.95, 0.48],
+  /*
+   * Platforms that were re-hulled in the silhouette pass. Each value follows
+   * its own authored hull: the ellipse tracks the real footprint rather than the
+   * collision radius, so a long-barrelled howitzer casts a longer pool than the
+   * IFV beside it and a replenishment ship does not cast the fast attack craft's
+   * short shadow.
+   */
+  ifv: [1.70, 0.88],
+  td: [1.80, 0.88],
+  rocketArtillery: [1.95, 0.95],
+  navalSupport: [3.50, 1.05],
+  tankEC: [1.85, 0.92],
+  ifvEC: [1.72, 0.84],
+  tdEC: [1.95, 0.95],
+  reconEC: [1.80, 0.92],
+  aaEC: [1.85, 0.95],
+  spgEC: [2.35, 0.92],
+  rocketArtilleryEC: [2.10, 0.98],
+  rifleEC: [0.30, 0.24],
+  atgmEC: [0.55, 0.38],
+  missileBoatEC: [1.90, 0.80],
+  corvetteEC: [2.90, 1.05],
+  frigateEC: [3.45, 1.20],
+  submarineEC: [2.90, 0.85],
+  navalSupportEC: [3.20, 1.15],
+  k9Thunder: [2.20, 0.85],
+  cv90: [1.95, 0.78],
+  koksan: [2.30, 0.88],
 };
 
 export function unitShadowRadius(id: string): [number, number] {
@@ -2578,6 +2975,12 @@ const BANNER_HEIGHT: Record<string, number> = {
   interceptor: 1.95,
   uav: 1.45,
   deepReconUAV: 1.45,
+  fighterEC: 1.90,
+  gripen: 1.85,
+  interceptorEC: 2.05,
+  uavEC: 1.60,
+  mohajer6: 1.70,
+  attackHeloEC: 2.25,
   kestrelTeam: 1.45,
   hedgehogTeam: 1.45,
   taszar: 1.35,
@@ -2586,8 +2989,6 @@ const BANNER_HEIGHT: Record<string, number> = {
   koksan: 2.45,
   cv90: 1.95,
   khordadSam: 2.30,
-  gripen: 1.80,
-  mohajer6: 1.60,
   bulsae4: 1.95,
   visby: 1.95,
   ghadir: 1.42,
@@ -2613,11 +3014,502 @@ export function unitBannerHeight(id: string): number {
  */
 export const AIR_UNIT_ALTITUDE = 13;
 
+/**
+ * Render-only clearance of a parked airframe above the ground, in world units.
+ *
+ * A facility's apron slab is a third of a unit thick, so a hull drawn at the
+ * bare terrain height parks its wheels inside the concrete. The landing pads, the
+ * flight line and the shadow all use this one value.
+ */
+export const PARKED_AIRCRAFT_CLEARANCE = 0.5;
+
 const RECON_BODY = buildRecon();
 const MBT_BODY = buildMbtBody();
 const MBT_TURRET = buildMbtTurret();
 /** The frigate carries the same 76 mm mount as the corvette. */
 const CORVETTE_TURRET = buildCorvetteTurret();
+
+/* ------------------------------------------------------------------------
+ * Alliance and expansion airframes.
+ *
+ * Every one of these platforms used to borrow a baseline airframe, which made
+ * a Gripen indistinguishable from the strike fighter it replaced. Each is now
+ * authored around the same construction kit and the same scale envelope, but
+ * with its own planform: canard delta, heavy twin-fin interceptor, twin-boom
+ * MALE drone, small piston drone and a wheeled twin-engine gunship.
+ * --------------------------------------------------------------------- */
+
+/**
+ * European canard delta. Where the baseline fighter is a twin-tail twin-engine
+ * strike airframe, this is a single-fin delta with foreplanes: the canards, the
+ * broad wing and the boxy under-cockpit intake trunks are its identity.
+ */
+function buildEuFighter(): MeshBuffers {
+  const b = new MeshBuilder();
+  const body: Color = [0.47, 0.50, 0.47];
+  const panel: Color = [0.38, 0.42, 0.40];
+  const panelLight: Color = [0.54, 0.57, 0.54];
+  const navRed: Color = [0.62, 0.15, 0.13];
+  const navGreen: Color = [0.16, 0.52, 0.24];
+  // ── Fuselage ───────────────────────────────────────────────────────────
+  b.box(0.20, 0, 0, 4.60, 0.52, 0.92, body);
+  b.addQuad([2.50, 0.24, -0.46], [2.50, 0.24, 0.46], [3.30, 0.08, 0.14], [3.30, 0.08, -0.14], body);
+  b.addQuad([2.50, -0.24, -0.46], [2.50, -0.24, 0.46], [3.30, 0.08, 0.14], [3.30, 0.08, -0.14], panel);
+  b.addTriangle([2.50, 0.24, -0.46], [3.30, 0.08, -0.14], [2.50, -0.24, -0.46], panel);
+  b.addTriangle([2.50, 0.24, 0.46], [2.50, -0.24, 0.46], [3.30, 0.08, 0.14], panel);
+  b.box(2.48, 0.02, 0, 0.07, 0.48, 0.90, panelLight);
+  b.cylinderX(3.46, 0.06, 0, 0.018, 0.34, 5, PALETTE.metal);
+  // Broad boxy intake trunks alongside the forward fuselage.
+  for (const z of [-0.72, 0.72]) {
+    b.box(0.90, -0.18, z, 2.10, 0.42, 0.34, panel);
+    b.box(1.86, -0.18, z * 0.96, 0.12, 0.34, 0.28, PALETTE.track);
+    b.box(0.90, 0.02, z * 0.90, 1.90, 0.06, 0.06, panelLight);
+  }
+  // ── Cockpit ────────────────────────────────────────────────────────────
+  b.box(1.30, 0.33, 0, 1.44, 0.16, 0.62, PALETTE.glassDark);
+  b.box(1.30, 0.39, 0, 1.24, 0.14, 0.48, PALETTE.glass);
+  b.addQuad([2.02, 0.245, -0.30], [2.02, 0.245, 0.30], [1.74, 0.46, 0.26], [1.74, 0.46, -0.26], PALETTE.glass);
+  for (const z of [-0.30, 0.30]) b.box(1.28, 0.248, z, 1.40, 0.03, 0.035, panel);
+  b.box(1.36, 0.46, 0, 0.98, 0.025, 0.045, panel);
+  b.box(0.72, 0.44, 0, 0.06, 0.18, 0.46, panel);
+  b.box(1.70, 0.42, 0, 0.22, 0.04, 0.42, panel);
+  b.box(1.60, 0.46, 0, 0.05, 0.09, 0.20, PALETTE.darkMetal);
+  b.box(0.78, 0.46, 0, 0.15, 0.14, 0.18, PALETTE.oliveDark);
+  // ── Canards ────────────────────────────────────────────────────────────
+  for (const side of [-1, 1]) {
+    b.addQuad(
+      [1.72, 0.04, side * 0.66],
+      [1.72, 0.04, side * 0.70],
+      [1.06, 0.04, side * 1.62],
+      [1.00, 0.04, side * 1.52],
+      body,
+    );
+    b.box(1.10, 0.05, side * 1.56, 0.30, 0.02, 0.16, panelLight);
+  }
+  // ── Delta wing ─────────────────────────────────────────────────────────
+  b.addQuad([0.72, -0.02, -0.48], [0.72, -0.02, 0.48], [-2.44, -0.02, 2.86], [-2.44, -0.02, -2.86], body);
+  b.addQuad([0.60, 0.05, -0.46], [0.60, 0.05, 0.46], [-2.36, 0.05, 2.70], [-2.36, 0.05, -2.70], shade(body, 0.95));
+  for (const side of [-1, 1]) {
+    // Flap and elevon hinge lines on the upper surface.
+    b.addQuad(
+      [-0.30, 0.055, side * 0.60],
+      [-0.30, 0.055, side * 0.66],
+      [-1.90, 0.055, side * 1.98],
+      [-1.90, 0.055, side * 1.92],
+      panelLight,
+    );
+    // Outboard pylon with a long-range missile.
+    b.box(-0.90, -0.12, side * 2.16, 0.56, 0.08, 0.12, PALETTE.metal);
+    b.cylinderX(-0.62, -0.18, side * 2.16, 0.062, 1.30, 6, PALETTE.white);
+    b.box(-0.40, -0.18, side * 2.16, 0.14, 0.02, 0.18, PALETTE.white);
+    // Wingtip launch rail and navigation light.
+    b.box(-1.44, 0.0, side * 2.86, 0.66, 0.06, 0.07, PALETTE.metal);
+    b.box(-1.18, 0.0, side * 2.88, 0.10, 0.06, 0.10, side < 0 ? navRed : navGreen);
+  }
+  // ── Fin ────────────────────────────────────────────────────────────────
+  beam(b, [-1.92, 0.16, 0.16], [-2.42, 1.34, 0.26], 0.52, 0.11, body);
+  beam(b, [-2.06, 0.44, 0.21], [-2.44, 1.30, 0.26], 0.09, 0.09, panelLight);
+  b.box(-2.42, 1.24, 0.26, 0.22, 0.06, 0.02, PALETTE.white);
+  // ── Stores under the belly ─────────────────────────────────────────────
+  for (const z of [-0.30, 0.30]) {
+    b.box(-0.90, -0.28, z, 0.70, 0.12, 0.24, PALETTE.darkMetal);
+    b.cylinderX(-0.30, -0.30, z, 0.07, 1.20, 6, PALETTE.white);
+  }
+  // ── Exhaust ────────────────────────────────────────────────────────────
+  b.box(-2.80, 0.02, 0, 0.34, 0.46, 1.04, panel);
+  for (const z of [-0.26, 0.26]) {
+    b.cylinderX(-2.96, 0, z, 0.21, 0.34, 9, PALETTE.darkMetal);
+    b.cylinderX(-3.12, 0, z, 0.16, 0.08, 9, PALETTE.track);
+  }
+  // ── Markings and doors ─────────────────────────────────────────────────
+  for (const z of [-1.40, 1.40]) b.box(-0.60, 0.058, z, 0.56, 0.02, 0.40, PALETTE.hull, 0.88);
+  b.box(-2.32, 0.92, 0.27, 0.30, 0.30, 0.02, PALETTE.hull, 0.9);
+  for (const z of [-0.34, 0.34]) b.box(-0.70, -0.276, z, 0.90, 0.02, 0.24, panelLight);
+  b.box(1.10, 0.30, 0.30, 0.14, 0.02, 0.10, PALETTE.glassDark);
+  return b.build();
+}
+
+/**
+ * Light canard delta. Shorter and narrower than the European fighter, with a
+ * single fin, ventral strakes and one engine: at battle zoom its short span is
+ * the giveaway that a cheap light fighter took the field.
+ */
+function buildGripen(): MeshBuffers {
+  const b = new MeshBuilder();
+  const body: Color = [0.52, 0.55, 0.52];
+  const panel: Color = [0.42, 0.46, 0.43];
+  const panelLight: Color = [0.58, 0.61, 0.58];
+  const navRed: Color = [0.62, 0.15, 0.13];
+  const navGreen: Color = [0.16, 0.52, 0.24];
+  // Compact fuselage with a pointed radome.
+  b.box(0.00, 0, 0, 3.90, 0.48, 0.80, body);
+  b.addQuad([2.06, 0.22, -0.40], [2.06, 0.22, 0.40], [2.72, 0.04, 0.12], [2.72, 0.04, -0.12], body);
+  b.addQuad([2.06, -0.22, -0.40], [2.06, -0.22, 0.40], [2.72, 0.04, 0.12], [2.72, 0.04, -0.12], panel);
+  b.addTriangle([2.06, 0.22, -0.40], [2.72, 0.04, -0.12], [2.06, -0.22, -0.40], panel);
+  b.addTriangle([2.06, 0.22, 0.40], [2.06, -0.22, 0.40], [2.72, 0.04, 0.12], panel);
+  b.cylinderX(2.88, 0.04, 0, 0.016, 0.32, 5, PALETTE.metal);
+  // Single side intake trunk and its splitter.
+  for (const z of [-0.50, 0.50]) {
+    b.box(0.94, -0.14, z, 1.20, 0.28, 0.22, panel);
+    b.box(1.30, -0.14, z, 0.10, 0.22, 0.18, PALETTE.track);
+  }
+  // Bubble canopy with frames.
+  b.box(1.06, 0.31, 0, 1.16, 0.14, 0.56, PALETTE.glassDark);
+  b.box(1.06, 0.37, 0, 0.98, 0.12, 0.44, PALETTE.glass);
+  for (const z of [-0.27, 0.27]) b.box(1.06, 0.238, z, 1.10, 0.03, 0.03, panel);
+  b.box(0.60, 0.40, 0, 0.06, 0.14, 0.40, panel);
+  b.box(1.44, 0.40, 0, 0.20, 0.04, 0.38, panel);
+  // Canards.
+  for (const side of [-1, 1]) {
+    b.addQuad(
+      [1.52, 0.03, side * 0.56],
+      [1.52, 0.03, side * 0.60],
+      [0.94, 0.03, side * 1.36],
+      [0.88, 0.03, side * 1.28],
+      body,
+    );
+  }
+  // Delta wing with elevons and wingtip rails.
+  b.addQuad([0.70, -0.02, -0.42], [0.70, -0.02, 0.42], [-2.06, -0.02, 2.16], [-2.06, -0.02, -2.16], body);
+  b.addQuad([0.60, 0.04, -0.40], [0.60, 0.04, 0.40], [-1.98, 0.04, 2.04], [-1.98, 0.04, -2.04], shade(body, 0.95));
+  for (const side of [-1, 1]) {
+    b.addQuad(
+      [-0.40, 0.045, side * 0.50],
+      [-0.40, 0.045, side * 0.56],
+      [-1.60, 0.045, side * 1.44],
+      [-1.60, 0.045, side * 1.38],
+      panelLight,
+    );
+    b.box(-1.10, 0.0, side * 2.16, 0.50, 0.05, 0.06, PALETTE.metal);
+    b.box(-0.90, 0.0, side * 2.18, 0.09, 0.05, 0.09, side < 0 ? navRed : navGreen);
+    b.cylinderX(-1.34, -0.10, side * 1.24, 0.055, 1.00, 6, PALETTE.white);
+    b.box(-1.10, -0.10, side * 1.24, 0.12, 0.02, 0.16, PALETTE.white);
+  }
+  // Single fin, rudder seam and ventral strakes.
+  beam(b, [-1.62, 0.14, 0.14], [-2.04, 1.16, 0.20], 0.44, 0.10, body);
+  beam(b, [-1.74, 0.38, 0.18], [-2.06, 1.12, 0.20], 0.08, 0.08, panelLight);
+  for (const side of [-1, 1]) beam(b, [-1.38, -0.22, side * 0.28], [-1.78, -0.44, side * 0.36], 0.06, 0.22, panel);
+  // Nozzle with petals.
+  b.box(-2.34, 0.02, 0, 0.26, 0.42, 0.60, panel);
+  b.cylinderX(-2.44, 0, 0, 0.20, 0.34, 9, PALETTE.darkMetal);
+  b.cylinderX(-2.60, 0, 0, 0.15, 0.08, 9, PALETTE.track);
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    b.box(-2.54, Math.cos(a) * 0.18, Math.sin(a) * 0.18, 0.18, 0.05, 0.05, PALETTE.metal);
+  }
+  // Markings, doors and the small stores this airframe can carry.
+  for (const z of [-1.06, 1.06]) b.box(-0.80, 0.048, z, 0.48, 0.02, 0.34, PALETTE.hull, 0.88);
+  b.box(-1.98, 0.84, 0.21, 0.26, 0.26, 0.02, PALETTE.hull, 0.9);
+  b.box(1.30, -0.246, 0, 0.44, 0.02, 0.24, panelLight);
+  b.box(-0.80, -0.246, 0, 0.60, 0.02, 0.22, panelLight);
+  b.box(0.30, 0.252, 0, 0.03, 0.012, 0.42, panelLight);
+  return b.build();
+}
+
+/**
+ * Heavy twin-fin interceptor. Long fuselage, wide-set engine nacelles and two
+ * canted fins: a different aircraft from the single-fin clean delta, and heavy
+ * enough at the tail to read as the long-range missile carrier it is.
+ */
+function buildEuInterceptor(): MeshBuffers {
+  const b = new MeshBuilder();
+  const body: Color = [0.50, 0.52, 0.52];
+  const panel: Color = [0.41, 0.44, 0.44];
+  const panelLight: Color = [0.57, 0.59, 0.59];
+  const navRed: Color = [0.62, 0.15, 0.13];
+  const navGreen: Color = [0.16, 0.52, 0.24];
+  // ── Fuselage ───────────────────────────────────────────────────────────
+  b.box(0.10, 0, 0, 6.40, 0.52, 0.92, body);
+  b.addQuad([3.30, 0.24, -0.44], [3.30, 0.24, 0.44], [3.96, 0.08, 0.14], [3.96, 0.08, -0.14], body);
+  b.addQuad([3.30, -0.24, -0.44], [3.30, -0.24, 0.44], [3.96, 0.08, 0.14], [3.96, 0.08, -0.14], panel);
+  b.addTriangle([3.30, 0.24, -0.44], [3.96, 0.08, -0.14], [3.30, -0.24, -0.44], panel);
+  b.addTriangle([3.30, 0.24, 0.44], [3.30, -0.24, 0.44], [3.96, 0.08, 0.14], panel);
+  b.box(3.28, 0.02, 0, 0.07, 0.50, 0.88, panelLight);
+  b.cylinderX(4.10, 0.05, 0, 0.02, 0.34, 5, PALETTE.metal);
+  // Wide-set rectangular intakes along the flanks.
+  for (const z of [-0.70, 0.70]) {
+    b.box(1.30, -0.10, z, 2.60, 0.40, 0.30, panel);
+    b.box(2.56, -0.10, z * 0.94, 0.14, 0.32, 0.24, PALETTE.track);
+    b.box(1.30, 0.12, z * 0.92, 2.40, 0.05, 0.06, panelLight);
+  }
+  // ── Cockpit set back behind the long nose ──────────────────────────────
+  b.box(1.66, 0.33, 0, 1.50, 0.16, 0.60, PALETTE.glassDark);
+  b.box(1.66, 0.39, 0, 1.28, 0.14, 0.46, PALETTE.glass);
+  b.addQuad([2.40, 0.245, -0.28], [2.40, 0.245, 0.28], [2.12, 0.46, 0.24], [2.12, 0.46, -0.24], PALETTE.glass);
+  for (const z of [-0.29, 0.29]) b.box(1.66, 0.248, z, 1.44, 0.03, 0.034, panel);
+  b.box(1.02, 0.44, 0, 0.06, 0.18, 0.44, panel);
+  b.box(2.04, 0.42, 0, 0.22, 0.04, 0.40, panel);
+  b.box(1.06, 0.44, 0, 0.14, 0.13, 0.17, PALETTE.oliveDark);
+  // ── Wing ───────────────────────────────────────────────────────────────
+  for (const side of [-1, 1]) {
+    b.addQuad(
+      [0.10, -0.02, side * 0.44],
+      [0.10, -0.02, side * 0.50],
+      [-2.60, -0.02, side * 2.62],
+      [-2.42, -0.02, side * 2.58],
+      body,
+    );
+    b.addQuad(
+      [0.10, 0.05, side * 0.42],
+      [-2.42, 0.05, side * 2.48],
+      [-2.30, 0.05, side * 2.44],
+      [0.10, 0.05, side * 0.40],
+      shade(body, 0.95),
+    );
+    // Flap and aileron hinge lines.
+    b.addQuad(
+      [-1.10, 0.058, side * 0.60],
+      [-1.10, 0.058, side * 0.66],
+      [-2.34, 0.058, side * 2.10],
+      [-2.34, 0.058, side * 2.04],
+      panelLight,
+    );
+    b.box(-1.80, 0.0, side * 2.58, 0.56, 0.05, 0.06, PALETTE.metal);
+    b.box(-1.56, 0.0, side * 2.60, 0.09, 0.05, 0.09, side < 0 ? navRed : navGreen);
+  }
+  // ── Twin canted fins and stabilators ───────────────────────────────────
+  for (const side of [-1, 1]) {
+    beam(b, [-2.30, 0.20, side * 0.50], [-3.10, 1.30, side * 0.86], 0.48, 0.10, body);
+    beam(b, [-2.52, 0.42, side * 0.58], [-3.14, 1.26, side * 0.86], 0.09, 0.09, panelLight);
+    b.box(-3.16, 1.24, side * 0.88, 0.22, 0.06, 0.02, PALETTE.white);
+    b.boxRot(-2.86, 0.06, side * 1.62, 0.86, 0.08, 1.14, side * 0.30, panel);
+    b.box(-2.62, 0.06, side * 1.20, 0.34, 0.14, 0.26, body);
+  }
+  // ── Engines ────────────────────────────────────────────────────────────
+  for (const z of [-0.50, 0.50]) {
+    b.cylinderX(-3.20, 0, z, 0.24, 0.70, 10, PALETTE.darkMetal);
+    b.cylinderX(-3.52, 0, z, 0.19, 0.10, 10, PALETTE.track);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      b.box(-3.40, Math.cos(a) * 0.22, z + Math.sin(a) * 0.22, 0.22, 0.06, 0.06, PALETTE.metal);
+    }
+  }
+  // ── Long-range stores ──────────────────────────────────────────────────
+  for (const z of [-0.30, 0.30]) {
+    b.box(-1.30, -0.28, z, 0.90, 0.12, 0.26, PALETTE.darkMetal);
+    b.cylinderX(-0.40, -0.30, z, 0.08, 1.90, 6, PALETTE.white);
+    b.box(-1.26, -0.30, z, 0.16, 0.16, 0.02, PALETTE.white);
+  }
+  for (const z of [-1.30, 1.30]) {
+    b.box(-0.60, -0.16, z, 0.60, 0.09, 0.11, PALETTE.metal);
+    b.cylinderX(-0.10, -0.24, z, 0.07, 1.70, 6, PALETTE.white);
+    b.box(0.68, -0.24, z, 0.10, 0.12, 0.12, PALETTE.warning);
+  }
+  // ── Markings and doors ─────────────────────────────────────────────────
+  for (const z of [-1.50, 1.50]) b.box(-0.90, 0.058, z, 0.60, 0.02, 0.36, PALETTE.hull, 0.88);
+  b.box(-2.96, 0.86, 0, 0.30, 0.30, 0.02, PALETTE.hull, 0.9);
+  b.box(2.34, -0.266, 0, 0.52, 0.02, 0.26, panelLight);
+  for (const z of [-0.32, 0.32]) b.box(-0.90, -0.266, z, 1.00, 0.02, 0.26, panelLight);
+  b.box(1.10, 0.262, 0, 0.03, 0.012, 0.54, panelLight);
+  return b.build();
+}
+
+/**
+ * Long-endurance twin-boom drone. Bulged nose and satcom fairing, a very long
+ * straight wing, twin booms with V-tails and a single pusher: the same role as
+ * the tactical drone but unmistakably a different class of airframe.
+ */
+function buildEuUav(): MeshBuffers {
+  const b = new MeshBuilder();
+  const airframe: Color = [0.52, 0.55, 0.53];
+  const skin: Color = [0.60, 0.62, 0.60];
+  const navRed: Color = [0.62, 0.15, 0.13];
+  const navGreen: Color = [0.16, 0.52, 0.24];
+  // ── Bulged forward fuselage ────────────────────────────────────────────
+  b.box(0.10, 0, 0, 3.10, 0.44, 0.74, airframe);
+  b.sphere(1.72, 0.02, 0, 0.38, 5, 10, airframe);
+  b.sphere(1.78, 0.02, 0, 0.24, 4, 8, skin);
+  b.box(1.34, 0.24, 0, 0.70, 0.06, 0.52, skin);
+  // Cooling louvres and the forward avionics hatch.
+  b.box(0.96, 0.235, 0, 0.22, 0.02, 0.44, PALETTE.darkMetal);
+  for (const x of [0.86, 0.74]) b.box(x, 0.235, 0, 0.05, 0.02, 0.36, PALETTE.track);
+  // ── Long straight wing ─────────────────────────────────────────────────
+  b.box(0.10, 0.05, 0, 1.06, 0.12, 8.90, airframe);
+  b.box(0.10, 0.112, 0, 1.16, 0.02, 0.40, skin);
+  b.box(-0.36, 0.112, 0, 0.30, 0.025, 8.20, skin);
+  for (const z of [-3.30, 3.30]) b.box(0.04, 0.114, z, 1.00, 0.02, 0.10, skin);
+  for (const z of [-2.80, 2.80]) b.box(0.08, 0.12, z, 0.62, 0.016, 0.60, PALETTE.hull, 0.86);
+  for (const z of [-4.30, 4.30]) {
+    b.box(0.08, 0.02, z, 0.36, 0.22, 0.50, PALETTE.oliveDark);
+    b.box(0.08, 0.02, z * 1.04, 0.18, 0.12, 0.12, z < 0 ? navRed : navGreen);
+  }
+  // ── Twin booms and V-tails ─────────────────────────────────────────────
+  for (const z of [-0.56, 0.56]) {
+    b.box(-1.44, 0.04, z, 2.90, 0.20, 0.20, airframe);
+    b.box(-0.60, 0.06, z, 0.60, 0.26, 0.28, skin);
+    b.box(-2.86, 0.16, z, 0.30, 0.34, 0.24, skin);
+    // Angled tail surfaces, each with its own rib.
+    beam(b, [-2.78, 0.16, z], [-3.06, 0.62, z * 1.30], 0.30, 0.03, airframe);
+    beam(b, [-2.78, 0.16, z], [-3.06, -0.26, z * 1.30], 0.30, 0.03, airframe);
+    b.box(-3.04, 0.60, z * 1.32, 0.10, 0.14, 0.04, PALETTE.darkMetal);
+  }
+  // ── Propulsion ─────────────────────────────────────────────────────────
+  b.cylinderX(-1.90, 0.02, 0, 0.10, 0.34, 7, PALETTE.darkMetal);
+  b.cylinderX(-2.10, 0.02, 0, 0.07, 0.10, 7, PALETTE.metal);
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2;
+    b.boxRot(-2.22, 0.02 + Math.sin(a) * 0.48, Math.cos(a) * 0.48, 0.03, 0.78, 0.10, i * 0.9, PALETTE.darkMetal);
+  }
+  // ── Sensors ────────────────────────────────────────────────────────────
+  // Multi-sensor turret: a wide EO/IR head with two apertures.
+  b.box(1.24, -0.26, 0, 0.46, 0.16, 0.40, PALETTE.darkMetal);
+  b.sphere(1.24, -0.36, 0, 0.28, 5, 10, PALETTE.darkMetal);
+  b.sphere(1.24, -0.36, 0, 0.20, 5, 10, PALETTE.glassDark);
+  b.box(1.24, -0.36, 0, 0.10, 0.14, 0.34, PALETTE.glass);
+  b.box(1.44, -0.36, 0.14, 0.06, 0.10, 0.10, PALETTE.glass);
+  // Satcom fairing on the spine and a datalink dome behind it.
+  b.sphere(-0.34, 0.32, 0, 0.30, 4, 9, skin);
+  b.sphere(-0.34, 0.32, 0, 0.20, 4, 9, PALETTE.glassDark);
+  b.sphere(-1.02, 0.22, 0, 0.16, 4, 8, skin);
+  b.box(-0.72, 0.24, 0, 0.02, 0.16, 0.06, PALETTE.metal);
+  // ── Ground contact ─────────────────────────────────────────────────────
+  for (const z of [-0.30, 0.30]) b.box(0.50, -0.40, z, 1.10, 0.05, 0.07, PALETTE.metal);
+  b.box(0.50, -0.30, 0, 0.07, 0.22, 0.46, PALETTE.darkMetal);
+  b.box(-2.90, -0.14, 0, 0.12, 0.26, 0.10, PALETTE.darkMetal);
+  return b.build();
+}
+
+/**
+ * Small piston-engined drone. A single boom to an inverted-V tail and wing
+ * struts make it read as the cheap, slow member of the drone family; the wing
+ * is also shorter and higher-mounted than the jet-powered reconnaissance kit.
+ */
+function buildMohajer(): MeshBuffers {
+  const b = new MeshBuilder();
+  const airframe: Color = [0.55, 0.57, 0.53];
+  const skin: Color = [0.62, 0.64, 0.60];
+  const navRed: Color = [0.62, 0.15, 0.13];
+  const navGreen: Color = [0.16, 0.52, 0.24];
+  // ── Pod fuselage ───────────────────────────────────────────────────────
+  b.box(0.20, 0.02, 0, 2.40, 0.40, 0.56, airframe);
+  // Ownership flash on the dorsal deck and both fin faces: a prop drone is
+  // flown from a map marker, so its team has to read from directly above.
+  b.box(0.08, 0.225, 0, 1.10, 0.02, 0.34, airframe, 0.85);
+  b.box(1.34, 0.04, 0, 0.30, 0.30, 0.44, skin);
+  b.cylinderX(1.56, 0.04, 0, 0.16, 0.18, 8, PALETTE.darkMetal);
+  b.box(1.28, 0.21, 0, 0.34, 0.03, 0.30, PALETTE.darkMetal);
+  // High wing on struts, with plain flaps and small tip pods.
+  b.box(0.04, 0.34, 0, 0.82, 0.10, 5.60, airframe);
+  b.box(-0.34, 0.392, 0, 0.24, 0.02, 4.40, skin);
+  for (const z of [-1.30, 1.30]) b.box(0.04, 0.30, z, 0.86, 0.03, 0.30, skin);
+  for (const z of [-2.70, 2.70]) {
+    b.box(0.02, 0.34, z, 0.30, 0.16, 0.34, PALETTE.oliveDark);
+    b.box(0.02, 0.34, z * 1.05, 0.14, 0.10, 0.10, z < 0 ? navRed : navGreen);
+  }
+  for (const z of [-1.28, 1.28]) {
+    beam(b, [0.18, 0.10, z * 0.62], [0.10, 0.32, z], 0.05, 0.05, PALETTE.metal);
+    beam(b, [-0.24, 0.10, z * 0.62], [-0.20, 0.32, z], 0.05, 0.05, PALETTE.metal);
+  }
+  // ── Single boom to an inverted-V tail ──────────────────────────────────
+  b.box(-1.30, 0.14, 0, 2.30, 0.16, 0.18, airframe);
+  b.box(-2.30, 0.16, 0, 0.32, 0.30, 0.22, skin);
+  for (const side of [-1, 1]) {
+    beam(b, [-2.28, 0.24, side * 0.08], [-2.72, 0.62, side * 0.34], 0.28, 0.03, airframe);
+    beam(b, [-2.28, 0.16, side * 0.08], [-2.70, -0.18, side * 0.34], 0.26, 0.03, airframe);
+  }
+  b.box(-2.44, 0.30, 0, 0.36, 0.02, 0.10, skin);
+  // Tail flashes so the drone still reads as friendly from the side.
+  for (const side of [-1, 1]) b.box(-2.62, 0.48, side * 0.30, 0.18, 0.22, 0.04, airframe, 0.85);
+  // ── Pusher propeller ───────────────────────────────────────────────────
+  b.cylinderX(-1.62, 0.16, 0, 0.07, 0.26, 6, PALETTE.darkMetal);
+  for (let i = 0; i < 2; i++) {
+    const a = (i / 2) * Math.PI * 2;
+    b.boxRot(-1.76, 0.16 + Math.sin(a) * 0.40, Math.cos(a) * 0.40, 0.03, 0.66, 0.10, a, PALETTE.darkMetal);
+  }
+  // ── Sensors and mast ───────────────────────────────────────────────────
+  b.sphere(0.94, -0.24, 0, 0.24, 4, 9, PALETTE.darkMetal);
+  b.sphere(0.94, -0.24, 0, 0.16, 4, 9, PALETTE.glassDark);
+  b.box(0.94, -0.24, 0, 0.08, 0.12, 0.28, PALETTE.glass);
+  b.box(0.20, 0.28, 0, 0.02, 0.24, 0.02, PALETTE.metal);
+  b.box(0.20, 0.40, 0, 0.10, 0.02, 0.02, PALETTE.darkMetal);
+  // ── Ground contact ─────────────────────────────────────────────────────
+  for (const side of [-1, 1]) {
+    b.box(0.70, -0.20, side * 0.22, 0.08, 0.30, 0.06, PALETTE.metal);
+    b.box(0.90, -0.34, side * 0.30, 0.60, 0.05, 0.06, PALETTE.darkMetal);
+  }
+  b.box(-2.20, -0.02, 0, 0.10, 0.34, 0.08, PALETTE.darkMetal);
+  return b.build();
+}
+
+/**
+ * Twin-engine gunship with a wheeled undercarriage. Squared-off fuselage,
+ * chin turret and tricycle gear separate it from the skidded baseline attack
+ * helicopter at any zoom.
+ */
+function buildEuHelo(): MeshBuffers {
+  const b = new MeshBuilder();
+  const hull: Color = [0.34, 0.38, 0.33];
+  const skin: Color = [0.40, 0.43, 0.38];
+  const navRed: Color = [0.62, 0.15, 0.13];
+  const navGreen: Color = [0.16, 0.52, 0.24];
+  // ── Squared fuselage with a faceted nose ───────────────────────────────
+  b.box(0.90, 1.06, 0, 1.90, 0.86, 0.92, hull, 0.4);
+  b.addQuad([1.84, 1.49, -0.44], [1.84, 1.49, 0.44], [2.12, 1.16, 0.26], [2.12, 1.16, -0.26], skin);
+  b.addQuad([1.84, 0.65, -0.44], [1.84, 0.65, 0.44], [2.12, 0.98, 0.26], [2.12, 0.98, -0.26], skin);
+  b.box(1.60, 1.06, 0, 0.20, 0.66, 0.80, skin);
+  // Chin turret: mount, sensor block, gun and its trunnion.
+  b.box(1.42, 0.62, 0, 0.40, 0.24, 0.34, PALETTE.darkMetal);
+  b.sphere(1.40, 0.60, 0, 0.20, 4, 8, PALETTE.darkMetal);
+  b.box(1.56, 0.58, 0, 0.10, 0.14, 0.14, PALETTE.glassDark);
+  b.cylinderX(1.80, 0.54, 0, 0.05, 0.56, 7, PALETTE.darkMetal);
+  b.cylinderX(2.06, 0.54, 0, 0.035, 0.12, 6, PALETTE.metal);
+  // ── Tandem cockpit ─────────────────────────────────────────────────────
+  b.box(1.02, 1.56, 0, 0.94, 0.14, 0.78, PALETTE.glassDark);
+  b.box(1.02, 1.62, 0, 0.80, 0.12, 0.62, PALETTE.glass);
+  b.addQuad([1.48, 1.50, -0.34], [1.48, 1.50, 0.34], [1.30, 1.72, 0.30], [1.30, 1.72, -0.30], PALETTE.glass);
+  b.addQuad([0.56, 1.50, -0.34], [0.56, 1.50, 0.34], [0.74, 1.72, 0.30], [0.74, 1.72, -0.30], PALETTE.glass);
+  for (const z of [-0.36, 0.36]) b.box(1.02, 1.50, z, 0.94, 0.03, 0.035, skin);
+  b.box(1.02, 1.72, 0, 0.06, 0.03, 0.56, skin);
+  b.box(0.60, 1.68, 0, 0.06, 0.14, 0.62, skin);
+  // ── Engines and rotor mast ─────────────────────────────────────────────
+  for (const z of [-0.60, 0.60]) {
+    b.box(-0.36, 1.60, z, 1.50, 0.46, 0.42, skin);
+    b.box(0.28, 1.66, z, 0.26, 0.32, 0.34, PALETTE.darkMetal);
+    b.cylinderX(-1.12, 1.58, z * 1.05, 0.15, 0.24, 8, PALETTE.darkMetal);
+    b.box(-1.22, 1.44, z * 1.06, 0.10, 0.22, 0.24, PALETTE.track);
+  }
+  b.box(-0.16, 1.78, 0, 0.92, 0.26, 0.70, skin);
+  b.cylinder(-0.16, 1.94, 0, 0.15, 0.18, 8, PALETTE.darkMetal);
+  // ── Stub wings with rocket pods and missiles ───────────────────────────
+  b.box(0.90, 1.10, 0, 0.86, 0.16, 3.20, hull, 0.4);
+  for (const z of [-1.10, 1.10]) {
+    b.cylinderX(0.92, 0.86, z, 0.19, 0.72, 9, PALETTE.hullDark);
+    b.cylinderX(1.26, 0.86, z, 0.19, 0.05, 9, PALETTE.darkMetal);
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+      b.cylinderX(1.28, 0.86 + Math.cos(a) * 0.10, z + Math.sin(a) * 0.10, 0.04, 0.05, 6, PALETTE.track);
+    }
+  }
+  for (const z of [-1.44, 1.44]) {
+    b.box(0.90, 0.90, z, 0.66, 0.07, 0.11, PALETTE.metal);
+    b.cylinderX(1.10, 0.96, z, 0.045, 0.74, 6, PALETTE.white);
+    b.box(1.44, 0.96, z, 0.09, 0.09, 0.09, PALETTE.warning);
+  }
+  for (const z of [-1.60, 1.60]) b.box(0.90, 1.20, z, 0.12, 0.06, 0.09, z < 0 ? navRed : navGreen);
+  // ── Tail boom, fin and stabilator ──────────────────────────────────────
+  b.box(-1.60, 1.24, 0, 2.00, 0.34, 0.46, hull, 0.4);
+  b.box(-2.60, 1.20, 0, 1.40, 0.24, 0.28, hull, 0.35);
+  b.box(-3.20, 1.36, 0, 0.42, 0.66, 0.14, PALETTE.darkMetal, 0.3);
+  b.box(-3.34, 1.32, 0.14, 0.16, 0.24, 0.18, PALETTE.darkMetal);
+  b.box(-3.40, 1.10, 0, 0.30, 0.08, 0.94, skin);
+  b.box(-3.20, 1.70, 0, 0.08, 0.06, 0.06, PALETTE.red);
+  // ── Tricycle undercarriage ─────────────────────────────────────────────
+  // Nose wheel forward of the chin turret, two mains under the wings.
+  b.box(1.48, 0.86, 0, 0.10, 0.34, 0.10, PALETTE.metal);
+  b.cylinderZ(1.48, 0.50, 0, 0.20, 0.16, 10, PALETTE.rubber);
+  b.cylinderZ(1.48, 0.50, 0, 0.09, 0.18, 8, PALETTE.metal);
+  for (const z of [-0.86, 0.86]) {
+    b.box(0.40, 0.84, z, 0.12, 0.40, 0.10, PALETTE.metal);
+    b.cylinderZ(0.40, 0.42, z, 0.24, 0.18, 10, PALETTE.rubber);
+    b.cylinderZ(0.40, 0.42, z, 0.10, 0.20, 8, PALETTE.metal);
+    b.box(0.40, 0.72, z * 1.04, 0.22, 0.10, 0.06, PALETTE.darkMetal);
+  }
+  // ── Markings ───────────────────────────────────────────────────────────
+  b.box(0.90, 1.50, 0, 0.80, 0.03, 0.86, PALETTE.hull, 0.85);
+  for (const z of [-0.50, 0.50]) b.box(-0.10, 1.06, z, 0.70, 0.14, 0.02, PALETTE.hull, 0.85);
+  b.box(-2.10, 1.34, 0.16, 0.26, 0.12, 0.02, PALETTE.white);
+  return b.build();
+}
 
 const STYLES: Record<string, EntityStyle> = {
   rifle: { body: buildRifle(), turretOffset: [0, 0, 0], infantry: infantryRig() },
@@ -2724,11 +3616,12 @@ const STYLES: Record<string, EntityStyle> = {
   },
   frigate: {
     body: buildFrigateBody(),
-    // The frigate mounts the same 76 mm turret as the corvette on a longer
-    // forecastle; the SAM box and extra canisters live on the hull instead.
-    turret: CORVETTE_TURRET,
+    // The frigate carries its own heavier enclosed mount rather than the light
+    // 76 mm gunhouse it used to share with the corvette; the SAM box and extra
+    // canisters live on the hull instead.
+    turret: buildFrigateTurret(),
     // 3.60 + 1.40 local = 3.50 at the 0.70 scale, the authored 3.5 reach;
-    // 1.15 + 0.22 = 0.96 local, the authored 0.95 height.
+    // 1.15 + 0.26 = 1.41 local, the authored 0.95 height.
     turretOffset: [3.60, 1.15, 0],
   },
   // Slots the old shared baseline did not have. Each adopts the closest
@@ -2750,7 +3643,26 @@ const STYLES: Record<string, EntityStyle> = {
     turret: buildMlrsLauncher(),
     turretOffset: [0, 1.0, 0],
   },
-  attackHelo: { body: buildAttackHelo(), turretOffset: [0, 0, 0] },
+  attackHelo: {
+    body: buildAttackHelo(),
+    turretOffset: [0, 0, 0],
+    rotor: { mesh: buildHeloRotor(), offset: [0, 1.82, 0], rate: 7.2 },
+    tailRotor: { mesh: buildHeloTailRotor(), offset: [-3.45, 1.35, 0.24], rate: 15 },
+  },
+  // Alliance and expansion airframes. Each is authored rather than borrowed:
+  // a canard delta, a light canard delta, a heavy twin-fin interceptor, a
+  // twin-boom MALE drone, a piston drone and a wheeled twin-engine gunship.
+  fighterEC: { body: buildEuFighter(), turretOffset: [0, 0, 0] },
+  gripen: { body: buildGripen(), turretOffset: [0, 0, 0] },
+  interceptorEC: { body: buildEuInterceptor(), turretOffset: [0, 0, 0] },
+  uavEC: { body: buildEuUav(), turretOffset: [0, 0, 0] },
+  mohajer6: { body: buildMohajer(), turretOffset: [0, 0, 0] },
+  attackHeloEC: {
+    body: buildEuHelo(),
+    turretOffset: [0, 0, 0],
+    rotor: { mesh: buildHeloRotor(), offset: [-0.16, 2.06, 0], rate: 7.2 },
+    tailRotor: { mesh: buildHeloTailRotor(), offset: [-3.34, 1.32, 0.24], rate: 15 },
+  },
   navalSupport: {
     body: buildMissileBoatBody(),
     turret: CORVETTE_TURRET,
@@ -2774,52 +3686,22 @@ const STYLES: Record<string, EntityStyle> = {
   },
 };
 
-/**
- * Alliance platforms currently share their canonical slot's authored mesh.
- * Their equipment differs in data — gun, armour, salvo, hull — but a bespoke
- * silhouette per platform is a separate art pass, so this keeps every unit
- * rendering a complete coherent model instead of the fallback box. Retire an
- * entry here as soon as that platform gets its own parts.
+/*
+ * Every platform in the roster now owns an authored silhouette. These tables
+ * live in their own modules purely to keep this file navigable; they are merged
+ * into the same style map, so the renderer, thumbnails and the forge all resolve
+ * a unit id exactly as before. Nothing here aliases another unit's rig: an
+ * alliance or national platform that shared a family mesh would be unreadable at
+ * battle zoom, because ownership is the only difference a player could see.
  */
-const FAMILY_SHARED_STYLES: Record<string, string> = {
-  rifleEC: 'rifle',
-  atgmEC: 'atgm',
-  reconEC: 'recon',
-  ifvEC: 'ifv',
-  tankEC: 'tank',
-  tdEC: 'td',
-  spgEC: 'spg',
-  rocketArtilleryEC: 'rocketArtillery',
-  aaEC: 'aa',
-  uavEC: 'uav',
-  interceptorEC: 'interceptor',
-  fighterEC: 'fighter',
-  attackHeloEC: 'attackHelo',
-  missileBoatEC: 'missileBoat',
-  corvetteEC: 'corvette',
-  frigateEC: 'frigate',
-  submarineEC: 'submarine',
-  navalSupportEC: 'navalSupport',
-  /*
-   * Expansion-nation equipment shares its canonical family's rig for the same
-   * reason the alliance platforms do: the data and the card carry the identity,
-   * and a bespoke silhouette per hull is a separate art pass. Replace an entry
-   * here when that unit gets its own parts.
-   */
-  k9Thunder: 'spg',
-  cv90: 'ifv',
-  khordadSam: 'aa',
-  koksan: 'spg',
-  spikeTeam: 'atgm',
-  gripen: 'fighter',
-  mohajer6: 'uav',
-  bulsae4: 'td',
-};
-
-for (const [platform, slot] of Object.entries(FAMILY_SHARED_STYLES)) {
-  const style = STYLES[slot];
-  if (style) STYLES[platform] = style;
-}
+Object.assign(
+  STYLES,
+  CANONICAL_HULL_STYLES,
+  VARIANT_HULL_STYLES,
+  ALLIANCE_GROUND_STYLES,
+  ALLIANCE_SUPPORT_STYLES,
+  NATIONAL_STYLES,
+);
 
 export function unitStyle(id: string): EntityStyle | undefined {
   return STYLES[id];

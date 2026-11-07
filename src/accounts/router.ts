@@ -13,6 +13,30 @@ import {
   MAX_GUEST_IMPORT_MATCHES,
   type CareerMatchInput,
 } from './career';
+import {
+  CALLSIGN_CHANGES_PER_DAY,
+  DEFAULT_AVATAR,
+  callsignKey,
+  defaultCallsign,
+  validateAvatar,
+  validateCallsign,
+  type PlayerIdentity,
+} from './identity';
+import {
+  MP_REWARD_VERSION,
+  eligibilityReason,
+  matchDurationSeconds,
+  mpReward,
+  outcomeFor,
+  parseExtraStats,
+  parseMpResult,
+  type MpMatchResult,
+  type MpPlayerResult,
+} from './matchCareer';
+import { buildCareerStats } from './stats';
+import type { CareerEntryWrite, MatchReportRecord, MpResultPlayerRecord, PlayerProfileRecord } from './types';
+import { rankForXp } from './ranks';
+import { safeEqual } from './crypto';
 import { randomToken } from './crypto';
 import {
   beginAuthorization,
@@ -42,6 +66,10 @@ export interface AccountDeps {
   config: AccountConfig;
   fetch: (input: string, init?: RequestInit) => Promise<Response>;
 }
+
+/** How many ledger rows a service-record page asks for. */
+const HISTORY_PAGE_SIZE = 20;
+const MAX_HISTORY_PAGE_SIZE = 50;
 
 const MAX_BODY_BYTES = 8 * 1024;
 
@@ -279,6 +307,7 @@ class Router {
         authenticated: true,
         account: summarise(resolved.account, identities),
         providers: configuredProviders(this.config),
+        identity: this.identityView(await this.identityFor(resolved.account.id)),
       });
     }
 
@@ -329,7 +358,37 @@ class Router {
       if (request.method !== 'GET') throw new AccountError('method-not-allowed', 'Use GET for this endpoint.', 405);
       await enforceRateLimit(this.deps, 'career-read', RATE_LIMITS.sessionRead, request, 'any');
       const resolved = await this.requireSession(request);
-      return jsonResponse({ ok: true, career: await this.careerView(resolved.account.id) });
+      const limit = Math.min(
+        MAX_HISTORY_PAGE_SIZE,
+        Math.max(1, Math.floor(Number(url.searchParams.get('limit') ?? HISTORY_PAGE_SIZE) || HISTORY_PAGE_SIZE)),
+      );
+      return jsonResponse({ ok: true, career: await this.careerView(resolved.account.id, limit) });
+    }
+
+    if (segments[0] === 'career' && segments[1] === 'matches') {
+      if (request.method !== 'GET') throw new AccountError('method-not-allowed', 'Use GET for this endpoint.', 405);
+      if (segments.length === 2) return this.matchHistory(request, url);
+      if (segments.length === 3) return this.matchDetail(request, decodeURIComponent(segments[2]));
+    }
+
+    if (segments[0] === 'career' && segments[1] === 'results' && segments.length === 3) {
+      if (request.method !== 'GET') throw new AccountError('method-not-allowed', 'Use GET for this endpoint.', 405);
+      return this.matchResult(request, decodeURIComponent(segments[2]));
+    }
+
+    if (segments[0] === 'identity' && segments.length === 1) {
+      if (request.method !== 'POST') throw new AccountError('method-not-allowed', 'Use POST for this endpoint.', 405);
+      return this.updateIdentity(request);
+    }
+
+    if (segments[0] === 'players' && segments.length === 2) {
+      if (request.method !== 'GET') throw new AccountError('method-not-allowed', 'Use GET for this endpoint.', 405);
+      return this.publicProfile(request, segments[1]);
+    }
+
+    if (segments[0] === 'internal' && segments[1] === 'mp-result' && segments.length === 2) {
+      if (request.method !== 'POST') throw new AccountError('method-not-allowed', 'Use POST for this endpoint.', 405);
+      return this.ingestMpResult(request);
     }
 
     if (segments[0] === 'matches' && segments.length === 1) {
@@ -344,7 +403,18 @@ class Router {
       if (!this.config.ticketSecret) {
         throw new AccountError('server-error', 'Multiplayer identity is not configured.', 503);
       }
-      const ticket = await issueTicket(this.config.ticketSecret, resolved.account.id, this.now);
+      // The room cannot call back into this service, so the identity it shows
+      // in the lobby travels inside the signed ticket it already verifies. The
+      // rank is read from this account's ledger here, which is the only place
+      // that can say what it is: neither the room nor the browser may choose it.
+      const profile = await this.identityFor(resolved.account.id);
+      const totals = await this.deps.store.careerTotals(resolved.account.id);
+      const ticket = await issueTicket(
+        this.config.ticketSecret,
+        resolved.account.id,
+        this.now,
+        { ...this.identityView(profile), rank: rankForXp(totals.xp).rank.id },
+      );
       return jsonResponse({ ok: true, ...ticket });
     }
 
@@ -552,12 +622,58 @@ class Router {
    * The career view. Totals are aggregated from the ledger on every read, so
    * the rank shown is always the sum of the matches below it.
    */
-  private async careerView(accountId: string): Promise<unknown> {
-    const [totals, matches] = await Promise.all([
+  private async careerView(
+    accountId: string,
+    limit = HISTORY_PAGE_SIZE,
+    offset = 0,
+  ): Promise<unknown> {
+    const [totals, matches, rows, profile] = await Promise.all([
       this.deps.store.careerTotals(accountId),
-      this.deps.store.careerMatches(accountId, 20),
+      this.deps.store.careerMatches(accountId, limit, offset),
+      this.deps.store.careerStatRows(accountId),
+      this.identityFor(accountId),
     ]);
-    return careerViewFrom(totals, matches);
+    return {
+      ...careerViewFrom(totals, matches),
+      // XP and rank come from the ledger above; every other figure is grouped
+      // from the same ledger, so a profile cannot disagree with its history.
+      stats: buildCareerStats(rows),
+      identity: this.identityView(profile),
+      page: { limit, offset },
+    };
+  }
+
+  /**
+   * The player's presentable identity, created on first use.
+   *
+   * Accounts predate profiles, so a read may be the first time a name exists.
+   * Creation is a single idempotent insert: two concurrent reads cannot produce
+   * two profiles, and a lost uniqueness race re-reads the winner.
+   */
+  private async identityFor(accountId: string): Promise<PlayerProfileRecord> {
+    const existing = await this.deps.store.profile(accountId);
+    if (existing) return existing;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const callsign = defaultCallsign();
+      const record: PlayerProfileRecord = {
+        accountId,
+        callsign,
+        callsignKey: callsignKey(callsign),
+        avatar: DEFAULT_AVATAR,
+        createdAt: this.now,
+        updatedAt: this.now,
+        callsignChangedAt: null,
+      };
+      const written = await this.deps.store.createProfile(record);
+      if (written === 'ok') return record;
+      const raced = await this.deps.store.profile(accountId);
+      if (raced) return raced;
+    }
+    throw new AccountError('server-error', 'A player identity could not be created.', 500);
+  }
+
+  private identityView(profile: PlayerProfileRecord): PlayerIdentity {
+    return { callsign: profile.callsign, avatar: profile.avatar };
   }
 
   /**
@@ -581,13 +697,342 @@ class Router {
       throw new AccountError('invalid-request', 'Multiplayer results are recorded by the room service.', 400);
     }
     const record = careerRecord(parsed.value, { provenance: 'local', now: this.now });
-    const outcome = await this.deps.store.recordCareerMatch(resolved.account.id, record);
+    const stats = parseExtraStats(body.stats);
+    const report: MatchReportRecord = {
+      ref: record.ref,
+      mode: record.mode,
+      mapId: this.mapId(body.mapId),
+      opponentAccountId: null,
+      opponentCallsign: null,
+      opponentNation: null,
+      durationSeconds: record.durationSeconds,
+      unitsDestroyed: record.kills,
+      unitsLost: record.unitsLost,
+      structuresDestroyed: stats.structuresDestroyed,
+      structuresLost: stats.structuresLost,
+      structuresBuilt: stats.structuresBuilt,
+      sitesCaptured: stats.sitesCaptured,
+      superweaponsUsed: stats.superweaponsUsed,
+      objectivesCompleted: stats.objectivesCompleted,
+      rewardVersion: 0,
+      rewardStatus: 'local',
+      breakdown: null,
+      xpBefore: 0,
+      xpAfter: 0,
+      recordedAt: this.now,
+    };
+    const outcome = await this.deps.store.recordCareerEntry({
+      accountId: resolved.account.id,
+      record,
+      report,
+      audit: null,
+    });
     return jsonResponse({
       ok: true,
       recorded: outcome === 'ok',
       award: { xp: outcome === 'ok' ? record.xp : 0 },
       career: await this.careerView(resolved.account.id),
     });
+  }
+
+  private mapId(raw: unknown): string | null {
+    return typeof raw === 'string' && /^[a-z0-9_-]{1,48}$/.test(raw) ? raw : null;
+  }
+
+  /**
+   * Edit the presentable identity.
+   *
+   * A rename is rate-limited and must win the callsign key it proposes, so the
+   * lobby can never show two identical names. The account id is untouched, which
+   * is why match history and seat ownership survive the change.
+   */
+  private async updateIdentity(request: Request): Promise<Response> {
+    const resolved = await this.requireSession(request);
+    await enforceRateLimit(this.deps, 'identity', RATE_LIMITS.mutate, request, resolved.account.id);
+    const body = await readJsonBody(request);
+    const profile = await this.identityFor(resolved.account.id);
+    let callsign = profile.callsign;
+    let changedCallsign = false;
+    if (body.callsign !== undefined) {
+      const parsed = validateCallsign(body.callsign);
+      if (!parsed.ok) throw new AccountError(parsed.code, parsed.message, 400);
+      if (callsignKey(parsed.callsign) !== profile.callsignKey) {
+        const taken = await this.deps.store.profileByCallsignKey(callsignKey(parsed.callsign));
+        if (taken && taken.accountId !== resolved.account.id) {
+          throw new AccountError('identity-in-use', 'That callsign is already in use.', 409);
+        }
+        const attempts = await this.deps.store.countRateLimit(
+          `callsign-change:${resolved.account.id}`,
+          Math.floor(this.now / 86_400_000),
+        );
+        if (attempts > CALLSIGN_CHANGES_PER_DAY) {
+          throw new AccountError('rate-limited', 'Too many callsign changes today.', 429);
+        }
+        callsign = parsed.callsign;
+        changedCallsign = true;
+      }
+    }
+    let avatar = profile.avatar;
+    if (body.avatar !== undefined) {
+      const parsed = validateAvatar(body.avatar);
+      if (!parsed) throw new AccountError('invalid-request', 'That avatar is not available.', 400);
+      avatar = parsed;
+    }
+    const written = await this.deps.store.updateProfile(resolved.account.id, {
+      callsign,
+      callsignKey: callsignKey(callsign),
+      avatar,
+      updatedAt: this.now,
+      callsignChangedAt: changedCallsign ? this.now : null,
+    });
+    if (written === 'conflict') {
+      throw new AccountError('identity-in-use', 'That callsign is already in use.', 409);
+    }
+    return jsonResponse({
+      ok: true,
+      identity: this.identityView(await this.identityFor(resolved.account.id)),
+    });
+  }
+
+  /**
+   * A deliberately small public profile.
+   *
+   * Reachable only with a session, addressed by callsign rather than account id,
+   * and carrying no provider, email or session information. It is what an
+   * opponent's name in the lobby opens.
+   */
+  private async publicProfile(request: Request, rawCallsign: string): Promise<Response> {
+    await this.requireSession(request);
+    const key = callsignKey(decodeURIComponent(rawCallsign));
+    const profile = await this.deps.store.profileByCallsignKey(key);
+    if (!profile) throw new AccountError('not-found', 'No player uses that callsign.', 404);
+    const [totals, rows] = await Promise.all([
+      this.deps.store.careerTotals(profile.accountId),
+      this.deps.store.careerStatRows(profile.accountId),
+    ]);
+    const stats = buildCareerStats(rows);
+    const standing = rankForXp(totals.xp);
+    return jsonResponse({
+      ok: true,
+      player: {
+        callsign: profile.callsign,
+        avatar: profile.avatar,
+        rank: standing.rank,
+        xp: totals.xp,
+        progress: standing.progress,
+        matches: stats.overall.matches,
+        winRate: stats.overall.winRate,
+        playSeconds: stats.overall.playSeconds,
+        multiplayer: stats.modes.multiplayer,
+        nations: stats.nations,
+      },
+    });
+  }
+
+  /** Paged service-record history, newest first. */
+  private async matchHistory(request: Request, url: URL): Promise<Response> {
+    const resolved = await this.requireSession(request);
+    await enforceRateLimit(this.deps, 'history', RATE_LIMITS.sessionRead, request, 'any');
+    const limit = Math.min(
+      MAX_HISTORY_PAGE_SIZE,
+      Math.max(1, Math.floor(Number(url.searchParams.get('limit') ?? HISTORY_PAGE_SIZE) || HISTORY_PAGE_SIZE)),
+    );
+    const offset = Math.max(0, Math.floor(Number(url.searchParams.get('offset') ?? 0) || 0));
+    const records = await this.deps.store.careerMatches(resolved.account.id, limit, offset);
+    const items = await Promise.all(
+      records.map(async (match) => ({
+        match,
+        report: await this.deps.store.matchReport(resolved.account.id, match.ref),
+      })),
+    );
+    return jsonResponse({
+      ok: true,
+      items,
+      page: { limit, offset, hasMore: records.length === limit },
+    });
+  }
+
+  private async matchDetail(request: Request, ref: string): Promise<Response> {
+    const resolved = await this.requireSession(request);
+    const match = await this.deps.store.careerMatch(resolved.account.id, ref);
+    if (!match) throw new AccountError('not-found', 'That match is not in your record.', 404);
+    return jsonResponse({
+      ok: true,
+      match,
+      report: await this.deps.store.matchReport(resolved.account.id, ref),
+    });
+  }
+
+  /**
+   * The career outcome of one match, for the post-match screen.
+   *
+   * `pending` is a first-class answer: the room may report its result a moment
+   * after the client sees the scoreboard, so the screen must be able to say
+   * "still synchronising" instead of showing a guessed reward.
+   */
+  private async matchResult(request: Request, ref: string): Promise<Response> {
+    const resolved = await this.requireSession(request);
+    if (!/^[A-Za-z0-9:_-]{8,96}$/.test(ref)) {
+      throw new AccountError('invalid-request', 'Match reference is not valid.', 400);
+    }
+    const match = await this.deps.store.careerMatch(resolved.account.id, ref);
+    if (!match) return jsonResponse({ ok: true, status: 'pending', matchRef: ref });
+    const report = await this.deps.store.matchReport(resolved.account.id, ref);
+    const xpBefore = report?.xpBefore ?? Math.max(0, (await this.deps.store.careerTotals(resolved.account.id)).xp - match.xp);
+    const xpAfter = report?.xpAfter ?? xpBefore + match.xp;
+    const before = rankForXp(xpBefore);
+    const after = rankForXp(xpAfter);
+    return jsonResponse({
+      ok: true,
+      status: 'recorded',
+      matchRef: ref,
+      match,
+      award: {
+        xp: match.xp,
+        status: report?.rewardStatus ?? 'awarded',
+        reason: report?.breakdown?.reason ?? null,
+        breakdown: report?.breakdown ?? null,
+        xpBefore,
+        xpAfter,
+        rankBefore: before.rank,
+        rankAfter: after.rank,
+        promoted: after.index > before.index,
+      },
+    });
+  }
+
+  /**
+   * Authoritative result intake from the room service.
+   *
+   * The caller is a service, not a browser: it presents a shared secret, and the
+   * request carries no client identity to trust. For each seated account the
+   * award is recomputed here from the reported facts, written in one entry with
+   * its report and audit row, and deduplicated by the match reference, so a
+   * retry or a reconnect can only ever return the award that already exists.
+   */
+  private async ingestMpResult(request: Request): Promise<Response> {
+    const secret = this.config.mpResultToken;
+    if (!secret) throw new AccountError('server-error', 'Result intake is not configured.', 503);
+    const presented = request.headers.get('X-MCA-Result-Token') ?? '';
+    if (!presented || !safeEqual(presented, secret)) {
+      throw new AccountError('unauthorized', 'Result intake credentials are not valid.', 401);
+    }
+    const body = await readJsonBody(request);
+    const parsed = parseMpResult(body, this.now);
+    if (!parsed.ok) throw new AccountError('invalid-request', parsed.message, 400);
+    const result: MpMatchResult = parsed.value;
+    const dayStart = Math.floor(this.now / 86_400_000) * 86_400_000;
+    const players: unknown[] = [];
+    for (const player of result.players) {
+      if (!player.accountId) {
+        players.push({ seat: player.team, accountId: null, status: 'guest', xp: 0 });
+        continue;
+      }
+      const accountId = player.accountId;
+      const account = await this.deps.store.account(accountId);
+      if (!account || account.status !== 'active') {
+        players.push({ seat: player.team, accountId, status: 'ineligible', xp: 0 });
+        continue;
+      }
+      const outcome = outcomeFor(result, player.team);
+      const durationSeconds = matchDurationSeconds(result);
+      const rewardedToday = await this.deps.store.mpResultsSince(accountId, dayStart);
+      const breakdown = mpReward({
+        outcome,
+        durationSeconds,
+        stats: player.stats,
+        rewardedToday,
+        ineligibleReason: eligibilityReason(result, player),
+      });
+      // The standing before this match is read from the ledger, not guessed:
+      // the result card and the service record both show the same two numbers.
+      const standingBefore = await this.deps.store.careerTotals(accountId);
+      const record = careerRecord(
+        {
+          ref: result.matchId,
+          mode: 'multiplayer',
+          outcome,
+          // Multiplayer has no AI difficulty; the field is part of the ledger's
+          // checks and a neutral value is the honest one.
+          difficulty: 'veteran',
+          durationSeconds,
+          nation: player.nation,
+          kills: player.stats.unitsDestroyed,
+          unitsLost: player.stats.unitsLost,
+        },
+        { provenance: 'authoritative', now: this.now },
+      );
+      // The ledger's own XP formula covers local play; for an authoritative
+      // match the reward above is the decision, so it replaces the estimate.
+      record.xp = breakdown.xp;
+      const opponent = result.players.find((other) => other.team !== player.team) ?? null;
+      const report = this.mpReport(
+        result,
+        player,
+        opponent,
+        record.xp,
+        breakdown,
+        durationSeconds,
+        standingBefore.xp,
+      );
+      const audit: MpResultPlayerRecord = {
+        matchId: result.matchId,
+        accountId,
+        roomId: result.roomId,
+        team: player.team,
+        outcome,
+        nation: player.nation,
+        rewardVersion: MP_REWARD_VERSION,
+        xpAwarded: breakdown.xp,
+        status: breakdown.status,
+        processedAt: this.now,
+      };
+      const entry: CareerEntryWrite = { accountId, record, report, audit };
+      const written = await this.deps.store.recordCareerEntry(entry);
+      players.push({
+        seat: player.team,
+        accountId,
+        status: breakdown.status,
+        xp: written === 'ok' ? breakdown.xp : 0,
+        recorded: written === 'ok',
+        matchRef: result.matchId,
+      });
+    }
+    return jsonResponse({ ok: true, matchId: result.matchId, players });
+  }
+
+  private mpReport(
+    result: MpMatchResult,
+    player: MpPlayerResult,
+    opponent: MpPlayerResult | null,
+    xp: number,
+    breakdown: ReturnType<typeof mpReward>,
+    durationSeconds: number,
+    xpBefore: number,
+  ): MatchReportRecord {
+    return {
+      ref: result.matchId,
+      mode: 'multiplayer',
+      mapId: result.mapId,
+      opponentAccountId: opponent?.accountId ?? null,
+      opponentCallsign: opponent?.callsign ?? null,
+      opponentNation: opponent?.nation ?? null,
+      durationSeconds,
+      unitsDestroyed: player.stats.unitsDestroyed,
+      unitsLost: player.stats.unitsLost,
+      structuresDestroyed: player.stats.structuresDestroyed,
+      structuresLost: player.stats.structuresLost,
+      structuresBuilt: player.stats.structuresBuilt,
+      sitesCaptured: player.stats.sitesCaptured,
+      superweaponsUsed: player.stats.superweaponsUsed,
+      objectivesCompleted: player.stats.objectivesCompleted,
+      rewardVersion: MP_REWARD_VERSION,
+      rewardStatus: breakdown.status,
+      breakdown,
+      xpBefore,
+      xpAfter: xpBefore + xp,
+      recordedAt: this.now,
+    };
   }
 
   private async migrateGuest(request: Request, accountId: string): Promise<Response> {

@@ -11,6 +11,19 @@ import {
 } from './constants';
 import { angleTo, dist, dist2, normalizeAngle, rotateLocalOffset, turnToward, clamp } from '../core/math';
 import { muzzleHeight, muzzleReach, muzzleWorldOffset } from './hardpoints';
+import {
+  authoredBays,
+  authoredSlots,
+  deliveryBay,
+  deliveryStand,
+  deliveryWait,
+  dockHoldPose,
+  dockPose,
+  runwayLanding,
+  runwayTakeoff,
+  type DockKind,
+  type DockPose,
+} from './docks';
 import { Rng } from '../core/rng';
 import {
   BUILDINGS,
@@ -36,6 +49,7 @@ import {
   unitUpgradeDef,
   upgradesForSlot,
   modulesForSlot,
+  allianceAllows,
   type BuildingModuleDef,
   type ResearchCatalog,
   type ResearchUnlocks,
@@ -66,7 +80,7 @@ import {
   type ScenarioRestrictions,
   type ScenarioStructure,
 } from './scenario';
-import { createRuntimeMap, footprintCenter, stampFootprint } from './map';
+import { clearOreFootprint, createRuntimeMap, footprintCenter, stampFootprint } from './map';
 import { TUTORIAL_SCENARIO_ID } from '../data/tutorial';
 import {
   dayNightAt,
@@ -130,7 +144,7 @@ import {
   unitSlotId,
 } from '../data/roster';
 import { tryIdentityDef, NATIONS } from '../data/factions';
-import { abilityForUpgrade } from '../data/abilities';
+import { abilityForUpgrade, isGuidedWeapon, type TimedAbilityDef } from '../data/abilities';
 import {
   SUPERWEAPON_FAMILIES,
   isSuperweaponFamilyId,
@@ -158,6 +172,9 @@ import {
 } from './save';
 import { migrateSave } from './saveMigrations';
 import type {
+  AircraftDocks,
+  AircraftOccupancy,
+  AircraftState,
   Command,
   Entity,
   GameState,
@@ -226,8 +243,44 @@ const AIRCRAFT_ALTITUDE = 13;
 /** Electronic-attack sight and range penalties, from the family catalogue. */
 const EW_EFFECT =
   SUPERWEAPON_FAMILIES.ew.effect.kind === 'ew' ? SUPERWEAPON_FAMILIES.ew.effect : undefined;
-/** An assigned engineer has to be this close to the site to advance it. */
-const ENGINEER_WORK_RANGE = 5 * TILE_SIZE;
+/**
+ * Standing room a crew needs beyond a structure's footprint to work it.
+ *
+ * Work is measured from the structure's centre, so the reach has to scale with
+ * the footprint: a yard over the wall for a barracks, further out for an
+ * airfield. Anything larger reads as work from across the parade ground — the
+ * old flat five-tile radius let a crew raise a building from most of the way
+ * across its own compound.
+ */
+const ENGINEER_STAND_OFF = 1.6 * TILE_SIZE;
+/** Seconds a hauler spends at a refinery bay emptying a full hopper. */
+const UNLOAD_SECONDS = 3.2;
+/**
+ * How long a load may hold a delivery mouth before it must give the claim back.
+ *
+ * A mouth the truck cannot drive up to — walled off, cut by a cliff, blocked by
+ * a wreck — is not something the hauler can solve by waiting, and the mouth is
+ * promised to it while it tries. Other loads then queue at the staging spot and
+ * the refinery reads as silent. Handing the claim back lets the next truck try
+ * (the lane is often blocked in one direction only) and the stalled one replans.
+ */
+const BAY_PATIENCE = 12;
+/** Ground speed of a taxiing airframe, in world units per second. */
+const TAXI_SPEED = 11;
+/** Seconds a fixed-wing take-off run occupies the strip. */
+const TAKEOFF_RUN_SECONDS = 3.2;
+/** Seconds a landing roll spends slowing down on the strip. */
+const LANDING_ROLL_SECONDS = 3.0;
+/** Seconds a helicopter spends lifting off or settling onto its pad. */
+const HELO_LIFT_SECONDS = 2.4;
+/**
+ * Seconds the crew spends bringing the disc up to flying speed on the pad.
+ *
+ * A helicopter does not leave the ground when its engine catches: the rotor has
+ * to reach governed speed first, and the visible spool-up is the countdown. The
+ * hull holds its pad for this long before any height is gained.
+ */
+const HELO_SPOOL_SECONDS = 3.4;
 /** Fraction of a structure's maximum HP restored per engineer per second. */
 const ENGINEER_REPAIR_RATE = 0.035;
 /** A medic treats one wounded infantryman inside this radius. */
@@ -551,7 +604,7 @@ export class Game {
     defId: string,
     x: number,
     z: number,
-    opts: { starting?: boolean; free?: boolean; authoredKey?: string } = {},
+    opts: { starting?: boolean; free?: boolean; authoredKey?: string; berth?: number } = {},
   ): Entity {
     const def = unitDef(defId);
     const hp = def.hp;
@@ -578,7 +631,21 @@ export class Game {
       };
     }
     if (def.domain === 'air') {
-      const home = this.nearestOwnedBuilding(owner, (b) => !!BUILDINGS[b.defId]?.airfield, x, z);
+      // A home must offer a position of this hull's kind: an airfield's single
+      // helicopter pad is not a berth for a fighter, and a heliport has no
+      // flight line at all.
+      const home = this.nearestOwnedBuilding(
+        owner,
+        (b) => {
+          const docks = this.docksFor(b.defId);
+          if (!docks) return false;
+          // A rotary hull is based only where it can stay: the airfield's
+          // single pad is a recovery position, not a home.
+          return def.rotary ? docks.helo > 0 && !docks.heloTemporary : docks.fixedWing > 0;
+        },
+        x,
+        z,
+      );
       e.homeId = home?.id ?? 0;
       e.aircraft = {
         homeId: e.homeId,
@@ -588,6 +655,7 @@ export class Game {
         serviceTimer: 0,
         serviceTotal: 8,
         returningHome: false,
+        ...(opts.berth === undefined ? {} : { berth: opts.berth }),
       };
       if (opts.starting) e.state = 'grounded';
       if (home) {
@@ -614,12 +682,119 @@ export class Game {
       };
     }
     this.addEntity(e);
+    // A scenario airframe begins parked, so it begins on a position rather
+    // than in the middle of its own hangar.
+    if (e.aircraft?.landed) this.parkAircraft(e);
     if (!opts.starting) {
       const player = this.player(owner);
       if (player) player.stats.unitsBuilt++;
       this.emit('unitBuilt', { team: owner, x, z, text: `${def.name} ready`, entityId: e.id, defId, level: 'info' });
     }
     return e;
+  }
+
+  /**
+   * Free any crew walled in by the structure that has just gone up.
+   *
+   * A base grows outward from the platoon that is building it, and a ring of
+   * factories, refineries and gun pits can close around the crew: every tile it
+   * can still reach is inside the ring, no route leads to the next foundation,
+   * and the base then stops growing for the rest of the match while the
+   * commander waits on concrete nobody can pour. A crew that has been sealed
+   * into a pocket is moved out to open ground beside the new structure.
+   */
+  private releaseBoxedCrew(owner: number, tx: number, tz: number, defId: string): void {
+    if (owner < 0) return;
+    const crew = this.state.entities.filter(
+      (e) =>
+        e.kind === 'unit' &&
+        e.hp > 0 &&
+        e.owner === owner &&
+        unitDef(e.defId).canBuild,
+    );
+    for (const unit of crew) {
+      if (!this.isBoxedIn(unit)) continue;
+      const spot = this.openTileNear(tx, tz, buildingDef(defId), unit);
+      if (!spot) continue;
+      unit.x = (spot.x + 0.5) * TILE_SIZE;
+      unit.z = (spot.z + 0.5) * TILE_SIZE;
+      unit.path = [];
+      unit.pathIndex = 0;
+      unit.destX = unit.x;
+      unit.destZ = unit.z;
+      unit.state = 'idle';
+      unit.blockedTicks = 0;
+    }
+  }
+
+  /** Whether every tile a unit can still walk to is a handful of tiles. */
+  private isBoxedIn(unit: Entity): boolean {
+    const map = this.state.map;
+    const moveClass = unitDef(unit.defId).moveClass;
+    const startX = Math.floor(unit.x / TILE_SIZE);
+    const startZ = Math.floor(unit.z / TILE_SIZE);
+    if (!inBounds(map.width, map.height, startX, startZ)) return false;
+    const cap = 48;
+    const seen = new Set<number>();
+    const stack: number[] = [tileIndex(map.width, startX, startZ)];
+    seen.add(stack[0]);
+    while (stack.length > 0) {
+      const tile = stack.pop()!;
+      if (seen.size > cap) return false;
+      const tx = tile % map.width;
+      const tz = (tile / map.width) | 0;
+      for (const [dx, dz] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ] as const) {
+        const nx = tx + dx;
+        const nz = tz + dz;
+        if (!inBounds(map.width, map.height, nx, nz)) continue;
+        const next = tileIndex(map.width, nx, nz);
+        if (seen.has(next)) continue;
+        if (this.blocked[next]) continue;
+        if (!canStandOn(map.width, map.height, map.terrain, next, moveClass)) continue;
+        seen.add(next);
+        stack.push(next);
+      }
+    }
+    return true;
+  }
+
+  /** The nearest open tile outside a footprint, for a crew that must be moved. */
+  private openTileNear(
+    tx: number,
+    tz: number,
+    def: ReturnType<typeof buildingDef>,
+    unit: Entity,
+  ): { x: number; z: number } | null {
+    const map = this.state.map;
+    const moveClass = unitDef(unit.defId).moveClass;
+    for (let radius = 1; radius <= 12; radius++) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dz)) !== radius) continue;
+          const x = tx + dx;
+          const z = tz + dz;
+          if (!inBounds(map.width, map.height, x, z)) continue;
+          const idx = tileIndex(map.width, x, z);
+          if (this.blocked[idx]) continue;
+          if (!canStandOn(map.width, map.height, map.terrain, idx, moveClass)) continue;
+          if (
+            x >= tx &&
+            x < tx + def.footprint.w &&
+            z >= tz &&
+            z < tz + def.footprint.h
+          ) {
+            continue;
+          }
+          return { x, z };
+        }
+      }
+    }
+    return null;
   }
 
   private spawnStructure(s: ScenarioStructure, construction = false): Entity {
@@ -659,6 +834,11 @@ export class Game {
     e.guardZ = center.z;
     this.addEntity(e);
     stampFootprint(this.blocked, this.state.map, s.defId, s.x, s.z, def.walkable ? 0 : 1);
+    if (!def.walkable) this.releaseBoxedCrew(s.owner, s.x, s.z, s.defId);
+    // Anything standing here takes the ground with it, deposit included: an
+    // authored map was swept when it was assembled, but a structure spawned
+    // during play — a mission objective, a forward base — has to sweep its own.
+    clearOreFootprint(this.state.map, s.defId, s.x, s.z);
     if (def.walkable) this.deckDirty = true;
     if (s.owner >= 0) {
       const player = this.player(s.owner);
@@ -1483,6 +1663,7 @@ export class Game {
       this.completedTechnologies(owner),
       unitFamily(unit.defId),
       this.research,
+      this.allianceIdOf(owner),
     ).filter((upgrade) => !applied.has(upgrade.id));
   }
 
@@ -1500,6 +1681,7 @@ export class Game {
       p.research.completed,
       buildingFamily(building.defId),
       this.research,
+      this.allianceIdOf(owner),
     ).filter((module) => {
       const count = installed.filter((id) => id === module.id).length;
       return count < (module.capacity ?? 1);
@@ -1720,11 +1902,13 @@ export class Game {
         e.destX = dest.x;
         e.destZ = dest.z;
         e.state = 'moving';
-        if (e.aircraft?.landed) {
-          e.aircraft.landed = false;
+        // A parked airframe taxis out before it flies; one already rolling must
+        // not have its manoeuvre replaced by a teleport into the air.
+        if (e.aircraft) {
           e.aircraft.serviceTimer = 0;
+          e.aircraft.returningHome = false;
+          this.launchAircraft(e);
         }
-        e.aircraft && (e.aircraft.returningHome = false);
         continue;
       }
       if (e.harvester) {
@@ -2073,9 +2257,8 @@ export class Game {
       }
       e.path = [];
       e.pathIndex = 0;
-      if (UNITS[e.defId]?.domain === 'air' && e.aircraft?.landed) {
-        e.aircraft.landed = false;
-        e.aircraft.returningHome = false;
+      if (UNITS[e.defId]?.domain === 'air' && e.aircraft) {
+        this.launchAircraft(e);
       }
     }
     if (capable === 0) {
@@ -3373,6 +3556,9 @@ export class Game {
     }
     const module = buildingModuleDef(moduleId, this.research);
     if (!module) return { ok: false, reason: 'Unknown module.' };
+    if (!allianceAllows(module.alliances, this.allianceIdOf(owner))) {
+      return { ok: false, reason: `${module.name} is not available to this alliance.` };
+    }
     const slot = buildingFamily(building.defId);
     if (!module.eligibleSlots.includes(slot)) {
       return { ok: false, reason: `${module.name} cannot be fitted to this structure.` };
@@ -3524,6 +3710,123 @@ export class Game {
     return Math.max(0, this.getEntity(unitId)?.cooldowns?.[abilityId] ?? 0);
   }
 
+  /** Seconds of an active timed ability left; 0 when it is not running. */
+  effectRemaining(unitId: number, abilityId: string): number {
+    return Math.max(0, this.getEntity(unitId)?.effects?.[abilityId] ?? 0);
+  }
+
+  /** The alliance a seat belongs to, or undefined for an unknown faction. */
+  private allianceIdOf(owner: number): string | undefined {
+    const factionId = this.player(owner)?.factionId;
+    return factionId ? tryIdentityDef(factionId)?.allianceId : undefined;
+  }
+
+  /** Timed abilities currently running on one entity. */
+  private activeTimed(e: Entity): TimedAbilityDef[] {
+    if (!e.effects) return [];
+    const active: TimedAbilityDef[] = [];
+    for (const id of Object.keys(e.effects)) {
+      const def = abilityForUpgrade(id);
+      if (def && def.kind === 'timed') active.push(def);
+    }
+    return active;
+  }
+
+  /**
+   * Movement multiplier from active abilities.
+   *
+   * A hull-down crew is deliberately pinned: the whole benefit is fighting from
+   * a static position, so an order to move means the crew must break position
+   * first. Emergency power is the opposite trade.
+   */
+  private abilitySpeedFactor(e: Entity): number {
+    let factor = 1;
+    for (const def of this.activeTimed(e)) factor *= def.speedMult;
+    return factor;
+  }
+
+  /** Vision multiplier from active abilities (an active sonar sweep). */
+  private abilityVisionFactor(e: Entity): number {
+    let factor = 1;
+    for (const def of this.activeTimed(e)) factor *= def.visionMult;
+    return factor;
+  }
+
+  /** Reload multiplier from active abilities (a prepared fire mission). */
+  private abilityReloadFactor(e: Entity): number {
+    let factor = 1;
+    for (const def of this.activeTimed(e)) factor *= def.reloadMult;
+    return factor;
+  }
+
+  /**
+   * Incoming-damage multiplier from active protection.
+   *
+   * The class of weapon decides: hard-kill answers guided ordnance, hull-down
+   * answers direct fire but not the indirect round that arcs over the ramp,
+   * and countermeasures answer anti-aircraft fire. Splash without a weapon id
+   * is left alone rather than guessed at.
+   */
+  incomingDamageMultiplier(target: Entity, weaponId?: string): number {
+    if (!target.effects) return 1;
+    const weapon = weaponId ? WEAPONS[weaponId] : undefined;
+    if (!weapon) return 1;
+    let factor = 1;
+    for (const def of this.activeTimed(target)) {
+      if (def.damageMult === undefined) continue;
+      if (def.versus === 'direct' && weapon.indirect) continue;
+      if (def.versus === 'missile' && !isGuidedWeapon(weapon)) continue;
+      if (def.versus === 'antiAir' && !weapon.antiAir) continue;
+      factor *= def.damageMult;
+    }
+    return factor;
+  }
+
+  /** Extra vision a structure's installed modules add, in tiles. */
+  private moduleVision(e: Entity): number {
+    if (!e.modules || e.modules.length === 0) return 0;
+    return installedModuleEffects(e.modules, this.research).vision;
+  }
+
+  /** Production-rate multiplier from a facility's installed modules. */
+  private moduleProductionSpeed(e: Entity): number {
+    if (!e.modules || e.modules.length === 0) return 1;
+    return installedModuleEffects(e.modules, this.research).productionSpeed;
+  }
+
+  /**
+   * Servicing turnaround multiplier from a facility's installed modules.
+   *
+   * The whole servicing run is one clock — rearming, refuelling and repair all
+   * complete together — so shortening the clock is what a flightline crew buys.
+   */
+  private moduleServiceSpeed(e: Entity | undefined): number {
+    if (!e?.modules || e.modules.length === 0) return 1;
+    return Math.max(0.1, installedModuleEffects(e.modules, this.research).serviceSpeed);
+  }
+
+  /** Seconds a hull needs on the ground at this facility before it is ready. */
+  private serviceSecondsAt(home: Entity | undefined, ac: { serviceTotal: number }): number {
+    return ac.serviceTotal / this.moduleServiceSpeed(home);
+  }
+
+  /**
+   * One active sonar ping.
+   *
+   * A sweep is not a weapon: it exposes a dived boat the way a depth-charge hit
+   * already does, so the escort still has to engage it and the boat's own crew
+   * still gets the warning that it has been found. Only hostile boats inside the
+   * ping are affected, and only while they are actually under the surface.
+   */
+  private sweepSonar(source: Entity, radiusTiles: number): void {
+    for (const e of this.state.entities) {
+      if (e.kind !== 'unit' || e.hp <= 0 || !e.submarine?.dived) continue;
+      if (!this.isHostile(source.owner, e.owner)) continue;
+      if (dist(source.x, source.z, e.x, e.z) > radiusTiles * TILE_SIZE) continue;
+      this.revealSubmarine(e, 4);
+    }
+  }
+
   /**
    * Distance, in world units, at which this entity can actually engage.
    *
@@ -3573,6 +3876,13 @@ export class Game {
     const upgrade = unitUpgradeDef(abilityId, this.research);
     const ability = upgrade ? abilityForUpgrade(upgrade.id) : undefined;
     if (!upgrade || !ability) return { ok: false, reason: 'Unknown ability.', cooldown: 0 };
+    if (!allianceAllows(upgrade.alliances, this.allianceIdOf(owner))) {
+      return {
+        ok: false,
+        reason: `${upgrade.name} is not fitted to this alliance's crews.`,
+        cooldown: 0,
+      };
+    }
     if (!upgrade.eligibleSlots.includes(unitFamily(unit.defId))) {
       return { ok: false, reason: `${upgrade.name} cannot be fitted to this unit.`, cooldown: 0 };
     }
@@ -3607,16 +3917,24 @@ export class Game {
     }
     const ability = abilityForUpgrade(abilityId)!;
     const tick = this.state.tick;
-    this.state.smoke.push({
-      id: this.state.nextSmokeId++,
-      owner,
-      team: this.teamOf(owner),
-      x: unit!.x,
-      z: unit!.z,
-      radius: ability.radius * TILE_SIZE,
-      startTick: tick,
-      expiresTick: tick + Math.max(1, Math.round(ability.durationSeconds * TICK_RATE)),
-    });
+    if (ability.kind === 'smoke') {
+      this.state.smoke.push({
+        id: this.state.nextSmokeId++,
+        owner,
+        team: this.teamOf(owner),
+        x: unit!.x,
+        z: unit!.z,
+        radius: ability.radius * TILE_SIZE,
+        startTick: tick,
+        expiresTick: tick + Math.max(1, Math.round(ability.durationSeconds * TICK_RATE)),
+      });
+    } else {
+      // A timed ability belongs to the hull, not to the world: it runs on the
+      // fixed tick clock, so a pause, a save and a reconnecting peer all read
+      // the same remaining time instead of a browser timer.
+      unit!.effects = { ...(unit!.effects ?? {}), [ability.upgradeId]: ability.durationSeconds };
+      if (ability.revealSubsRadius) this.sweepSonar(unit!, ability.revealSubsRadius);
+    }
     // Only the hull that fired reloads. The command never touches the player's
     // research record or any other unit's clock.
     unit!.cooldowns = { ...(unit!.cooldowns ?? {}), [ability.upgradeId]: ability.cooldownSeconds };
@@ -3624,7 +3942,7 @@ export class Game {
       team: owner,
       x: unit!.x,
       z: unit!.z,
-      text: 'Smoke away',
+      text: ability.kind === 'smoke' ? 'Smoke away' : `${ability.name} active`,
       entityId: unit!.id,
       level: 'info',
       sound: 'queue',
@@ -3667,6 +3985,18 @@ export class Game {
     if (this.unitRestrictedByOperation(owner, defId)) {
       return { ok: false, reason: `${def.name} is not available in this operation.` };
     }
+    // Facility kind is answered before the roster: an airfield's pad recovers a
+    // helicopter but does not build one, and a heliport has no flight line at
+    // all. Saying so is more useful than "cannot produce".
+    if (def.domain === 'air') {
+      const family = buildingFamily(b.defId);
+      if (def.rotary && family !== 'heliport') {
+        return { ok: false, reason: 'Helicopters require an operational heliport.' };
+      }
+      if (!def.rotary && family !== 'airfield') {
+        return { ok: false, reason: `${bdef.name} has no flight line for fixed-wing aircraft.` };
+      }
+    }
     // Resolve the facility's baseline slots through the roster so a national
     // variant keeps its family's production slot without a parallel list.
     if (!this.productionEntries(owner, b.defId).includes(defId)) {
@@ -3698,22 +4028,403 @@ export class Game {
         };
       }
     }
+    // Airframes launch from this facility, and the facility is resolved by
+    // family: a national airfield variant (the British expeditionary strip, for
+    // one) is the same airfield, so it must be able to build what the shared
+    // strip builds. Comparing the raw id refused every variant its own aircraft.
+    //
+    // Capacity is answered before money and before the queue: a flight line with
+    // every position promised will not take another hull whatever the player can
+    // pay, so "Insufficient materials" would name a problem the player could fix
+    // and hide the one that is actually stopping the order.
+    if (def.domain === 'air') {
+      // Kind was settled above; what remains is whether a position of this
+      // hull's kind is still free on the flight line.
+      const capacity = this.slotCapacity(b.defId, defId);
+      const used = this.slotsUsed(b.id, defId);
+      if (capacity <= used) {
+        return {
+          ok: false,
+          reason: `No free ${
+            def.rotary ? 'helicopter position' : 'flight-line position'
+          } (${used}/${capacity}).`,
+        };
+      }
+    }
     if (b.queue.length >= MAX_QUEUE) return { ok: false, reason: 'Production queue is full.' };
     if (p.mats < def.cost.mats) return { ok: false, reason: 'Insufficient materials.' };
     if (p.req < def.cost.req) return { ok: false, reason: 'Insufficient requisition.' };
-    if (unitFamily(def.id) === 'fighter') {
-      const hasAirfield = this.state.entities.some(
-        (e) => e.owner === owner && e.defId === 'airfield' && e.hp > 0 && !e.construction,
-      );
-      if (!hasAirfield) return { ok: false, reason: 'Requires an operational airfield.' };
-    }
-    if (def.domain === 'naval') {
-      const hasYard = this.state.entities.some(
-        (e) => e.owner === owner && e.defId === 'shipyard' && e.hp > 0 && !e.construction,
-      );
-      if (!hasYard) return { ok: false, reason: 'Requires an operational shipyard.' };
+    if (def.domain === 'naval' && buildingFamily(b.defId) !== 'shipyard') {
+      return { ok: false, reason: 'Requires an operational shipyard.' };
     }
     return { ok: true, reason: '' };
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Aircraft docking                                                   */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Aircraft positions a facility offers.
+   *
+   * Read through the variant chain so a national strip inherits the shared
+   * airfield's four flight-line positions instead of silently offering none.
+   */
+  private docksFor(buildingDefId: string): AircraftDocks | undefined {
+    return BUILDINGS[buildingDefId]?.docks ?? BUILDINGS[buildingFamily(buildingDefId)]?.docks;
+  }
+
+  /** Which kind of position an aircraft occupies. */
+  private aircraftSlotKind(defId: string): 'fixedWing' | 'helo' {
+    return UNITS[defId]?.rotary ? 'helo' : 'fixedWing';
+  }
+
+  private slotCapacity(buildingDefId: string, aircraftDefId: string): number {
+    return this.berthCapacity(buildingDefId, this.aircraftSlotKind(aircraftDefId) as DockKind);
+  }
+
+  /**
+   * Positions a facility physically has for one kind of aircraft.
+   *
+   * The declared dock count is capped by the positions the apron was authored
+   * with: a berth with no paint under it would double-book two hulls onto one
+   * spot, which is exactly what an invented position looks like.
+   */
+  private berthCapacity(buildingDefId: string, kind: DockKind): number {
+    const docks = this.docksFor(buildingDefId);
+    if (!docks) return 0;
+    const declared = kind === 'helo' ? docks.helo : docks.fixedWing;
+    return Math.max(0, Math.min(declared, authoredSlots(buildingDefId, kind)));
+  }
+
+  /**
+   * Positions of this aircraft's kind already promised at one facility.
+   *
+   * A berth is promised from the moment the hull is ordered — the queue item
+   * holds the index — and stays promised for the hull's whole life: airborne,
+   * on patrol, coming home, parked or servicing. Counting only parked hulls was
+   * the old limitation: four airframes in the air read as an empty flight line,
+   * so a fifth could be ordered and the facility held more hulls than it had
+   * positions for.
+   */
+  private berthHolders(
+    buildingId: number,
+    kind: DockKind,
+    excludeEntityId?: number,
+  ): Set<number> {
+    const held = new Set<number>();
+    for (const e of this.state.entities) {
+      if (e.kind !== 'unit' || e.hp <= 0) continue;
+      if (e.id === excludeEntityId) continue;
+      const ac = e.aircraft;
+      if (!ac || ac.berth === undefined) continue;
+      if (ac.homeId !== buildingId) continue;
+      if (this.aircraftSlotKind(e.defId) !== kind) continue;
+      held.add(ac.berth);
+    }
+    const facility = this.getEntity(buildingId);
+    if (facility?.kind === 'building') {
+      for (const item of facility.queue) {
+        if (item.berth === undefined) continue;
+        if (this.aircraftSlotKind(item.defId) !== kind) continue;
+        held.add(item.berth);
+      }
+    }
+    return held;
+  }
+
+  /** Lowest free position of this kind at a facility, or null when full. */
+  private vacantBerth(
+    buildingId: number,
+    kind: DockKind,
+    excludeEntityId?: number,
+  ): number | null {
+    const building = this.getEntity(buildingId);
+    if (!building || building.kind !== 'building') return null;
+    const capacity = this.berthCapacity(building.defId, kind);
+    const held = this.berthHolders(buildingId, kind, excludeEntityId);
+    for (let index = 0; index < capacity; index++) {
+      if (!held.has(index)) return index;
+    }
+    return null;
+  }
+
+  /** Positions of this aircraft's kind already promised at one facility. */
+  private slotsUsed(buildingId: number, aircraftDefId: string): number {
+    return this.berthHolders(buildingId, this.aircraftSlotKind(aircraftDefId) as DockKind).size;
+  }
+
+  /**
+   * Put a landed aircraft on its own position at the facility it came home to.
+   *
+   * Called every tick a hull is down, not only when it touches down: losing the
+   * hull in the next position along has to close the gap, and a battle loaded
+   * from a save has to find the apron again. Devoting the position to the entity
+   * instead of offsetting it at draw time keeps picking, health bars and the
+   * selection ring on the aircraft the player can see.
+   */
+  /**
+   * True when this position is an airfield's recovery-only helicopter pad.
+   *
+   * The pad flag belongs to the hull, not to the facility. An airfield declares
+   * `heloTemporary` because of its single pad, so reading the facility alone
+   * marked every fighter parked on an airfield as a temporary guest — and a
+   * temporary guest releases its berth when servicing ends, which would hand a
+   * permanent flight-line position back to the queue after every sortie.
+   */
+  private isTemporaryPad(home: Entity | undefined, kind: DockKind): boolean {
+    if (!home || kind !== 'helo') return false;
+    return !!this.docksFor(home.defId)?.heloTemporary;
+  }
+
+  /** Stamp or clear the recovery-pad flag on a hull that has just taken a berth. */
+  private markPadFlag(
+    ac: { temporaryBerth?: boolean },
+    home: Entity | undefined,
+    kind: DockKind,
+  ): void {
+    if (this.isTemporaryPad(home, kind)) ac.temporaryBerth = true;
+    else delete ac.temporaryBerth;
+  }
+
+  private parkAircraft(e: Entity): void {
+    const ac = e.aircraft;
+    if (!ac || !ac.landed) return;
+    const home = this.getEntity(ac.homeId);
+    if (!home || home.kind !== 'building' || home.hp <= 0) return;
+    const kind = this.aircraftSlotKind(e.defId) as DockKind;
+    if (!ac.waitingForDock) this.ensureBerth(e);
+    const pose =
+      !ac.waitingForDock && ac.berth !== undefined ? dockPose(home, kind, ac.berth) : null;
+    const at = pose ?? dockHoldPose(home);
+    if (!at) return;
+    e.x = at.x;
+    e.z = at.z;
+    e.facing = at.facing;
+    e.turretFacing = at.facing;
+    e.destX = e.x;
+    e.destZ = e.z;
+  }
+
+  /**
+   * Rebuild every aircraft reservation after a load.
+   *
+   * Saves written before berths were stored carry none, and an authored
+   * scenario or an old save may carry more hulls than its aprons have positions.
+   * Aircraft are processed in id order and queue items after them, which is the
+   * same order production and landings use, so the reconstruction is
+   * deterministic: a saved battle, a reload and both peers of a match settle on
+   * the same flight line. A hull the apron cannot hold loses its claim and waits
+   * on the holding point instead of being deleted.
+   */
+  private reconcileAircraftBerths(): void {
+    const taken = new Map<string, Set<number>>();
+    const key = (buildingId: number, kind: DockKind): string => `${buildingId}:${kind}`;
+    const claim = (buildingId: number, kind: DockKind, berth: number): void => {
+      const held = taken.get(key(buildingId, kind)) ?? new Set<number>();
+      held.add(berth);
+      taken.set(key(buildingId, kind), held);
+    };
+    const free = (building: Entity, kind: DockKind): number | undefined => {
+      const capacity = this.berthCapacity(building.defId, kind);
+      const held = taken.get(key(building.id, kind)) ?? new Set<number>();
+      for (let index = 0; index < capacity; index++) {
+        if (!held.has(index)) return index;
+      }
+      return undefined;
+    };
+    for (const e of this.state.entities) {
+      if (e.kind !== 'unit' || e.hp <= 0 || !e.aircraft) continue;
+      const ac = e.aircraft;
+      const home = this.getEntity(ac.homeId);
+      const kind = this.aircraftSlotKind(e.defId) as DockKind;
+      let berth =
+        home && home.kind === 'building' && home.hp > 0 && Number.isInteger(ac.berth)
+          ? (ac.berth as number)
+          : undefined;
+      if (
+        berth !== undefined &&
+        (!home || dockPose(home, kind, berth) === null ||
+          (taken.get(key(home.id, kind))?.has(berth) ?? false))
+      ) {
+        berth = undefined;
+      }
+      if (berth === undefined && home && home.hp > 0) berth = free(home, kind);
+      if (berth === undefined || !home || home.hp <= 0) {
+        delete ac.berth;
+        delete ac.temporaryBerth;
+        continue;
+      }
+      ac.berth = berth;
+      this.markPadFlag(ac, home, kind);
+      claim(home.id, kind, berth);
+    }
+    for (const building of this.state.entities) {
+      if (building.kind !== 'building' || building.queue.length === 0) continue;
+      for (const item of building.queue) {
+        if (unitDef(item.defId).domain !== 'air') {
+          delete item.berth;
+          continue;
+        }
+        const kind = this.aircraftSlotKind(item.defId) as DockKind;
+        let berth =
+          Number.isInteger(item.berth) && dockPose(building, kind, item.berth as number) !== null
+            ? (item.berth as number)
+            : undefined;
+        if (berth !== undefined && (taken.get(key(building.id, kind))?.has(berth) ?? false)) {
+          berth = undefined;
+        }
+        if (berth === undefined) berth = free(building, kind);
+        if (berth === undefined) {
+          delete item.berth;
+          continue;
+        }
+        item.berth = berth;
+        claim(building.id, kind, berth);
+      }
+    }
+  }
+
+  /**
+   * Give a hull a position at its home if it does not already own one.
+   *
+   * Normally every airframe acquires its berth before it exists — from the
+   * production queue, or from the scenario placement — so this is the fallback
+   * for the two cases that cannot: a battle saved before berths were stored, and
+   * an authored airfield carrying more airframes than it has positions. Such a
+   * hull waits on the holding point and takes the first berth that frees, which
+   * is the safe overflow the old count-based model produced by accident.
+   */
+  private ensureBerth(e: Entity): void {
+    const ac = e.aircraft;
+    if (!ac) return;
+    const home = this.getEntity(ac.homeId);
+    if (!home || home.kind !== 'building' || home.hp <= 0) return;
+    const kind = this.aircraftSlotKind(e.defId) as DockKind;
+    if (ac.berth !== undefined) {
+      // A saved index the apron no longer has (an older build, or a shortened
+      // flight line) is rebuilt rather than trusted.
+      if (dockPose(home, kind, ac.berth)) return;
+      ac.berth = undefined;
+    }
+    const index = this.vacantBerth(home.id, kind, e.id);
+    if (index === null) {
+      ac.waitingForDock = true;
+      return;
+    }
+    ac.berth = index;
+    this.markPadFlag(ac, home, kind);
+    ac.waitingForDock = false;
+  }
+
+  /**
+   * Whether this facility can take this aircraft in right now: operational, of
+   * the right kind, and with one position still free. Used by landing and by
+   * production, so the flight line and the queue can never disagree.
+   */
+  canServiceAircraft(
+    building: Entity,
+    aircraftDefId: string,
+    forAircraft?: Entity,
+  ): boolean {
+    if (building.kind !== 'building' || building.hp <= 0) return false;
+    if (building.construction || building.deconstruct) return false;
+    const kind = this.aircraftSlotKind(aircraftDefId) as DockKind;
+    // A hull that already owns a position here is always cleared to land on it:
+    // a berth is not "taken" by anyone else, and a flight line that is full of
+    // its own airframes must not refuse the aircraft whose reservation fills it.
+    const owned = forAircraft?.aircraft;
+    if (owned && owned.homeId === building.id && owned.berth !== undefined) {
+      return dockPose(building, kind, owned.berth) !== null;
+    }
+    return this.vacantBerth(building.id, kind, forAircraft?.id) !== null;
+  }
+
+  /**
+   * The position an inbound hull is cleared to land on, or null if it has none.
+   *
+   * Read from the rules that actually land the aircraft: a hull on its way home,
+   * a home that can still take it in, and the position `parkAircraft` will hand
+   * it on touchdown. The renderer paints the answer while the hull is on
+   * approach, so the bay that lights up and the bay that gets occupied cannot
+   * drift apart — it is the same index, worked out the same way, a few seconds
+   * early. A hull diverted because every position is taken gets null and lands
+   * on the holding point with no bay marked.
+   */
+  landingClearance(e: Entity): {
+    buildingId: number;
+    kind: DockKind;
+    index: number;
+    x: number;
+    z: number;
+    facing: number;
+  } | null {
+    const ac = e.aircraft;
+    if (e.kind !== 'unit' || e.hp <= 0 || !ac || ac.landed) return null;
+    // Production queues and patrol orders are not approaches; only a hull that
+    // is coming home is being given a bay.
+    if (!ac.returningHome && e.order?.type !== 'return') return null;
+    const home = this.getEntity(ac.homeId);
+    if (!home || home.kind !== 'building' || home.hp <= 0) return null;
+    if (!this.canServiceAircraft(home, e.defId, e)) return null;
+    const kind = this.aircraftSlotKind(e.defId) as DockKind;
+    // The stand is the one this hull owns, not the next empty one: two hulls on
+    // final can no longer be told to take the same bay, because neither is
+    // choosing from the vacancy list at all.
+    if (ac.berth === undefined) return null;
+    const pose = dockPose(home, kind, ac.berth);
+    if (!pose) return null;
+    return { buildingId: home.id, kind, index: ac.berth, x: pose.x, z: pose.z, facing: pose.facing };
+  }
+
+  /**
+   * Occupancy of one facility's aircraft positions, for the building card.
+   *
+   * Derived from the aircraft themselves rather than stored on the structure,
+   * so a save, a reload and both peers of a match read the same flight line.
+   */
+  dockStatus(
+    buildingId: number,
+  ): {
+    fixedWing: AircraftOccupancy;
+    helo: AircraftOccupancy;
+  } | null {
+    const building = this.getEntity(buildingId);
+    if (!building || building.kind !== 'building') return null;
+    const docks = this.docksFor(building.defId);
+    if (!docks) return null;
+    const probe = (kind: 'fixedWing' | 'helo'): AircraftOccupancy => {
+      let parked = 0;
+      let inbound = 0;
+      let airborne = 0;
+      for (const e of this.state.entities) {
+        if (e.kind !== 'unit' || e.hp <= 0) continue;
+        const ac = e.aircraft;
+        if (!ac || ac.berth === undefined || ac.homeId !== buildingId) continue;
+        if (this.aircraftSlotKind(e.defId) !== kind) continue;
+        if (ac.landed) parked++;
+        else if (ac.returningHome || e.order?.type === 'return') inbound++;
+        else airborne++;
+      }
+      let queued = 0;
+      for (const item of building.queue) {
+        if (item.berth === undefined) continue;
+        if (this.aircraftSlotKind(item.defId) !== kind) continue;
+        queued++;
+      }
+      return {
+        used: this.berthHolders(buildingId, kind).size,
+        capacity: this.berthCapacity(building.defId, kind),
+        parked,
+        inbound,
+        airborne,
+        queued,
+      };
+    };
+    return {
+      fixedWing: probe('fixedWing'),
+      helo: { ...probe('helo'), temporary: !!docks.heloTemporary },
+    };
   }
 
   /**
@@ -3767,7 +4478,19 @@ export class Game {
     // Only the empty-to-active transition is a production start. Appending to
     // an existing queue must not replay the announcement for every item.
     const startingProduction = bt.queue.length === 0;
-    bt.queue.push({ defId, remaining: def.buildTime, total: def.buildTime });
+    // An airframe's position is reserved when the order is accepted, not when it
+    // launches: the queue is what stops a commander from ordering five hulls
+    // into four positions while the first four are still in the air.
+    const berth =
+      def.domain === 'air'
+        ? this.vacantBerth(bt.id, this.aircraftSlotKind(defId) as DockKind)
+        : null;
+    bt.queue.push({
+      defId,
+      remaining: def.buildTime,
+      total: def.buildTime,
+      ...(berth === null ? {} : { berth }),
+    });
     this.emit('orderAck', {
       team: owner,
       x: bt.x,
@@ -4052,6 +4775,14 @@ export class Game {
       this.state.map.ore,
     );
     if (!check.ok) return check;
+    // Aprons are working ground, not spare land. A foundation laid across a
+    // refinery's delivery mouths seals them: the haulers hold positions they can
+    // never drive up to, the bay the next load wants stays promised to a truck
+    // that is going nowhere, and the refinery quietly stops paying out. The same
+    // is true of a flight line or a helicopter pad. Refusing the overlap is the
+    // only version of this that cannot be worked around by accident.
+    const apron = this.apronConflict(tileX, tileZ, def);
+    if (apron) return apron;
     // Units block foundations.
     for (const e of this.state.entities) {
       if (e.kind !== 'unit' || e.hp <= 0) continue;
@@ -4090,6 +4821,69 @@ export class Game {
       };
     }
     return { ok: true, code: 'ok', reason: 'Placement valid.' };
+  }
+
+  /**
+   * Whether a candidate foundation would stand on another structure's apron.
+   *
+   * The apron is the painted working ground a facility is serviced from: a
+   * refinery's delivery mouths and their staging spot, an airfield's flight line
+   * and holding point, a heliport's touch-down circles. Those points are authored
+   * outside the collision footprint, which is exactly why the ordinary occupancy
+   * test lets a structure be laid on top of them.
+   */
+  private apronConflict(
+    tileX: number,
+    tileZ: number,
+    def: { footprint: { w: number; h: number } },
+  ): { ok: false; code: string; reason: string } | null {
+    const margin = TILE_SIZE * 0.5;
+    const x0 = tileX * TILE_SIZE - margin;
+    const x1 = (tileX + def.footprint.w) * TILE_SIZE + margin;
+    const z0 = tileZ * TILE_SIZE - margin;
+    const z1 = (tileZ + def.footprint.h) * TILE_SIZE + margin;
+    const covers = (p: { x: number; z: number } | null): boolean =>
+      !!p && p.x >= x0 && p.x <= x1 && p.z >= z0 && p.z <= z1;
+    for (const b of this.state.entities) {
+      if (b.kind !== 'building' || b.hp <= 0) continue;
+      const bays = authoredBays(b.defId);
+      for (let i = 0; i < bays; i++) {
+        if (covers(deliveryStand(b, i)) || covers(deliveryBay(b, i))) {
+          return {
+            ok: false,
+            code: 'apron',
+            reason: `Clear the unloading apron of the ${buildingDef(b.defId).name.toLowerCase()} first.`,
+          };
+        }
+      }
+      if (bays > 0 && covers(deliveryWait(b))) {
+        return {
+          ok: false,
+          code: 'apron',
+          reason: `Clear the unloading apron of the ${buildingDef(b.defId).name.toLowerCase()} first.`,
+        };
+      }
+      for (const kind of ['fixedWing', 'helo'] as DockKind[]) {
+        const slots = authoredSlots(b.defId, kind);
+        for (let i = 0; i < slots; i++) {
+          if (covers(dockPose(b, kind, i))) {
+            return {
+              ok: false,
+              code: 'apron',
+              reason: `Clear the apron of the ${buildingDef(b.defId).name.toLowerCase()} first.`,
+            };
+          }
+        }
+        if (slots > 0 && covers(dockHoldPose(b))) {
+          return {
+            ok: false,
+            code: 'apron',
+            reason: `Clear the apron of the ${buildingDef(b.defId).name.toLowerCase()} first.`,
+          };
+        }
+      }
+    }
+    return null;
   }
 
   /**
@@ -4230,14 +5024,97 @@ export class Game {
     this.walkEngineerToSite(engineer, site);
   }
 
+  /** How close to a structure's centre a crew has to be to work it. */
+  private engineerReach(site: Entity): number {
+    const def = buildingDef(site.defId);
+    return (Math.max(def.footprint.w, def.footprint.h) * TILE_SIZE) / 2 + ENGINEER_STAND_OFF;
+  }
+
   /** Send an assigned engineer to a spot just outside the site's footprint. */
+  /**
+   * A walkable tile against the site's wall, nearest the engineer.
+   *
+   * A radial stand-off point is only a suggestion to the pathfinder: when the
+   * tile it lands on is blocked — a foundation, a wreck, a cliff, the next
+   * structure along — the route simply stops at the nearest reachable tile, and
+   * on a crowded base that can be outside the work tolerance. The crew then
+   * walks up, stops a stride short and the site never moves. Asking for a tile
+   * in the ring around the footprint keeps the destination a real standing spot
+   * against the wall, which is inside the reach by construction.
+   */
+  private workTile(engineer: Entity, site: Entity): { x: number; z: number } | null {
+    const def = buildingDef(site.defId);
+    const tx0 = Math.round(site.x / TILE_SIZE - def.footprint.w / 2);
+    const tz0 = Math.round(site.z / TILE_SIZE - def.footprint.h / 2);
+    const map = this.state.map;
+    const candidates: Array<{ x: number; z: number; wall: number; crew: number }> = [];
+    for (let tz = tz0 - 1; tz <= tz0 + def.footprint.h; tz++) {
+      for (let tx = tx0 - 1; tx <= tx0 + def.footprint.w; tx++) {
+        // Only the ring: the footprint itself is the structure, not a stance.
+        const insideX = tx >= tx0 && tx < tx0 + def.footprint.w;
+        const insideZ = tz >= tz0 && tz < tz0 + def.footprint.h;
+        if (insideX && insideZ) continue;
+        if (!inBounds(map.width, map.height, tx, tz)) continue;
+        const idx = tileIndex(map.width, tx, tz);
+        if (this.blocked[idx]) continue;
+        // A stance has to be ground the crew can actually stand on. On a shore
+        // the ring around a footprint runs into the water, and picking one of
+        // those tiles sent the platoon to a point it could not occupy: the
+        // route resolved to the far bank, the crew stood off the work, and the
+        // foundation sat at zero percent until it was reclaimed.
+        if (
+          !canStandOn(
+            map.width,
+            map.height,
+            map.terrain,
+            idx,
+            unitDef(engineer.defId).moveClass,
+          )
+        ) {
+          continue;
+        }
+        const cx = (tx + 0.5) * TILE_SIZE;
+        const cz = (tz + 0.5) * TILE_SIZE;
+        candidates.push({
+          x: cx,
+          z: cz,
+          wall: dist(cx, cz, site.x, site.z),
+          crew: dist2(engineer.x, engineer.z, cx, cz),
+        });
+      }
+    }
+    if (candidates.length === 0) return null;
+    // Stand against the wall, not on a corner: a diagonal ring tile is half a
+    // footprint further out again, which puts it outside the work tolerance.
+    // Among the tiles that hug the wall, take the one nearest the crew.
+    let wall = Infinity;
+    for (const c of candidates) wall = Math.min(wall, c.wall);
+    let best: { x: number; z: number } | null = null;
+    let bestDist = Infinity;
+    for (const c of candidates) {
+      if (c.wall > wall + TILE_SIZE * 0.75) continue;
+      if (c.crew < bestDist) {
+        bestDist = c.crew;
+        best = { x: c.x, z: c.z };
+      }
+    }
+    return best;
+  }
+
   /** Where an engineer should stand to work a structure, clear of its footprint. */
   private engineerApproachPoint(engineer: Entity, site: Entity): { x: number; z: number } {
+    const tile = this.workTile(engineer, site);
+    if (tile) return tile;
     const def = buildingDef(site.defId);
     const dx = engineer.x - site.x;
     const dz = engineer.z - site.z;
     const len = Math.hypot(dx, dz);
-    const reach = (Math.max(def.footprint.w, def.footprint.h) * TILE_SIZE) / 2 + 2.5;
+    // Inside the work reach, so the walk ends with the crew at the wall rather
+    // than a stride short of it. The stand-off has to be a fraction of the work
+    // tolerance, not a larger number of tiles: an approach point *outside* the
+    // reach stopped the crew a metre from the wall and the site never moved.
+    const reach =
+      (Math.max(def.footprint.w, def.footprint.h) * TILE_SIZE) / 2 + ENGINEER_STAND_OFF * 0.6;
     return {
       x: site.x + (len > 0.01 ? (dx / len) * reach : reach),
       z: site.z + (len > 0.01 ? (dz / len) * reach : 0),
@@ -4284,7 +5161,7 @@ export class Game {
     for (const site of sites) {
       const builder = engineers.find((e) => e.buildTargetId === site.id);
       if (builder) {
-        if (dist(builder.x, builder.z, site.x, site.z) <= ENGINEER_WORK_RANGE) {
+        if (dist(builder.x, builder.z, site.x, site.z) <= this.engineerReach(site)) {
           if (builder.state !== 'building') {
             builder.state = 'building';
             builder.path = [];
@@ -4771,11 +5648,16 @@ export class Game {
         const def = buildingDef(e.defId);
         // Construction only advances while the assigned engineer is on site.
         // Calling the engineer away pauses the site at its current progress.
+        // The crew's approach point can sit exactly on the work boundary, and
+        // then float rounding decides whether the site progresses that tick.
+        // A site observed frozen at 86% with its engineer parked a hair outside
+        // the radius is that tie, not a sealed approach, so the construction
+        // check keeps a small margin the assignment test does not need.
         const builder = engineers.find(
           (eng) =>
             eng.owner === e.owner &&
             eng.buildTargetId === e.id &&
-            dist(eng.x, eng.z, e.x, e.z) <= ENGINEER_WORK_RANGE,
+            dist(eng.x, eng.z, e.x, e.z) <= this.engineerReach(e) * 1.05,
         );
         if (builder) {
           const rate = 1 / Math.max(1, def.buildTime);
@@ -4811,9 +5693,9 @@ export class Game {
       }
       if (e.queue.length > 0) {
         const item = e.queue[0];
-        item.remaining -= dt * speedFor(e.owner);
+        item.remaining -= dt * speedFor(e.owner) * this.moduleProductionSpeed(e);
         if (item.remaining <= 0) {
-          const spawned = this.spawnFromFacility(e, item.defId);
+          const spawned = this.spawnFromFacility(e, item.defId, item.berth);
           if (spawned) {
             e.queue.shift();
             this.emit('notice', {
@@ -4888,8 +5770,8 @@ export class Game {
    * is validated like any other move (terrain class, blocked tiles, path), so a
    * rally set on water or inside a building simply leaves the unit on the apron.
    */
-  private spawnFromFacility(building: Entity, defId: string): Entity | null {
-    const unit = this.spawnAtFacility(building, defId);
+  private spawnFromFacility(building: Entity, defId: string, berth?: number): Entity | null {
+    const unit = this.spawnAtFacility(building, defId, berth);
     if (unit) this.sendToRally(unit, building);
     return unit;
   }
@@ -4909,19 +5791,56 @@ export class Game {
     this.commandMove(unit.owner, [unit.id], building.rallyX, building.rallyZ, false);
   }
 
-  private spawnAtFacility(building: Entity, defId: string): Entity | null {
+  private spawnAtFacility(building: Entity, defId: string, berth?: number): Entity | null {
     const def = unitDef(defId);
     const bdef = BUILDINGS[building.defId];
     if (def.domain === 'air') {
-      if (building.defId !== 'airfield') return null;
-      const plane = this.spawnUnit(building.owner, defId, building.x, building.z);
-      plane.aircraft!.landed = false;
-      plane.aircraft!.homeId = building.id;
+      // Family, not raw id: a national airfield variant launches its family's
+      // airframes. Without this the queue reached 100% and never spawned, which
+      // is the stall a British Expeditionary Airfield produced.
+      const family = buildingFamily(building.defId);
+      if (family !== 'airfield' && family !== 'heliport') return null;
+      // A recovery-only pad recovers and services one helicopter; it never
+      // launches a new one, so the heliport stays the way to build a rotary force.
+      if (def.rotary && this.docksFor(building.defId)?.heloTemporary) return null;
+      // The queue item's berth is the flight line's promise. Re-checking for a
+      // vacancy here would fail against the promise itself; an item without one
+      // (a save written by an older build) may only launch if a position is
+      // genuinely free, and otherwise waits on the holding point.
+      const slot =
+        berth ?? this.vacantBerth(building.id, this.aircraftSlotKind(defId) as DockKind);
+      const kind = this.aircraftSlotKind(defId) as DockKind;
+      // A new airframe is rolled out of the hangar onto its own stand, not
+      // dropped into the air over the field: the first thing the player sees is
+      // an aircraft parked where the order said it would be, and the sortie
+      // begins when they (or the commander) give it one.
+      const pose =
+        (slot === null ? null : dockPose(building, kind, slot)) ?? dockHoldPose(building);
+      const plane = this.spawnUnit(building.owner, defId, pose?.x ?? building.x, pose?.z ?? building.z, {
+        berth: slot ?? undefined,
+      });
+      const ac = plane.aircraft!;
+      ac.landed = true;
+      ac.climb = 0;
+      ac.serviceTimer = 0;
+      ac.homeId = building.id;
+      ac.temporaryBerth = undefined;
       plane.homeId = building.id;
+      plane.state = 'grounded';
+      if (pose) {
+        plane.x = pose.x;
+        plane.z = pose.z;
+        plane.facing = pose.facing;
+        plane.turretFacing = pose.facing;
+        plane.destX = pose.x;
+        plane.destZ = pose.z;
+      }
+      this.parkAircraft(plane);
       return plane;
     }
     if (def.domain === 'naval') {
-      if (building.defId !== 'shipyard') return null;
+      // Same rule for a national yard: the Swedish coastal yard is a shipyard.
+      if (buildingFamily(building.defId) !== 'shipyard') return null;
       const structure: ScenarioStructure = {
         defId: building.defId,
         owner: building.owner,
@@ -5048,7 +5967,8 @@ export class Game {
         // less far than a vehicle on the shore in the same weather.
         const seaReach = UNITS[e.defId]?.domain === 'naval' ? this.weather.navalVision : 1;
         const vision =
-          entityVision(e) *
+          (entityVision(e) + this.moduleVision(e)) *
+          this.abilityVisionFactor(e) *
           visionFactor(sensorFor(e), dayNight) *
           this.weather.visibility *
           seaReach *
@@ -5158,10 +6078,13 @@ export class Game {
     for (const e of this.state.entities) {
       if (e.hp <= 0 || e.kind !== 'building' || e.construction) continue;
       if (this.teamOf(e.owner) !== team) continue;
+      const baseScan = BUILDINGS[e.defId]?.scanRadius ?? 0;
+      // Only a structure that is already a sensor gains from a sensor module;
+      // a harbour sonar suite does not quietly turn a dockyard into a radar.
+      if (baseScan <= 0) continue;
       const scan =
-        (BUILDINGS[e.defId]?.scanRadius ?? 0) *
+        (baseScan + this.moduleVision(e)) *
         ewScanFactor(this.player(e.owner)?.superweapon, this.state.tick);
-      if (scan <= 0) continue;
       let brownout = gridBrownout.get(e.owner);
       if (brownout === undefined) {
         brownout = this.powerStatus(e.owner).brownout;
@@ -5170,15 +6093,30 @@ export class Game {
       if (brownout) continue;
       radars.push({ x: e.x, z: e.z, radius: scan, owner: e.owner });
     }
-    // Sonar is a unit sensor, not a powered structure: an escort's set works
-    // even when the grid is browned out. It is the only sensor that can find a
-    // dived boat through fog without the boat revealing itself.
+    // Sonar is the only sensor that can find a dived boat through fog without
+    // the boat revealing itself. An escort's set is a unit sensor and works even
+    // when the grid is browned out; a harbour suite is a structure installation
+    // and needs the dockyard's power, the same way a radar does.
     const sonars: Array<{ x: number; z: number; radius: number; owner: number }> = [];
     for (const e of this.state.entities) {
       if (e.hp <= 0 || e.kind !== 'unit' || e.garrisonId) continue;
       if (e.owner < 0 || this.teamOf(e.owner) !== team) continue;
       const sonar = UNITS[e.defId]?.sonar ?? 0;
       if (sonar > 0) sonars.push({ x: e.x, z: e.z, radius: sonar, owner: e.owner });
+    }
+    for (const e of this.state.entities) {
+      if (e.hp <= 0 || e.kind !== 'building' || e.construction) continue;
+      if (this.teamOf(e.owner) !== team) continue;
+      if (!e.modules || e.modules.length === 0) continue;
+      const radius = installedModuleEffects(e.modules, this.research).sonar;
+      if (radius <= 0) continue;
+      let brownout = gridBrownout.get(e.owner);
+      if (brownout === undefined) {
+        brownout = this.powerStatus(e.owner).brownout;
+        gridBrownout.set(e.owner, brownout);
+      }
+      if (brownout) continue;
+      sonars.push({ x: e.x, z: e.z, radius, owner: e.owner });
     }
     let radarContacts = 0;
     let radarSource: { x: number; z: number; owner: number } | null = null;
@@ -5619,6 +6557,17 @@ export class Game {
         }
         if (Object.keys(e.cooldowns).length === 0) delete e.cooldowns;
       }
+      // Active abilities run down on the same fixed clock as the reloads. A hull
+      // that dies mid-effect simply takes its record with it, so nothing has to
+      // clean up after a destroyed unit.
+      if (e.effects) {
+        for (const id of Object.keys(e.effects)) {
+          const next = e.effects[id] - dt;
+          if (next <= 0) delete e.effects[id];
+          else e.effects[id] = next;
+        }
+        if (Object.keys(e.effects).length === 0) delete e.effects;
+      }
       e.suppression = Math.max(0, e.suppression - dt * 0.12);
       // The counter means "ticks spent under a movement order without getting
       // anywhere". Anything that is not trying to travel resets it, so a quiet
@@ -5776,12 +6725,398 @@ export class Game {
     }
   }
 
+  /**
+   * Move an airframe to another friendly facility that can take it in.
+   *
+   * Used both by a hull in the air whose home is gone or cannot take it, and by
+   * a parked hull whose airfield was destroyed beneath it — the latter lifts off
+   * and flies to its new home rather than teleporting across the map. The new
+   * facility's berth is assigned here, so the diversion and the landing cannot
+   * disagree about which position the hull owns. Returns the facility adopted,
+   * or null when nothing can take this kind of aircraft in.
+   */
+  private reassignAircraftHome(e: Entity): Entity | null {
+    const ac = e.aircraft;
+    if (!ac) return null;
+    const kind = this.aircraftSlotKind(e.defId) as DockKind;
+    const alternate = this.nearestOwnedBuilding(
+      e.owner,
+      (b) => b.id !== ac.homeId && this.canServiceAircraft(b, e.defId, e),
+      e.x,
+      e.z,
+    );
+    if (!alternate) return null;
+    const berth = this.vacantBerth(alternate.id, kind, e.id);
+    if (berth === null) return null;
+    ac.homeId = alternate.id;
+    e.homeId = alternate.id;
+    ac.berth = berth;
+    this.markPadFlag(ac, alternate, kind);
+    ac.waitingForDock = false;
+    if (!ac.landed) this.orderAircraftReturn(e);
+    return alternate;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Ground movement: taxi, take-off run, roll-out                       */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Where an airframe has to arrive before it can be brought down.
+   *
+   * A fixed-wing hull lands on the strip, so it flies to the threshold and its
+   * roll-out starts there. A helicopter comes straight down onto the pad it was
+   * given, or onto the holding point when it has no stand of its own.
+   */
+  private approachPose(
+    base: Entity,
+    e: Entity,
+    kind: DockKind,
+  ): { x: number; z: number; facing: number } | null {
+    if (kind === 'fixedWing') return runwayLanding(base)?.from ?? null;
+    const berth = e.aircraft?.berth;
+    const pad = berth === undefined ? null : dockPose(base, kind, berth);
+    return pad ?? dockHoldPose(base);
+  }
+
+  /** Begin one ground leg. The sim owns the hull's position until it ends. */
+  private startGroundRoll(
+    e: Entity,
+    kind: 'takeoff' | 'landing',
+    from: { x: number; z: number },
+    to: { x: number; z: number; facing: number },
+    seconds: number,
+    next: 'takeoffRun' | 'lift' | 'taxiIn' | 'land' | 'airborne',
+  ): void {
+    const ac = e.aircraft;
+    if (!ac) return;
+    ac.roll = {
+      kind,
+      t: 0,
+      seconds: Math.max(0.2, seconds),
+      fromX: from.x,
+      fromZ: from.z,
+      toX: to.x,
+      toZ: to.z,
+      facing: to.facing,
+      next,
+    };
+    // Either manoeuvre keeps the hull on its wheels for the whole leg: the
+    // `climb` share, not `landed`, is what says how high it is right now.
+    ac.landed = true;
+    e.path = [];
+    e.pathIndex = 0;
+    e.destX = e.x;
+    e.destZ = e.z;
+  }
+
+  /**
+   * Advance a ground leg one tick.
+   *
+   * Position and height are both eased along the leg: a take-off gathers speed
+   * down the strip before the wheels leave it, a landing roll-off decays as the
+   * brakes bite. Everything is a pure function of elapsed time, so the manoeuvre
+   * is identical on every machine and after a reload.
+   */
+  private stepGroundRoll(e: Entity, def: UnitDef, ac: AircraftState, dt: number): void {
+    const roll = ac.roll;
+    if (!roll) return;
+    roll.t += dt;
+    const u = Math.min(1, roll.t / roll.seconds);
+    const eased = roll.kind === 'takeoff' ? u * u : 1 - (1 - u) * (1 - u);
+    e.x = roll.fromX + (roll.toX - roll.fromX) * eased;
+    e.z = roll.fromZ + (roll.toZ - roll.fromZ) * eased;
+    e.facing = roll.facing;
+    e.turretFacing = roll.facing;
+    e.destX = e.x;
+    e.destZ = e.z;
+    e.path = [];
+    e.pathIndex = 0;
+    e.state = roll.kind === 'takeoff' ? 'moving' : 'returning';
+    if (roll.next === 'airborne') ac.climb = eased;
+    else if (roll.next === 'taxiIn') ac.climb = 1 - 0.9 * eased;
+    else ac.climb = 0;
+    if (u < 1) return;
+    this.finishGroundRoll(e, def, ac);
+  }
+
+  /** Hand the hull on to the next leg, or back to normal flight. */
+  private finishGroundRoll(e: Entity, def: UnitDef, ac: AircraftState): void {
+    const roll = ac.roll;
+    if (!roll) return;
+    ac.roll = undefined;
+    const home = this.getEntity(ac.homeId);
+    const kind = this.aircraftSlotKind(e.defId) as DockKind;
+    if (roll.next === 'takeoffRun') {
+      const run = home && home.hp > 0 ? runwayTakeoff(home) : null;
+      if (!run) {
+        ac.landed = false;
+        ac.climb = 1;
+        return;
+      }
+      this.startGroundRoll(
+        e,
+        'takeoff',
+        { x: e.x, z: e.z },
+        run.to,
+        TAKEOFF_RUN_SECONDS,
+        'airborne',
+      );
+      ac.landed = true;
+      ac.climb = 0;
+      return;
+    }
+    if (roll.next === 'lift') {
+      this.startGroundRoll(
+        e,
+        'takeoff',
+        { x: e.x, z: e.z },
+        { x: e.x, z: e.z, facing: roll.facing },
+        HELO_LIFT_SECONDS,
+        'airborne',
+      );
+      ac.landed = true;
+      return;
+    }
+    if (roll.next === 'taxiIn') {
+      const pad = home && ac.berth !== undefined ? dockPose(home, kind, ac.berth) : null;
+      const to = pad ?? (home ? dockHoldPose(home) : null);
+      if (!to) {
+        this.landAircraft(e, def, ac);
+        return;
+      }
+      this.startGroundRoll(
+        e,
+        'landing',
+        { x: e.x, z: e.z },
+        to,
+        dist(e.x, e.z, to.x, to.z) / TAXI_SPEED,
+        'land',
+      );
+      ac.climb = 0.1;
+      return;
+    }
+    if (roll.next === 'land') {
+      this.landAircraft(e, def, ac);
+      return;
+    }
+    // Airborne: the sortie is the hull's own business now. The ground legs had
+    // to clear the flight path to taxi, so a move order that sent the hull out
+    // is resumed here — without this the aircraft climbed away from the strip
+    // and then hung over the field, order intact and nowhere to fly.
+    ac.landed = false;
+    ac.climb = 1;
+    if (e.order && (e.order.type === 'move' || e.order.type === 'attackMove')) {
+      const ox = e.order.x ?? e.x;
+      const oz = e.order.z ?? e.z;
+      e.path = [{ x: ox, z: oz }];
+      e.pathIndex = 0;
+      e.destX = ox;
+      e.destZ = oz;
+      e.state = 'moving';
+      return;
+    }
+    e.state = e.order ? 'moving' : 'idle';
+  }
+
+  /**
+   * Teeth down on a stand: the end of every recovery.
+   *
+   * A hull with no position of its kind left still lands and still belongs to
+   * the facility, but it cannot rearm or repair until a stand frees up — the
+   * emergency-landing rule, unchanged by the roll that brings it in.
+   */
+  private landAircraft(e: Entity, def: UnitDef, ac: AircraftState): void {
+    const base = this.getEntity(ac.homeId);
+    const kind = this.aircraftSlotKind(e.defId) as DockKind;
+    if (base && base.hp > 0 && ac.berth === undefined) {
+      ac.berth = this.vacantBerth(base.id, kind, e.id) ?? undefined;
+      ac.temporaryBerth = ac.berth === undefined ? undefined : this.isTemporaryPad(base, kind);
+    }
+    const canPark = !!base && base.hp > 0 && ac.berth !== undefined;
+    e.path = [];
+    e.pathIndex = 0;
+    e.order = null;
+    ac.landed = true;
+    ac.climb = 0;
+    ac.roll = undefined;
+    ac.returningHome = false;
+    ac.waitingForDock = !canPark;
+    ac.serviceTimer = canPark ? this.serviceSecondsAt(base!, ac) : 0;
+    e.state = canPark ? 'rearming' : 'grounded';
+    this.parkAircraft(e);
+    this.emit('aircraftReturn', {
+      team: e.owner,
+      x: e.x,
+      z: e.z,
+      text: canPark
+        ? `${def.name} landing — rearming`
+        : `${def.name} landing — no free position, awaiting servicing`,
+      entityId: e.id,
+      level: canPark ? 'info' : 'warning',
+      sound: 'land',
+    });
+  }
+
+  /**
+   * Bring an inbound hull down.
+   *
+   * Fixed-wing airframes run the strip: touch down at the threshold, roll out,
+   * then turn onto their own stand. Rotary hulls settle vertically onto the pad
+   * they were given. Either way the hull is on the ground before the manoeuvre
+   * ends, which is what makes the approach readable from above.
+   */
+  private beginLanding(
+    e: Entity,
+    def: UnitDef,
+    ac: AircraftState,
+    base: Entity,
+    kind: DockKind,
+  ): void {
+    if (kind === 'fixedWing') {
+      const run = runwayLanding(base);
+      if (run) {
+        this.startGroundRoll(e, 'landing', run.from, run.to, LANDING_ROLL_SECONDS, 'taxiIn');
+        ac.climb = 1;
+        return;
+      }
+    }
+    if (ac.berth === undefined) {
+      ac.berth = this.vacantBerth(base.id, kind, e.id) ?? undefined;
+      ac.temporaryBerth = ac.berth === undefined ? undefined : this.isTemporaryPad(base, kind);
+    }
+    const pad = ac.berth === undefined ? null : dockPose(base, kind, ac.berth);
+    const to = pad ?? dockHoldPose(base);
+    if (!to) {
+      this.landAircraft(e, def, ac);
+      return;
+    }
+    this.startGroundRoll(e, 'landing', { x: e.x, z: e.z }, to, HELO_LIFT_SECONDS, 'land');
+  }
+
+  /**
+   * Send a parked airframe out.
+   *
+   * A fixed-wing hull taxis to the threshold and then runs the strip; a
+   * helicopter lifts off its pad where it stands. A hull already rolling back in
+   * simply climbs away from where it is — a touch-and-go, which is also what a
+   * commander's order during a recovery amounts to.
+   */
+  private launchAircraft(e: Entity): void {
+    const ac = e.aircraft;
+    if (!ac) return;
+    const roll = ac.roll;
+    if (roll) {
+      if (roll.kind === 'takeoff') return;
+      // Touch and go: the crew is on the strip, not on its stand. The order
+      // that called them away still owns a destination, so the flight path is
+      // rebuilt from it rather than left to the ground legs that cleared it.
+      ac.roll = undefined;
+      ac.landed = false;
+      ac.climb = Math.max(ac.climb ?? 0, 0.2);
+      ac.returningHome = false;
+      if (e.order && (e.order.type === 'move' || e.order.type === 'attackMove')) {
+        const ox = e.order.x ?? e.x;
+        const oz = e.order.z ?? e.z;
+        e.path = [{ x: ox, z: oz }];
+        e.pathIndex = 0;
+        e.destX = ox;
+        e.destZ = oz;
+      }
+      e.state = 'moving';
+      return;
+    }
+    ac.returningHome = false;
+    if (!ac.landed) return;
+    const home = this.getEntity(ac.homeId);
+    if (!home || home.hp <= 0) {
+      ac.landed = false;
+      ac.climb = 1;
+      return;
+    }
+    if (UNITS[e.defId]?.rotary) {
+      // Rotors first: the crew holds the pad while the disc comes up to speed
+      // and only then lifts, which is what makes the spool-up a countdown the
+      // player can read rather than an animation that plays over the departure.
+      this.startGroundRoll(
+        e,
+        'takeoff',
+        { x: e.x, z: e.z },
+        { x: e.x, z: e.z, facing: e.facing },
+        HELO_SPOOL_SECONDS,
+        'lift',
+      );
+      return;
+    }
+    const run = runwayTakeoff(home);
+    if (!run) {
+      ac.landed = false;
+      ac.climb = 1;
+      return;
+    }
+    // Taxi out to the threshold first, then the run itself. The taxi is paced by
+    // distance so a hull parked at the far end of the apron takes longer.
+    this.startGroundRoll(
+      e,
+      'takeoff',
+      { x: e.x, z: e.z },
+      run.from,
+      dist(e.x, e.z, run.from.x, run.from.z) / TAXI_SPEED,
+      'takeoffRun',
+    );
+  }
+
   private updateAircraft(e: Entity, def: UnitDef, dt: number): void {
     const ac = e.aircraft;
     if (!ac) return;
     const home = this.getEntity(ac.homeId);
+    // A hull on the ground is moving under its own wheels or rotors, not
+    // following a flight path: the roll owns its position until the leg ends.
+    if (ac.roll) {
+      this.stepGroundRoll(e, def, ac, dt);
+      return;
+    }
     if (ac.landed) {
+      // A field destroyed under a parked hull must not leave the airframe homed
+      // to rubble: the crew scrambles and flies to whatever can take them in.
+      if (!home || home.hp <= 0) {
+        if (this.reassignAircraftHome(e)) {
+          ac.landed = false;
+          // Scrambling off a lost field is not a taxi: the crew is going now.
+          ac.climb = 1;
+          e.state = 'returning';
+          this.emit('alert', {
+            team: e.owner,
+            x: e.x,
+            z: e.z,
+            text: `${def.name} scrambling — home airfield lost`,
+            entityId: e.id,
+            level: 'warning',
+            sound: 'alert',
+          });
+        }
+        return;
+      }
+      this.parkAircraft(e);
       e.fuel = Math.max(0, e.fuel);
+      // Down with nowhere to park: the crew is safe but cannot rearm or repair
+      // until a position of their kind frees up at this facility.
+      if (ac.waitingForDock) {
+        if (home && home.hp > 0) this.ensureBerth(e);
+        if (!ac.waitingForDock && ac.berth !== undefined) {
+          ac.serviceTimer = this.serviceSecondsAt(home, ac);
+          e.state = 'rearming';
+          this.emit('notice', {
+            team: e.owner,
+            x: e.x,
+            z: e.z,
+            text: `${def.name} moving onto a free position`,
+            entityId: e.id,
+            level: 'info',
+          });
+        }
+        return;
+      }
       if (e.state === 'rearming') {
         ac.serviceTimer -= dt;
         e.hp = Math.min(e.maxHp, e.hp + (e.maxHp / ac.serviceTotal) * dt);
@@ -5789,21 +7124,90 @@ export class Game {
           e.ammo = e.maxAmmo;
           e.fuel = e.maxFuel;
           e.hp = e.maxHp;
-          e.state = 'grounded';
           e.order = null;
           ac.returningHome = false;
-          this.emit('aircraftReady', {
-            team: e.owner,
-            x: e.x,
-            z: e.z,
-            text: `${def.name} rearmed and ready`,
-            entityId: e.id,
-            level: 'success',
-            sound: 'ready',
-          });
+          // An airfield's helicopter pad is a recovery position, not a berth:
+          // once the servicing run is done the crew lifts off and frees it for
+          // the next damaged helicopter. A heliport bases the hull instead.
+          const temporaryPad = !!ac.temporaryBerth;
+          if (temporaryPad) {
+            // Release the pad: it is a recovery position, never a berth. If a
+            // heliport has room the crew re-bases there, so a helicopter that
+            // diverted to a strip does not keep coming back to it.
+            ac.berth = undefined;
+            ac.temporaryBerth = undefined;
+            ac.landed = false;
+            ac.climb = 1;
+            e.state = 'idle';
+            const port = this.nearestOwnedBuilding(
+              e.owner,
+              (b) =>
+                b.id !== ac.homeId &&
+                buildingFamily(b.defId) === 'heliport' &&
+                this.canServiceAircraft(b, e.defId),
+              e.x,
+              e.z,
+            );
+            const berth = port ? this.vacantBerth(port.id, 'helo', e.id) : null;
+            if (port && berth !== null) {
+              ac.homeId = port.id;
+              e.homeId = port.id;
+              ac.berth = berth;
+            }
+            this.emit('aircraftReady', {
+              team: e.owner,
+              x: e.x,
+              z: e.z,
+              text: port && berth !== null
+                ? `${def.name} serviced — clearing the pad, based at the heliport`
+                : `${def.name} serviced — clearing the temporary pad`,
+              entityId: e.id,
+              level: 'info',
+              sound: 'ready',
+            });
+          } else {
+            e.state = 'grounded';
+            this.emit('aircraftReady', {
+              team: e.owner,
+              x: e.x,
+              z: e.z,
+              text: `${def.name} rearmed and ready`,
+              entityId: e.id,
+              level: 'success',
+              sound: 'ready',
+            });
+          }
         }
       }
       return;
+    }
+    // A home that is gone must not strand the airframe over the battlefield,
+    // and a hull already coming home must not arrive at a full flight line: both
+    // divert to any friendly facility that can take this kind in. A sortie that
+    // is still fighting is left alone — a momentarily full base is not a reason
+    // to break off an attack. The diverted hull adopts that facility as its
+    // home, so the flight line it occupies is the one it actually landed at.
+    const homeAlive = !!home && home.hp > 0;
+    const wantsRecovery = ac.returningHome || e.order?.type === 'return';
+    // A berth is owned, so a full flight line cannot refuse the hull whose
+    // reservation fills it. Only a hull with no position of its own has to look
+    // elsewhere — the over-capacity overflow case.
+    const ownsBerth = homeAlive && ac.berth !== undefined;
+    const homeFull =
+      homeAlive && wantsRecovery && !ownsBerth && !this.canServiceAircraft(home!, e.defId, e);
+    if (!homeAlive || homeFull) {
+      const alternate = this.reassignAircraftHome(e);
+      if (alternate) {
+        this.emit('alert', {
+          team: e.owner,
+          x: e.x,
+          z: e.z,
+          text: `${def.name} diverting to ${BUILDINGS[alternate.defId]?.name ?? 'a forward facility'}`,
+          entityId: e.id,
+          level: 'info',
+          sound: 'alert',
+        });
+      }
     }
     // Airborne fuel burn and auto-recovery.
     e.fuel = Math.max(0, e.fuel - dt);
@@ -5830,25 +7234,17 @@ export class Game {
       });
     }
     if (e.order?.type === 'return') {
-      if (home && home.hp > 0 && dist(e.x, e.z, home.x, home.z) < 7 * TILE_SIZE) {
-        e.x = home.x;
-        e.z = home.z;
-        e.path = [];
-        e.pathIndex = 0;
-        e.state = 'rearming';
-        ac.landed = true;
-        ac.serviceTimer = ac.serviceTotal;
-        e.order = null;
-        this.emit('aircraftReturn', {
-          team: e.owner,
-          x: e.x,
-          z: e.z,
-          text: `${def.name} landing — rearming`,
-          entityId: e.id,
-          level: 'info',
-          sound: 'land',
-        });
-        return;
+      const base = this.getEntity(e.homeId);
+      if (base && base.hp > 0) {
+        // The hull is cleared to land when it reaches the point it would touch
+        // down on, not when it drifts near the structure: a fixed-wing approach
+        // ends at the threshold, a rotary one over its own pad.
+        const kind = this.aircraftSlotKind(e.defId) as DockKind;
+        const approach = this.approachPose(base, e, kind);
+        if (approach && dist(e.x, e.z, approach.x, approach.z) < 9) {
+          this.beginLanding(e, def, ac, base, kind);
+          return;
+        }
       }
     }
     if (e.fuel <= 0 && (!home || home.hp <= 0)) {
@@ -5864,12 +7260,28 @@ export class Game {
     const home = this.getEntity(e.homeId);
     if (!home || home.hp <= 0) return;
     if (!e.aircraft) return;
+    // On the ground — parked, or caught at the start of its take-off taxi — the
+    // sortie ends where the hull is: aborting the roll and servicing it there is
+    // what a recall on the apron means. Flying a full approach to come back to
+    // the stand it never left spent a whole ground cycle for nothing.
+    if (e.aircraft.landed) {
+      this.landAircraft(e, unitDef(e.defId), e.aircraft);
+      return;
+    }
+    const kind = this.aircraftSlotKind(e.defId) as DockKind;
+    // Fly to the point where the landing actually starts. Sending the hull at
+    // the structure's centre used to leave it circling a building it had to
+    // pass over before it was allowed down, and on a full flight line that was
+    // the difference between a landing and a hull loitering over the hangar.
+    const approach = this.approachPose(home, e, kind);
+    const x = approach?.x ?? home.x;
+    const z = approach?.z ?? home.z;
     e.aircraft.returningHome = true;
-    e.order = { type: 'return', x: home.x, z: home.z };
-    e.path = [{ x: home.x, z: home.z }];
+    e.order = { type: 'return', x, z };
+    e.path = [{ x, z }];
     e.pathIndex = 0;
-    e.destX = home.x;
-    e.destZ = home.z;
+    e.destX = x;
+    e.destZ = z;
     e.state = 'returning';
   }
 
@@ -5958,27 +7370,97 @@ export class Game {
       }
       case 'toRefinery': {
         e.state = 'delivering';
-        if (h.refineId) {
-          const refinery = this.getEntity(h.refineId);
-          if (!refinery || refinery.hp <= 0) {
-            h.refineId = 0;
-            h.phase = 'seek';
-            break;
-          }
-          if (dist(e.x, e.z, refinery.x, refinery.z) < 8 * TILE_SIZE) {
+        if (!h.refineId) {
+          h.phase = 'seek';
+          break;
+        }
+        const refinery = this.getEntity(h.refineId);
+        if (!refinery || refinery.hp <= 0 || refinery.construction) {
+          h.refineId = 0;
+          h.bay = undefined;
+          h.phase = 'seek';
+          break;
+        }
+        // A load with no promised bay waits clear of the mouths. It does not
+        // drive at one and hope: two trucks at the same mouth overlap, and the
+        // whole reason to buy a second refinery is that one mouth is a limit.
+        if (h.bay === undefined) {
+          if (this.vacantBay(e, refinery.id) !== null) this.headForBay(e, refinery);
+          break;
+        }
+        const bay = this.bayStand(refinery, h.bay);
+        if (!bay) {
+          h.bay = undefined;
+          this.headForBay(e, refinery);
+          break;
+        }
+        // A haul is unloaded once the truck has actually stopped at the mouth.
+        // The test is deliberately generous: a route ends on a tile centre, and
+        // the mover treats a waypoint inside its own arrival radius as reached,
+        // so a hull can come to rest a stride short of the painted bay. Demanding
+        // the exact point left trucks parked one pixel outside the tolerance
+        // holding a full hopper for the rest of the battle.
+        if (e.path.length === 0 && dist(e.x, e.z, bay.x, bay.z) < 5.5) {
+          h.phase = 'unloading';
+          h.timer = 0;
+          e.path = [];
+          e.pathIndex = 0;
+          e.destX = bay.x;
+          e.destZ = bay.z;
+          e.state = 'delivering';
+          break;
+        }
+        // A route that ran out anywhere else is a blocked approach, not an
+        // arrival: the lane can be cut by another truck or by the building
+        // itself. Re-plan on a slow clock rather than stand there.
+        h.timer += dt;
+        if (e.path.length === 0 && (this.state.tick + e.id) % 30 === 0) {
+          this.headForBay(e, refinery);
+        }
+        // A mouth the truck cannot actually reach — its approach sealed by a
+        // structure, a cliff or a wreck — must not stay claimed: the other loads
+        // would queue behind it for the rest of the battle and the player would
+        // see a refinery that has stopped paying out.
+        if (h.timer > BAY_PATIENCE) {
+          // Parked against the depot with the mouth sealed (a factory raised
+          // across the apron does exactly this): tip the load in where the hull
+          // stands. Losing one bay's throughput is a base-layout mistake; a
+          // refinery that swallows ore and never pays out is a bug.
+          if (dist(e.x, e.z, refinery.x, refinery.z) <= this.deliveryReach(refinery)) {
             h.phase = 'unloading';
             h.timer = 0;
-            e.path = [];
+            e.state = 'delivering';
+            break;
+          }
+          // Back off to the staging spot rather than re-claiming the mouth this
+          // truck cannot close on: holding it starves every other load, and the
+          // re-approach from open ground is what finds a stance that works.
+          h.bay = undefined;
+          h.timer = 0;
+          const waitSpot = deliveryWait(refinery);
+          const waitPath = waitSpot ? this.findPathFor(e, waitSpot.x, waitSpot.z) : null;
+          if (waitPath) {
+            e.path = waitPath;
+            e.pathIndex = 0;
+            e.destX = waitSpot!.x;
+            e.destZ = waitSpot!.z;
             e.state = 'delivering';
           }
-        } else {
-          h.phase = 'seek';
         }
         break;
       }
       case 'unloading': {
+        const refinery = h.refineId ? this.getEntity(h.refineId) : null;
+        if (!refinery || refinery.hp <= 0) {
+          // The drop-off went up under the load: keep the ore, find another.
+          h.refineId = 0;
+          h.bay = undefined;
+          h.phase = 'seek';
+          e.state = 'idle';
+          break;
+        }
         h.timer += dt;
-        if (h.timer >= 1.2) {
+        if (h.timer >= UNLOAD_SECONDS) {
           player.mats += h.ore;
           player.stats.matsGathered += h.ore;
           this.emit('income', {
@@ -5990,6 +7472,7 @@ export class Game {
             sound: 'deposit',
           });
           h.ore = 0;
+          h.bay = undefined;
           h.phase = 'seek';
           h.timer = 0;
           e.state = 'idle';
@@ -6030,19 +7513,116 @@ export class Game {
     }
     if (!best) {
       h.phase = 'seek';
+      h.bay = undefined;
       return;
     }
     h.refineId = best.id;
-    const path = this.findPathFor(e, best.x, best.z);
-    if (!path) {
+    this.headForBay(e, best);
+  }
+
+  /**
+   * How close a hauler has to be to count as standing at this depot's door.
+   *
+   * The bays sit on the apron in front of the mouth, so this is the building's
+   * half-diagonal plus a truck's width: close enough that a load coming off
+   * there is being unloaded at the structure, not across the compound.
+   */
+  private deliveryReach(building: Entity): number {
+    const def = buildingDef(building.defId);
+    const halfX = (def.footprint.w * TILE_SIZE) / 2;
+    const halfZ = (def.footprint.h * TILE_SIZE) / 2;
+    return Math.hypot(halfX, halfZ) + TILE_SIZE * 1.5;
+  }
+
+  /** Whether another hauler already holds this bay, or is driving at it. */
+  private bayClaimed(e: Entity, buildingId: number, bay: number): boolean {
+    for (const other of this.state.entities) {
+      if (other.id === e.id || other.kind !== 'unit' || other.hp <= 0) continue;
+      const h = other.harvester;
+      if (!h || h.refineId !== buildingId || h.bay !== bay) continue;
+      if (h.phase === 'toRefinery' || h.phase === 'unloading') return true;
+    }
+    return false;
+  }
+
+  /**
+   * The stance a hauler can actually drive to at one bay.
+   *
+   * The painted mouth is the pose a truck should hold, but a refinery's apron is
+   * often paved, shares a tile with a neighbour, or has a factory raised across
+   * it — and a blocked tile can never end a route. Planning at the mouth then
+   * finished two tiles short: the truck "arrived" at the last open tile, measured
+   * itself well outside the bay, re-planned half a second later and held that
+   * mouth for the rest of the battle. So when the mouth's own tile is closed, step
+   * out along the bay's outward bearing until there is open ground and aim at that
+   * tile's centre instead — still nose-in at the opening, but somewhere a route
+   * can actually finish.
+   */
+  private bayStand(refinery: Entity, bay: number): DockPose | null {
+    const stand = deliveryStand(refinery, bay) ?? deliveryBay(refinery, bay);
+    if (!stand) return null;
+    const tile = this.tileAt(stand.x, stand.z);
+    if (tile !== null && !this.blocked[tile]) return stand;
+    const dx = stand.x - refinery.x;
+    const dz = stand.z - refinery.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const step = TILE_SIZE * 0.5;
+    for (let i = 1; i <= 8; i++) {
+      const x = stand.x + (dx / len) * step * i;
+      const z = stand.z + (dz / len) * step * i;
+      const t = this.tileAt(x, z);
+      if (t === null || this.blocked[t]) continue;
+      return {
+        x: (Math.floor(x / TILE_SIZE) + 0.5) * TILE_SIZE,
+        z: (Math.floor(z / TILE_SIZE) + 0.5) * TILE_SIZE,
+        facing: stand.facing,
+      };
+    }
+    return null;
+  }
+
+  /** The first bay at this drop-off that no other load has spoken for. */
+  private vacantBay(e: Entity, buildingId: number): number | null {
+    const building = this.getEntity(buildingId);
+    if (!building) return null;
+    const count = authoredBays(building.defId);
+    for (let bay = 0; bay < count; bay++) {
+      if (!this.bayClaimed(e, buildingId, bay)) return bay;
+    }
+    return null;
+  }
+
+  /**
+   * Drive a loaded hauler at a bay, or at the staging spot beside the refinery
+   * while every mouth is busy. The bay is claimed here, at dispatch, so a
+   * second load arriving later sees what is already spoken for.
+   */
+  private headForBay(e: Entity, refinery: Entity): void {
+    const h = e.harvester!;
+    const bay = this.vacantBay(e, refinery.id);
+    const target = (bay === null ? null : this.bayStand(refinery, bay)) ?? deliveryWait(refinery);
+    if (!target) {
       h.phase = 'seek';
+      h.bay = undefined;
       return;
     }
+    const path = this.findPathFor(e, target.x, target.z);
+    if (!path) {
+      h.phase = 'seek';
+      h.bay = undefined;
+      return;
+    }
+    // Only a fresh claim restarts the clock. A re-plan of the bay this load is
+    // already waiting on used to zero it every half-second, so a mouth the truck
+    // could not close on was retried forever and the hauler never gave the bay
+    // up: the refinery stopped paying out for the rest of the battle.
+    if (h.bay !== bay) h.timer = 0;
+    h.bay = bay ?? undefined;
     h.phase = 'toRefinery';
     e.path = path;
     e.pathIndex = 0;
-    e.destX = best.x;
-    e.destZ = best.z;
+    e.destX = target.x;
+    e.destZ = target.z;
     e.state = 'delivering';
   }
 
@@ -6200,7 +7780,11 @@ export class Game {
         e.state = 'idle';
         return;
       }
-      if (dist(e.x, e.z, target.x, target.z) <= ENGINEER_WORK_RANGE) {
+      // Same margin as construction: the crew's stand point is a tile centre, so
+      // the last stride is quantised and a hull parked exactly on the wall can
+      // measure a fraction over the tolerance. Without the allowance the order
+      // is accepted, the crew walks up and the structure never moves.
+      if (dist(e.x, e.z, target.x, target.z) <= this.engineerReach(target) * 1.05) {
         e.path = [];
         e.state = 'repairing';
         // Shelling stops work. The crew keeps the detail but makes no progress
@@ -6278,7 +7862,7 @@ export class Game {
           e.order = null;
           e.state = 'idle';
           const p = this.player(e.owner);
-          if (p) p.stats.kills += 0;
+          if (p) p.stats.sitesCaptured = (p.stats.sitesCaptured ?? 0) + 1;
           this.emit('capture', {
             team: e.owner,
             x: target.x,
@@ -6500,7 +8084,7 @@ export class Game {
     // A veteran crew works its gun faster; the reload it sets is the only
     // thing veterancy changes about the weapon itself.
     const crew = rankOf(e);
-    e.cooldown = weapon.cooldown * crew.cooldown;
+    e.cooldown = weapon.cooldown * crew.cooldown * this.abilityReloadFactor(e);
     // A submarine launch is a datum: the boat is briefly exposed, which gives
     // the target a chance to answer with sonar, guns or depth charges.
     if (shooterDef?.submarine) this.revealSubmarine(e, shooterDef.submarine.revealSeconds);
@@ -7267,6 +8851,7 @@ export class Game {
       terrainFactor *
       suppressionFactor *
       diveFactor *
+      this.abilitySpeedFactor(e) *
       weatherSpeedFactor(def.domain, this.weather);
     // Ground and naval movers travel where the hull points. A vehicle waiting
     // for its turn therefore pivots instead of sliding sideways, and a track
@@ -8126,6 +9711,12 @@ export class Game {
         if (cover > 0) damage = Math.max(0.1, Math.round(damage * (1 - 0.3 * cover) * 10) / 10);
       }
     }
+    // Active protection answers a class of weapon, never all of them: the crew
+    // that spent it is still vulnerable to everything it was not built to stop.
+    if (damage > 0 && target.effects) {
+      const factor = this.incomingDamageMultiplier(target, weaponId);
+      if (factor !== 1) damage = Math.round(damage * factor * 10) / 10;
+    }
     // What actually landed, so a killing blow cannot pay out more experience
     // than the target had left to give.
     const applied = Math.max(0, Math.min(damage, target.hp));
@@ -8177,9 +9768,15 @@ export class Game {
     }
     const attacker = this.player(attackerOwner);
     const victim = this.player(target.owner);
-    if (attacker) attacker.stats.kills++;
+    if (attacker) {
+      attacker.stats.kills++;
+      if (target.kind === 'building') {
+        attacker.stats.structuresDestroyed = (attacker.stats.structuresDestroyed ?? 0) + 1;
+      }
+    }
     if (victim) {
       if (target.kind === 'unit') victim.stats.unitsLost++;
+      else victim.stats.structuresLost = (victim.stats.structuresLost ?? 0) + 1;
     }
     const name = entityName(target);
     if (target.kind === 'unit') {
@@ -8746,6 +10343,10 @@ export class Game {
     game.visible = [[], []].map(() => new Set<number>());
     game.state.charted = Array.isArray(state.charted) ? state.charted : [];
     game.rebuildChartedIndex();
+    // Aircraft reservations are rebuilt before the first tick: a save from a
+    // build that counted parked hulls has no berth on its aircraft or its queue
+    // items, and one authored over capacity has more hulls than positions.
+    game.reconcileAircraftBerths();
     game.state.ready = true;
     game.refreshVision(false);
     game.lastMatsSample = game.state.players.map((p) => p.stats.matsGathered);
@@ -8847,6 +10448,21 @@ export class Game {
       } else {
         delete e.cooldowns;
       }
+      // Active effects are validated the same way and never exceed the ability's
+      // own duration, so a hand-edited save cannot make a posture permanent.
+      if (e.kind === 'unit' && e.effects && typeof e.effects === 'object') {
+        const effects: Record<string, number> = {};
+        for (const [id, value] of Object.entries(e.effects)) {
+          const def = abilityForUpgrade(id);
+          if (!def || def.kind !== 'timed') continue;
+          if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) continue;
+          effects[id] = Math.min(value, def.durationSeconds);
+        }
+        if (Object.keys(effects).length > 0) e.effects = effects;
+        else delete e.effects;
+      } else {
+        delete e.effects;
+      }
     }
   }
 
@@ -8929,9 +10545,33 @@ export class Game {
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([id, value]) => `${id}@${value.toFixed(2)}`)
             .join('+') || '-',
+          // A running ability changes how a unit moves, sees, reloads or takes
+          // damage, so two worlds with different effects must not hash alike.
+          // Only a hull with a live effect emits the field, so every battle
+          // that never spent one keeps its pre-existing hash.
+          ...(e.effects && Object.keys(e.effects).length > 0
+            ? [
+                Object.entries(e.effects)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([id, value]) => `${id}~${value.toFixed(2)}`)
+                  .join('+'),
+              ]
+            : []),
           e.submarine
             ? `s${e.submarine.dived ? 1 : 0}:${e.submarine.battery.toFixed(1)}:${e.submarine.revealTimer.toFixed(1)}:${e.submarine.revealed ? 1 : 0}`
             : '-',
+          // Aircraft posture is simulation state: a hull parked at a full flight
+          // line and one being serviced are different worlds, and so are two
+          // crews at different points in a servicing run. Only an airframe emits
+          // the field, so every ground and naval baseline hashes exactly as it
+          // did before docking positions existed.
+          ...(e.aircraft
+            ? [
+                `f${e.aircraft.homeId}:${e.aircraft.landed ? 1 : 0}:${
+                  e.aircraft.returningHome ? 1 : 0
+                }:${e.aircraft.waitingForDock ? 1 : 0}:${e.aircraft.serviceTimer.toFixed(2)}`,
+              ]
+            : []),
         ].join(','),
       );
     }

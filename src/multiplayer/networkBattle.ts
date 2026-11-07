@@ -168,6 +168,9 @@ function createEntity(projected: ProjectedEntity, x: number, z: number): Entity 
   // The projection ships reload clocks for own hulls only, which is exactly
   // what the selection box needs to draw a disabled ability button.
   if (projected.cooldowns) entity.cooldowns = { ...projected.cooldowns };
+  // The same rule for a running posture: the client draws the badge from the
+  // authoritative remaining time, never from a local timer.
+  if (projected.effects) entity.effects = { ...projected.effects };
   // The room ships the hauler's work state, so the client draws the same dust,
   // cargo bar and MINING label the simulation is actually producing. A build
   // that predates the field still gets a plausible idle hull rather than none.
@@ -391,6 +394,8 @@ export class NetworkBattle {
         entity.captureProgress = projected.captureProgress ?? 0;
         if (projected.cooldowns) entity.cooldowns = { ...projected.cooldowns };
         else delete entity.cooldowns;
+        if (projected.effects) entity.effects = { ...projected.effects };
+        else delete entity.effects;
         if (entity.aircraft) {
           entity.aircraft.landed =
             projected.remembered === true ||

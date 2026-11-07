@@ -54,6 +54,9 @@ const BED_RECIPES: Record<AmbienceKind, BedRecipe> = {
   // Ships: deep diesel through a hull, wash rather than machinery.
   naval: { osc: 'sawtooth', oscFreq: 30, oscGain: 0.6, filterType: 'lowpass', filterFreq: 150, noiseGain: 0.55, modHz: 3.2, modDepth: 0.18 },
   facility: { osc: 'sine', oscFreq: 96, oscGain: 0.5, filterType: 'bandpass', filterFreq: 880, noiseGain: 0.26, modHz: 0, modDepth: 0 },
+  // A fuel pump beside a hull on turnaround: a low throb under the wet hiss of
+  // fuel moving through the hose, uneven at the pump's own stroke rate.
+  servicing: { osc: 'sine', oscFreq: 58, oscGain: 0.5, filterType: 'bandpass', filterFreq: 460, noiseGain: 0.44, modHz: 1.9, modDepth: 0.7 },
 };
 
 /** Per-kind trim so one recipe never buries the others in the ambient bus. */
@@ -66,6 +69,9 @@ const BED_TRIM: Record<AmbienceKind, number> = {
   rotor: 0.4,
   jet: 0.4,
   naval: 0.5,
+  // Small machinery, close to the ear: audible over a fuselage's idle without
+  // competing with the structures behind it.
+  servicing: 0.44,
   // A base's turbine should sit behind the engines crossing it, not over them.
   facility: 0.32,
 };
@@ -459,7 +465,7 @@ export class AudioEngine {
     const ctx = this.ctx;
     const bus = this.bedBus;
     if (!ctx || !bus) return;
-    if (kind === 'foot' || kind === 'facility') return;
+    if (kind === 'foot' || kind === 'facility' || kind === 'servicing') return;
     const recipe = BED_RECIPES[kind];
     const now = ctx.currentTime;
     const duration = rising ? 0.42 : 0.55;
@@ -1658,6 +1664,17 @@ export class AudioEngine {
       case 'land':
         this.noise(0.4, 0.1, 800);
         this.tone(110, 0.3, 'triangle', 0.03, 70);
+        break;
+      /**
+       * The bowser's beacon sweeping over an apron: two short notes falling in
+       * pitch, sizzled by a click of air. Pitched above the pump so it carries
+       * through the bed without being turned up, and panned to the hull that
+       * owns it — a flight line works by ear, not by a bell over the whole map.
+       */
+      case 'serviceBeacon':
+        this.tone(1180, 0.06, 'sine', 0.05, 1240);
+        this.tone(920, 0.09, 'sine', 0.032, 900, 0.075);
+        this.noise(0.02, 0.012, 5200);
         break;
       case 'start':
         this.tone(180, 0.5, 'sine', 0.05, 240);

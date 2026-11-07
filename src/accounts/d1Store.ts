@@ -18,14 +18,21 @@ import type {
   AccountRecord,
   AccountStore,
   AccountStatus,
+  CareerEntryWrite,
   GuestMigrationRecord,
   IdentityRecord,
+  MatchReportRecord,
   MigrationState,
+  MpResultPlayerRecord,
   NewIdentity,
+  PlayerProfileRecord,
   ProviderId,
   SessionRecord,
   WriteOutcome,
 } from './types';
+import { DEFAULT_AVATAR, isAvatarId, type AvatarId } from './identity';
+import type { MatchRewardSummary } from './matchCareer';
+import type { StatGroupRow } from './stats';
 
 /** The subset of the D1 binding this service uses. */
 export interface D1ResultLike<T> {
@@ -42,6 +49,11 @@ export interface D1StatementLike {
 
 export interface D1DatabaseLike {
   prepare(sql: string): D1StatementLike;
+  /**
+   * Optional atomic batch. D1 runs one in a single implicit transaction, which
+   * is what makes a match, its report and its audit row inseparable.
+   */
+  batch?(statements: D1StatementLike[]): Promise<D1ResultLike<unknown>[]>;
 }
 
 function changed(result: D1ResultLike<unknown>): number {
@@ -103,6 +115,59 @@ interface CareerTotalsRow {
   kills: number | null;
   units_lost: number | null;
   play_seconds: number | null;
+}
+
+interface ProfileRow {
+  account_id: string;
+  callsign: string;
+  callsign_key: string;
+  avatar: string;
+  created_at: number;
+  updated_at: number;
+  callsign_changed_at: number | null;
+}
+
+interface MatchReportRow {
+  match_ref: string;
+  mode: string;
+  map_id: string | null;
+  opponent_account_id: string | null;
+  opponent_callsign: string | null;
+  opponent_nation: string | null;
+  duration_seconds: number;
+  units_destroyed: number;
+  units_lost: number;
+  structures_destroyed: number;
+  structures_lost: number;
+  structures_built: number;
+  sites_captured: number;
+  superweapons_used: number;
+  objectives_completed: number;
+  reward_version: number;
+  reward_status: string;
+  reward_breakdown: string | null;
+  xp_before: number;
+  xp_after: number;
+  recorded_at: number;
+}
+
+interface StatRow {
+  mode: string;
+  nation: string | null;
+  matches: number | null;
+  victories: number | null;
+  defeats: number | null;
+  draws: number | null;
+  play_seconds: number | null;
+  xp: number | null;
+  units_destroyed: number | null;
+  units_lost: number | null;
+  structures_destroyed: number | null;
+  structures_lost: number | null;
+  structures_built: number | null;
+  sites_captured: number | null;
+  superweapons_used: number | null;
+  objectives_completed: number | null;
 }
 
 interface MigrationRow {
@@ -341,17 +406,281 @@ export class D1AccountStore implements AccountStore {
     return changed(result) > 0 ? 'ok' : 'conflict';
   }
 
-  async careerMatches(accountId: string, limit: number): Promise<CareerMatchRecord[]> {
+  async careerMatches(accountId: string, limit: number, offset = 0): Promise<CareerMatchRecord[]> {
     const result = await this.db
       .prepare(
         `SELECT match_ref, mode, outcome, difficulty, nation, duration_seconds,
                 kills, units_lost, xp, provenance, recorded_at
            FROM career_matches WHERE account_id = ?
-          ORDER BY recorded_at DESC, match_ref ASC LIMIT ?`,
+          ORDER BY recorded_at DESC, match_ref ASC LIMIT ? OFFSET ?`,
       )
-      .bind(accountId, Math.max(1, Math.min(200, Math.floor(limit))))
+      .bind(
+        accountId,
+        Math.max(1, Math.min(200, Math.floor(limit))),
+        Math.max(0, Math.floor(offset)),
+      )
       .all<CareerRow>();
     return (result.results ?? []).map(toCareerMatch);
+  }
+
+  async careerMatch(accountId: string, ref: string): Promise<CareerMatchRecord | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT match_ref, mode, outcome, difficulty, nation, duration_seconds,
+                kills, units_lost, xp, provenance, recorded_at
+           FROM career_matches WHERE account_id = ? AND match_ref = ?`,
+      )
+      .bind(accountId, ref)
+      .first<CareerRow>();
+    return row ? toCareerMatch(row) : null;
+  }
+
+  async profile(accountId: string): Promise<PlayerProfileRecord | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT account_id, callsign, callsign_key, avatar, created_at, updated_at,
+                callsign_changed_at
+           FROM account_profiles WHERE account_id = ?`,
+      )
+      .bind(accountId)
+      .first<ProfileRow>();
+    return row ? toProfile(row) : null;
+  }
+
+  async profileByCallsignKey(callsignKey: string): Promise<PlayerProfileRecord | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT account_id, callsign, callsign_key, avatar, created_at, updated_at,
+                callsign_changed_at
+           FROM account_profiles WHERE callsign_key = ?`,
+      )
+      .bind(callsignKey)
+      .first<ProfileRow>();
+    return row ? toProfile(row) : null;
+  }
+
+  async createProfile(record: PlayerProfileRecord): Promise<WriteOutcome> {
+    const result = await this.db
+      .prepare(
+        `INSERT INTO account_profiles
+           (account_id, callsign, callsign_key, avatar, created_at, updated_at, callsign_changed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT DO NOTHING`,
+      )
+      .bind(
+        record.accountId,
+        record.callsign,
+        record.callsignKey,
+        record.avatar,
+        record.createdAt,
+        record.updatedAt,
+        record.callsignChangedAt,
+      )
+      .run();
+    return changed(result) > 0 ? 'ok' : 'conflict';
+  }
+
+  async updateProfile(
+    accountId: string,
+    patch: {
+      callsign: string;
+      callsignKey: string;
+      avatar: AvatarId;
+      updatedAt: number;
+      callsignChangedAt: number | null;
+    },
+  ): Promise<WriteOutcome> {
+    try {
+      const result = await this.db
+        .prepare(
+          `UPDATE account_profiles
+              SET callsign = ?, callsign_key = ?, avatar = ?, updated_at = ?,
+                  callsign_changed_at = COALESCE(?, callsign_changed_at)
+            WHERE account_id = ?`,
+        )
+        .bind(patch.callsign, patch.callsignKey, patch.avatar, patch.updatedAt, patch.callsignChangedAt, accountId)
+        .run();
+      return changed(result) > 0 ? 'ok' : 'conflict';
+    } catch (error) {
+      if (isUniqueViolation(error)) return 'conflict';
+      throw error;
+    }
+  }
+
+  async recordCareerEntry(entry: CareerEntryWrite): Promise<WriteOutcome> {
+    // The report is written before the ledger row so its XP-before subquery
+    // reads the career *without* this match. `DO NOTHING` on every statement
+    // makes a retried report harmless, and the ledger's changes count is what
+    // decides whether this call actually paid.
+    const statements: D1StatementLike[] = [];
+    if (entry.report) statements.push(this.reportStatement(entry.accountId, entry.report));
+    if (entry.audit) statements.push(this.auditStatement(entry.audit));
+    statements.push(this.ledgerStatement(entry.accountId, entry.record));
+
+    if (this.db.batch) {
+      const results = await this.db.batch(statements);
+      const ledger = results[results.length - 1];
+      return changed(ledger) > 0 ? 'ok' : 'conflict';
+    }
+    let ledgerChanges = 0;
+    for (const statement of statements) {
+      const result = await statement.run();
+      ledgerChanges = changed(result);
+    }
+    return ledgerChanges > 0 ? 'ok' : 'conflict';
+  }
+
+  private reportStatement(accountId: string, report: MatchReportRecord): D1StatementLike {
+    return this.db
+      .prepare(
+        `INSERT INTO career_match_details
+           (account_id, match_ref, mode, map_id, opponent_account_id, opponent_callsign,
+            opponent_nation, duration_seconds, units_destroyed, units_lost,
+            structures_destroyed, structures_lost, structures_built, sites_captured,
+            superweapons_used, objectives_completed, reward_version, reward_status,
+            reward_breakdown, xp_before, xp_after, recorded_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                 (SELECT COALESCE(SUM(xp), 0) FROM career_matches WHERE account_id = ?),
+                 (SELECT COALESCE(SUM(xp), 0) FROM career_matches WHERE account_id = ?) + ?,
+                 ?)
+         ON CONFLICT (account_id, match_ref) DO NOTHING`,
+      )
+      .bind(
+        accountId,
+        report.ref,
+        report.mode,
+        report.mapId,
+        report.opponentAccountId,
+        report.opponentCallsign,
+        report.opponentNation,
+        report.durationSeconds,
+        report.unitsDestroyed,
+        report.unitsLost,
+        report.structuresDestroyed,
+        report.structuresLost,
+        report.structuresBuilt,
+        report.sitesCaptured,
+        report.superweaponsUsed,
+        report.objectivesCompleted,
+        report.rewardVersion,
+        report.rewardStatus,
+        report.breakdown ? JSON.stringify(report.breakdown) : null,
+        accountId,
+        accountId,
+        report.xpAfter - report.xpBefore,
+        report.recordedAt,
+      );
+  }
+
+  private auditStatement(audit: MpResultPlayerRecord): D1StatementLike {
+    return this.db
+      .prepare(
+        `INSERT INTO mp_result_players
+           (match_id, account_id, room_id, team, outcome, nation, reward_version,
+            xp_awarded, status, processed_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (match_id, account_id) DO NOTHING`,
+      )
+      .bind(
+        audit.matchId,
+        audit.accountId,
+        audit.roomId,
+        audit.team,
+        audit.outcome,
+        audit.nation,
+        audit.rewardVersion,
+        audit.xpAwarded,
+        audit.status,
+        audit.processedAt,
+      );
+  }
+
+  private ledgerStatement(accountId: string, record: CareerMatchRecord): D1StatementLike {
+    return this.db
+      .prepare(
+        `INSERT INTO career_matches
+           (account_id, match_ref, mode, outcome, difficulty, nation,
+            duration_seconds, kills, units_lost, xp, provenance, recorded_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (account_id, match_ref) DO NOTHING`,
+      )
+      .bind(
+        accountId,
+        record.ref,
+        record.mode,
+        record.outcome,
+        record.difficulty,
+        record.nation,
+        record.durationSeconds,
+        record.kills,
+        record.unitsLost,
+        record.xp,
+        record.provenance,
+        record.recordedAt,
+      );
+  }
+
+  async recordMatchReport(accountId: string, report: MatchReportRecord): Promise<void> {
+    await this.reportStatement(accountId, report).run();
+  }
+
+  async matchReport(accountId: string, ref: string): Promise<MatchReportRecord | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT match_ref, mode, map_id, opponent_account_id, opponent_callsign,
+                opponent_nation, duration_seconds, units_destroyed, units_lost,
+                structures_destroyed, structures_lost, structures_built, sites_captured,
+                superweapons_used, objectives_completed, reward_version, reward_status,
+                reward_breakdown, xp_before, xp_after, recorded_at
+           FROM career_match_details WHERE account_id = ? AND match_ref = ?`,
+      )
+      .bind(accountId, ref)
+      .first<MatchReportRow>();
+    return row ? toMatchReport(row) : null;
+  }
+
+  async careerStatRows(accountId: string): Promise<StatGroupRow[]> {
+    const result = await this.db
+      .prepare(
+        `SELECT m.mode AS mode, m.nation AS nation,
+                COUNT(*) AS matches,
+                COALESCE(SUM(CASE WHEN m.outcome = 'victory' THEN 1 ELSE 0 END), 0) AS victories,
+                COALESCE(SUM(CASE WHEN m.outcome = 'defeat' THEN 1 ELSE 0 END), 0) AS defeats,
+                COALESCE(SUM(CASE WHEN m.outcome = 'draw' THEN 1 ELSE 0 END), 0) AS draws,
+                COALESCE(SUM(m.duration_seconds), 0) AS play_seconds,
+                COALESCE(SUM(m.xp), 0) AS xp,
+                COALESCE(SUM(m.kills), 0) AS units_destroyed,
+                COALESCE(SUM(m.units_lost), 0) AS units_lost,
+                COALESCE(SUM(d.structures_destroyed), 0) AS structures_destroyed,
+                COALESCE(SUM(d.structures_lost), 0) AS structures_lost,
+                COALESCE(SUM(d.structures_built), 0) AS structures_built,
+                COALESCE(SUM(d.sites_captured), 0) AS sites_captured,
+                COALESCE(SUM(d.superweapons_used), 0) AS superweapons_used,
+                COALESCE(SUM(d.objectives_completed), 0) AS objectives_completed
+           FROM career_matches m
+           LEFT JOIN career_match_details d
+                  ON d.account_id = m.account_id AND d.match_ref = m.match_ref
+          WHERE m.account_id = ?
+          GROUP BY m.mode, m.nation`,
+      )
+      .bind(accountId)
+      .all<StatRow>();
+    return (result.results ?? []).map(toStatRow);
+  }
+
+  async recordMpResultPlayer(record: MpResultPlayerRecord): Promise<void> {
+    await this.auditStatement(record).run();
+  }
+
+  async mpResultsSince(accountId: string, since: number): Promise<number> {
+    const row = await this.db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM mp_result_players
+          WHERE account_id = ? AND status = 'awarded' AND processed_at >= ?`,
+      )
+      .bind(accountId, since)
+      .first<{ count: number | null }>();
+    return Number(row?.count ?? 0);
   }
 
   async careerTotals(accountId: string): Promise<CareerTotals> {
@@ -434,6 +763,83 @@ function toCareerMatch(row: CareerRow): CareerMatchRecord {
     xp: row.xp,
     provenance,
     recordedAt: row.recorded_at,
+  };
+}
+
+function toProfile(row: ProfileRow): PlayerProfileRecord {
+  return {
+    accountId: row.account_id,
+    callsign: row.callsign,
+    callsignKey: row.callsign_key,
+    avatar: isAvatarId(row.avatar) ? row.avatar : DEFAULT_AVATAR,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    callsignChangedAt: row.callsign_changed_at,
+  };
+}
+
+function toMatchReport(row: MatchReportRow): MatchReportRecord {
+  const mode: CareerMode = row.mode === 'campaign' || row.mode === 'multiplayer' ? row.mode : 'skirmish';
+  const rewardStatus: MatchReportRecord['rewardStatus'] =
+    row.reward_status === 'capped' || row.reward_status === 'ineligible' || row.reward_status === 'local'
+      ? row.reward_status
+      : 'awarded';
+  return {
+    ref: row.match_ref,
+    mode,
+    mapId: row.map_id,
+    opponentAccountId: row.opponent_account_id,
+    opponentCallsign: row.opponent_callsign,
+    opponentNation: row.opponent_nation,
+    durationSeconds: row.duration_seconds,
+    unitsDestroyed: row.units_destroyed,
+    unitsLost: row.units_lost,
+    structuresDestroyed: row.structures_destroyed,
+    structuresLost: row.structures_lost,
+    structuresBuilt: row.structures_built,
+    sitesCaptured: row.sites_captured,
+    superweaponsUsed: row.superweapons_used,
+    objectivesCompleted: row.objectives_completed,
+    rewardVersion: row.reward_version,
+    rewardStatus,
+    breakdown: parseBreakdown(row.reward_breakdown),
+    xpBefore: row.xp_before,
+    xpAfter: row.xp_after,
+    recordedAt: row.recorded_at,
+  };
+}
+
+function parseBreakdown(raw: string | null): MatchRewardSummary['breakdown'] {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as MatchRewardSummary['breakdown'];
+    return value && typeof value === 'object' ? value : null;
+  } catch {
+    // A corrupt audit blob must not break the service record; the ledger row is
+    // still the authority for what was paid.
+    return null;
+  }
+}
+
+function toStatRow(row: StatRow): StatGroupRow {
+  const mode: CareerMode = row.mode === 'campaign' || row.mode === 'multiplayer' ? row.mode : 'skirmish';
+  return {
+    mode,
+    nation: row.nation,
+    matches: Number(row.matches ?? 0),
+    victories: Number(row.victories ?? 0),
+    defeats: Number(row.defeats ?? 0),
+    draws: Number(row.draws ?? 0),
+    playSeconds: Number(row.play_seconds ?? 0),
+    xp: Number(row.xp ?? 0),
+    unitsDestroyed: Number(row.units_destroyed ?? 0),
+    unitsLost: Number(row.units_lost ?? 0),
+    structuresDestroyed: Number(row.structures_destroyed ?? 0),
+    structuresLost: Number(row.structures_lost ?? 0),
+    structuresBuilt: Number(row.structures_built ?? 0),
+    sitesCaptured: Number(row.sites_captured ?? 0),
+    superweaponsUsed: Number(row.superweapons_used ?? 0),
+    objectivesCompleted: Number(row.objectives_completed ?? 0),
   };
 }
 

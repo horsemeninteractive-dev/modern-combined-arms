@@ -26,6 +26,25 @@ function developedAiGame(difficulty: AIDifficulty = 'veteran') {
   return game;
 }
 
+/**
+ * Keep the dummy opponent's command post standing.
+ *
+ * These two cases inspect a production chain — a flight line that eventually
+ * fields a fighter, a yard that eventually lays down a corvette — not the
+ * outcome of the battle. A veteran commander now finishes an idle island base
+ * in about five minutes, which used to happen after the corvette was built and
+ * now happens before it. Holding the dummy's headquarters keeps the match open
+ * so the assertion measures the AI's building programme rather than the clock.
+ */
+function holdTheLine(game: Game): Game {
+  for (const hq of game.entitiesOf(0, 'building')) {
+    if (hq.defId !== 'commandPost') continue;
+    hq.hp = 1e7;
+    hq.maxHp = 1e7;
+  }
+  return game;
+}
+
 function firstStructure(aiSeed: number): string | null {
   const game = new Game(createIslandAssault(), { enableAI: true, aiSeed });
   for (let i = 0; i < 20 * 90; i++) {
@@ -87,6 +106,16 @@ describe('skirmish AI', () => {
     expect(recruit.recall).toBe(false);
     expect(veteran.recall).toBe(true);
     expect(elite.recall).toBe(true);
+    // The economy half of the same ladder: a recruit leaves its trucks in the
+    // line of fire, never expands past one drop-off and never fortifies, while
+    // every level above it does all three. A novice also fights with the plain
+    // weapon — smoke and hull-down are drills it does not run.
+    expect(recruit.protectEconomy).toBe(false);
+    expect(veteran.protectEconomy).toBe(true);
+    expect(elite.protectEconomy).toBe(true);
+    expect(recruit.abilities).toBe(false);
+    expect(veteran.abilities).toBe(true);
+    expect(elite.abilities).toBe(true);
 
     const low = new Game(createIslandAssault(), {
       enableAI: true,
@@ -266,11 +295,14 @@ describe('skirmish AI', () => {
   });
 
   it('builds an airfield, fields a fighter and sorties it against a ground target', () => {
-    const game = developedAiGame();
+    const game = holdTheLine(developedAiGame());
     game.player(1)!.mats = 10000;
     game.player(1)!.req = 2500;
 
-    for (let i = 0; i < 20 * 420; i++) {
+    // Air Operations is the commander's fifth project here, so the strip has to
+    // clear research, placement and construction before the first hull leaves
+    // it. Ten minutes covers that chain with room for a slow host.
+    for (let i = 0; i < 20 * 600; i++) {
       game.tick();
       if (game.entitiesOf(1, 'building').some((e) => e.defId === 'airfield' && !e.construction)) break;
     }
@@ -279,7 +311,12 @@ describe('skirmish AI', () => {
       .find((e) => e.defId === 'airfield' && !e.construction);
     expect(airfield).toBeDefined();
 
-    for (let i = 0; i < 20 * 180; i++) {
+    // Air Superiority is no longer the next project after the strip: the
+    // commander studies the arms it has not opened yet first — the artillery and,
+    // on a coastal map, the fleet — so the fighter arrives after one more branch
+    // and its research time. The assertion is unchanged, only the horizon that
+    // covers the study queue.
+    for (let i = 0; i < 20 * 300; i++) {
       game.tick();
       if (game.entitiesOf(1, 'unit').some((e) => unitFamily(e.defId) === 'fighter')) break;
     }
@@ -299,7 +336,7 @@ describe('skirmish AI', () => {
   });
 
   it('builds a coastal shipyard and maintains a corvette', () => {
-    const game = developedAiGame();
+    const game = holdTheLine(developedAiGame());
     game.player(1)!.mats = 6000;
     game.player(1)!.req = 1200;
 

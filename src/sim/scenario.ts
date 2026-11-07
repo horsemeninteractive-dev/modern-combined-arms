@@ -19,6 +19,7 @@ import {
 } from './terrain';
 import type { MoveClass } from './types';
 import { BUILDINGS } from '../data/buildings';
+import { PROPS, isPropKind, type PropKind } from '../data/props';
 import { dist2 } from '../core/math';
 import { UNITS, unitFamily } from '../data/units';
 import { TECHS } from '../data/research';
@@ -125,6 +126,31 @@ export interface ScenarioUnit {
   z: number;
 }
 
+/**
+ * One authored prop: an individual piece of set dressing on a tile.
+ *
+ * Absent from a scenario that has none, so every map authored before props
+ * existed keeps its exact file shape. `x`/`z` are tiles; the renderer draws the
+ * prop in the middle of its tile, which is where the Forge's cursor put it.
+ */
+export interface ScenarioProp {
+  kind: PropKind;
+  x: number;
+  z: number;
+  /** Yaw in radians; absent means 0. Authored props snap to 45° steps. */
+  rotation?: number;
+  /** Size multiplier applied to the catalogue's own scale; absent means 1. */
+  scale?: number;
+  /**
+   * Nudge within the prop's own tile, in tile fractions (-0.5..0.5). Absent
+   * means the middle of the tile, which is where every prop authored before
+   * this field stood. The tile itself never changes: a prop stays inside the
+   * cell it was placed in, so the authored tile keeps naming its ground.
+   */
+  offsetX?: number;
+  offsetZ?: number;
+}
+
 export type VictoryType = 'destroyHQ' | 'annihilation';
 
 export interface ScenarioSettings {
@@ -194,6 +220,8 @@ export interface Scenario {
   players: ScenarioPlayer[];
   structures: ScenarioStructure[];
   units: ScenarioUnit[];
+  /** Individually authored set dressing; absent on a map with none. */
+  props?: ScenarioProp[];
   objectives: string[];
   settings: ScenarioSettings;
   /** Four rotated starts on competitive maps; absent elsewhere. */
@@ -452,6 +480,30 @@ export function parseScenario(
       z: asNumber(ur.z, `units[${i}].z`, 0, height - 1),
     };
   });
+  // Authored props are optional in the same way: a map that places scenery by
+  // hand carries the list, every other map carries nothing.
+  const props: ScenarioProp[] = (Array.isArray(r.props) ? r.props : []).map((p, i) => {
+    const pr = p as Record<string, unknown>;
+    const kind = asString(pr.kind, `props[${i}].kind`);
+    if (!isPropKind(kind)) fail(`props[${i}].kind`, 'known prop');
+    return {
+      kind,
+      x: asNumber(pr.x, `props[${i}].x`, 0, width - 1),
+      z: asNumber(pr.z, `props[${i}].z`, 0, height - 1),
+      ...(pr.rotation === undefined
+        ? {}
+        : { rotation: asNumber(pr.rotation, `props[${i}].rotation`, -Math.PI, Math.PI) }),
+      ...(pr.scale === undefined
+        ? {}
+        : { scale: asNumber(pr.scale, `props[${i}].scale`, 0.25, 3) }),
+      ...(pr.offsetX === undefined
+        ? {}
+        : { offsetX: asNumber(pr.offsetX, `props[${i}].offsetX`, -0.5, 0.5) }),
+      ...(pr.offsetZ === undefined
+        ? {}
+        : { offsetZ: asNumber(pr.offsetZ, `props[${i}].offsetZ`, -0.5, 0.5) }),
+    };
+  });
   // Authored keys are the identity mission references resolve against, so they
   // are unique across both placement lists, not merely within one of them.
   const authoredKeys = new Map<string, string>();
@@ -549,6 +601,7 @@ export function parseScenario(
     players,
     structures,
     units,
+    ...(props.length > 0 ? { props } : {}),
     objectives: Array.isArray(r.objectives)
       ? r.objectives.filter((o): o is string => typeof o === 'string')
       : [],
@@ -775,6 +828,56 @@ export function validateScenario(scenario: Scenario): ValidationIssue[] {
   const teams = new Set(scenario.players.map((p) => p.team));
   if (scenario.players.length >= 2 && teams.size < 2) {
     add('error', 'teams-conflict', 'Both players are on the same team; no valid opponent exists.');
+  }
+
+  // Authored set dressing. A prop is decoration, so a misplaced one is a
+  // warning rather than a refusal to load: the author is told where it is wrong,
+  // and the battle still runs.
+  if ((scenario.props ?? []).length > 0) {
+    const paved = new Uint8Array(scenario.width * scenario.height);
+    for (const structure of scenario.structures) {
+      const def = BUILDINGS[structure.defId];
+      if (!def) continue;
+      for (let dz = 0; dz < def.footprint.h; dz++) {
+        for (let dx = 0; dx < def.footprint.w; dx++) {
+          const x = structure.x + dx;
+          const z = structure.z + dz;
+          if (inBounds(scenario.width, scenario.height, x, z)) {
+            paved[tileIndex(scenario.width, x, z)] = 1;
+          }
+        }
+      }
+    }
+    for (const prop of scenario.props ?? []) {
+      const def = PROPS[prop.kind];
+      if (!def) {
+        add('warning', 'prop-unknown', `Unknown prop ${String(prop.kind)} will not be drawn.`);
+        continue;
+      }
+      if (!inBounds(scenario.width, scenario.height, prop.x, prop.z)) {
+        add('error', 'prop-out-of-bounds', `${def.name} is outside the map.`, prop.x, prop.z);
+        continue;
+      }
+      const i = tileIndex(scenario.width, prop.x, prop.z);
+      if (def.ground === 'land' && TERRAIN[scenario.tiles[i].t as TerrainId].water) {
+        add(
+          'warning',
+          'prop-on-water',
+          `${def.name} stands in water; place it on land or use reeds.`,
+          prop.x,
+          prop.z,
+        );
+      }
+      if (paved[i]) {
+        add(
+          'warning',
+          'prop-on-structure',
+          `${def.name} stands on a structure's ground and will be hidden by it.`,
+          prop.x,
+          prop.z,
+        );
+      }
+    }
   }
 
   // Player starts

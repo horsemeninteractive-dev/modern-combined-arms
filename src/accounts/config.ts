@@ -28,6 +28,12 @@ export interface AccountConfig {
   sessionTtlMs: number;
   providers: Partial<Record<ProviderId, ProviderConfig>>;
   ticketSecret: string | null;
+  /**
+   * Shared secret for the room service's result intake. Without it the intake
+   * route refuses every request, so a deployment that has not been wired for
+   * multiplayer career rewards cannot be talked into awarding any.
+   */
+  mpResultToken: string | null;
   now: () => number;
 }
 
@@ -44,6 +50,7 @@ export interface AccountEnv {
   DISCORD_CLIENT_SECRET?: string;
   DISCORD_REDIRECT_URI?: string;
   MCA_IDENTITY_TICKET_SECRET?: string;
+  MCA_MP_RESULT_TOKEN?: string;
 }
 
 export const DEFAULT_SESSION_TTL_DAYS = 30;
@@ -125,6 +132,7 @@ export function resolveConfig(env: AccountEnv, now: () => number = Date.now): Ac
     sessionTtlMs: sessionTtlMs(env.SESSION_TTL_DAYS),
     providers,
     ticketSecret: env.MCA_IDENTITY_TICKET_SECRET?.trim() || null,
+    mpResultToken: env.MCA_MP_RESULT_TOKEN?.trim() || null,
     now,
   };
 }

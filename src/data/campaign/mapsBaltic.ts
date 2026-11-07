@@ -146,7 +146,7 @@ export function createKestrelBeach(): Scenario {
           'directedEnergyPower',
           'beamTargeting',
         ],
-        buildings: ['researchCentre', 'airfield', 'shipyard'],
+        buildings: ['researchCentre', 'airfield', 'heliport', 'shipyard'],
         units: [
           'tank',
           'ifv',
@@ -253,7 +253,7 @@ export function createRustPass(): Scenario {
           'naval1',
           'naval2',
         ],
-        buildings: ['airfield', 'shipyard'],
+        buildings: ['airfield', 'heliport', 'shipyard'],
         units: ['td', 'spg', 'rocketArtillery', 'uav', 'interceptor', 'fighter', 'attackHelo'],
       },
     },
@@ -325,7 +325,7 @@ export function createStraitDenial(): Scenario {
       technologies: ['naval1', 'manoeuvre1'],
       restrictions: {
         technologies: ['naval2', 'manoeuvre2', 'fires1', 'fires2', 'air1', 'air2'],
-        buildings: ['airfield'],
+        buildings: ['airfield', 'heliport'],
         units: ['td', 'spg', 'rocketArtillery', 'uav', 'interceptor', 'fighter', 'attackHelo'],
       },
     },

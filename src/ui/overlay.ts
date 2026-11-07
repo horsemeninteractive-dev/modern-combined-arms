@@ -22,9 +22,11 @@ import {
   healthPulse,
   healthSegments,
   healthTone,
+  serviceProgress,
   serviceStripLayout,
   supplyTone,
 } from './bars';
+import { isServicingAircraft } from '../render/servicing';
 import { experienceOf, rankForXp } from '../sim/veterancy';
 import { drawOrderGhostGlyph } from './cursors';
 import {
@@ -162,6 +164,11 @@ export class Overlay {
       if (!selected && hovered?.id !== e.id && e.kind === 'building' && e.hp >= e.maxHp) continue;
       this.drawHealth(app, e, state, selected);
     }
+
+    // Rearm progress. A health plate only appears on a damaged or hovered hull,
+    // but a turnaround is worth watching on its own: the ring says how much of
+    // the run is left without the player having to select the aircraft.
+    this.drawServiceRings(app, state);
 
     // A site under construction keeps its building's own outline for the whole
     // build: the growing model fills in a frame that is always the real shape.
@@ -619,6 +626,71 @@ export class Overlay {
       0.34 * fade,
       0.9,
     );
+  }
+
+  /**
+   * A small progress ring over every hull currently being turned around.
+   *
+   * Servicing is the one state where a grounded aircraft is deliberately
+   * unresponsive — it cannot be ordered, it is not in the air, and it looks
+   * exactly like a parked one from above. The ring is the only cue that says
+   * "wait, that one is coming back", so it is drawn beside the hull's own
+   * banner: the plate's left flank is the one side nothing else claims — rank
+   * chevrons sit above it, the percentage and the service strip to the right —
+   * and the ring therefore survives a veteran hull, a selected one, and the
+   * case where no plate is drawn at all because the hull is still at full
+   * condition while the crew works.
+   */
+  private drawServiceRings(app: App, state: GameState): void {
+    const game = app.game;
+    if (!game) return;
+    const camera = app.renderer.camera;
+    const ctx = this.ctx;
+    for (const e of state.entities) {
+      if (!isServicingAircraft(e)) continue;
+      if (e.owner !== app.localPlayerId && !game.isVisibleTo(app.localPlayerId, e.id)) continue;
+      const aircraft = e.aircraft;
+      if (!aircraft) continue;
+      const progress = serviceProgress(aircraft.serviceTimer, aircraft.serviceTotal);
+      // Nothing to show before the crew starts, and nothing left to show the
+      // frame the hull is ready: the kit disappears on the same tick.
+      if (progress <= 0 || progress >= 1) continue;
+      const p = camera.worldToScreen(
+        e.x,
+        terrainVisualHeight(state.scenario, e.x, e.z) + unitBannerHeight(e.defId),
+        e.z,
+      );
+      if (!p.visible) continue;
+
+      // The plate's own geometry, so the ring sits against it whether or not the
+      // plate is currently being drawn.
+      const plateX = Math.round(p.x - (app.selected.includes(e.id) ? 30 : 24) / 2) - 3;
+      const cx = plateX - 10;
+      const cy = Math.round(p.y - 9) + 2.5;
+      const r = 6.5;
+      // A dark disc first, so the ring reads over tarmac, grass or snow.
+      ctx.beginPath();
+      ctx.arc(cx, cy, r + 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(4,8,9,0.82)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(167,190,184,0.3)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      // The track keeps a full circle visible, so the last few degrees are not
+      // mistaken for a ring that has finished.
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // Elapsed run, clockwise from twelve o'clock. Amber matches the bowser's
+      // beacon: on this battlefield amber on a flight line means "working".
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+      ctx.strokeStyle = AMBER;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
   }
 
   private drawHealth(app: App, e: Entity, state: GameState, selected: boolean): void {

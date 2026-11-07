@@ -121,6 +121,12 @@ export interface ProjectedEntity {
    * cooldown is combat information the projection does not hand over.
    */
   cooldowns?: Record<string, number>;
+  /**
+   * Own entities only: timed abilities still running. Same rule as a reload
+   * clock — an opponent's posture and its remaining seconds are combat
+   * information, not something the projection hands over.
+   */
+  effects?: Record<string, number>;
 }
 
 export interface ProjectedTeamResult {
@@ -276,6 +282,9 @@ function liveEntity(game: Game, entity: Entity, team: number, own: boolean): Pro
   if (entity.modules && entity.modules.length > 0) projected.modules = [...entity.modules];
   if (entity.cooldowns && Object.keys(entity.cooldowns).length > 0) {
     projected.cooldowns = { ...entity.cooldowns };
+  }
+  if (entity.effects && Object.keys(entity.effects).length > 0) {
+    projected.effects = { ...entity.effects };
   }
   if (entity.deconstruct) projected.deconstruct = { ...entity.deconstruct };
   return projected;

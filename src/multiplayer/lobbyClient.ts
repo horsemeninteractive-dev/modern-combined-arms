@@ -36,6 +36,14 @@ export interface LobbySeatView {
   ready: boolean;
   host: boolean;
   connected: boolean;
+  /**
+   * Presentable identity the room was given at seat claim; null for a guest.
+   * `rank` is the career rank id the signed ticket carried, absent for a ticket
+   * minted before ranks travelled.
+   */
+  identity?: { callsign: string; avatar: string; rank?: string } | null;
+  /** True when the seat presents a verified account. */
+  verified?: boolean;
 }
 
 export interface LobbyMatchView {
@@ -69,6 +77,12 @@ export interface LobbyView {
   color: string | null;
   isHost: boolean;
   match: LobbyMatchView | null;
+  /**
+   * The authoritative result once the room announces it. `matchId` is the
+   * reference the account service uses to answer "what did this match pay?",
+   * so the end screen reads the award instead of submitting one.
+   */
+  matchResult: { outcome: 'victory' | 'defeat' | 'draw'; matchId: string | null } | null;
   /** Most recent rejection or informational line, for the panel footer. */
   notice: string | null;
   noticeKind: 'info' | 'error';
@@ -112,6 +126,7 @@ function emptyView(): LobbyView {
     color: null,
     isHost: false,
     match: null,
+    matchResult: null,
     notice: null,
     noticeKind: 'info',
     error: null,
@@ -120,6 +135,19 @@ function emptyView(): LobbyView {
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Identity as the room reported it. Shape check only; the room verified it. */
+function seatIdentity(value: unknown): { callsign: string; avatar: string; rank?: string } | null {
+  if (!record(value)) return null;
+  const callsign = typeof value.callsign === 'string' ? value.callsign.trim() : '';
+  if (!callsign) return null;
+  const rank = typeof value.rank === 'string' && /^[a-z-]{2,24}$/.test(value.rank) ? value.rank : undefined;
+  return {
+    callsign: callsign.slice(0, 32),
+    avatar: typeof value.avatar === 'string' ? value.avatar.slice(0, 16) : 'insignia',
+    ...(rank ? { rank } : {}),
+  };
 }
 
 /** A room id a human can read out: no ambiguous characters, no separators. */
@@ -521,7 +549,16 @@ export class LobbyClient {
       return;
     }
     if (type === 'result') {
+      const outcome = message.outcome;
+      this.view = {
+        ...this.view,
+        matchResult: {
+          outcome: outcome === 'victory' || outcome === 'defeat' || outcome === 'draw' ? outcome : 'draw',
+          matchId: typeof message.matchId === 'string' && message.matchId.length > 0 ? message.matchId : null,
+        },
+      };
       this.note(`Match finished: ${String(message.outcome ?? 'result')}.`, 'info');
+      this.emit();
       return;
     }
     if (type === 'roomClosed') {
@@ -554,6 +591,8 @@ export class LobbyClient {
       ready: seat.ready === true,
       host: seat.host === true,
       connected: seat.connected === true,
+      identity: seatIdentity(seat.identity),
+      verified: seat.verified === true,
     }));
     const seat = typeof message.seat === 'number' ? message.seat : (this.view.seat ?? 0);
     const mine = seats[seat];

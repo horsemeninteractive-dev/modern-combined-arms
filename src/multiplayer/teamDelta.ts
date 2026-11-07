@@ -85,6 +85,7 @@ export function sameProjectedEntity(a: ProjectedEntity, b: ProjectedEntity): boo
     sameIds(a.upgrades, b.upgrades) &&
     sameIds(a.modules, b.modules) &&
     sameCooldowns(a.cooldowns, b.cooldowns) &&
+    sameCooldowns(a.effects, b.effects) &&
     sameQueue(a.queue, b.queue)
   );
 }

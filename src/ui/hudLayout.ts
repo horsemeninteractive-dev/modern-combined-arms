@@ -217,7 +217,14 @@ export function selectionChips(
  * The simulation owns the authoritative sentence; the HUD only classifies it
  * so the reason is visible without hover and the tone is consistent.
  */
-export type ProductionBlockTone = 'materials' | 'requisition' | 'queue' | 'tech' | 'research' | 'other';
+export type ProductionBlockTone =
+  | 'materials'
+  | 'requisition'
+  | 'queue'
+  | 'tech'
+  | 'research'
+  | 'space'
+  | 'other';
 
 export interface ProductionBlockReason {
   text: string;
@@ -229,8 +236,19 @@ export function productionBlockReason(reason: string): ProductionBlockReason {
   if (text.includes('materials')) return { text: 'NO MATERIALS', tone: 'materials' };
   if (text.includes('requisition')) return { text: 'NO REQUISITION', tone: 'requisition' };
   if (text.includes('queue is full')) return { text: 'QUEUE FULL', tone: 'queue' };
+  // A full flight line locks the card the same way a missing prerequisite does,
+  // but the fix is different: wait for a hull to come back, or build another
+  // facility. The label names the space and the kind of position, because
+  // "NEEDS AIRFIELD" would be a lie while the airfield stands right there.
+  if (text.includes('no free') && text.includes('position')) {
+    return {
+      text: text.includes('helicopter') ? 'NO FREE HELO PAD' : 'NO FREE FLIGHT LINE',
+      tone: 'space',
+    };
+  }
   if (text.includes('research')) return { text: 'RESEARCH REQUIRED', tone: 'research' };
   if (text.includes('airfield')) return { text: 'NEEDS AIRFIELD', tone: 'tech' };
+  if (text.includes('heliport')) return { text: 'NEEDS HELIPORT', tone: 'tech' };
   if (text.includes('shipyard')) return { text: 'NEEDS SHIPYARD', tone: 'tech' };
   if (text.includes('factory')) return { text: 'NEEDS VEHICLE FACTORY', tone: 'tech' };
   if (text.includes('under construction')) return { text: 'UNDER CONSTRUCTION', tone: 'tech' };

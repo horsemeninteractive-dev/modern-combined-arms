@@ -10,7 +10,12 @@
 import { NATIONS, PLAYABLE_NATION_IDS } from '../data/factions';
 import { scenarioById, scenariosForMode, type ScenarioEntry } from '../data/scenarioCatalog';
 import { LOBBY_COLORS, MAX_MATCH_DURATION_MS, MIN_MATCH_DURATION_MS } from '../multiplayer/lobbyConfig';
-import { LobbyClient, type LobbyView } from '../multiplayer/lobbyClient';
+import { LobbyClient, type LobbySeatView, type LobbyView } from '../multiplayer/lobbyClient';
+import { AVATARS } from '../accounts/identity';
+import { RANKS, type RankSpec } from '../accounts/ranks';
+import type { PublicPlayerView } from '../accounts/client';
+import { formatPercent, formatPlaytime } from '../accounts/stats';
+import { rankInsigniaSvg } from './rankInsignia';
 import { NationPicker, type NationPickerEntry } from './nationPicker';
 import { drawBriefMap } from './mapPreview';
 import { PHASE_LABELS, formatHour, phaseForStartHour } from '../sim/dayNight';
@@ -34,6 +39,11 @@ export interface MultiplayerPanelOptions {
    * or null means guest, which is a fully supported way to play.
    */
   identityTicket?: () => Promise<string | null>;
+  /**
+   * Reads an opponent's limited public profile. The lobby shows only what the
+   * account service chooses to publish; absent means the link is not offered.
+   */
+  lookupPlayer?: (callsign: string) => Promise<PublicPlayerView | null>;
 }
 
 /**
@@ -112,6 +122,78 @@ function minutes(ms: number): string {
 function nationName(id: string | null): string {
   if (!id) return '—';
   return NATIONS[id]?.name ?? id;
+}
+
+function rankForId(id: string | undefined): RankSpec | null {
+  if (!id) return null;
+  return RANKS.find((rank) => rank.id === id) ?? null;
+}
+
+function avatarGlyph(id: string): string {
+  return AVATARS.find((avatar) => avatar.id === id)?.glyph ?? AVATARS[0].glyph;
+}
+
+/**
+ * The presentable half of a seat: who is sitting in it and what they have
+ * earned. A guest has no account identity, and says so rather than borrowing
+ * the opponent's.
+ */
+function identityMarkup(seat: LobbySeatView): string {
+  const identity = seat.identity ?? null;
+  if (!identity) {
+    return `<div class="mp-identity mp-identity-guest">
+      <span class="mp-avatar" aria-hidden="true">◌</span>
+      <span class="mp-identity-text">
+        <b class="mp-callsign">Guest commander</b>
+        <small class="mp-rank">GUEST · NO ACCOUNT</small>
+      </span>
+    </div>`;
+  }
+  const rank = rankForId(identity.rank);
+  const rankLine = rank
+    ? `<span class="mp-rank-insignia">${rankInsigniaSvg(rank, { label: `${rank.name} insignia` })}</span>
+       <small class="mp-rank">${escapeHtml(rank.name.toUpperCase())} · ${escapeHtml(rank.grade)}</small>`
+    : '<small class="mp-rank">RANK NOT VERIFIED</small>';
+  return `<div class="mp-identity">
+    <span class="mp-avatar" aria-hidden="true">${escapeHtml(avatarGlyph(identity.avatar))}</span>
+    <span class="mp-identity-text">
+      <b class="mp-callsign">${escapeHtml(identity.callsign)}</b>
+      ${rankLine}
+    </span>
+    ${seat.verified ? '<span class="mp-verified" title="Seat identity verified by the account service">VERIFIED</span>' : ''}
+  </div>`;
+}
+
+function publicProfileMarkup(player: PublicPlayerView): string {
+  const nations = player.nations.length
+    ? `<ul class="mp-profile-nations">${player.nations
+        .map(
+          (line) =>
+            `<li><span>${escapeHtml(line.nation.toUpperCase())}</span><span>${line.matches} played · ${formatPercent(line.winRate)} win rate</span></li>`,
+        )
+        .join('')}</ul>`
+    : '<p class="mp-hint">No nation record published yet.</p>';
+  return `<section class="mp-card mp-profile-card" aria-label="Opponent service record">
+    <span class="mp-card-head">OPPONENT RECORD</span>
+    <div class="mp-profile-head">
+      <span class="mp-avatar" aria-hidden="true">${escapeHtml(avatarGlyph(player.avatar))}</span>
+      <span class="mp-identity-text">
+        <b class="mp-callsign">${escapeHtml(player.callsign)}</b>
+        <small class="mp-rank">${player.rank ? `${escapeHtml(player.rank.name.toUpperCase())} · ${escapeHtml(player.rank.grade)}` : 'UNRANKED'}</small>
+      </span>
+      <span class="mp-rank-insignia">${player.rank ? rankInsigniaSvg(player.rank, { label: `${player.rank.name} insignia` }) : ''}</span>
+    </div>
+    <dl class="mp-stats">
+      <dt>Career XP</dt><dd>${player.xp.toLocaleString()}</dd>
+      <dt>Matches</dt><dd>${player.matches}</dd>
+      <dt>Win rate</dt><dd>${formatPercent(player.winRate)}</dd>
+      <dt>Service</dt><dd>${formatPlaytime(player.playSeconds)}</dd>
+      <dt>Online matches</dt><dd>${player.multiplayer?.matches ?? 0}</dd>
+    </dl>
+    <p class="section-title">NATIONS</p>
+    ${nations}
+    <button type="button" class="btn btn-ghost" data-lobby-action="close-profile">CLOSE RECORD</button>
+  </section>`;
 }
 
 export class MultiplayerPanel {
@@ -319,6 +401,7 @@ export class MultiplayerPanel {
       }
       return `<section class="mp-card mp-seat ${isYou ? 'is-you' : ''}">
         <span class="mp-card-head">${label}${isYou ? ' · YOU' : ''}</span>
+        ${identityMarkup(seat)}
         <p class="mp-seat-name">
           <span class="mp-swatch" style="background:${escapeHtml(seat.color)}"></span>
           ${escapeHtml(nationName(seat.nation))}
@@ -327,6 +410,7 @@ export class MultiplayerPanel {
           <span class="${seat.connected ? 'mp-on' : 'mp-off'}">${seat.connected ? 'CONNECTED' : 'OFFLINE'}</span>
           <span class="${seat.ready ? 'mp-on' : 'mp-off'}">${seat.ready ? 'READY' : 'NOT READY'}</span>
         </p>
+        ${!isYou && seat.verified && seat.identity ? `<button type="button" class="mp-profile-link" data-lobby-action="profile" data-callsign="${escapeHtml(seat.identity.callsign)}">SERVICE RECORD</button>` : ''}
       </section>`;
     };
 
@@ -418,6 +502,7 @@ export class MultiplayerPanel {
           ${seatCard(0)}
           ${seatCard(1)}
         </div>
+        <div id="mp-profile-view" class="mp-profile-view"></div>
         <div class="mp-columns">
           <section class="mp-card">
             <span class="mp-card-head">YOUR NATION</span>
@@ -446,9 +531,38 @@ export class MultiplayerPanel {
     this.bindLobby();
   }
 
+  private async showPublicProfile(callsign: string): Promise<void> {
+    const host = this.host.querySelector<HTMLElement>('#mp-profile-view');
+    if (!host) return;
+    if (!this.options.lookupPlayer) {
+      host.innerHTML = '<p class="mp-hint">Sign in to read an opponent\'s service record.</p>';
+      return;
+    }
+    host.innerHTML = '<p class="mp-hint">Reading service record…</p>';
+    try {
+      const player = await this.options.lookupPlayer(callsign);
+      if (!player) {
+        host.innerHTML = '<p class="mp-notice is-error">That service record is not available.</p>';
+        return;
+      }
+      host.innerHTML = publicProfileMarkup(player);
+      host.querySelector('[data-lobby-action="close-profile"]')?.addEventListener('click', () => {
+        host.innerHTML = '';
+      });
+    } catch {
+      host.innerHTML = '<p class="mp-notice is-error">That service record could not be read.</p>';
+    }
+  }
+
   private bindLobby(): void {
     const client = this.clientInstance;
     if (!client) return;
+    this.host.querySelectorAll<HTMLButtonElement>('[data-lobby-action="profile"]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const callsign = button.dataset.callsign;
+        if (callsign) void this.showPublicProfile(callsign);
+      });
+    });
 
     // The card is in the DOM now, so its box has a size to raster into.
     requestAnimationFrame(() => this.paintMapPreview(this.view.mapId));
@@ -615,6 +729,7 @@ function emptyView(): LobbyView {
     color: null,
     isHost: false,
     match: null,
+    matchResult: null,
     notice: null,
     noticeKind: 'info',
     error: null,

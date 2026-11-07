@@ -406,6 +406,10 @@ export class RoomLobby {
           ready: seat.ready,
           host: index === this.hostSeatId,
           connected: this.seats[index]?.connected ?? false,
+          // Presentable identity only: the account id stays server-side, so a
+          // lobby cannot be used to enumerate accounts.
+          identity: this.seats[index]?.identity ?? null,
+          verified: Boolean(this.seats[index]?.accountId),
         })),
       },
     };

@@ -457,6 +457,8 @@ Potential roles include:
 
 Aircraft should have persistent state, including fuel and ammunition where appropriate. Recovery, rearming and refuelling should be automated enough to avoid tedious micromanagement, while remaining tactically meaningful. Bases, airfields, access, damage and air-defence threats should matter.
 
+**Implementation status (0.5.4).** Aviation is a two-tier operational model rather than a single airfield. An airfield bases four fixed-wing aircraft on four authored parking positions and offers one recovery-only helicopter pad; a heliport bases two helicopters on two of its own. A position is assigned when the airframe is ordered and is held through take-off, patrol, return, parking and servicing, so the cap is on aircraft assigned to a facility, not on hulls currently parked — a fifth order is refused. National variants inherit the family's capacity. The recovery pad lets a damaged helicopter divert to the nearest strip, but it is never a home and cannot produce: expanding a rotary force still requires heliports, which preserves the strategic distinction while avoiding the frustration of a helicopter with nowhere to land. Losing a facility releases its positions and re-bases surviving hulls to the nearest compatible friendly facility.
+
 The exact abstraction level—such as individual weapon stores, sortie planning and maintenance—should be staged. The core loop needs clear limits and consequences without demanding a detailed flight simulator.
 
 ### 9.3 Naval forces
@@ -549,7 +551,7 @@ Shared rules:
 - **Persistence and authoring.** All three structures are placed in the editor (including neutral ownership), saved in the scenario, and captured through ordinary runtime ownership. Scenario saves preserve the authored placement; battle saves preserve runtime ownership, damage, capture progress and the station's operational state.
 - **AI.** The commander values a relay when requisition is low, a depot when harvesters or passive materials are scarce, and a radar station when it has no reconnaissance feed. It sends a free engineer only when the base is not under threat, no construction site is waiting, and the objective is within 48 tiles; a failed or impossible capture does not re-fire every tick.
 
-Not every building is capturable. Airfields, ports, bridges, additional depot types and a general buff framework remain future work.
+Not every building is capturable: the capture set is the structures above. Airfields and ports exist and are operational, but are not captured by this rule, and bridges, additional depot types and a general buff framework remain future work.
 
 ---
 

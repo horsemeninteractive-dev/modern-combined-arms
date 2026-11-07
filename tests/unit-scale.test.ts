@@ -170,10 +170,14 @@ describe('unit visual scale', () => {
     expect(spg.turret!.teamMask.some((v) => v >= 0.5)).toBe(true);
   });
 
-  it('shares the scout hull between Recon and Pathfinder and keeps their cues distinct', () => {
+  it('gives Recon and Pathfinder their own hulls while keeping their cues distinct', () => {
     const recon = unitStyle('recon')!;
     const pathfinder = unitStyle('pathfinder')!;
-    expect(pathfinder.body).toBe(recon.body);
+    // The two scout platforms used to share one hull. A player who cannot tell
+    // the upgrade from the baseline by silhouette alone is flying blind, so the
+    // hulls are authored separately and the weapon cues stay where they were.
+    expect(pathfinder.body).not.toBe(recon.body);
+    expect(pathfinder.body.positions.length).not.toBe(recon.body.positions.length);
     expect(pathfinder.turret).toBeUndefined();
     expect(recon.turret).toBeDefined();
     expect(unitVisualScale('recon')).toBe(1);

@@ -16,6 +16,13 @@ dist-account/
 *.log
 *.pid
 
+# Trailer captures and intermediates: large, regenerable (tools/trailer)
+trailer/raw/
+trailer/segments/
+trailer/audio/
+trailer/preview/
+trailer/out/
+
 # Scratch work: diagnostic scripts, screenshots, packed archives
 tmp/
 ss/

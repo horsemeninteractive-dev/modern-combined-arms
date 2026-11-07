@@ -13,6 +13,7 @@ import {
   healthPulse,
   healthSegments,
   healthTone,
+  serviceProgress,
   serviceStripLayout,
   supplyTone,
 } from '../src/ui/bars';
@@ -41,6 +42,26 @@ function extents(defId: string): { x: number; z: number } {
     z: (def.footprint.h * TILE_SIZE) / 2,
   };
 }
+
+describe('servicing progress ring', () => {
+  it('reads a countdown timer as the share of the run completed', () => {
+    // A fresh run: the timer still holds the whole service time, so no ring.
+    expect(serviceProgress(8, 8)).toBe(0);
+    expect(serviceProgress(4, 8)).toBeCloseTo(0.5, 6);
+    // Finished, and a timer that has run past zero: both read as complete.
+    expect(serviceProgress(0, 8)).toBe(1);
+    expect(serviceProgress(-0.4, 8)).toBe(1);
+  });
+
+  it('draws nothing for a hull that was never serviced', () => {
+    // No service model, an unset total, or nonsense from a corrupt save must not
+    // paint a full ring: an empty result means "no ring", not "ready".
+    expect(serviceProgress(0, 0)).toBe(0);
+    expect(serviceProgress(3, 0)).toBe(0);
+    expect(serviceProgress(Number.NaN, 8)).toBe(0);
+    expect(serviceProgress(4, Number.NaN)).toBe(0);
+  });
+});
 
 describe('battlefield health bar presentation', () => {
   it('keeps the two established breakpoints for the tone ramp', () => {

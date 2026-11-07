@@ -69,6 +69,40 @@ export function stampFootprint(
   }
 }
 
+/**
+ * Strip the material out from under a structure footprint.
+ *
+ * A deposit a building stands on can never be mined: a harvester that targets
+ * it drives to the nearest open ground, never gets within mining reach, and
+ * waits there for the rest of the match. Authored maps are swept once when they
+ * are assembled (`clearOreUnderStructures`), but a structure spawned or finished
+ * during play — a mission's own objective, a depot raised mid-match — has to
+ * sweep its own ground, or its paving carries a deposit nobody can reach.
+ *
+ * Returns the number of tiles that held material.
+ */
+export function clearOreFootprint(
+  map: RuntimeMap,
+  defId: string,
+  tileX: number,
+  tileZ: number,
+): number {
+  const def = buildingDef(defId);
+  let cleared = 0;
+  for (let dz = 0; dz < def.footprint.h; dz++) {
+    for (let dx = 0; dx < def.footprint.w; dx++) {
+      const x = tileX + dx;
+      const z = tileZ + dz;
+      if (!inBounds(map.width, map.height, x, z)) continue;
+      const i = tileIndex(map.width, x, z);
+      if (map.ore[i] <= 0) continue;
+      map.ore[i] = 0;
+      cleared++;
+    }
+  }
+  return cleared;
+}
+
 /** Determine top-left tile for a footprint centred on a point. */
 export function footprintOrigin(defId: string, tileX: number, tileZ: number): { x: number; z: number } {
   const def = buildingDef(defId);

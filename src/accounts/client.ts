@@ -17,6 +17,7 @@ import type {
 } from './career';
 import { EMPTY_CAREER, type CareerViewData } from './career';
 import type { RankSpec } from './ranks';
+import type { CareerStats, NationLine, StatBlock } from './stats';
 import type { ProviderId } from './types';
 import type { GuestMigrationRequest } from './guest';
 
@@ -40,6 +41,70 @@ export interface AccountState {
   authenticated: boolean;
   account: AccountView | null;
   providers: ProviderId[];
+  /** The player's presentable identity, once signed in. */
+  identity: IdentityView | null;
+}
+
+function asIdentity(value: unknown): IdentityView | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const record = value as Record<string, unknown>;
+  if (typeof record.callsign !== 'string' || !record.callsign) return null;
+  return {
+    callsign: record.callsign.slice(0, 32),
+    avatar: typeof record.avatar === 'string' ? record.avatar : 'insignia',
+  };
+}
+
+function asStatBlock(value: unknown): StatBlock | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const row = value as Record<string, unknown>;
+  const optionalRate = typeof row.winRate === 'number' ? row.winRate : null;
+  return {
+    matches: num(row.matches),
+    victories: num(row.victories),
+    defeats: num(row.defeats),
+    draws: num(row.draws),
+    winRate: optionalRate,
+    playSeconds: num(row.playSeconds),
+    xp: num(row.xp),
+    unitsDestroyed: num(row.unitsDestroyed),
+    unitsLost: num(row.unitsLost),
+    structuresDestroyed: num(row.structuresDestroyed),
+    structuresLost: num(row.structuresLost),
+    structuresBuilt: num(row.structuresBuilt),
+    sitesCaptured: num(row.sitesCaptured),
+    superweaponsUsed: num(row.superweaponsUsed),
+    objectivesCompleted: num(row.objectivesCompleted),
+  };
+}
+
+function asCareerStats(value: unknown): CareerStats | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const row = value as Record<string, unknown>;
+  const overall = asStatBlock(row.overall);
+  if (!overall) return null;
+  const modes = (typeof row.modes === 'object' && row.modes !== null ? row.modes : {}) as Record<
+    string,
+    unknown
+  >;
+  const nationsRaw = Array.isArray(row.nations) ? row.nations : [];
+  const nations: NationLine[] = [];
+  for (const entry of nationsRaw) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const nation = (entry as Record<string, unknown>).nation;
+    const block = asStatBlock(entry);
+    if (typeof nation === 'string' && block) nations.push({ nation, ...block });
+  }
+  const fallback = asStatBlock({}) as StatBlock;
+  return {
+    overall,
+    modes: {
+      campaign: asStatBlock(modes.campaign) ?? fallback,
+      skirmish: asStatBlock(modes.skirmish) ?? fallback,
+      multiplayer: asStatBlock(modes.multiplayer) ?? fallback,
+    },
+    nations,
+  };
 }
 
 export type AccountAuthOutcome = 'signed-in' | 'linked' | 'error';
@@ -51,8 +116,84 @@ export interface CareerNextRank {
   xpRequired: number;
 }
 
+export interface IdentityView {
+  callsign: string;
+  avatar: string;
+}
+
 /** The career block: totals, standing and the most recent service record. */
-export type CareerView = CareerViewData;
+export interface CareerView extends CareerViewData {
+  /** Grouped statistics. Absent on a guest ledger, which has no breakdown. */
+  stats?: CareerStats | null;
+  identity?: IdentityView | null;
+}
+
+/** One row of the paged service record. */
+export interface MatchHistoryItem {
+  match: CareerMatchRecord;
+  report: MatchReportView | null;
+}
+
+export interface MatchReportView {
+  mapId: string | null;
+  opponentCallsign: string | null;
+  opponentNation: string | null;
+  structuresDestroyed: number;
+  structuresLost: number;
+  structuresBuilt: number;
+  sitesCaptured: number;
+  superweaponsUsed: number;
+  objectivesCompleted: number;
+  rewardStatus: 'awarded' | 'capped' | 'ineligible' | 'local';
+  xpBefore: number;
+  xpAfter: number;
+  breakdown: {
+    version: number;
+    status: string;
+    base: number;
+    completion: number;
+    duration: number;
+    objectives: number;
+    performance: number;
+    outcomeFactor: number;
+    subtotal: number;
+    xp: number;
+    reason: string | null;
+  } | null;
+}
+
+/** The post-match career outcome: recorded, or still being synchronised. */
+export type MatchResultView =
+  | { status: 'pending'; matchRef: string }
+  | {
+      status: 'recorded';
+      matchRef: string;
+      match: CareerMatchRecord;
+      award: {
+        xp: number;
+        status: string;
+        reason: string | null;
+        breakdown: MatchReportView['breakdown'];
+        xpBefore: number;
+        xpAfter: number;
+        rankBefore: RankSpec | null;
+        rankAfter: RankSpec | null;
+        promoted: boolean;
+      };
+    };
+
+export interface PublicPlayerView {
+  callsign: string;
+  avatar: string;
+  rank: RankSpec | null;
+  xp: number;
+  progress: number;
+  matches: number;
+  winRate: number | null;
+  playSeconds: number;
+  multiplayer: StatBlock | null;
+  nations: NationLine[];
+}
 
 export interface CareerRecordResult {
   recorded: boolean;
@@ -165,6 +306,33 @@ export function asCareerView(value: unknown): CareerView | null {
     matches: Array.isArray(row.matches)
       ? row.matches.map(asMatch).filter((match): match is CareerMatchRecord => match !== null)
       : [],
+    stats: asCareerStats(row.stats),
+    identity: asIdentity(row.identity),
+  };
+}
+
+function asReport(value: unknown): MatchReportView | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const row = value as Record<string, unknown>;
+  const status = row.rewardStatus;
+  return {
+    mapId: typeof row.mapId === 'string' ? row.mapId : null,
+    opponentCallsign: typeof row.opponentCallsign === 'string' ? row.opponentCallsign : null,
+    opponentNation: typeof row.opponentNation === 'string' ? row.opponentNation : null,
+    structuresDestroyed: num(row.structuresDestroyed),
+    structuresLost: num(row.structuresLost),
+    structuresBuilt: num(row.structuresBuilt),
+    sitesCaptured: num(row.sitesCaptured),
+    superweaponsUsed: num(row.superweaponsUsed),
+    objectivesCompleted: num(row.objectivesCompleted),
+    rewardStatus:
+      status === 'capped' || status === 'ineligible' || status === 'local' ? status : 'awarded',
+    xpBefore: num(row.xpBefore),
+    xpAfter: num(row.xpAfter),
+    breakdown:
+      typeof row.breakdown === 'object' && row.breakdown !== null
+        ? (row.breakdown as MatchReportView['breakdown'])
+        : null,
   };
 }
 
@@ -259,6 +427,93 @@ export class HttpAccountApi {
       authenticated: body.authenticated === true,
       account: asAccount(body.account),
       providers: asProviders(body.providers),
+      identity: asIdentity(body.identity),
+    };
+  }
+
+  /** One page of the service record, newest first. */
+  async history(offset = 0, limit = 20): Promise<{ items: MatchHistoryItem[]; hasMore: boolean }> {
+    const body = await this.request(`/career/matches?limit=${limit}&offset=${offset}`);
+    const items: MatchHistoryItem[] = [];
+    for (const entry of Array.isArray(body.items) ? body.items : []) {
+      if (typeof entry !== 'object' || entry === null) continue;
+      const match = asMatch((entry as Record<string, unknown>).match);
+      if (!match) continue;
+      items.push({ match, report: asReport((entry as Record<string, unknown>).report) });
+    }
+    const page = (typeof body.page === 'object' && body.page !== null ? body.page : {}) as Record<
+      string,
+      unknown
+    >;
+    return { items, hasMore: page.hasMore === true };
+  }
+
+  /**
+   * The career outcome of one match. `pending` is a real answer, not an error:
+   * the room reports a result after the scoreboard is already on screen.
+   */
+  async matchResult(ref: string): Promise<MatchResultView> {
+    const body = await this.request(`/career/results/${encodeURIComponent(ref)}`);
+    if (body.status !== 'recorded') return { status: 'pending', matchRef: ref };
+    const match = asMatch(body.match);
+    const award = (typeof body.award === 'object' && body.award !== null ? body.award : {}) as Record<
+      string,
+      unknown
+    >;
+    if (!match) return { status: 'pending', matchRef: ref };
+    return {
+      status: 'recorded',
+      matchRef: ref,
+      match,
+      award: {
+        xp: num(award.xp),
+        status: typeof award.status === 'string' ? award.status : 'awarded',
+        reason: typeof award.reason === 'string' ? award.reason : null,
+        breakdown: asReport({ rewardStatus: award.status, breakdown: award.breakdown })?.breakdown ?? null,
+        xpBefore: num(award.xpBefore),
+        xpAfter: num(award.xpAfter),
+        rankBefore: asRank(award.rankBefore),
+        rankAfter: asRank(award.rankAfter),
+        promoted: award.promoted === true,
+      },
+    };
+  }
+
+  async updateIdentity(patch: { callsign?: string; avatar?: string }): Promise<IdentityView> {
+    const body = await this.request('/identity', {
+      method: 'POST',
+      body: JSON.stringify(patch),
+    });
+    const identity = asIdentity(body.identity);
+    if (!identity) throw new AccountApiError('server-error', 'The identity reply was malformed.', 500);
+    return identity;
+  }
+
+  /** A limited public profile, addressed by callsign. */
+  async publicProfile(callsign: string): Promise<PublicPlayerView> {
+    const body = await this.request(`/players/${encodeURIComponent(callsign)}`);
+    const player = (typeof body.player === 'object' && body.player !== null ? body.player : {}) as Record<
+      string,
+      unknown
+    >;
+    const nations: NationLine[] = [];
+    for (const entry of Array.isArray(player.nations) ? player.nations : []) {
+      if (typeof entry !== 'object' || entry === null) continue;
+      const nation = (entry as Record<string, unknown>).nation;
+      const block = asStatBlock(entry);
+      if (typeof nation === 'string' && block) nations.push({ nation, ...block });
+    }
+    return {
+      callsign: typeof player.callsign === 'string' ? player.callsign : callsign,
+      avatar: typeof player.avatar === 'string' ? player.avatar : 'insignia',
+      rank: asRank(player.rank),
+      xp: num(player.xp),
+      progress: Math.max(0, Math.min(1, num(player.progress))),
+      matches: num(player.matches),
+      winRate: typeof player.winRate === 'number' ? player.winRate : null,
+      playSeconds: num(player.playSeconds),
+      multiplayer: asStatBlock(player.multiplayer),
+      nations,
     };
   }
 

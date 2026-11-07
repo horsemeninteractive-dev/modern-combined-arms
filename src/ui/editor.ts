@@ -15,6 +15,23 @@ import {
 import { createEmptyScenario, createIslandAssault } from '../data/scenarios';
 import { BUILDINGS } from '../data/buildings';
 import { UNITS } from '../data/units';
+import { PROPS, PROP_GROUPS, PROP_IDS, type PropKind } from '../data/props';
+import { propPreview } from './propPreviews';
+import type { ScenarioProp } from '../sim/scenario';
+import {
+  deleteProps,
+  duplicateProps,
+  propAt,
+  propBox,
+  propSettings,
+  propTiles,
+  propsInBox,
+  pruneSelection,
+  type TileBox,
+  centreProp,
+  nudgeProp,
+  rotateProp,
+} from './editorProps';
 import { ALLIANCE_LIST, FACTIONS, NATION_LIST, tryIdentityDef } from '../data/factions';
 import {
   OVERLAYS,
@@ -101,7 +118,13 @@ type EditorTool =
   /** Surface/vegetation overlay on top of the existing base terrain. */
   | 'overlay'
   /** Strip the surface layer without touching the ground under it. */
-  | 'overlayClear';
+  | 'overlayClear'
+  /** Individual authored set dressing: one piece per click. */
+  | 'prop'
+  /** Eyedropper: adopt a placed prop's kind, yaw and scale. */
+  | 'propPick'
+  /** Marquee: select authored props, shift to add or remove. */
+  | 'propSelect';
 
 /**
  * Browser storage, or null when the browser refuses access entirely.
@@ -132,6 +155,18 @@ export class Editor {
   owner = 0;
   structureDef = 'barracks';
   unitDef = 'rifle';
+  /** Which set-dressing piece the placement tool stamps. */
+  propKind: PropKind = 'bush';
+  /** Yaw of the next authored prop, in degrees (the format stores radians). */
+  propRotation = 0;
+  /** Size multiplier of the next authored prop. */
+  propScale = 1;
+  /** Authored props the marquee has caught: object identity, not tile keys. */
+  propSelection: ScenarioProp[] = [];
+  /** Marquee rectangle in progress, in tile coordinates; drawn by the overlay. */
+  propMarquee: TileBox | null = null;
+  /** Whether the marquee being dragged adds to the selection instead of replacing it. */
+  private propMarqueeAdditive = false;
   startPlayerId = 0;
   /** Authoring symmetry: one-way, mirrored or four-way rotational. */
   symmetry: SymmetryMode = 'single';
@@ -177,6 +212,8 @@ export class Editor {
   private pan: { x: number; y: number } | null = null;
   private painting = false;
   private lastPaint = '';
+  /** Set by any prop edit; the next frame restages the scenery. */
+  private propsDirty = false;
   private terrainDirty = false;
   private lastTerrainRefresh = 0;
   private autosaveTimer = 0;
@@ -786,6 +823,24 @@ export class Editor {
       const active = this.tool === 'overlay' && this.overlayId === id;
       return `<button class="terrain-swatch overlay-swatch ${active ? 'active' : ''}" data-overlay="${id}" title="${escapeHtml(overlayNote(id))}" style="background:${color}">${escapeHtml(def.name.toUpperCase())}</button>`;
     }).join('');
+    // Fifty kinds in one flat grid is not a palette, and a label alone does not
+    // tell a bollard from a hydrant. Every swatch carries a picture of the mesh
+    // it stamps, so the author picks by silhouette — how the prop reads on the
+    // map. Group headings are their own rows rather than grid cells, so a long
+    // group name can never squeeze the swatches beside it.
+    const propGroups = PROP_GROUPS.map((group) => {
+      const swatches = PROP_IDS.filter((id) => PROPS[id].group === group)
+        .map((id) => {
+          const def = PROPS[id];
+          const active = this.tool === 'prop' && this.propKind === id ? 'active' : '';
+          const preview = propPreview(id);
+          return `<button class="prop-swatch ${active}" data-prop="${id}" title="${escapeHtml(def.note)}">${
+            preview ? `<img class="prop-thumb" src="${preview}" alt="" draggable="false">` : ''
+          }<span>${escapeHtml(def.name.toUpperCase())}</span></button>`;
+        })
+        .join('');
+      return `<div class="prop-group"><h5>${group.toUpperCase()}</h5><div class="prop-grid">${swatches}</div></div>`;
+    }).join('');
     return `
       <div class="tool-section"><h4>BRUSH TOOL</h4>
         <div class="tool-grid">
@@ -807,6 +862,37 @@ export class Editor {
       <div class="tool-section"><h4>BRUSH SIZE</h4>
         <div class="brush-row"><input type="range" min="0" max="4" step="1" value="${this.brush}" id="ed-brush"><span class="mono">${this.brush * 2 + 1}</span></div>
         <p class="tool-note">Paint water to author coastlines and navigable channels. Raise or lower elevation for ridges and plateaus.</p>
+      </div>
+      <div class="tool-section"><h4>SET DRESSING</h4>
+        <div class="prop-palette">${propGroups}</div>
+        <div class="brush-row"><span class="mono">ROTATE</span><input type="range" min="-180" max="180" step="45" value="${this.propRotation}" id="ed-prop-rotate"><span class="mono">${this.propRotation}°</span></div>
+        <div class="brush-row"><span class="mono">SCALE</span><input type="range" min="0.5" max="2" step="0.1" value="${this.propScale}" id="ed-prop-scale"><span class="mono">${this.propScale.toFixed(1)}×</span></div>
+        <div class="tool-grid">
+          <button class="tool-btn ${this.tool === 'propPick' ? 'active' : ''}" data-proppick="1" title="Click a placed prop to adopt its kind, rotation and scale">EYEDROPPER</button>
+          <button class="tool-btn ${this.tool === 'propSelect' ? 'active' : ''}" data-propsel="1" title="Drag a box over authored props; shift adds or removes">SELECT</button>
+        </div>
+        ${
+          this.propSelection.length > 0
+            ? `<p class="tool-note"><b>${this.propSelection.length}</b> prop${this.propSelection.length === 1 ? '' : 's'} selected</p>
+              <div class="tool-grid">
+                <button class="tool-btn" data-propact="adopt">ADOPT</button>
+                <button class="tool-btn" data-propact="duplicate">DUPLICATE</button>
+                <button class="tool-btn" data-propact="delete">DELETE</button>
+              </div>
+              <div class="tool-grid">
+                <button class="tool-btn" data-propact="rotateL" title="Turn the selection 45° anticlockwise">⟲ 45°</button>
+                <button class="tool-btn" data-propact="rotateR" title="Turn the selection 45° clockwise">⟳ 45°</button>
+                <button class="tool-btn" data-propact="centre" title="Put the selection back in the middle of its tiles">CENTRE</button>
+              </div>
+              <div class="tool-grid">
+                <button class="tool-btn" data-propdir="-1:0" title="Nudge left inside the tile">◀</button>
+                <button class="tool-btn" data-propdir="0:-1" title="Nudge up inside the tile">▲</button>
+                <button class="tool-btn" data-propdir="0:1" title="Nudge down inside the tile">▼</button>
+                <button class="tool-btn" data-propdir="1:0" title="Nudge right inside the tile">▶</button>
+              </div>`
+            : ''
+        }
+        <p class="tool-note">Props are stored on the scenario, so an authored piece survives a save and ships with the map. Click to place one; ERASE removes it. Select placed props to turn them in 45° steps and nudge them inside their tile (arrow keys). ${escapeHtml(PROPS[this.propKind].note)}</p>
       </div>
       <div class="tool-section"><h4>PREVIEW</h4>
         <div class="tool-grid">
@@ -925,6 +1011,84 @@ export class Editor {
       this.overlayDensity = Math.max(1, Math.min(3, Number(density.value) || 1));
       const readout = density.nextElementSibling;
       if (readout) readout.textContent = String(this.overlayDensity);
+    });
+    this.root.querySelectorAll<HTMLElement>('[data-prop]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.prop;
+        if (!id || !PROPS[id as PropKind]) return;
+        this.propKind = id as PropKind;
+        this.tool = 'prop';
+        this.panMode = false;
+        this.syncPanButton();
+        this.renderTools();
+        this.closeTools();
+        this.setHint();
+      });
+    });
+    this.root.querySelectorAll<HTMLElement>('[data-proppick]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.tool = 'propPick';
+        this.panMode = false;
+        this.syncPanButton();
+        this.renderTools();
+        this.closeTools();
+        this.setHint();
+      });
+    });
+    this.root.querySelectorAll<HTMLElement>('[data-propsel]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        this.tool = 'propSelect';
+        this.panMode = false;
+        this.syncPanButton();
+        this.renderTools();
+        this.closeTools();
+        this.setHint();
+      });
+    });
+    this.root.querySelectorAll<HTMLElement>('[data-propact]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const action = btn.dataset.propact;
+        if (action === 'adopt') {
+          const first = this.propSelection[0];
+          if (first) this.adoptPropSettings(first);
+        } else if (action === 'duplicate') {
+          this.duplicateSelectedProps();
+          this.renderTools();
+        } else if (action === 'delete') {
+          this.deleteSelectedProps();
+          this.renderTools();
+        } else if (action === 'rotateL') {
+          this.rotateSelectedProps(-1);
+          this.renderTools();
+        } else if (action === 'rotateR') {
+          this.rotateSelectedProps(1);
+          this.renderTools();
+        } else if (action === 'centre') {
+          this.centreSelectedProps();
+          this.renderTools();
+        }
+      });
+    });
+    this.root.querySelectorAll<HTMLElement>('[data-propdir]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const [dx, dz] = (btn.dataset.propdir ?? '0:0').split(':').map(Number);
+        this.nudgeSelectedProps(dx || 0, dz || 0);
+        this.renderTools();
+      });
+    });
+    const propRotate = this.root.querySelector<HTMLInputElement>('#ed-prop-rotate');
+    propRotate?.addEventListener('input', () => {
+      this.propRotation = Math.max(-180, Math.min(180, Number(propRotate.value) || 0));
+      const readout = propRotate.nextElementSibling;
+      if (readout) readout.textContent = `${this.propRotation}°`;
+      this.setHint();
+    });
+    const propScale = this.root.querySelector<HTMLInputElement>('#ed-prop-scale');
+    propScale?.addEventListener('input', () => {
+      this.propScale = Math.max(0.5, Math.min(2, Number(propScale.value) || 1));
+      const readout = propScale.nextElementSibling;
+      if (readout) readout.textContent = `${this.propScale.toFixed(1)}×`;
+      this.setHint();
     });
     this.root.querySelectorAll<HTMLElement>('[data-building]').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -1433,6 +1597,10 @@ export class Editor {
 
   private onKeyDown = (event: KeyboardEvent): void => {
     if (!this.active) return;
+    if (event.key !== 'Escape' && this.propKeys(event)) {
+      event.preventDefault();
+      return;
+    }
     if (event.key !== 'Escape') return;
     if (this.entityPick) {
       this.cancelEntityPick();
@@ -1450,6 +1618,47 @@ export class Editor {
       event.preventDefault();
     }
   };
+
+  /**
+   * Arrow keys nudge the selected props inside their tiles and `[`/`]` turn them
+   * by one compass step. Returns whether the key was consumed, so Escape still
+   * reaches the cancel path and typing in a field is never intercepted.
+   */
+  private propKeys(event: KeyboardEvent): boolean {
+    if (this.propSelection.length === 0) return false;
+    const target = event.target as HTMLElement | null;
+    if (
+      target &&
+      (target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable)
+    ) {
+      return false;
+    }
+    switch (event.key) {
+      case 'ArrowLeft':
+        this.nudgeSelectedProps(-1, 0);
+        return true;
+      case 'ArrowRight':
+        this.nudgeSelectedProps(1, 0);
+        return true;
+      case 'ArrowUp':
+        this.nudgeSelectedProps(0, -1);
+        return true;
+      case 'ArrowDown':
+        this.nudgeSelectedProps(0, 1);
+        return true;
+      case '[':
+        this.rotateSelectedProps(-1);
+        return true;
+      case ']':
+        this.rotateSelectedProps(1);
+        return true;
+      default:
+        return false;
+    }
+  }
 
   /** Load a document chosen from the library or an import. */
   loadScenario(scenario: Scenario): void {
@@ -1739,6 +1948,7 @@ export class Editor {
 
   refreshValidation(): void {
     if (!this.active) return;
+    this.prunePropSelection();
     this.issues = validateScenario(this.scenario);
     const list = this.root?.querySelector('#ed-validation');
     const count = this.root?.querySelector('#ed-issue-count');
@@ -1819,6 +2029,19 @@ export class Editor {
       this.beginRegionGesture(event);
       return;
     }
+    if (this.tool === 'propSelect') {
+      this.updateHover(event.clientX, event.clientY);
+      if (!this.hover) return;
+      this.propMarquee = {
+        x0: this.hover.x,
+        z0: this.hover.z,
+        x1: this.hover.x,
+        z1: this.hover.z,
+      };
+      this.propMarqueeAdditive = event.shiftKey;
+      this.painting = true;
+      return;
+    }
     this.painting = true;
     this.lastPaint = '';
     this.paintAtScreen(event.clientX, event.clientY);
@@ -1836,14 +2059,54 @@ export class Editor {
       this.updateRegionGesture(event.clientX, event.clientY);
       return;
     }
-    if (this.painting && (this.tool === 'paint' || this.tool === 'raise' || this.tool === 'lower' || this.tool === 'ore' || this.tool === 'erase')) {
+    if (this.propMarquee && this.hover) {
+      this.propMarquee = {
+        ...this.propMarquee,
+        x1: this.hover.x,
+        z1: this.hover.z,
+      };
+      this.draw();
+      return;
+    }
+    if (this.painting && this.strokesOnDrag()) {
       this.paintAtScreen(event.clientX, event.clientY);
     }
   };
 
+  /**
+   * Whether the active tool keeps working while the pointer is held down.
+   *
+   * Every tile tool paints tile by tile, so a stroke has to re-stamp under the
+   * moving cursor; without a tool in this list a drag does nothing and the
+   * author is reduced to clicking once per tile. Placement tools are excluded
+   * on purpose: dragging a building or a unit across the map would carpet the
+   * ground with copies.
+   */
+  private strokesOnDrag(): boolean {
+    return this.tool === 'paint'
+      || this.tool === 'raise'
+      || this.tool === 'lower'
+      || this.tool === 'ore'
+      || this.tool === 'erase'
+      || this.tool === 'overlay'
+      || this.tool === 'overlayClear';
+  }
+
   private onPointerUp = (): void => {
     this.painting = false;
     this.pan = null;
+    if (this.propMarquee) {
+      const box = propBox(
+        this.propMarquee.x0,
+        this.propMarquee.z0,
+        this.propMarquee.x1,
+        this.propMarquee.z1,
+      );
+      this.applyPropSelection(box, this.propMarqueeAdditive);
+      this.propMarquee = null;
+      this.draw();
+      return;
+    }
     if (this.regionDrag) {
       this.commitRegionGesture();
       return;
@@ -2031,6 +2294,19 @@ export class Editor {
       this.refreshValidation();
       return;
     }
+    if (this.tool === 'propPick') {
+      const picked = propAt(this.scenario.props ?? [], this.hover.x, this.hover.z);
+      if (!picked) {
+        this.app.notify('No authored prop stands on that tile.', 'info');
+        return;
+      }
+      this.adoptPropSettings(picked);
+      return;
+    }
+    if (this.tool === 'prop') {
+      this.placeProp(this.hover.x, this.hover.z);
+      return;
+    }
     if (this.tool === 'start') {
       const player = this.scenario.players.find((p) => p.id === this.startPlayerId);
       if (player) {
@@ -2172,6 +2448,193 @@ export class Editor {
     }
   }
 
+  /**
+   * Stamp one authored prop, repeated by the authoring symmetry.
+   *
+   * Placement is refused on a structure's ground: the scatter pass clears props
+   * off every footprint, so a prop authored there would never be drawn and the
+   * author would be left wondering where it went. A prop is decoration, so the
+   * terrain itself is never a reason to refuse — the validator warns about water
+   * instead of blocking the click.
+   */
+  private placeProp(x: number, z: number): void {
+    const def = PROPS[this.propKind];
+    if (!def) return;
+    const targets = [
+      { x, z },
+      ...symmetryTiles(this.symmetry, this.scenario.width, this.scenario.height, x, z),
+    ];
+    for (const target of targets) {
+      if (!inBounds(this.scenario.width, this.scenario.height, target.x, target.z)) {
+        this.app.notify('A symmetric prop would fall outside the map.', 'warning');
+        this.app.audio.play('denied');
+        return;
+      }
+      if (this.structureAt(target.x, target.z)) {
+        this.app.notify(`${def.name} cannot stand on a structure's ground.`, 'warning');
+        this.app.audio.play('denied');
+        return;
+      }
+    }
+    const props = (this.scenario.props ??= []);
+    const radians = (this.propRotation * Math.PI) / 180;
+    for (const target of targets) {
+      props.push({
+        kind: this.propKind,
+        x: target.x,
+        z: target.z,
+        ...(radians === 0 ? {} : { rotation: radians }),
+        ...(this.propScale === 1 ? {} : { scale: this.propScale }),
+      });
+    }
+    this.app.audio.play('build');
+    this.refreshValidation();
+    this.propsDirty = true;
+  }
+
+  /**
+   * Adopt a placed prop's kind, yaw and scale, and arm the placement tool with
+   * them.
+   *
+   * This is the eyedropper's whole job: a lamp at an awkward angle becomes the
+   * next lamp without touching three controls. The round trip goes through the
+   * Forge's own units (degrees, tenths), so the sliders show exactly what the
+   * next click will stamp.
+   */
+  adoptPropSettings(prop: ScenarioProp): void {
+    const settings = propSettings(prop);
+    this.propKind = settings.kind;
+    this.propRotation = settings.rotation;
+    this.propScale = settings.scale;
+    this.tool = 'prop';
+    this.panMode = false;
+    this.syncPanButton();
+    this.renderTools();
+    this.closeTools();
+    this.app.notify(
+      `Adopted ${PROPS[settings.kind].name} · ${settings.rotation}° · ${settings.scale.toFixed(1)}×`,
+      'info',
+    );
+    this.setHint();
+  }
+
+  /** Tiles a duplicate may not land on: every prop and every paved footprint. */
+  private occupiedPropTiles(): Set<string> {
+    const taken = propTiles(this.scenario.props ?? []);
+    for (const structure of this.scenario.structures) {
+      const def = BUILDINGS[structure.defId];
+      if (!def) continue;
+      for (let dz = 0; dz < def.footprint.h; dz++) {
+        for (let dx = 0; dx < def.footprint.w; dx++) {
+          taken.add(`${structure.x + dx},${structure.z + dz}`);
+        }
+      }
+    }
+    return taken;
+  }
+
+  /** Turn a marquee into a selection, or toggle it into the existing one. */
+  private applyPropSelection(box: TileBox, additive: boolean): void {
+    const hits = propsInBox(this.scenario.props ?? [], box);
+    if (!additive) {
+      this.propSelection = hits;
+      if (hits.length === 0) this.app.notify('No authored props in that box.', 'info');
+    } else {
+      const chosen = new Set(this.propSelection);
+      for (const hit of hits) {
+        if (chosen.has(hit)) chosen.delete(hit);
+        else chosen.add(hit);
+      }
+      this.propSelection = [...chosen];
+    }
+    this.renderTools();
+    this.setHint();
+  }
+
+  /** Copy the selection one tile down and right, keeping every setting. */
+  duplicateSelectedProps(): void {
+    if (this.propSelection.length === 0) {
+      this.app.notify('Select a prop first.', 'info');
+      return;
+    }
+    const props = (this.scenario.props ??= []);
+    const copies = duplicateProps(this.propSelection, {
+      width: this.scenario.width,
+      height: this.scenario.height,
+      occupied: this.occupiedPropTiles(),
+    });
+    if (copies.length === 0) {
+      this.app.notify('No room to duplicate that selection.', 'warning');
+      this.app.audio.play('denied');
+      return;
+    }
+    props.push(...copies);
+    this.propSelection = copies;
+    this.app.audio.play('build');
+    this.propsDirty = true;
+    this.refreshValidation();
+    this.setHint();
+  }
+
+  /**
+   * Re-stamp every selected prop through a pure transform.
+   *
+   * The selection holds props by identity, so the scenario's entry is replaced
+   * rather than mutated and the selection is rebuilt around the new objects. A
+   * stale reference would leave the marquee highlighting props that are gone.
+   */
+  private transformSelectedProps(change: (prop: ScenarioProp) => ScenarioProp): void {
+    const props = this.scenario.props ?? [];
+    this.propSelection = this.propSelection.map((prop) => {
+      const next = change(prop);
+      const index = props.indexOf(prop);
+      if (index >= 0) props[index] = next;
+      return next;
+    });
+    this.propsDirty = true;
+    this.refreshValidation();
+    this.setHint();
+  }
+
+  /** Turn the selection one compass step: eight directions, no arbitrary yaw. */
+  rotateSelectedProps(direction: 1 | -1): void {
+    if (this.propSelection.length === 0) return;
+    this.transformSelectedProps((prop) => rotateProp(prop, direction));
+  }
+
+  /** Move the selection by whole eighths of a tile, never out of its tiles. */
+  nudgeSelectedProps(dx: number, dz: number): void {
+    if (this.propSelection.length === 0) return;
+    this.transformSelectedProps((prop) => nudgeProp(prop, dx, dz));
+  }
+
+  /** Put the selection back in the middle of the tiles it stands on. */
+  centreSelectedProps(): void {
+    if (this.propSelection.length === 0) return;
+    this.transformSelectedProps((prop) => centreProp(prop));
+  }
+
+  /** Remove every prop the marquee caught. */
+  deleteSelectedProps(): void {
+    if (this.propSelection.length === 0) {
+      this.app.notify('Select a prop first.', 'info');
+      return;
+    }
+    const removed = this.propSelection.length;
+    this.scenario.props = deleteProps(this.scenario.props ?? [], this.propSelection);
+    this.propSelection = [];
+    this.propsDirty = true;
+    this.refreshValidation();
+    this.app.notify(`Removed ${removed} authored prop${removed === 1 ? '' : 's'}.`, 'info');
+    this.setHint();
+  }
+
+  /** Drop selected props that a delete, an undo or a reload has already removed. */
+  private prunePropSelection(): void {
+    if (this.propSelection.length === 0) return;
+    this.propSelection = pruneSelection(this.scenario.props ?? [], this.propSelection);
+  }
+
   private eraseEntityAt(x: number, z: number): boolean {
     const structureIndex = this.scenario.structures.findIndex((s) => {
       const bdef = BUILDINGS[s.defId];
@@ -2179,12 +2642,23 @@ export class Editor {
     });
     if (structureIndex >= 0) {
       this.scenario.structures.splice(structureIndex, 1);
+      // The scatter a footprint was hiding comes back with the structure gone.
+      this.propsDirty = true;
       return true;
     }
     const unitIndex = this.scenario.units.findIndex((u) => u.x === x && u.z === z);
     if (unitIndex >= 0) {
       this.scenario.units.splice(unitIndex, 1);
       return true;
+    }
+    const props = this.scenario.props;
+    if (props && props.length > 0) {
+      const propIndex = props.findIndex((entry) => entry.x === x && entry.z === z);
+      if (propIndex >= 0) {
+        props.splice(propIndex, 1);
+        this.propsDirty = true;
+        return true;
+      }
     }
     return false;
   }
@@ -2419,6 +2893,13 @@ export class Editor {
     this.overlayWidth = this.app.overlay.width;
     this.overlayHeight = this.app.overlay.height;
     const now = performance.now();
+    // A placed, duplicated or erased prop only exists in the scenario until the
+    // instanced batches are rebuilt, so without this the author sees the ring
+    // and not the piece.
+    if (this.propsDirty) {
+      this.propsDirty = false;
+      this.app.renderer.restageProps();
+    }
     if (this.terrainDirty && now - this.lastTerrainRefresh > 120) this.refreshTerrain(false);
     drawEditorOverlay(this);
   }
@@ -2473,6 +2954,12 @@ export class Editor {
         return `PAINT ${OVERLAYS[this.overlayId].name.toUpperCase()} ${this.overlayDensity} · brush ${this.brush * 2 + 1}${this.symmetryTag()} · ground underneath is preserved · right-drag pan`;
       case 'overlayClear':
         return 'CLEAR SURFACE LAYER · strips crops/reeds/mud, ground untouched · right-drag pan';
+      case 'prop':
+        return `PLACE ${PROPS[this.propKind].name.toUpperCase()} · rotate ${this.propRotation}° · scale ${this.propScale.toFixed(1)}×${this.symmetryTag()} · click to place · ERASE removes`;
+      case 'propPick':
+        return 'EYEDROPPER · click an authored prop to adopt its kind, rotation and scale · right-drag pan';
+      case 'propSelect':
+        return `SELECT PROPS · drag a box or click a prop · shift adds or removes · ${this.propSelection.length} selected · DUPLICATE/DELETE in the panel`;
       case 'start':
         return `PLAYER START · click to reposition ${escapeHtml(this.scenario.players.find((p) => p.id === this.startPlayerId)?.name ?? 'player')}`;
       case 'structure': {
@@ -2498,6 +2985,12 @@ export class Editor {
         return `PLACE ${BUILDINGS[this.structureDef]?.name.toUpperCase() ?? 'STRUCTURE'}${this.structureNote(this.structureDef)}`;
       case 'unit':
         return `PLACE ${unitPaletteName(this.unitDef).toUpperCase()}`;
+      case 'prop':
+        return `PLACE ${PROPS[this.propKind].name.toUpperCase()}`;
+      case 'propPick':
+        return 'EYEDROPPER';
+      case 'propSelect':
+        return `SELECT PROPS (${this.propSelection.length})`;
       case 'start':
         return `START ${this.scenario.players.find((p) => p.id === this.startPlayerId)?.name.toUpperCase() ?? 'PLAYER'}`;
       default:

@@ -1562,10 +1562,12 @@ duration discount:
 | time | With an authored limit, remaining seconds against research time (floor 0.2); without one, a gentle decay after ten minutes. |
 | duration | Long projects lose up to 20%. |
 
-Upgrade and module effects score **zero** with the reason `no playable effect`:
-their selection-box purchase paths do not exist yet, so spending on them would
-buy nothing this match. When those paths are implemented, only the effect branch
-in `researchOptionScore` changes.
+Upgrade and module effects score through their own demand functions
+(`upgradeDemand`, `moduleDemand`): a capability the army cannot fire — a smoke
+discharger with no recon hull, a retrofit with no eligible structure — still
+scores **zero** with the reason `no playable effect`. When this record was
+written neither path existed; both now do, and the full catalogue is described in
+`docs/PHASE_1_ABILITIES_AND_MODULES.md`.
 
 Affordability, the army reserve and the single-project rule are deliberately not
 in the score — they decide *when*, not *what*:

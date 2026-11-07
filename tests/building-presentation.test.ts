@@ -16,11 +16,11 @@ function teamCoverage(positions: Float32Array, teamMask: Float32Array): number[]
 
 describe('building ownership surfaces', () => {
   it('gives every player-buildable structure a substantial team-masked surface', () => {
-    // Thirteen shared structures — the bronze set plus the Strategic
-    // Operations Centre — and one national variant per nation. Every national
-    // variant is player-buildable for its own nation, so it has to carry the
-    // same ownership surface as the shared building it replaces.
-    expect(BUILDABLE_BY_PLAYER).toHaveLength(24);
+    // Fourteen shared structures — the bronze set, the Strategic Operations
+    // Centre and the Heliport — and one national variant per nation. Every
+    // national variant is player-buildable for its own nation, so it has to
+    // carry the same ownership surface as the shared building it replaces.
+    expect(BUILDABLE_BY_PLAYER).toHaveLength(25);
     for (const def of BUILDABLE_BY_PLAYER) {
       const mesh = buildingMesh(def.id);
       expect(mesh, def.id).toBeDefined();

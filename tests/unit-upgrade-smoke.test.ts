@@ -666,9 +666,14 @@ describe('AI use of the smokescreen', () => {
     expect(play()).toEqual(play());
   });
 
-  it('registers exactly one playable ability in the catalogue', () => {
-    expect(Object.keys(UNIT_ABILITIES)).toEqual([ABILITY]);
-    expect(UNIT_ABILITIES[ABILITY].radius).toBe(SMOKE_RADIUS_TILES);
+  it('keeps the smoke geometry on the recon entry as the catalogue grows', () => {
+    const smoke = UNIT_ABILITIES[ABILITY];
+    expect(smoke.kind).toBe('smoke');
+    expect(smoke.upgradeId).toBe(ABILITY);
+    if (smoke.kind !== 'smoke') return;
+    expect(smoke.radius).toBe(SMOKE_RADIUS_TILES);
+    // Phase 1 extended the catalogue; the smoke entry stays one of several.
+    expect(Object.keys(UNIT_ABILITIES).length).toBeGreaterThan(1);
   });
 });
 

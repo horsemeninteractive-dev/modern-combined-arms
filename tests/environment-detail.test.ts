@@ -16,6 +16,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { WEATHER, weatherSpeedFactor } from '../src/sim/weather';
 import { scenarioById } from '../src/data/scenarioCatalog';
+import type { Scenario } from '../src/sim/scenario';
 import { buildPropInstances } from '../src/render/terrainMesh';
 import { Terrain } from '../src/sim/terrain';
 import { TILE_SIZE } from '../src/sim/constants';
@@ -74,6 +75,73 @@ describe('environmental props', () => {
   it('draws each new prop from one instanced batch', () => {
     for (const mesh of ['rubbleMesh', 'reedsMesh', 'polesMesh']) {
       expect(rendererSource).toContain(`this.${mesh} = new InstancedMesh`);
+      expect(rendererSource).toContain(`this.${mesh}.draw(`);
+    }
+  });
+});
+
+describe('terrain detail families', () => {
+  /**
+   * The eight terrains added with the sixteen-map catalogue shipped without any
+   * ground scatter: scrub, dune, farmland, mud and rocky ground were painted
+   * tiles. A brush map read as a flat field with a forest on it. Each now grows
+   * its own family, and these are the promises that keep it that way.
+   */
+  type Props = ReturnType<typeof buildPropInstances>;
+
+  function countOn(
+    scenario: Scenario,
+    list: Props[keyof Props],
+    terrain: number,
+  ): number {
+    let found = 0;
+    for (const instance of list as Array<{ x: number; z: number }>) {
+      const tx = Math.floor(instance.x / TILE_SIZE);
+      const tz = Math.floor(instance.z / TILE_SIZE);
+      if (scenario.tiles[tz * scenario.width + tx]?.t === terrain) found++;
+    }
+    return found;
+  }
+
+  function tilesOf(scenario: Scenario, terrain: number): number {
+    let found = 0;
+    for (const tile of scenario.tiles) if (tile.t === terrain) found++;
+    return found;
+  }
+
+  it('grows brush across scrub ground instead of leaving it painted', () => {
+    const { scenario, props } = propsFor('thorn-scrub');
+    const scrub = tilesOf(scenario, Terrain.Scrub);
+    expect(scrub).toBeGreaterThan(200);
+    const brush =
+      countOn(scenario, props.bushes, Terrain.Scrub) + countOn(scenario, props.shrubs, Terrain.Scrub);
+    // The thickets are two plants deep, so roughly half of every brush tile
+    // carries scrub and the rest carries a straggler.
+    expect(brush).toBeGreaterThan(scrub * 0.25);
+  });
+
+  it('strews stubble over farmland and dry grass over the dunes', () => {
+    const vale = propsFor('hedgerow-vale');
+    expect(tilesOf(vale.scenario, Terrain.Farmland)).toBeGreaterThan(200);
+    expect(countOn(vale.scenario, vale.props.tufts, Terrain.Farmland)).toBeGreaterThan(100);
+
+    const erg = propsFor('saffron-erg');
+    expect(countOn(erg.scenario, erg.props.tufts, Terrain.Dune)).toBeGreaterThan(50);
+    // Wind-blown sand leaves stone behind: the dune belt is not a bare slope.
+    expect(countOn(erg.scenario, erg.props.rocks, Terrain.Dune)).toBeGreaterThan(5);
+  });
+
+  it('raises boulders on rocky ground, not only on ridge rock', () => {
+    const { scenario, props } = propsFor('granite-steps');
+    const rocky = tilesOf(scenario, Terrain.Rocks);
+    expect(rocky).toBeGreaterThan(100);
+    expect(countOn(scenario, props.rocks, Terrain.Rocks)).toBeGreaterThan(rocky * 0.25);
+  });
+
+  it('feeds the new detail through the batches that already exist', () => {
+    // Six instanced batches cover every map's scatter; a new terrain joins them
+    // rather than adding a draw call of its own.
+    for (const mesh of ['rocksMesh', 'bushesMesh', 'shrubsMesh', 'tuftsMesh']) {
       expect(rendererSource).toContain(`this.${mesh}.draw(`);
     }
   });

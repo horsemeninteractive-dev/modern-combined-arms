@@ -162,6 +162,24 @@ describe('production card block reasons', () => {
     expect(productionBlockReason('Facility still under construction.')).toEqual({ text: 'UNDER CONSTRUCTION', tone: 'tech' });
     expect(productionBlockReason('Something unexpected.')).toEqual({ text: 'UNAVAILABLE', tone: 'other' });
   });
+
+  it('names a full flight line as space, not as a missing facility', () => {
+    // Exactly the sentence `productionStatus` returns once every position is
+    // promised, airborne hulls included: the airfield stands, so a NEEDS
+    // AIRFIELD label would send the player to build one they already own.
+    expect(productionBlockReason('No free flight-line position (4/4).')).toEqual({
+      text: 'NO FREE FLIGHT LINE',
+      tone: 'space',
+    });
+    expect(productionBlockReason('No free helicopter position (2/2).')).toEqual({
+      text: 'NO FREE HELO PAD',
+      tone: 'space',
+    });
+    expect(productionBlockReason('Helicopters require an operational heliport.')).toEqual({
+      text: 'NEEDS HELIPORT',
+      tone: 'tech',
+    });
+  });
 });
 
 describe('production drag edge auto-scroll', () => {

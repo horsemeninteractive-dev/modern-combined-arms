@@ -1,8 +1,9 @@
 import { TILE_SIZE } from '../sim/constants';
-import { OVERLAYS, Terrain, TERRAIN, overlayIdOf, tileIndex, type TerrainId } from '../sim/terrain';
+import { OVERLAYS, Overlay, Terrain, TERRAIN, overlayIdOf, tileIndex, type TerrainId } from '../sim/terrain';
 import type { Scenario } from '../sim/scenario';
 import type { RuntimeMap } from '../sim/types';
 import { BUILDINGS } from '../data/buildings';
+import { PROPS } from '../data/props';
 import { MeshBuilder } from './geometry';
 import { MATERIAL } from './materials';
 import type { MeshBuffers } from './gl';
@@ -75,7 +76,13 @@ function surfaceColor(terrain: TerrainId, overlay: number): [number, number, num
   const props = OVERLAYS[overlayIdOf(overlay)];
   if (props.id === 0) return base;
   const density = overlay % 4;
-  const amount = Math.min(0.7, props.strength * density * 0.3);
+  // Snow is a cover, not a tint: even the lightest coat turns the ground pale,
+  // and full density has to reach white or it reads as frozen soil. The other
+  // overlays stay tints, where a 70% cap keeps the ground visible underneath.
+  const amount =
+    props.id === Overlay.Snow
+      ? Math.min(0.92, 0.5 + density * 0.14)
+      : Math.min(0.7, props.strength * density * 0.3);
   return [
     base[0] * (1 - amount) + props.tint[0] * amount,
     base[1] * (1 - amount) + props.tint[1] * amount,
@@ -780,14 +787,105 @@ export function oreNodesInTile(
 }
 
 /**
+ * A structure's own ground, in world units.
+ *
+ * Scatter is placed by tile and then nudged, and the nodes of a seam stand on a
+ * ring inside their own tile, so a tile test is not the same question as "is
+ * this on the paving". A crystal or a tree from the tile beside an apron can
+ * still land on it. These rectangles are the footprint itself, widened by a
+ * margin the width of a prop's base, and anything placed by world position is
+ * rejected if it falls inside one.
+ */
+export interface SiteRect {
+  x0: number;
+  z0: number;
+  x1: number;
+  z1: number;
+}
+
+/** How far beyond the footprint a prop is turned away, in world units. */
+const SITE_MARGIN = 0.7;
+
+/**
+ * Footprints of a list of structures, as world rectangles.
+ *
+ * An authored structure carries the top-left tile of its footprint — the same
+ * origin the blocking grid is stamped from — while a live building carries its
+ * centre in world units. `centredInWorld` names the convention instead of
+ * guessing at it, because a structure at tile (3, 4) is also a plausible world
+ * point and the two readings would disagree silently.
+ */
+export function structureRects(
+  structures: ReadonlyArray<{ defId: string; x: number; z: number }>,
+  centredInWorld = false,
+  margin = SITE_MARGIN,
+): SiteRect[] {
+  const rects: SiteRect[] = [];
+  for (const s of structures) {
+    const footprint = BUILDINGS[s.defId]?.footprint;
+    if (!footprint) continue;
+    const tx = centredInWorld ? Math.round(s.x / TILE_SIZE - footprint.w / 2) : s.x;
+    const tz = centredInWorld ? Math.round(s.z / TILE_SIZE - footprint.h / 2) : s.z;
+    rects.push({
+      x0: tx * TILE_SIZE - margin,
+      z0: tz * TILE_SIZE - margin,
+      x1: (tx + footprint.w) * TILE_SIZE + margin,
+      z1: (tz + footprint.h) * TILE_SIZE + margin,
+    });
+  }
+  return rects;
+}
+
+/** Whether a world point stands on a structure's ground. */
+export function onSite(rects: ReadonlyArray<SiteRect>, x: number, z: number): boolean {
+  for (const r of rects) {
+    if (x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1) return true;
+  }
+  return false;
+}
+
+/**
+ * Drop every instance standing on a structure, in place.
+ *
+ * Returns how many went, so a caller with a GPU batch can skip the upload when
+ * nothing was on the pad. Only ever removes: a prop taken off a footprint when a
+ * structure appeared stays gone if that structure is later destroyed, because
+ * the ground it stood on has been built on and is no longer scenery.
+ */
+export function clearSitesFrom(list: PropInstance[], rects: ReadonlyArray<SiteRect>): number {
+  if (rects.length === 0) return 0;
+  let removed = 0;
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (!onSite(rects, list[i].x, list[i].z)) continue;
+    list.splice(i, 1);
+    removed++;
+  }
+  return removed;
+}
+
+/**
  * A material seam is five crystal nodes to a tile rather than one giant spire.
  * Each node holds a fifth of the deposit and shrinks with what it still holds,
  * so 20% gathered has already taken one node down to nothing.
+ *
+ * `liveBuildings` covers structures that did not exist when the scenario was
+ * assembled — a forward depot raised during a match, a mission's own objective —
+ * so their paving repels scatter too. Ore is filtered rather than cleared here:
+ * the simulation owns the deposit, and this pass only decides what is drawn.
+ *
+ * `standing` is the match's own answer to "whose ground is this?". When it is
+ * given, those buildings are the *only* ones holding ground: the authored list
+ * is ignored, because a structure destroyed during the battle is no longer in
+ * the running match and its footprint has to be able to grow trees again. The
+ * builder is deterministic, so rebuilding with the surviving list gives the same
+ * scenery it would have placed had the building never been there.
  */
 export function buildPropInstances(
   scenario: Scenario,
   ore?: Uint16Array,
   maxOre?: Uint16Array,
+  liveBuildings?: ReadonlyArray<{ defId: string; x: number; z: number }>,
+  standing?: ReadonlyArray<{ defId: string; x: number; z: number }>,
 ): {
   trees: PropInstance[];
   rocks: PropInstance[];
@@ -801,6 +899,8 @@ export function buildPropInstances(
   rubble: PropInstance[];
   reeds: PropInstance[];
   poles: PropInstance[];
+  /** Authored props whose kind owns an instanced batch of its own. */
+  decor: Record<string, PropInstance[]>;
 } {
   const trees: PropInstance[] = [];
   const rocks: PropInstance[] = [];
@@ -813,24 +913,45 @@ export function buildPropInstances(
   const reeds: PropInstance[] = [];
   const poles: PropInstance[] = [];
   const lamps: PropInstance[] = [];
+  const decor: Record<string, PropInstance[]> = {};
   const signs: PropInstance[] = [];
   const W = scenario.width;
   const H = scenario.height;
   // Coastal riprap is part of the existing instanced rock pass, not a new draw
-  // path. Keep it out of authored footprints so a breakwater never grows
+  // path. Keep it out of a structure's ground so a breakwater never grows
   // through a command post or a supply depot.
   const blocked = new Uint8Array(W * H);
-  for (const structure of scenario.structures) {
-    const def = BUILDINGS[structure.defId];
-    if (!def) continue;
+  const stampGround = (defId: string, tx: number, tz: number): void => {
+    const def = BUILDINGS[defId];
+    if (!def) return;
     for (let dz = 0; dz < def.footprint.h; dz++) {
       for (let dx = 0; dx < def.footprint.w; dx++) {
-        const tx = structure.x + dx;
-        const tz = structure.z + dz;
-        if (tx >= 0 && tz >= 0 && tx < W && tz < H) blocked[tz * W + tx] = 1;
+        const px = tx + dx;
+        const pz = tz + dz;
+        if (px >= 0 && pz >= 0 && px < W && pz < H) blocked[pz * W + px] = 1;
       }
     }
+  };
+  if (standing) {
+    for (const site of standing) {
+      const footprint = BUILDINGS[site.defId]?.footprint;
+      if (!footprint) continue;
+      stampGround(
+        site.defId,
+        Math.round(site.x / TILE_SIZE - footprint.w / 2),
+        Math.round(site.z / TILE_SIZE - footprint.h / 2),
+      );
+    }
+  } else {
+    for (const structure of scenario.structures) stampGround(structure.defId, structure.x, structure.z);
   }
+  // Every structure's own ground, for the world-space rejection at the end.
+  // `standing` and `liveBuildings` are world-space centre points — that is what
+  // `stampGround` divides by TILE_SIZE to recover a footprint, and what the
+  // `centredInWorld` rects below expect. The scenario's own structures are
+  // authored as tile corners, hence the two shapes here.
+  const sites = standing ? structureRects(standing, true) : structureRects(scenario.structures);
+  if (liveBuildings) sites.push(...structureRects(liveBuildings, true));
   for (let z = 0; z < H; z++) {
     for (let x = 0; x < W; x++) {
       const i = tileIndex(W, x, z);
@@ -853,7 +974,10 @@ export function buildPropInstances(
             color: [tint * 0.92, tint, tint * 0.88],
           });
         }
-      } else if (tile.t === Terrain.Rock && hash01(x, z, 5) > 0.6) {
+      } else if (
+        (tile.t === Terrain.Rock || tile.t === Terrain.Rocks) &&
+        hash01(x, z, 5) > (tile.t === Terrain.Rocks ? 0.45 : 0.6)
+      ) {
         const wx = (x + 0.5) * TILE_SIZE + (hash01(x, z, 9) - 0.5) * 2;
         const wz = (z + 0.5) * TILE_SIZE + (hash01(x, z, 10) - 0.5) * 2;
         rocks.push({
@@ -861,7 +985,7 @@ export function buildPropInstances(
           y: terrainSurfaceHeight(scenario, wx, wz),
           z: wz,
           rotation: hash01(x, z, 11) * Math.PI * 2,
-          scale: 0.55 + hash01(x, z, 12) * 0.8,
+          scale: (tile.t === Terrain.Rocks ? 0.7 : 0.55) + hash01(x, z, 12) * 0.8,
           color: [0.9 + hash01(x, z, 13) * 0.16, 0.88, 0.85],
         });
       } else if (
@@ -980,6 +1104,83 @@ export function buildPropInstances(
           else if (roll < 0.11) plant('bush', 139);
         } else if (roll < 0.14) {
           plant('tuft', 141);
+        }
+      }
+
+      // The terrains added with the sixteen-map catalogue rendered as painted
+      // ground: scrub, dune, farmland and mud carried no scatter, so a brush map
+      // was a flat field with a forest standing on it. Each grows its own family
+      // here, out of the same three instanced batches the grass uses, so a new
+      // terrain cannot ship looking flatter than an original one and the pass
+      // still costs no extra draw call.
+      const wild =
+        tile.t === Terrain.Scrub ||
+        tile.t === Terrain.Dune ||
+        tile.t === Terrain.Farmland ||
+        tile.t === Terrain.Mud;
+      if (wild && !blocked[i] && tile.o === 0) {
+        const roll = hash01(x, z, 201);
+        const grow = (
+          kind: 'bush' | 'shrub' | 'tuft',
+          salt: number,
+          min: number,
+          max: number,
+          dry: boolean,
+        ) => {
+          const wx = (x + 0.5) * TILE_SIZE + (hash01(x, z, salt) - 0.5) * 2.9;
+          const wz = (z + 0.5) * TILE_SIZE + (hash01(x, z, salt + 1) - 0.5) * 2.9;
+          const tint = 0.8 + hash01(x, z, salt + 2) * 0.3;
+          const variant = hash01(x, z, salt + 5);
+          const green: [number, number, number] =
+            variant < 0.34
+              ? [0.78, 1.0, 0.74]
+              : variant < 0.68
+                ? [1.02, 0.99, 0.7]
+                : [0.72, 0.93, 0.85];
+          const instance: PropInstance = {
+            x: wx,
+            y: terrainSurfaceHeight(scenario, wx, wz),
+            z: wz,
+            rotation: hash01(x, z, salt + 3) * Math.PI * 2,
+            scale: min + hash01(x, z, salt + 4) * (max - min),
+            color: dry
+              ? [tint * 0.95, tint * 0.9, tint * 0.72]
+              : [tint * green[0], tint * green[1], tint * green[2]],
+          };
+          if (kind === 'bush') bushes.push(instance);
+          else if (kind === 'shrub') shrubs.push(instance);
+          else tufts.push(instance);
+        };
+        if (tile.t === Terrain.Scrub) {
+          // Brush country: most tiles carry something, and the thickets the
+          // sight lines are drawn through are two plants deep.
+          if (roll < 0.46) grow('bush', 203, 0.6, 1.3, false);
+          else if (roll < 0.66) grow('shrub', 207, 0.7, 1.4, false);
+          else if (roll < 0.78) grow('tuft', 209, 0.7, 1.2, false);
+          if (roll < 0.66 && hash01(x, z, 221) > 0.5) grow('bush', 223, 0.45, 0.85, false);
+        } else if (tile.t === Terrain.Farmland) {
+          // Stubble, not a lawn: short dry tufts at a field density, and the odd
+          // hedgerow straggler where the crop ends.
+          if (roll < 0.2) grow('tuft', 227, 0.42, 0.62, true);
+          else if (roll > 0.97) grow('bush', 229, 0.5, 0.8, false);
+        } else if (tile.t === Terrain.Dune) {
+          // Dry marram along the crests, and the odd stone the wind has left.
+          if (roll < 0.14) grow('tuft', 233, 0.5, 0.8, true);
+          if (hash01(x, z, 237) > 0.965) {
+            const wx = (x + 0.5) * TILE_SIZE + (hash01(x, z, 239) - 0.5) * 2;
+            const wz = (z + 0.5) * TILE_SIZE + (hash01(x, z, 241) - 0.5) * 2;
+            rocks.push({
+              x: wx,
+              y: terrainSurfaceHeight(scenario, wx, wz),
+              z: wz,
+              rotation: hash01(x, z, 243) * Math.PI * 2,
+              scale: 0.35 + hash01(x, z, 245) * 0.4,
+              color: [1.02, 0.98, 0.9],
+            });
+          }
+        } else if (roll < 0.1) {
+          // Mud: the last grass that has not been churned out.
+          grow('tuft', 247, 0.6, 0.95, true);
         }
       }
 
@@ -1123,12 +1324,14 @@ export function buildPropInstances(
       // the only prop placed on a water tile, so they are also the thing that
       // tells a shallow shelf apart from open sea at a glance.
       const waterTile = TERRAIN[tile.t as TerrainId].water;
+      const marshTile = tile.t === Terrain.Marsh;
       if (
         !blocked[i] &&
         (tile.t === Terrain.Marsh ||
           (waterTile && tile.t === Terrain.ShallowWater && hash01(x, z, 177) > 0.52))
       ) {
-        let toLand = false;
+        // A reed bed grows through the whole marsh, not only around its rim.
+        let toLand = marshTile;
         for (const [dx, dz] of [
           [1, 0],
           [-1, 0],
@@ -1214,6 +1417,69 @@ export function buildPropInstances(
       }
     }
   }
+  // Authored set dressing: the individual props a map places by hand, drawn
+  // out of the same instanced batches as the procedural scatter. The list is
+  // part of the scenario, so a reload, a save and every client that builds the
+  // same map see the same pieces in the same places.
+  const batches: Record<string, PropInstance[]> = {
+    trees,
+    rocks,
+    bushes,
+    shrubs,
+    tufts,
+    fences,
+    lamps,
+    signs,
+    poles,
+    rubble,
+    reeds,
+  };
+  for (const prop of scenario.props ?? []) {
+    const def = PROPS[prop.kind];
+    if (!def) continue;
+    const tile = scenario.tiles[tileIndex(W, prop.x, prop.z)];
+    if (!tile) continue;
+    // The prop's tile plus its authored nudge. Offsets stay inside the half
+    // tile so a prop never crosses into a neighbour's ground.
+    const wx = (prop.x + 0.5 + (prop.offsetX ?? 0)) * TILE_SIZE;
+    const wz = (prop.z + 0.5 + (prop.offsetZ ?? 0)) * TILE_SIZE;
+    const tint = 0.94 + hash01(prop.x, prop.z, 301) * 0.12;
+    const target = batches[def.batch] ?? (decor[def.batch] ??= []);
+    target.push({
+      x: wx,
+      // A prop authored onto water stands on the surface plane, exactly as a
+      // reed does: there is no visible bed to stand on.
+      y: TERRAIN[tile.t as TerrainId].water ? 0.14 : terrainSurfaceHeight(scenario, wx, wz),
+      z: wz,
+      rotation: prop.rotation ?? 0,
+      scale: (prop.scale ?? 1) * def.scale,
+      color: [tint, tint, tint],
+    });
+  }
+
+  // The tile mask above keeps scatter from being *generated* on a footprint;
+  // this is the last word, and it is in world space because that is where the
+  // props actually stand. A seam beside an apron has nodes overhanging the
+  // paving, and those are the crystals a player finds on a flight line.
+  if (sites.length > 0) {
+    for (const list of [
+      trees,
+      rocks,
+      oreInstances,
+      bushes,
+      shrubs,
+      tufts,
+      fences,
+      lamps,
+      signs,
+      rubble,
+      reeds,
+      poles,
+      ...Object.values(decor),
+    ]) {
+      clearSitesFrom(list, sites);
+    }
+  }
   return {
     trees,
     rocks,
@@ -1227,11 +1493,16 @@ export function buildPropInstances(
     rubble,
     reeds,
     poles,
+    decor,
   };
 }
 
-export function runtimeOreInstances(scenario: Scenario, map: RuntimeMap): OreInstance[] {
-  return buildPropInstances(scenario, map.ore, map.maxOre).ore;
+export function runtimeOreInstances(
+  scenario: Scenario,
+  map: RuntimeMap,
+  liveBuildings?: ReadonlyArray<{ defId: string; x: number; z: number }>,
+): OreInstance[] {
+  return buildPropInstances(scenario, map.ore, map.maxOre, liveBuildings).ore;
 }
 
 /** Sloped land height used by props, entities and effects; water returns 0. */

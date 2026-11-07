@@ -2,10 +2,10 @@
  * Selection-box view of a unit's researched abilities.
  *
  * The panel markup is thin on purpose: everything a test can assert — which
- * abilities a hull shows, whether each is ready, and what the button says while
- * it reloads — is decided here from the authoritative simulation, so the HUD
- * cannot display an ability the player has not researched or hide one that is
- * merely reloading.
+ * abilities a hull shows, whether each is ready, what the button says while it
+ * reloads and whether a timed effect is currently running — is decided here from
+ * the authoritative simulation, so the HUD cannot display an ability the player
+ * has not researched or hide one that is merely reloading.
  */
 import { abilityForUpgrade } from '../data/abilities';
 import type { Game } from '../sim/game';
@@ -23,6 +23,12 @@ export interface AbilityActionView {
   label: string;
   /** One-line reason or state for the button's second line and title. */
   detail: string;
+  /** True while a timed effect from this ability is running. */
+  active: boolean;
+  /** Seconds of active effect left; 0 when it is not running. */
+  activeRemaining: number;
+  /** The trade-off the crew accepts by using it. */
+  note: string;
 }
 
 /**
@@ -41,11 +47,15 @@ export function abilityActions(game: Game, owner: number, unitId: number): Abili
     const ability = abilityForUpgrade(upgrade.id);
     if (!ability) continue;
     const status = game.abilityStatus(owner, unitId, upgrade.id);
-    const detail = status.ok
-      ? 'Ready'
-      : status.cooldown > 0
-        ? `Reloading — ${Math.ceil(status.cooldown)}s`
-        : status.reason;
+    const activeRemaining = game.effectRemaining(unitId, upgrade.id);
+    const detail =
+      activeRemaining > 0
+        ? `Active — ${Math.ceil(activeRemaining)}s remaining`
+        : status.ok
+          ? ability.note
+          : status.cooldown > 0
+            ? `Reloading — ${Math.ceil(status.cooldown)}s`
+            : status.reason;
     views.push({
       upgradeId: upgrade.id,
       name: upgrade.name,
@@ -53,8 +63,18 @@ export function abilityActions(game: Game, owner: number, unitId: number): Abili
       description: upgrade.description,
       ready: status.ok,
       cooldown: status.cooldown,
-      label: status.ok ? 'READY' : status.cooldown > 0 ? `${Math.ceil(status.cooldown)}s` : 'BLOCKED',
+      label:
+        activeRemaining > 0
+          ? 'ACTIVE'
+          : status.ok
+            ? 'READY'
+            : status.cooldown > 0
+              ? `${Math.ceil(status.cooldown)}s`
+              : 'BLOCKED',
       detail,
+      active: activeRemaining > 0,
+      activeRemaining,
+      note: ability.note,
     });
   }
   return views;

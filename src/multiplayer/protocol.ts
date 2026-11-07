@@ -279,6 +279,10 @@ export interface LobbyMessage {
       ready: boolean;
       host: boolean;
       connected: boolean;
+      /** Captured when the seat was claimed; null for a guest with no identity. */
+      identity: { callsign: string; avatar: string } | null;
+      /** Whether the seat is a verified account, which the lobby marks. */
+      verified: boolean;
     }>;
   };
 }
@@ -303,6 +307,13 @@ export interface ResultMessage {
   v: typeof ROOM_PROTOCOL_VERSION;
   outcome: 'victory' | 'defeat' | 'draw';
   result: ProjectedMatchResult;
+  /**
+   * Stable reference of the authoritative match, `mp:<room>:<startedAtMs>`.
+   * The result screen uses it to read its own career award from the account
+   * service; it is not a credential, and the account service still checks that
+   * the caller owns the match.
+   */
+  matchId: string | null;
 }
 
 export interface ErrorMessage {
@@ -412,6 +423,7 @@ export function resultMessageFor(
   result: NeutralMatchResult,
   projected: ProjectedMatchResult,
   team: number,
+  matchId: string | null = null,
 ): ResultMessage {
   const outcome =
     result.phase !== 'finished'
@@ -427,5 +439,6 @@ export function resultMessageFor(
     v: ROOM_PROTOCOL_VERSION,
     outcome,
     result: projected,
+    matchId,
   };
 }

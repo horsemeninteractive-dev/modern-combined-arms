@@ -12,6 +12,116 @@ rendered in game from **Changelog** in the main-menu footer.
 When the version is bumped, rename it to the new `## [x.y.z STAGE] — date`
 heading: `tools/release.mjs` refuses to ship unless that heading exists.
 
+## [0.6.0 BETA] — 2026-11-07
+
+Phase 1 and Phase 2 of the roadmap land together: tactical abilities and
+building modules, a hard aviation basing model, a persistent career fed by
+authoritative online results, and an authored prop and city layer for the
+battlefields. All notes below ship together in this build.
+
+### Tactical abilities and building modules
+
+- **Abilities are one catalogue, not a branch per unit.** `src/data/abilities.ts`
+  holds the effect of every ability and `src/data/research.ts` holds its cost,
+  duration, reload and the node that grants it; the tick reads those records
+  generically and the interface answers from the same table, so what the button
+  offers and what the simulation applies cannot drift apart. Timed effects run on
+  the fixed clock and are part of the state hash, the save file and the
+  multiplayer snapshot projection.
+- **No research node was added, removed or renumbered.** Every capability rides
+  on an existing node as a `grantUnitUpgrade` or `grantBuildingModule` effect, so
+  the approved eight-node tree is unchanged while the tree now buys capabilities
+  as well as hulls.
+- **Modules are bought per structure.** A module belongs to one plant, factory,
+  radar set, airfield or shipyard; two plants are two purchases with two
+  capacity slots. The structure card and module view read the same capacity the
+  simulation enforces.
+- **The AI uses the same abilities through the same visibility list.** Every
+  trigger reads `ctx.visible` — the sighting list the rest of the planner
+  already trusts — so the commander never sees through the fog to decide whether
+  a smokescreen or a guided round is worth spending.
+
+### Aviation basing
+
+- **Airframe capacity is a reservation, not a count.** Each airfield and shipyard
+  owns its berths, an aircraft holds the berth it was produced into, and the
+  flight line has a recovery pad for a returning or damaged airframe. Destroying
+  the facility re-bases its aircraft instead of silently deleting them, and the
+  structure card shows the breakdown of which berth holds what.
+- A berth flag that leaked onto fighters was found and fixed during the phase, and
+  is guarded by the basing tests.
+
+### Career and identity
+
+- **An online match now pays career XP, decided by the account service from the
+  room's own report.** The browser cannot award itself a result: the room sends
+  the match facts over the shared-secret `POST /api/account/internal/mp-result`
+  intake, the service recomputes the reward from those facts, and processing is
+  idempotent, auditable and retry-safe, so a dropped response cannot pay twice.
+- **A player identity exists.** A callsign and avatar are created, validated and
+  unique per account on a case- and space-folded key, and the 1v1 lobby presents
+  each seat's callsign, avatar and the career rank that seat was verified at.
+- **The service record aggregates the ledger** by mode and by nation, the match
+  history is paged with a detail view, and a signed-in player can read another
+  player's limited public profile from the lobby.
+- **New D1 migration** `migrations/0003_phase2_identity_and_results.sql`: three
+  additive tables (`account_profiles`, `career_match_details`,
+  `mp_result_players`) beside the existing XP ledger. Every statement is
+  idempotent and no existing column is altered, so it is safe to run against a
+  partially applied database.
+
+### Props, cities and environment
+
+- **Authored battlefield props are a first-class scenario layer.**
+  `src/data/props.ts` catalogues the prop set, scenarios carry authored props with
+  map validation, and the renderer instances decor per batch instead of drawing
+  each object on its own, so a dressed map stays cheap.
+- **The editor places, rotates and nudges a prop.** Rotation moves in 45° steps —
+  the eight plausible facings — and a prop can be moved within the tile it is
+  placed in by up to half a tile in each axis, with the tile still owning
+  picking, erase, duplication and validation. Buttons, a rotation slider, arrow
+  keys and `[` / `]` all drive the same pure helpers, and `CENTRE` puts a prop
+  back on its tile.
+- **The battlefield roster gains city fabric and weather.** Tenement blocks,
+  ruins, factories, bridges, radar stations, anti-turret emplacements and other
+  authored detail join the existing terrain, and snow cover grades the ground for
+  cold maps.
+
+### Economy and command AI
+
+- **A dead economy rebuilds itself.** The replacement engineer and hauler
+  reserves are now paid out of the real bank instead of the construction-trimmed
+  budget, which is what let a commander whose last crew had been killed sit on a
+  full bank forever: the reserve could never be reached because the trim had
+  already spent it. `economic-recovery` covers the drained-bank case directly.
+- **A commander stops banking for its support arm once the line is short.** The
+  hold now counts the hulls actually missing rather than summing fractional
+  deficits, which could never exceed the allowance; a recruit keeps the older,
+  worse behaviour, because that handicap is what the difficulty is for.
+- **An undefended base marks its perimeter as essential after a landing is
+  scouted**, so a scouted beachhead does not beat the wall that answers it merely
+  by scoring first.
+- **A drop-off the commander was saving for is finished.** Once the bank holds the
+  price of the planned refinery, it is bought ahead of the research centre and
+  the headroom plant that would otherwise take the bank on the same tick — the
+  bank used to cross the price, lose it and cross it again, never expanding. The
+  priority only applies while that plan is fresh, so a base that was never saving
+  for a drop-off keeps its ordinary build order.
+
+### Verification
+
+- Full `vitest` run: **181 files and 2,576 tests, all passing**, with
+  `npx tsc --noEmit` clean and the production build successful.
+- The difficulty ladder holds its separation: Recruit vs Veteran −17,941 (6-10),
+  Elite vs Recruit 95,774 (14-2), Elite vs Veteran 40,588 (9-7).
+- A 900-match, ten-nation Elite sweep on the mirrored arena is recorded in
+  [docs/NATION_LADDER_ELITE_SWEEP.md](docs/NATION_LADDER_ELITE_SWEEP.md).
+
+### Known limits
+
+- Prop rotation and sub-tile nudging are covered by unit and source guards; the
+  forge panel itself has not been through a browser pass in this build.
+
 ## [0.5.4 BETA] — 2026-11-05
 
 A reconciliation pass before new feature work: the build, the documents and the

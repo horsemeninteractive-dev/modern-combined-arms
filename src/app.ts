@@ -92,12 +92,15 @@ import type { SaveData } from './sim/save';
 import { AudioEngine } from './ui/audio';
 import { combatMix } from './ui/audioSpatial';
 import {
+  SERVICE_BEACON_CHIRP_SECONDS,
   ambiencePlan,
   framingGain,
+  serviceKitAmbience,
   structureAmbience,
   unitAmbience,
   type AmbienceCandidate,
 } from './ui/ambience';
+import { isServicingAircraft } from './render/servicing';
 import {
   defaultMusicPlaylist,
   moveMusicTrack,
@@ -163,7 +166,7 @@ import { HttpAccountApi, takeAuthOutcome } from './accounts/client';
 import { ensureGuestProfile } from './accounts/guest';
 import { CareerService } from './accounts/careerService';
 import type { CareerMatchInput } from './accounts/career';
-import { endCareerMarkup, type EndCareerState } from './ui/careerView';
+import { endCareerMarkup, mpCareerSummaryMarkup, type EndCareerState } from './ui/careerView';
 import { CursorLayer, type AppCursor } from './ui/cursors';
 import { addOrderGhost, type OrderGhost, type OrderGhostKind } from './ui/orderGhosts';
 import { TutorialDirector } from './ui/tutorial';
@@ -445,6 +448,8 @@ export class App {
   private accumulator = 0;
   /** Seconds since the battlefield bed last asked for a new plan. */
   private ambienceClock = 0;
+  /** Seconds since the bowser beacon last chirped over a working apron. */
+  private serviceChirpClock = 0;
   private lastFrame = 0;
   /** Scenario used by the static loading backdrop; null once a battle owns the canvas. */
   private menuScenario: Scenario | null = null;
@@ -1155,6 +1160,16 @@ export class App {
           if (!this.accountApi) return null;
           try {
             return (await this.accountApi.multiplayerTicket()).ticket;
+          } catch {
+            return null;
+          }
+        },
+        // Only the service can publish a record; the lobby asks it rather than
+        // reading anything an opponent's client might claim.
+        lookupPlayer: async (callsign) => {
+          if (!this.accountApi) return null;
+          try {
+            return await this.accountApi.publicProfile(callsign);
           } catch {
             return null;
           }
@@ -3198,6 +3213,24 @@ export class App {
       if (e.kind === 'unit') {
         const def = UNITS[e.defId];
         if (!def) continue;
+        // A hull on turnaround is not idling: its engine is off and the bowser
+        // beside it is the thing running. The kit's pump replaces the aircraft's
+        // own voice rather than stacking on it, which is also why it has to be
+        // decided here — the plan keeps one voice per source.
+        if (isServicingAircraft(e)) {
+          const kit = serviceKitAmbience({ servicing: true });
+          if (kit) {
+            out.push({
+              id: e.id,
+              kind: kit.kind,
+              level: kit.level,
+              pitch: kit.pitch,
+              motion: kit.motion,
+              ...project(e.x, e.z),
+            });
+          }
+          continue;
+        }
         const tone = unitAmbience({
           domain: def.domain,
           moveClass: def.moveClass,
@@ -3250,11 +3283,22 @@ export class App {
   private updateBattlefieldAmbience(dt: number): void {
     if (!this.game) return;
     this.ambienceClock += dt;
+    this.serviceChirpClock += dt;
     if (this.ambienceClock < 0.1) return;
     this.ambienceClock = 0;
-    this.audio.updateAmbience(
-      ambiencePlan(this.ambienceCandidates(), { gainScale: framingGain(this.renderer.camera.zoom) }),
-    );
+    const plan = ambiencePlan(this.ambienceCandidates(), {
+      gainScale: framingGain(this.renderer.camera.zoom),
+    });
+    this.audio.updateAmbience(plan);
+    // The beacon chirps over the pump on its own clock, from the same plan that
+    // decided who is audible: the nearest working apron, panned where it sits in
+    // the frame. With no apron in earshot the clock simply keeps running, so the
+    // first call lands as the crew hook up instead of up to a beat late.
+    if (this.serviceChirpClock < SERVICE_BEACON_CHIRP_SECONDS) return;
+    const apron = plan.find((voice) => voice.kind === 'servicing');
+    if (!apron) return;
+    this.serviceChirpClock = 0;
+    this.audio.play('serviceBeacon', Math.max(0.2, apron.gain * 0.9), apron.pan);
   }
 
   /* ------------------------------------------------------------------ */
@@ -3479,6 +3523,13 @@ export class App {
     const slot = document.getElementById('end-career');
     if (!slot || !this.careerService || result === 'playing') return;
     if (this.missionTestActive) return;
+    // An online match is already recorded by the room that ran it. The client
+    // must never submit it: it reads the award the account service derived
+    // from the authoritative result, and says "synchronising" until it can.
+    if (this.network) {
+      await this.recordNetworkCareer(slot, result);
+      return;
+    }
     if (this.campaignRun()) {
       this.paintEndCareer(slot, { status: 'pending' });
       return;
@@ -3521,6 +3572,88 @@ export class App {
     // was in flight; only paint into the slot that is still on screen.
     if (document.getElementById('end-career') !== slot) return;
     slot.innerHTML = endCareerMarkup(state);
+  }
+
+  /**
+   * The career block on an online result card.
+   *
+   * The room reports the finished match to the account service, so the client
+   * waits for the room's match reference, then asks the service what the match
+   * paid. Every state it can be in — waiting, still synchronising, awarded,
+   * or unavailable to a guest — is shown honestly, and a retry only re-reads;
+   * it can never create a second award.
+   */
+  private async recordNetworkCareer(slot: HTMLElement, outcome: VictoryState): Promise<void> {
+    if (!this.careerService) {
+      this.paintEndCareer(slot, { status: 'pending' });
+      return;
+    }
+    this.paintNetworkCareer(slot, null, 'Waiting for the room to report the finished match…', false);
+    let matchId = this.networkClient?.state.matchResult?.matchId ?? null;
+    const deadline = performance.now() + 10_000;
+    while (!matchId && performance.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+      if (document.getElementById('end-career') !== slot) return;
+      matchId = this.networkClient?.state.matchResult?.matchId ?? null;
+    }
+    if (!matchId) {
+      this.paintNetworkCareer(slot, null, 'The room has not reported this match yet.', true);
+      return;
+    }
+    try {
+      const view = await this.careerService.matchOutcome(matchId);
+      if (document.getElementById('end-career') !== slot) return;
+      if (!view) {
+        this.paintNetworkCareer(
+          slot,
+          null,
+          'Online career XP is stored with an account. Sign in before the next match to earn it.',
+          false,
+        );
+        return;
+      }
+      if (view.status === 'recorded') {
+        this.paintNetworkCareer(slot, view, null, false);
+        void this.accountPanel?.refresh();
+        return;
+      }
+      this.paintNetworkCareer(
+        slot,
+        null,
+        'The result is still synchronising. It will appear in your service record shortly.',
+        true,
+      );
+    } catch (error) {
+      this.paintNetworkCareer(
+        slot,
+        null,
+        error instanceof Error ? error.message : 'The account service could not be reached.',
+        true,
+      );
+    }
+    // `outcome` is deliberately unused for the award: the server decided it.
+    void outcome;
+  }
+
+  private paintNetworkCareer(
+    slot: HTMLElement,
+    view: Parameters<typeof mpCareerSummaryMarkup>[0],
+    note: string | null,
+    retry: boolean,
+  ): void {
+    if (document.getElementById('end-career') !== slot) return;
+    const noteMarkup = note
+      ? `<p class="account-note" data-career-note>${note.replace(/[<>&]/g, '')}</p>`
+      : '';
+    const retryMarkup = retry
+      ? '<button type="button" class="btn btn-ghost" data-career-retry>RETRY RECORD</button>'
+      : '';
+    slot.innerHTML = `${mpCareerSummaryMarkup(view)}${noteMarkup}${retryMarkup}`;
+    if (retry) {
+      slot.querySelector('[data-career-retry]')?.addEventListener('click', () => {
+        void this.recordNetworkCareer(slot, this.game?.state.victory ?? 'defeat');
+      });
+    }
   }
 
   /** Stable reference for idempotent career writes. */

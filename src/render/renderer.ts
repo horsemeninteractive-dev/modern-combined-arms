@@ -58,6 +58,7 @@ import {
 } from './flags';
 import {
   AIR_UNIT_ALTITUDE,
+  PARKED_AIRCRAFT_CLEARANCE,
   unitStyle,
   unitVisualScale,
   unitShadowRadius,
@@ -75,10 +76,22 @@ import {
   buildRockMesh,
   buildRubbleMesh,
   buildShrubMesh,
+  buildServiceBeacon,
+  buildServiceCrew,
+  buildServiceKit,
   buildSignPostMesh,
+  buildStandClearanceFrame,
+  buildStandClearanceRing,
   buildTreeMesh,
+  buildTreeSnowMesh,
   buildUtilityPoleMesh,
 } from './geometry';
+import { isServicingAircraft, serviceInstances, type ServicedHull } from './servicing';
+import {
+  standMarkInstances,
+  standPulse,
+  type ClearedStand,
+} from './standClearance';
 import { materialLut } from './materials';
 import {
   buildPropInstances,
@@ -90,6 +103,7 @@ import {
   tileWorldHeight,
   type TerrainGeometry,
 } from './terrainMesh';
+import { DECOR_BATCHES, buildDecorMesh } from './decorMeshes';
 import { ParticleSystem } from './particles';
 import { ParticleGpu, type GpuParticle } from './particleGpu';
 import { LightGpu, type GpuLight } from './lightGpu';
@@ -104,11 +118,14 @@ import { identity, type Vec3 } from './math';
 import { teamColorForOwner } from './teamColor';
 import {
   limbModelMatrix,
+  rotorModelMatrix,
   turretModelMatrix,
   unitBodyHeading,
   unitDrawnBodyHeading,
 } from './unitTransform';
 import { rotateLocalOffset } from '../core/math';
+import { stepRotorPower } from './rotorSpool';
+import { engineerWorkPose, workLightInstances } from './workLight';
 import {
   eventVisibleToLocal,
   pointVisibleToLocal,
@@ -175,6 +192,11 @@ interface VisualEntity {
   emergeAlt: number;
   /** Seconds until the next track decal is stamped. */
   trackTimer: number;
+  /** 0..1 rotor power: 1 airborne, easing to 0 once the hull is down. */
+  rotorPower: number;
+  /** Integrated main- and tail-rotor angles, in radians. */
+  rotorAngle: number;
+  tailRotorAngle: number;
 }
 
 interface MeshProgram {
@@ -297,6 +319,12 @@ export class Renderer {
   private waterCount = 0;
   private roadMesh: StaticMesh | null = null;
   private treesMesh!: InstancedMesh;
+  /**
+   * Snow on the canopy. A second instanced batch sharing the tree instance
+   * list, so it inherits position, yaw, scale and tint and bends on the same
+   * wind term; empty outside snow and blizzard.
+   */
+  private snowCapsMesh!: InstancedMesh;
   private rocksMesh!: InstancedMesh;
   private oreMesh!: InstancedMesh;
   private bushesMesh!: InstancedMesh;
@@ -308,10 +336,19 @@ export class Renderer {
   private rubbleMesh!: InstancedMesh;
   private reedsMesh!: InstancedMesh;
   private polesMesh!: InstancedMesh;
+  private serviceKitMesh!: InstancedMesh;
+  private serviceCrewMesh!: InstancedMesh;
+  private serviceBeaconMesh!: InstancedMesh;
+  private standFrameMesh!: InstancedMesh;
+  private standRingMesh!: InstancedMesh;
   private treeInstances: PropInstance[] = [];
+  private snowCapInstances: PropInstance[] = [];
   private rockInstances: PropInstance[] = [];
   private oreInstances: OreInstance[] = [];
   private bushInstances: PropInstance[] = [];
+  /** Authored detail batches: one instanced mesh per kind that owns a mesh. */
+  private decorMeshes = new Map<string, InstancedMesh>();
+  private decorInstances: Record<string, PropInstance[]> = {};
   private shrubInstances: PropInstance[] = [];
   private tuftInstances: PropInstance[] = [];
   private fenceInstances: PropInstance[] = [];
@@ -320,6 +357,19 @@ export class Renderer {
   private rubbleInstances: PropInstance[] = [];
   private reedInstances: PropInstance[] = [];
   private poleInstances: PropInstance[] = [];
+  /** Ground kit on airframes being turned around, rebuilt every frame. */
+  private serviceKitInstances: PropInstance[] = [];
+  private serviceCrewInstances: PropInstance[] = [];
+  private serviceBeaconInstances: PropInstance[] = [];
+  private serviceHulls: ServicedHull[] = [];
+  /** Live structure list reused by the ore and scatter refreshes. */
+  private liveSiteScratch: Array<{ defId: string; x: number; z: number }> = [];
+  /** Signature of the structure set the prop batches were last cleared for. */
+  private propSiteSignature = '';
+  /** Bays an inbound hull is cleared onto, rebuilt every frame. */
+  private standFrames: PropInstance[] = [];
+  private standRings: PropInstance[] = [];
+  private clearedStands: ClearedStand[] = [];
   private fogTexture!: WebGLTexture;
   /** Previous fog mask, cross-faded with the current one over one interval. */
   private fogTextureOld!: WebGLTexture;
@@ -359,17 +409,26 @@ export class Renderer {
   private flagMeshes = new Map<string, FlagMesh>();
   private flagTextures = new Map<string, WebGLTexture>();
   private whiteTexture!: WebGLTexture;
-  private materialTexture!: WebGLTexture;
-  private unitMeshes = new Map<string, {
-    body: StaticMesh;
-    turret: StaticMesh | null;
-    leg: StaticMesh | null;
-    load: StaticMesh | null;
-    periscope: StaticMesh | null;
-    periscopeOffset?: Vec3;
-    launcherPivot?: Vec3;
-    launcherElevation?: number;
-  }>();
+  private materialTexture!: WebGLTexture;  private unitMeshes = new Map<
+    string,
+    {
+      body: StaticMesh;
+      turret: StaticMesh | null;
+      leg: StaticMesh | null;
+      load: StaticMesh | null;
+      periscope: StaticMesh | null;
+      periscopeOffset?: Vec3;
+      launcherPivot?: Vec3;
+      launcherElevation?: number;
+      rotor: StaticMesh | null;
+      rotorOffset: Vec3;
+      /** Rotor rate at full power, so the phase and the mesh stay together. */
+      rotorRate: number;
+      tailRotor: StaticMesh | null;
+      tailRotorOffset: Vec3;
+      tailRotorRate: number;
+    }
+  >();
   private visuals = new Map<number, VisualEntity>();
   /**
    * Hulls that just earned a rank, keyed by entity id and stamped with the
@@ -519,7 +578,7 @@ export class Renderer {
     this.terrainProgram.u = uniformMap(gl, this.terrainProgram.program, [
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
       'uSun', 'uAmbient', 'uTone', 'uFogTex', 'uFogTexOld', 'uFogBlend', 'uShoreTex',
-      'uUseFog', 'uTime', 'uGrid', 'uWet', 'uHaze', 'uHazeColor', 'uHazeRef',
+      'uUseFog', 'uTime', 'uGrid', 'uWet', 'uSnow', 'uHaze', 'uHazeColor', 'uHazeRef',
       'uShadowMap', 'uLightVP', 'uShadowTexel', 'uShadowStrength', 'uShadowBias',
     ]);
     this.waterProgram.u = uniformMap(gl, this.waterProgram.program, [
@@ -545,6 +604,7 @@ export class Renderer {
     this.shadowMatrix = identity();
 
     this.treesMesh = new InstancedMesh(gl, buildTreeMesh());
+    this.snowCapsMesh = new InstancedMesh(gl, buildTreeSnowMesh());
     this.rocksMesh = new InstancedMesh(gl, buildRockMesh());
     this.oreMesh = new InstancedMesh(gl, buildOreMesh());
     this.bushesMesh = new InstancedMesh(gl, buildBushMesh());
@@ -556,6 +616,15 @@ export class Renderer {
     this.rubbleMesh = new InstancedMesh(gl, buildRubbleMesh());
     this.reedsMesh = new InstancedMesh(gl, buildReedMesh());
     this.polesMesh = new InstancedMesh(gl, buildUtilityPoleMesh());
+    for (const batch of DECOR_BATCHES) {
+      const mesh = buildDecorMesh(batch);
+      if (mesh) this.decorMeshes.set(batch, new InstancedMesh(gl, mesh));
+    }
+    this.serviceKitMesh = new InstancedMesh(gl, buildServiceKit());
+    this.serviceCrewMesh = new InstancedMesh(gl, buildServiceCrew());
+    this.serviceBeaconMesh = new InstancedMesh(gl, buildServiceBeacon());
+    this.standFrameMesh = new InstancedMesh(gl, buildStandClearanceFrame());
+    this.standRingMesh = new InstancedMesh(gl, buildStandClearanceRing());
     this.fogTexture = this.createTexture();
     this.fogTextureOld = this.createTexture();
     this.shoreTexture = this.createTexture();
@@ -572,6 +641,12 @@ export class Renderer {
           periscopeOffset: style.periscopeOffset,
           launcherPivot: style.launcherPivot,
           launcherElevation: style.launcherElevation,
+          rotor: style.rotor ? new StaticMesh(gl, style.rotor.mesh) : null,
+          rotorOffset: style.rotor?.offset ?? [0, 0, 0],
+          rotorRate: style.rotor?.rate ?? 0,
+          tailRotor: style.tailRotor ? new StaticMesh(gl, style.tailRotor.mesh) : null,
+          tailRotorOffset: style.tailRotor?.offset ?? [0, 0, 0],
+          tailRotorRate: style.tailRotor?.rate ?? 0,
         });
       }
     }
@@ -782,6 +857,10 @@ export class Renderer {
     this.projectileViews.clear();
     this.particles.clear();
     this.lastEventSeq = 0;
+    // A new scenario stages its scatter from the authored map. The next match's
+    // standing set is a different question, so the cached signature must not
+    // survive the change and convince the first refresh that nothing moved.
+    this.propSiteSignature = '';
     this.camera.setMap(scenario.width, scenario.height);
     this.camera.centerOn((scenario.width * TILE_SIZE) / 2, (scenario.height * TILE_SIZE) / 2);
     this.camera.setZoom(Math.max(58, scenario.width * 0.62));
@@ -791,30 +870,7 @@ export class Renderer {
     this.buildWater(scenario);
     this.roadMesh = new StaticMesh(this.gl, buildRoadDetails(scenario));
     const props = buildPropInstances(scenario);
-    this.treeInstances = props.trees;
-    this.rockInstances = props.rocks;
-    this.oreInstances = props.ore;
-    this.bushInstances = props.bushes;
-    this.shrubInstances = props.shrubs;
-    this.tuftInstances = props.tufts;
-    this.fenceInstances = props.fences;
-    this.lampInstances = props.lamps;
-    this.signInstances = props.signs;
-    this.rubbleInstances = props.rubble;
-    this.reedInstances = props.reeds;
-    this.poleInstances = props.poles;
-    this.treesMesh.setInstances(this.treeInstances);
-    this.rocksMesh.setInstances(this.rockInstances);
-    this.oreMesh.setInstances(this.oreInstances);
-    this.bushesMesh.setInstances(this.bushInstances);
-    this.shrubsMesh.setInstances(this.shrubInstances);
-    this.tuftsMesh.setInstances(this.tuftInstances);
-    this.fencesMesh.setInstances(this.fenceInstances);
-    this.lampsMesh.setInstances(this.lampInstances);
-    this.signsMesh.setInstances(this.signInstances);
-    this.rubbleMesh.setInstances(this.rubbleInstances);
-    this.reedsMesh.setInstances(this.reedInstances);
-    this.polesMesh.setInstances(this.poleInstances);
+    this.applyPropSource(props);
     this.rebuildPropShadows();
     this.shoreData = buildShoreTexture(scenario);
     // The coast field packs land and water distance into separate channels; the
@@ -914,6 +970,7 @@ export class Renderer {
     // and reflective rather than dark, so it brightens the blue back in.
     const profile = weatherFor(this.scenario?.settings.weather);
     this.weather = profile;
+    this.refreshSnowCaps();
     const gloom = profile.gloom;
     if (gloom > 0) {
       this.baseAmbient += (0.035 + 0.05 * light) * gloom;
@@ -1430,6 +1487,26 @@ export class Renderer {
     this.uploadFogField(data);
   }
 
+  /** Structures alive in the running match, in the shape the prop builders want. */
+  private liveStructures(): Array<{ defId: string; x: number; z: number }> {
+    const sites = this.liveSiteScratch;
+    sites.length = 0;
+    for (const e of this.game?.state.entities ?? []) {
+      if (e.kind !== 'building' || e.hp <= 0) continue;
+      // World-space centre of the footprint, not the tile. The prop builders
+      // divide by TILE_SIZE and subtract half the footprint to get back to the
+      // top-left corner, so a tile passed here lands the building a quarter of
+      // its distance from the origin and clears the wrong ground.
+      const footprint = BUILDINGS[e.defId]?.footprint;
+      sites.push({
+        defId: e.defId,
+        x: (e.x + (footprint?.w ?? 1) / 2) * TILE_SIZE,
+        z: (e.z + (footprint?.h ?? 1) / 2) * TILE_SIZE,
+      });
+    }
+    return sites;
+  }
+
   private refreshOre(): void {
     if (!this.scenario) return;
     const game = this.game;
@@ -1437,8 +1514,20 @@ export class Renderer {
     if (game) {
       if (this.oreInstances.length > 0 && game.state.tick - this.lastOreRefresh < 20) return;
       this.lastOreRefresh = game.state.tick;
-      const source = buildPropInstances(this.scenario, game.state.map.ore, game.state.map.maxOre);
+      // One pass feeds both draws. The standing buildings are the only ones
+      // holding ground, so a seam never sprouts on a live apron — and a
+      // destroyed structure's footprint is fair game again, for crystals and
+      // scenery alike.
+      const sites = this.liveStructures();
+      const source = buildPropInstances(
+        this.scenario,
+        game.state.map.ore,
+        game.state.map.maxOre,
+        sites,
+        sites,
+      );
       data = source.ore;
+      this.refreshScatter(sites, source);
     } else {
       data = this.oreInstances;
     }
@@ -1446,6 +1535,36 @@ export class Renderer {
       this.oreInstances = data;
       this.oreMesh.setInstances(this.oreInstances);
     }
+  }
+
+  /**
+   * Scatter follows the structures that are actually standing.
+   *
+   * The batches were staged once, from the map: a footprint that existed then had
+   * its scenery refused at build time. Mid-match that answer goes stale in both
+   * directions — a barracks raised on a meadow would keep the grass it was built
+   * on, and a refinery that has been shelled flat would keep the bare square it
+   * left behind, because nothing was ever staged back. So when the set of
+   * standing buildings changes, the scatter is rebuilt from the same deterministic
+   * builder with only those buildings holding ground: a destroyed structure's
+   * footprint grows its trees, brush and rubble again, and a new one takes them
+   * away.
+   *
+   * Rebuilding is a real cost, so it only happens when the signature moves — a
+   * few times a minute at most. Ore rides the same pass and already had this
+   * cadence; the batch uploads are skipped when the set has not changed.
+   */
+  private refreshScatter(
+    sites: ReadonlyArray<{ defId: string; x: number; z: number }>,
+    source: ReturnType<typeof buildPropInstances>,
+  ): void {
+    let signature = '';
+    for (const site of sites) signature += `${site.defId}:${site.x.toFixed(1)}:${site.z.toFixed(1)};`;
+    if (signature === this.propSiteSignature) return;
+    this.applyPropSource(source);
+    // The silhouettes were staged from the same batches, so a footprint that
+    // just went back to being woodland has to cast the shadows of woodland.
+    this.rebuildPropShadows();
   }
 
   /** Fraction of the next simulation tick already elapsed, for smooth projectiles. */
@@ -1506,8 +1625,19 @@ export class Renderer {
           doorHold: 0,
           doorQueue: 0,
           emerge: 0,
-          emergeAlt: 1,
+          // A hull first seen on the ground starts there, and one already in the
+          // air starts at cruise; anything else would pop at the far end of a
+          // climb it never made.
+          emergeAlt:
+            e.kind === 'unit' && UNITS[e.defId]?.domain === 'air'
+              ? e.aircraft?.climb ?? (e.aircraft?.landed ? 0 : 1)
+              : 1,
           trackTimer: 0,
+          // A helicopter first seen already airborne has its disc at full rate;
+          // one first seen on the ground spins up when it lifts off.
+          rotorPower: e.kind === 'unit' && UNITS[e.defId]?.domain === 'air' && !e.aircraft?.landed ? 1 : 0,
+          rotorAngle: 0,
+          tailRotorAngle: 0,
         };
         this.visuals.set(e.id, v);
         this.startEmergence(game, e, v);
@@ -1543,8 +1673,35 @@ export class Renderer {
           : 0;
       v.elevation += (deployed - v.elevation) * (1 - Math.exp(-dt * 4.2));
       if (v.elevation < 0.002) v.elevation = 0;
-      // Aircraft leave the hangar on the ground and climb away.
-      if (v.emergeAlt < 1) v.emergeAlt = Math.min(1, v.emergeAlt + dt / 1.3);
+      // Altitude is the simulation's own number while a hull taxis or rolls on
+      // a strip, and simply parked or flying otherwise. Easing toward it is what
+      // makes a landing read as a descent: snapping to apron height the instant
+      // `landed` flipped hid the last few metres of every approach.
+      if (udef?.domain === 'air') {
+        const targetAlt = e.aircraft?.climb ?? (e.aircraft?.landed ? 0 : 1);
+        const step = dt / 1.5;
+        if (v.emergeAlt < targetAlt) v.emergeAlt = Math.min(targetAlt, v.emergeAlt + step);
+        else if (v.emergeAlt > targetAlt) v.emergeAlt = Math.max(targetAlt, v.emergeAlt - step);
+      } else if (v.emergeAlt < 1) {
+        v.emergeAlt = Math.min(1, v.emergeAlt + dt / 1.3);
+      }
+      // Rotors are spun from the hull's own state rather than an event: a
+      // helicopter hovering on station keeps turning, one that lands coasts down
+      // through its own inertia. The angle is integrated from a ramped blade
+      // speed, so take-off and landing both have a visible transition.
+      const rotorRig = e.kind === 'unit' ? this.unitMeshes.get(e.defId) : null;
+      if (rotorRig?.rotor || rotorRig?.tailRotor) {
+        // `landed` alone is the wrong question while a hull is on the ground
+        // working: the crew holds the pad through the whole spin-up before it
+        // lifts, and keeps the disc turning down the approach and the taxi-in
+        // after touch-down. Any ground leg therefore counts as running, and the
+        // coast-down only begins once the hull is parked with no leg left.
+        const working = !!e.aircraft?.roll || !e.aircraft?.landed;
+        const aloft = udef?.domain === 'air' && working && e.hp > 0;
+        v.rotorPower = stepRotorPower(v.rotorPower, aloft, dt);
+        v.rotorAngle += dt * v.rotorPower * rotorRig.rotorRate;
+        v.tailRotorAngle += dt * v.rotorPower * rotorRig.tailRotorRate;
+      }
       const teleport = Math.abs(e.x - v.x) + Math.abs(e.z - v.z) > 40;
       // A unit leaving its bay eases out slowly enough to be seen driving.
       const ease = v.emerge > 0 ? 1 - Math.exp(-dt * 4.5) : k;
@@ -1592,6 +1749,9 @@ export class Renderer {
     if (e.kind !== 'unit' || e.garrisonId) return;
     const def = UNITS[e.defId];
     if (!def) return;
+    // A hull that rolled out of the hangar already parked on its stand did not
+    // come through the doorway: it appears where the simulation put it.
+    if (def.domain === 'air' && e.aircraft?.landed) return;
     let source: Entity | null = null;
     let bestDist = Infinity;
     for (const b of game.state.entities) {
@@ -1654,7 +1814,7 @@ export class Renderer {
       if (def && e.kind === 'unit') {
         v.trailTimer -= dt;
         if (moved && v.trailTimer <= 0) {
-          if (def.domain === 'air' && !e.aircraft?.landed) {
+          if (def.domain === 'air' && v.emergeAlt > 0.6) {
             const trailHeight = 0.3 + (AIR_UNIT_ALTITUDE - 0.4) * v.emergeAlt;
             this.particles.jetTrail(v.x, trailHeight, v.z);
             v.trailTimer = 0.05;
@@ -2187,6 +2347,34 @@ export class Renderer {
     return !!texture;
   }
 
+  /**
+   * How much weather-driven snow lies on the ground, 0..1.
+   *
+   * Authored snow overlays add their own cover on the tiles they were painted
+   * on; this is the weather's share, so a snow map is white everywhere without
+   * the author having to paint every tile by hand.
+   */
+  private groundSnow(): number {
+    const kind = this.weather.kind;
+    return kind === 'blizzard' ? 0.92 : kind === 'snow' ? 0.7 : 0;
+  }
+
+  /**
+   * Match the canopy snow batch to the weather.
+   *
+   * The batch reuses the tree instance list rather than copying it, so a fresh
+   * forest after a scenario reload is picked up by the next call and costs no
+   * per-tree work. Outside snow and blizzard it is empty and the draw is a
+   * zero-instance no-op.
+   */
+  private refreshSnowCaps(): void {
+    if (!this.snowCapsMesh) return;
+    const snowy = this.weather.kind === 'snow' || this.weather.kind === 'blizzard';
+    if (!snowy && this.snowCapInstances.length === 0) return;
+    this.snowCapInstances = snowy ? this.treeInstances : [];
+    this.snowCapsMesh.setInstances(this.snowCapInstances);
+  }
+
   private drawTerrain(): void {
     if (!this.terrainGpu || !this.scenario) return;
     const gl = this.gl;
@@ -2201,6 +2389,7 @@ export class Renderer {
     // Ground wetness is authored by the weather, not by the frame: a rainy map
     // is soaked when the first unit lands and stays soaked.
     gl.uniform1f(p.u.uWet ?? null, this.weather.wet);
+    gl.uniform1f(p.u.uSnow ?? null, this.groundSnow());
     bindTextureUnit(gl, 1, this.shoreTexture, p.u.uShoreTex ?? null);
     // Fog at unit 0, the previous field at unit 2; the shore map keeps unit 1.
     this.bindFogFields(p.u, 0, 2);
@@ -2270,6 +2459,85 @@ export class Renderer {
     gl.activeTexture(gl.TEXTURE0);
   }
 
+  /**
+   * Ground kit for airframes that are being turned around.
+   *
+   * Rebuilt every frame rather than on a state change: a servicing run lasts a
+   * few seconds, and the set has to appear when the crew starts working and
+   * disappear the moment the hull is declared ready. Only hulls the local team
+   * can actually see are staged, so fog never leaks a hidden flight line.
+   */
+  private rebuildServiceInstances(): void {
+    const game = this.game;
+    this.serviceHulls.length = 0;
+    this.serviceKitInstances.length = 0;
+    this.serviceCrewInstances.length = 0;
+    this.serviceBeaconInstances.length = 0;
+    if (!game || !this.scenario) return;
+    const team = game.teamOf(game.localPlayerId);
+    for (const e of game.state.entities) {
+      if (!isServicingAircraft(e)) continue;
+      if (game.visionStateOf(team, e.id) !== 'visible') continue;
+      const v = this.visuals.get(e.id);
+      this.serviceHulls.push({
+        id: e.id,
+        x: v?.x ?? e.x,
+        z: v?.z ?? e.z,
+        facing: v?.facing ?? e.facing,
+      });
+    }
+    if (this.serviceHulls.length > 0) {
+      serviceInstances(
+        this.serviceHulls,
+        (x, z) => tileWorldHeight(this.scenario!, x, z),
+        this.time,
+        this.serviceKitInstances,
+        this.serviceBeaconInstances,
+        this.serviceCrewInstances,
+      );
+    }
+    // A working engineer shows the same lamp, appended to the same instance
+    // list: one draw covers a flight line and a construction site, and a base
+    // with no aircraft still gets its site crews lit.
+    workLightInstances(
+      game.state.entities,
+      (e) => game.visionStateOf(team, e.id) === 'visible',
+      (x, z) => tileWorldHeight(this.scenario!, x, z),
+      this.time,
+      this.serviceBeaconInstances,
+    );
+  }
+
+  /**
+   * The bays inbound aircraft are cleared onto.
+   *
+   * The simulation owns the answer (`landingClearance`), so the marking is where
+   * the hull will actually set down rather than a guess the renderer made. Only
+   * hulls already on a return leg get that far, and each passes the fog test at
+   * its bay, so an approach over ground the player cannot see lights nothing.
+   */
+  private rebuildStandClearances(): void {
+    const game = this.game;
+    this.clearedStands.length = 0;
+    this.standFrames.length = 0;
+    this.standRings.length = 0;
+    if (!game || !this.scenario) return;
+    for (const e of game.state.entities) {
+      if (e.kind !== 'unit' || e.hp <= 0) continue;
+      const bay = game.landingClearance(e);
+      if (!bay) continue;
+      if (!this.pointVisible(game, bay.x, bay.z)) continue;
+      this.clearedStands.push({ kind: bay.kind, x: bay.x, z: bay.z, facing: bay.facing });
+    }
+    if (this.clearedStands.length === 0) return;
+    standMarkInstances(
+      this.clearedStands,
+      (x, z) => tileWorldHeight(this.scenario!, x, z),
+      this.standFrames,
+      this.standRings,
+    );
+  }
+
   private drawProps(): void {
     const gl = this.gl;
     const p = this.propProgram;
@@ -2289,6 +2557,7 @@ export class Renderer {
     gl.uniform2f(p.u.uWind, this.weather.wind[0], this.weather.wind[1]);
     gl.uniform1f(p.u.uTime ?? null, this.time);
     this.treesMesh.draw(this.treeInstances.length);
+    this.snowCapsMesh.draw(this.snowCapInstances.length);
     this.rocksMesh.draw(this.rockInstances.length);
     // The authored detail set. Three instanced batches, not one draw per prop:
     // scrub, boundary fencing and kerbside lamps share the prop program.
@@ -2301,6 +2570,51 @@ export class Renderer {
     this.rubbleMesh.draw(this.rubbleInstances.length);
     this.reedsMesh.draw(this.reedInstances.length);
     this.polesMesh.draw(this.poleInstances.length);
+    for (const [batch, mesh] of this.decorMeshes) {
+      mesh.draw(this.decorInstances[batch]?.length ?? 0);
+    }
+    // Servicing kit on any airframe currently being turned around: a bowser, a
+    // pump skid, a hose and two crew walking between them, with the bowser's
+    // beacon turning. The kit only exists while a servicing run is under way, so
+    // on a quiet map this costs one pass over the entity list and nothing else.
+    // The crew draw before the beacon, while the emissive uniform is still off:
+    // they are lit like any other prop, not like a lamp.
+    this.rebuildServiceInstances();
+    if (this.serviceKitInstances.length > 0) {
+      this.serviceKitMesh.setInstances(this.serviceKitInstances);
+      this.serviceKitMesh.draw(this.serviceKitInstances.length);
+      this.serviceCrewMesh.setInstances(this.serviceCrewInstances);
+      this.serviceCrewMesh.draw(this.serviceCrewInstances.length);
+    }
+    // The beacon is lit for both kinds of work — a bowser turning an airframe
+    // round and a crew working a site — and it lights even when no kit was
+    // staged at all. Amber in daylight, brighter after dark; the ore pass sets
+    // its own glow below, so this block only owns the lamps it drew.
+    if (this.serviceBeaconInstances.length > 0) {
+      const beaconGlow = 0.35 + 0.65 * this.nightGlow();
+      gl.uniform1f(p.u.uEmissive, 0.4);
+      gl.uniform3f(p.u.uGlow, beaconGlow, 0.5 * beaconGlow, 0.06 * beaconGlow);
+      this.serviceBeaconMesh.setInstances(this.serviceBeaconInstances);
+      this.serviceBeaconMesh.draw(this.serviceBeaconInstances.length);
+    }
+    // Landing clearance: the bay an inbound hull has been given lights up on the
+    // apron, and the apron frame or the pad ring flashes with it. Emissive rather
+    // than a light, so it reads identically in daylight and after dark without
+    // adding a pool the lighting pass would have to carry.
+    this.rebuildStandClearances();
+    if (this.clearedStands.length > 0) {
+      const pulse = standPulse(this.time);
+      gl.uniform1f(p.u.uEmissive, 0.1 + 0.3 * pulse);
+      gl.uniform3f(p.u.uGlow, pulse, 0.58 * pulse, 0.07 * pulse);
+      if (this.standFrames.length > 0) {
+        this.standFrameMesh.setInstances(this.standFrames);
+        this.standFrameMesh.draw(this.standFrames.length);
+      }
+      if (this.standRings.length > 0) {
+        this.standRingMesh.setInstances(this.standRings);
+        this.standRingMesh.draw(this.standRings.length);
+      }
+    }
     // The deposit is the one prop lit from inside: after dark the crystal
     // faces burn cyan on their own, brighter than the ground they stand on.
     const crystal = this.nightGlow() * 0.85;
@@ -2470,6 +2784,7 @@ export class Renderer {
     // position, rotation and scale, and the identity places the batch.
     gl.uniform1f(p.u.uStaticScale, 0);
     this.treesMesh.draw(this.treeInstances.length);
+    this.snowCapsMesh.draw(this.snowCapInstances.length);
     this.rocksMesh.draw(this.rockInstances.length);
     this.oreMesh.draw(this.oreInstances.length);
     this.bushesMesh.draw(this.bushInstances.length);
@@ -2481,6 +2796,9 @@ export class Renderer {
     this.rubbleMesh.draw(this.rubbleInstances.length);
     this.reedsMesh.draw(this.reedInstances.length);
     this.polesMesh.draw(this.poleInstances.length);
+    for (const [batch, mesh] of this.decorMeshes) {
+      mesh.draw(this.decorInstances[batch]?.length ?? 0);
+    }
     this.drawShadowCasters(cx, cz, footprint);
     gl.disable(gl.POLYGON_OFFSET_FILL);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -2558,10 +2876,12 @@ export class Renderer {
         const style = this.unitMeshes.get(e.defId);
         if (!def || !style) continue;
         const air = def.domain === 'air';
+        // Always the blend, never a branch on `landed`: this one number is what
+        // carries a hull down the last metre onto its stand and up off a strip.
         const y = air
-          ? e.aircraft?.landed
-            ? groundY + 0.25
-            : groundY + 0.25 + (AIR_UNIT_ALTITUDE - groundY - 0.25) * (v?.emergeAlt ?? 1)
+          ? groundY +
+            PARKED_AIRCRAFT_CLEARANCE +
+            (AIR_UNIT_ALTITUDE - groundY - PARKED_AIRCRAFT_CLEARANCE) * (v?.emergeAlt ?? 0)
           : groundY + (def.domain === 'naval' ? 0.12 : 0);
         const turret = turretFacing;
         // Same rule as the lit pass, so the hull and its shadow turn together.
@@ -2666,9 +2986,12 @@ export class Renderer {
         const v = this.visuals.get(e.id);
         const x = v?.x ?? e.x;
         const z = v?.z ?? e.z;
-        if (def?.domain === 'air' && !e.aircraft?.landed) {
+        const airAlt = def?.domain === 'air' ? v?.emergeAlt ?? 0 : 0;
+        if (def?.domain === 'air' && airAlt > 0.04) {
           const [rx, rz] = unitShadowRadius(e.defId);
-          const offset = this.airShadowOffset(AIR_UNIT_ALTITUDE);
+          // The shadow is cast from the hull's height, so it closes on the
+          // aircraft through a descent instead of jumping at touchdown.
+          const offset = this.airShadowOffset(AIR_UNIT_ALTITUDE * airAlt);
           const sx = x + offset.x;
           const sz = z + offset.z;
           shadows.push({
@@ -2678,7 +3001,7 @@ export class Renderer {
             rx: rx * 1.25,
             rz: rz * 1.25,
             rotation: -(v?.facing ?? e.facing),
-            alpha: 0.72,
+            alpha: 0.72 * Math.min(1, 0.35 + airAlt),
           });
           continue;
         }
@@ -2819,9 +3142,82 @@ export class Renderer {
   }
 
   /** Cache the static ground shadows for terrain props; ore is per-frame. */
+  /**
+   * Put one build of the scenery into every instanced batch.
+   *
+   * `buildPropInstances` is the single source of truth for what stands where:
+   * procedural scatter and authored props arrive in the same shape, so the
+   * scenario build, the mid-match restage and the Forge's own edits all upload
+   * through here rather than repeating thirteen batches in three places.
+   */
+  private applyPropSource(source: ReturnType<typeof buildPropInstances>): void {
+    this.treeInstances = source.trees;
+    this.refreshSnowCaps();
+    this.rockInstances = source.rocks;
+    this.oreInstances = source.ore;
+    this.bushInstances = source.bushes;
+    this.shrubInstances = source.shrubs;
+    this.tuftInstances = source.tufts;
+    this.fenceInstances = source.fences;
+    this.lampInstances = source.lamps;
+    this.signInstances = source.signs;
+    this.rubbleInstances = source.rubble;
+    this.reedInstances = source.reeds;
+    this.poleInstances = source.poles;
+    const batches: Array<[InstancedMesh, PropInstance[]]> = [
+      [this.treesMesh, this.treeInstances],
+      [this.rocksMesh, this.rockInstances],
+      [this.oreMesh, this.oreInstances],
+      [this.bushesMesh, this.bushInstances],
+      [this.shrubsMesh, this.shrubInstances],
+      [this.tuftsMesh, this.tuftInstances],
+      [this.fencesMesh, this.fenceInstances],
+      [this.lampsMesh, this.lampInstances],
+      [this.signsMesh, this.signInstances],
+      [this.rubbleMesh, this.rubbleInstances],
+      [this.reedsMesh, this.reedInstances],
+      [this.polesMesh, this.poleInstances],
+    ];
+    for (const [mesh, list] of batches) mesh.setInstances(list);
+    this.decorInstances = source.decor;
+    for (const [batch, mesh] of this.decorMeshes) {
+      mesh.setInstances(this.decorInstances[batch] ?? []);
+    }
+  }
+
+  /**
+   * Re-stage the scenery after the Scenario Forge edits it.
+   *
+   * Placing, duplicating, erasing or deleting a prop only changes the scenario;
+   * the batches were staged when the map loaded. Without this the author sees
+   * the Forge's ring around the tile and no piece at all, because nothing
+   * rebuilds the instances until some unrelated edit repaints the terrain. The
+   * signature is reset so the next mid-match pass cannot decide it has already
+   * staged this set.
+   */
+  restageProps(): void {
+    if (!this.scenario) return;
+    this.propSiteSignature = '';
+    this.applyPropSource(buildPropInstances(this.scenario));
+    this.rebuildPropShadows();
+  }
   private rebuildPropShadows(): void {
     if (!this.scenario) return;
     const out: GpuShadow[] = [];
+    for (const list of Object.values(this.decorInstances)) {
+      for (const prop of list) {
+        const lean = this.shadowLean(0.34 * prop.scale);
+        out.push({
+          x: prop.x + lean.x,
+          y: prop.y + 0.06,
+          z: prop.z + lean.z,
+          rx: 0.62 * prop.scale,
+          rz: 0.5 * prop.scale,
+          rotation: prop.rotation,
+          alpha: 0.5,
+        });
+      }
+    }
     for (const tree of this.treeInstances) {
       const s = tree.scale;
       const lean = this.shadowLean(1.5 * s);
@@ -3220,16 +3616,22 @@ export class Renderer {
       // A unit crossing a bridge stands on the deck, not on the sea bed the
       // terrain surface reports under it.
       const groundY = game.deckHeightAt(x, z) ?? tileWorldHeight(this.scenario!, x, z);
-      const alt = v?.emergeAlt ?? 1;
+      const alt = v?.emergeAlt ?? 0;
+      // The blend is the whole vertical profile: taxi, climb-out, approach and
+      // touchdown all ride it, so nothing here asks whether the hull has landed.
       const y = isAir
-        ? e.aircraft?.landed
-          ? groundY + 0.25
-          : groundY +
-            0.25 +
-            (AIR_UNIT_ALTITUDE - groundY - 0.25) * alt +
-            Math.sin(this.time * 1.7 + e.id) * 0.16 * alt
+        ? groundY +
+          PARKED_AIRCRAFT_CLEARANCE +
+          (AIR_UNIT_ALTITUDE - groundY - PARKED_AIRCRAFT_CLEARANCE) * alt +
+          Math.sin(this.time * 1.7 + e.id) * 0.16 * alt
         : groundY + (def?.domain === 'naval' ? 0.12 : 0);
-      const bob = def?.domain === 'naval' ? Math.sin(this.time * 1.2 + e.id * 0.7) * 0.06 : 0;
+      // A hull working a site rocks on its suspension; a ship rolls with the
+      // swell. One bob feeds the draw call, so neither needs its own branch.
+      const work = e.kind === 'unit' ? engineerWorkPose(e, this.time) : null;
+      const bob =
+        def?.domain === 'naval'
+          ? Math.sin(this.time * 1.2 + e.id * 0.7) * 0.06
+          : work?.lift ?? 0;
       const hitFlash = !remembered && game.state.tick - e.lastHitTick < 3 ? 0.75 : 0;
       const flash = Math.max(hitFlash, remembered ? 0 : this.promotionFlash(e.id));
       // An occupied shelter switches to its garrisoned model and takes the trim
@@ -3280,7 +3682,7 @@ export class Renderer {
         x,
         y + bob,
         z,
-        facing,
+        facing + (work?.sway ?? 0),
         turret,
         verticalScale,
         alpha,
@@ -3295,6 +3697,8 @@ export class Renderer {
           elevation: v?.elevation ?? 0,
           motion: v?.motion ?? e.facing,
           moving: e.state === 'moving' || e.path.length > 0,
+          rotor: v?.rotorAngle ?? 0,
+          tailRotor: v?.tailRotorAngle ?? 0,
         },
         garrisonOwner,
         doorOpen,
@@ -3359,8 +3763,10 @@ export class Renderer {
       const def = UNITS[e.defId];
       const groundY = tileWorldHeight(this.scenario!, x, z);
       const y =
-        def?.domain === 'air' && !e.aircraft?.landed
-          ? groundY + 0.25 + (AIR_UNIT_ALTITUDE - groundY - 0.25) * (v?.emergeAlt ?? 1)
+        def?.domain === 'air'
+          ? groundY +
+            PARKED_AIRCRAFT_CLEARANCE +
+            (AIR_UNIT_ALTITUDE - groundY - PARKED_AIRCRAFT_CLEARANCE) * (v?.emergeAlt ?? 0)
           : groundY + (def?.domain === 'naval' ? 0.12 : 0);
       this.drawEntityMesh(
         'unit',
@@ -3406,7 +3812,17 @@ export class Renderer {
     flash: number,
     construction: boolean,
     loadFill: number,
-    anim: { gait: number; pace: number; elevation?: number; motion?: number; moving?: boolean } | null = null,
+    anim:
+      | {
+          gait: number;
+          pace: number;
+          elevation?: number;
+          motion?: number;
+          moving?: boolean;
+          rotor?: number;
+          tailRotor?: number;
+        }
+      | null = null,
     garrisonOwner: number | null = null,
     doorOpen = 0,
     rotorAngle = 0,
@@ -3561,6 +3977,34 @@ export class Renderer {
       );
       gl.uniformMatrix4fv(mp.u.uModel, false, tm);
       style.turret.draw();
+    }
+    // Rotors are drawn on the body's heading and spin about their own mounts,
+    // so the disc turns with the airframe instead of skidding across it when
+    // the hull banks into a turn.
+    if (style.rotor) {
+      gl.uniformMatrix4fv(
+        mp.u.uModel,
+        false,
+        rotorModelMatrix(x, y, z, bodyFacing, style.rotorOffset, anim?.rotor ?? 0, vs, 'y'),
+      );
+      style.rotor.draw();
+    }
+    if (style.tailRotor) {
+      gl.uniformMatrix4fv(
+        mp.u.uModel,
+        false,
+        rotorModelMatrix(
+          x,
+          y,
+          z,
+          bodyFacing,
+          style.tailRotorOffset,
+          anim?.tailRotor ?? 0,
+          vs,
+          'z',
+        ),
+      );
+      style.tailRotor.draw();
     }
   }
 

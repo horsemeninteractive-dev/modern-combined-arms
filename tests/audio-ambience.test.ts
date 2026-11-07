@@ -14,6 +14,7 @@ import {
   clampAmbiencePitch,
   driveProfile,
   framingGain,
+  serviceKitAmbience,
   structureAmbience,
   unitAmbience,
   type AmbienceCandidate,
@@ -227,6 +228,43 @@ describe('drive families', () => {
     expect(unitAmbience({ ...base, garrisoned: true })).toBeNull();
     expect(unitAmbience({ ...base, dived: true })).toBeNull();
     expect(unitAmbience({ ...base, speed: 0 })).toBeNull();
+  });
+});
+
+describe('servicing kit ambience', () => {
+  it('runs a pump for a hull on turnaround, and nothing for one that is only parked', () => {
+    const kit = serviceKitAmbience({ servicing: true })!;
+    expect(kit.kind).toBe('servicing');
+    // A pump runs at one speed: the timbre is open from the moment it starts.
+    expect(kit.motion).toBe(1);
+    expect(kit.level).toBeGreaterThan(0);
+    expect(serviceKitAmbience({ servicing: false })).toBeNull();
+  });
+
+  it('is the voice you hear once the aircraft is on turnaround', () => {
+    // The app hands the kit the source the aircraft used to own, so the pump has
+    // to be at least as present as the jet idle it replaces — otherwise a hull
+    // appears to go quiet while a bowser works right beside it.
+    const parkedJet = unitAmbience({
+      ...STILL,
+      domain: 'air',
+      moveClass: 'air',
+      role: 'Air superiority',
+      speed: 1,
+    })!;
+    expect(serviceKitAmbience({ servicing: true })!.level).toBeGreaterThan(parkedJet.level);
+  });
+
+  it('is positional, so two working aprons do not both sit in the centre', () => {
+    const plan = ambiencePlan([
+      { id: 1, kind: 'servicing', level: 0.5, motion: 1, sx: -0.5, sy: 0 },
+      { id: 2, kind: 'servicing', level: 0.5, motion: 1, sx: 0.5, sy: 0 },
+    ]);
+    const byId = new Map(plan.map((voice) => [voice.id, voice]));
+    expect(byId.get(1)!.pan).toBeLessThan(-0.3);
+    expect(byId.get(2)!.pan).toBeGreaterThan(0.3);
+    // Nearest first: the beacon chirp is read off the head of this list.
+    expect([1, 2]).toContain(plan[0].id);
   });
 });
 

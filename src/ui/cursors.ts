@@ -521,15 +521,91 @@ export function wantsNativeCursor(target: Element | null): boolean {
 }
 
 /**
- * The topmost cursor surface. It is a separate canvas from the battlefield
- * overlay so the pointer can sit above the deck, modals and editor without
- * lifting the selection rings and hover labels above the HUD.
+ * Densest device-pixel ratio the pointer is rasterised at. A 4× ceiling is a
+ * guard against an absurd backing store, not a target: everything up to that
+ * draws at the panel's native density.
+ */
+export const MAX_CURSOR_DPR = 4;
+
+/** Backing-store size and the CSS→device scale that maps onto it exactly. */
+export interface CursorSurface {
+  /** Backing store, in device pixels. */
+  width: number;
+  height: number;
+  /** Device pixels per CSS pixel on each axis. */
+  scaleX: number;
+  scaleY: number;
+}
+
+/**
+ * Size the pointer's backing store for the display it is on.
+ *
+ * The layer used to cap the ratio at 2, which left 2.5× and 3× panels painting
+ * every glyph at roughly two-thirds of native density; the compositor then
+ * resampled the whole canvas up to the panel, which is what read as a soft,
+ * slightly crawling pointer. Rendering at the real ratio keeps the 1px halo and
+ * ring edges on physical pixels. The scale is derived back from the rounded
+ * backing store so the CSS-space transform lands on whole device pixels rather
+ * than being off by a fraction of one at the far edge of the screen.
+ */
+export function cursorSurface(cssWidth: number, cssHeight: number, ratio: number): CursorSurface {
+  const width = Math.max(1, cssWidth || 1);
+  const height = Math.max(1, cssHeight || 1);
+  const scale = Math.min(MAX_CURSOR_DPR, Math.max(1, ratio || 1));
+  const backingWidth = Math.max(1, Math.round(width * scale));
+  const backingHeight = Math.max(1, Math.round(height * scale));
+  return {
+    width: backingWidth,
+    height: backingHeight,
+    scaleX: backingWidth / width,
+    scaleY: backingHeight / height,
+  };
+}
+
+/**
+ * Snap a CSS-space coordinate onto the device-pixel grid.
+ *
+ * A hairline reticle drawn between physical pixels lands on a different
+ * subpixel each frame while the pointer is barely moving, so a ring or a 1.6px
+ * cap appears to shiver in place — the complaint that reads as a jittery
+ * pointer on a high-refresh panel, where every one of those steps is shown.
+ */
+export function snapToDevice(value: number, scale: number): number {
+  return scale > 0 ? Math.round(value * scale) / scale : value;
+}
+
+/**
+ * Extent of the painted pointer from its anchor, in CSS pixels: the widest ring
+ * plus its halo, with a pixel of slack for the anti-aliased edge.
+ */
+export const CURSOR_BLEED = 28;
+
+/** Side of the pointer's own canvas box, in CSS pixels. */
+export const CURSOR_BOX = CURSOR_BLEED * 2;
+
+/**
+ * The topmost cursor surface.
+ *
+ * The pointer gets its own small canvas rather than a full-window one: a
+ * full-screen 2D layer has to be cleared and re-composited every frame, and at
+ * 120 Hz and above that cost is exactly what shows up as a pointer that steps
+ * and shivers against a scene that is still smooth. This canvas is one 56px
+ * square that only ever repaints inside itself; moving it is a compositor-only
+ * transform, so the pointer stays glued to the hand at any refresh rate.
+ *
+ * It is still a separate canvas from the battlefield overlay, so the pointer can
+ * sit above the deck, modals and editor without lifting the selection rings and
+ * hover labels above the HUD.
  */
 export class CursorLayer {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  width = 1;
-  height = 1;
+  /** Ratio the backing store was sized for, so a monitor move can be noticed. */
+  private ratio = 1;
+  private scaleX = 1;
+  private scaleY = 1;
+  /** Last transform written, so the style is only touched when it changes. */
+  private placement = '';
   private reducedMotion =
     typeof window.matchMedia === 'function' &&
     window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -543,18 +619,47 @@ export class CursorLayer {
   }
 
   resize(): void {
-    const rect = this.canvas.getBoundingClientRect();
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    this.width = Math.max(1, Math.floor(rect.width || window.innerWidth));
-    this.height = Math.max(1, Math.floor(rect.height || window.innerHeight));
-    this.canvas.width = Math.floor(this.width * dpr);
-    this.canvas.height = Math.floor(this.height * dpr);
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.ratio = window.devicePixelRatio || 1;
+    const surface = cursorSurface(CURSOR_BOX, CURSOR_BOX, this.ratio);
+    this.canvas.width = surface.width;
+    this.canvas.height = surface.height;
+    this.scaleX = surface.scaleX;
+    this.scaleY = surface.scaleY;
+    // The box is positioned in CSS pixels by its transform, so the drawing space
+    // stays the same 56px square at every density.
+    this.ctx.setTransform(this.scaleX, 0, 0, this.scaleY, 0, 0);
+  }
+
+  /** Place the canvas box so the glyph anchor lands on the pointer. */
+  private place(x: number, y: number): void {
+    const left = snapToDevice(x, this.scaleX) - CURSOR_BLEED;
+    const top = snapToDevice(y, this.scaleY) - CURSOR_BLEED;
+    const next = `translate3d(${left}px, ${top}px, 0)`;
+    if (next === this.placement) return;
+    this.placement = next;
+    this.canvas.style.transform = next;
   }
 
   draw(cursor: AppCursor, x: number, y: number, visible: boolean, timeMs: number): void {
-    this.ctx.clearRect(0, 0, this.width, this.height);
-    if (!visible) return;
-    drawBattleCursor(this.ctx, cursor, x, y, this.reducedMotion ? 0 : timeMs);
+    // Moving the window to another monitor, or changing the browser zoom, alters
+    // the ratio without necessarily resizing this canvas: re-size before the
+    // next paint so the pointer never draws at a stale density.
+    if (Math.abs((window.devicePixelRatio || 1) - this.ratio) > 1e-3) this.resize();
+    if (!visible) {
+      // Park the box off-screen instead of painting a hidden pointer.
+      this.place(-CURSOR_BOX * 4, -CURSOR_BOX * 4);
+      return;
+    }
+    this.place(x, y);
+    // The whole canvas is one small square, so a full clear is cheap here and
+    // leaves no edge for a glyph to leave residue against.
+    this.ctx.clearRect(0, 0, CURSOR_BOX, CURSOR_BOX);
+    drawBattleCursor(
+      this.ctx,
+      cursor,
+      CURSOR_BLEED,
+      CURSOR_BLEED,
+      this.reducedMotion ? 0 : timeMs,
+    );
   }
 }

@@ -225,10 +225,15 @@ override the project, branch and verification URL.
   cover with a four-tile minimum range, and the unarmed recovery vehicle patches
   nearby vehicles at a material cost.
 - **Air**: strike fighter with four missiles, air-superiority interceptor and
-  unarmed recon drone, all parked at a physical airfield with the automatic
-  return/rearm loop. Interceptors answer hostile aircraft; the drone provides
-  22-tile vision for the army and artillery; SAM batteries and AA vehicles remain
-  the ground answer to air.
+  unarmed recon drone, based at a physical airfield with the automatic
+  return/rearm loop. A flight line is a real basing limit: four assigned
+  airframes per airfield and two per heliport, each on its own painted position,
+  and a hull keeps its position from the order that built it through every
+  sortie. A fifth order is refused. An airfield also has one recovery-only
+  helicopter pad — it can land, service and release a damaged gunship, but it is
+  not a home and cannot build one. Interceptors answer hostile aircraft; the
+  drone provides 22-tile vision for the army and artillery; SAM batteries and AA
+  vehicles remain the ground answer to air.
 - **Sea**: a four-hull shipyard line — cheap two-missile fast attack craft, a
   six-missile corvette with a deck gun, a torpedo submarine that runs dived on a
   battery, and an escort frigate whose naval SAM box screens the group against
@@ -386,7 +391,7 @@ legacy presets, old maps and existing saves keep the unmodified baseline. See
 
 ## Tests and measurements
 
-`npm test` runs 2,402 tests across 163 files, including nation identity, roster
+`npm test` runs 2,515 tests across 171 files, including nation identity, roster
 gating and national substitutions, national counterplay fixtures, two-run
 state-hash determinism, batch-size
 invariance, save/load round-trip, blocked paths,
@@ -486,10 +491,13 @@ latest runs are recorded in
 - One AI opponent. The campaign is two linear twelve-operation tracks (Baltic
   Line and Eastern Corridor) over the built-in theatres, not a branching
   narrative; online play is 1v1 only, joined by room
-  code with no room browser or matchmaking. Accounts exist and keep a career
-  record for local battles, but a room seat is still authorised by its own bearer
-  token rather than an account, so `MULTIPLAYER_FEATURE` keeps `roomDiscovery`
-  and `accountLinking` off; there is no mod SDK. All ten nations are selectable in skirmish and each substitutes one shared baseline
+  code with no room browser or matchmaking. Accounts keep one career across
+  local battles and online matches: a signed-in room seat is verified by a
+  short-lived signed identity ticket, and the room reports each finished match to
+  the account service, which awards XP idempotently from its own result. See
+  [docs/PHASE_2_CAREER_AND_IDENTITY.md](docs/PHASE_2_CAREER_AND_IDENTITY.md).
+  `MULTIPLAYER_FEATURE` still keeps `roomDiscovery` and `accountLinking` off;
+  there is no mod SDK. All ten nations are selectable in skirmish and each substitutes one shared baseline
   slot with a national variant, adds one exclusive unit and one structure
   variant, and Sweden and Iran also add a national naval hull of their own; but
   they have no national-only upgrades or signature abilities yet;

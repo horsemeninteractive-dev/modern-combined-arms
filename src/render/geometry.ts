@@ -387,6 +387,40 @@ export function buildTreeMesh(): MeshBuffers {
 }
 
 /**
+ * A snow shell for the conifer.
+ *
+ * Snow does not sit beside a branch, it sits on it, so this is a second mesh in
+ * the tree's own local space rather than a separate prop: the renderer draws it
+ * out of the same instance list, which means it inherits position, yaw, scale
+ * and the per-tree tint and sways on the same wind term. It is only instanced in
+ * snow and blizzard weather; in every other profile the batch is empty.
+ *
+ * Each tier gets a shallow cone whose base is a little wider than the green cone
+ * at that height, so the white shell sits proud of the foliage all the way to
+ * the tip instead of leaving a green spike poking out of the snow.
+ */
+export function buildTreeSnowMesh(): MeshBuffers {
+  const b = new MeshBuilder();
+  // Canvas, not concrete: foliage is the material the prop shader bends in the
+  // wind, and a cap that stayed still would slide off its own tree.
+  b.material = MATERIAL.canvas;
+  const snow: Color = [0.87, 0.9, 0.95];
+  const tiers: Array<[number, number, number, number]> = [
+    [1.8, 1.9, 4.4, 7],
+    [3.4, 1.45, 3.4, 7],
+    [4.8, 0.95, 2.6, 6],
+  ];
+  for (const [baseY, radius, height, segments] of tiers) {
+    // At 40% of the tier the green cone is 60% of its base radius; a 63% shell
+    // covers the upper slope and hides the tip without fattening the silhouette.
+    b.cone(0, baseY + height * 0.4, 0, radius * 0.63, height * 0.62, segments, snow);
+    // A thin crust on the lower rim: snow that has not slid off the branch fan.
+    b.cone(0, baseY + height * 0.12, 0, radius * 0.9, height * 0.07, segments, shade(snow, 0.92));
+  }
+  return b.build();
+}
+
+/**
  * A faceted monolith with irregular shoulder and apex rings. The old prop was a
  * sphere plus two boxes: its silhouette stayed round no matter what material it
  * wore, which is why ridge cover read as cartoon boulders. Flat faces give the
@@ -772,5 +806,187 @@ export function buildOreMesh(): MeshBuffers {
   // lone standing cone.
   crystalShard(b, [0.17, -0.05, 0.08], [0.36, 0.34, 0.17], 0.12, 5, paleGold, 2);
   crystalShard(b, [-0.16, -0.05, -0.06], [-0.32, 0.27, -0.13], 0.1, 5, deepGold, 3);
+  return b.build();
+}
+
+/**
+ * Flight-line servicing kit: fuel bowser, pump skid and hose, without the crew.
+ *
+ * Authored in an airframe's own frame — nose +X, right +Z — so one instance
+ * rotation, the parked heading, puts the whole set behind that hull's tail. The
+ * position matters: a strike fighter's wing sweeps back to roughly x = -2.2 and
+ * sits half a unit off the apron, so a crew standing under it would have their
+ * heads through the wing. The set therefore works the rear fuselage, behind the
+ * stabilator, where a real crew hooks up a fuelling point.
+ *
+ * The crew are not in here: they walk between the bowser and the hull, so
+ * `buildServiceCrew` builds them once, at the origin, and the renderer places
+ * one instance per figure on its own route.
+ *
+ * Nothing here is baked into a facility: an airfield is a place, and whether a
+ * hull on its apron is being turned around is a fact about that hull.
+ */
+export function buildServiceKit(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.painted;
+  const body: Color = [0.30, 0.33, 0.28];
+  const panel: Color = [0.24, 0.26, 0.23];
+  const tank: Color = [0.40, 0.44, 0.30];
+  // Three-quarter-ton bowser. Chassis, deck, cab and a ribbed tank: the
+  // silhouette a fuel truck keeps at tactical zoom, without a wheel per axle.
+  const bx = -5.2;
+  const bz = 1.2;
+  b.box(bx, 0.34, bz, 2.3, 0.24, 1.0, panel);
+  b.box(bx - 0.05, 0.49, bz, 2.1, 0.07, 0.94, body);
+  b.box(bx + 0.82, 0.76, bz, 0.62, 0.5, 0.9, body);
+  b.box(bx + 1.12, 0.82, bz, 0.04, 0.28, 0.7, PALETTE.glassDark);
+  b.box(bx + 0.82, 1.04, bz, 0.68, 0.07, 0.94, panel);
+  b.box(bx + 0.74, 0.66, bz, 0.05, 0.16, 0.5, PALETTE.canvas);
+  // Tank with two strap ribs, a filler neck and a rear hose reel.
+  b.cylinderX(bx - 0.55, 0.84, bz, 0.42, 1.32, 12, tank);
+  for (const dx of [-0.95, -0.15]) {
+    b.cylinderX(bx + dx, 0.84, bz, 0.445, 0.07, 12, panel);
+  }
+  b.cylinderX(bx - 0.55, 1.26, bz, 0.11, 0.12, 6, PALETTE.darkMetal);
+  b.cylinderZ(bx - 1.24, 0.7, bz, 0.24, 0.46, 8, PALETTE.darkMetal);
+  for (const dx of [-0.78, 0.82]) {
+    for (const dz of [-0.5, 0.5]) {
+      b.cylinderZ(bx + dx, 0.25, bz + dz, 0.26, 0.17, 8, PALETTE.rubber);
+      b.cylinderZ(bx + dx, 0.25, bz + dz, 0.11, 0.19, 6, PALETTE.metal);
+    }
+  }
+  // Pump skid between the truck and the tail, with its gauge and filter drum.
+  b.box(-4.05, 0.1, 0.9, 0.66, 0.16, 0.52, panel);
+  b.box(-4.05, 0.34, 0.9, 0.4, 0.34, 0.36, body);
+  b.cylinder(-4.05, 0.5, 0.9, 0.09, 0.13, 8, PALETTE.metal);
+  b.box(-4.05, 0.63, 0.9, 0.14, 0.03, 0.14, PALETTE.amber);
+  b.cylinderX(-3.86, 0.34, 0.9, 0.13, 0.18, 8, PALETTE.oliveDark);
+  // Hose: bowser reel, pump, then up to the fuselage's fuelling point. Stepped
+  // rather than a single rope so it reads as a coupled line at zoom.
+  b.material = MATERIAL.track;
+  const hose: Array<[number, number, number, number, number, number]> = [
+    [-4.75, 0.55, 1.1, 0.9, 0.07, 0.07],
+    [-4.3, 0.42, 1.0, 0.42, 0.07, 0.07],
+    [-3.78, 0.44, 0.86, 0.34, 0.07, 0.07],
+    [-3.42, 0.56, 0.7, 0.44, 0.07, 0.07],
+    [-3.12, 0.7, 0.52, 0.34, 0.07, 0.07],
+  ];
+  for (const [x, y, z, sx, sy, sz] of hose) b.box(x, y, z, sx, sy, sz, PALETTE.track);
+  // No crew here: they walk between this kit and the hull, so each one is its
+  // own instance with its own position and heading. Baking them into the set
+  // would freeze them on the spot.
+  return b.build();
+}
+
+/**
+ * One ground-crew figure, standing at the origin and facing +X.
+ *
+ * Authored at the feet so a route can drive it directly: the instance position
+ * is where the boots are and the instance yaw is which way they point, which is
+ * what makes a walking crew cheap — no skeleton, no second mesh, no per-frame
+ * geometry. The high-visibility vest is the one bright mass on a working apron
+ * and is why two figures read as crew at tactical zoom rather than as posts.
+ */
+export function buildServiceCrew(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.painted;
+  const lean = 0.12;
+  b.box(0.02, 0.08, 0, 0.26, 0.16, 0.32, PALETTE.track);
+  b.box(0, 0.34, 0, 0.2, 0.42, 0.24, PALETTE.oliveDark);
+  b.box(lean, 0.72, 0, 0.26, 0.38, 0.32, PALETTE.olive);
+  // High-visibility vest panel, the one bright mass on a working apron.
+  b.box(lean + 0.05, 0.74, 0, 0.05, 0.26, 0.28, PALETTE.warning);
+  b.box(lean + 0.06, 0.9, 0, 0.16, 0.1, 0.22, PALETTE.canvas);
+  b.sphere(lean + 0.02, 1.0, 0, 0.1, 3, 7, PALETTE.canvas);
+  b.box(lean + 0.02, 1.04, 0, 0.19, 0.045, 0.21, PALETTE.hullDark);
+  // Both arms on the hose side, so a figure walking reads as carrying rather
+  // than marching.
+  for (const dz of [-0.19, 0.19]) {
+    b.box(lean + 0.11, 0.72, dz, 0.09, 0.32, 0.09, PALETTE.oliveDark);
+  }
+  return b.build();
+}
+
+/**
+ * The bowser's rotating beacon, authored on its own so the instance yaw is the
+ * spin. A stuck lamp would say "parked"; a turning one says "working", which is
+ * the whole point of showing the kit at all.
+ */
+export function buildServiceBeacon(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.painted;
+  b.cylinder(0, 0.02, 0, 0.15, 0.05, 8, PALETTE.darkMetal);
+  b.box(0, 0.1, 0, 0.5, 0.08, 0.13, PALETTE.amber);
+  for (const x of [-0.26, 0.26]) {
+    b.box(x, 0.1, 0, 0.05, 0.1, 0.16, PALETTE.warning);
+  }
+  b.box(0, 0.16, 0, 0.16, 0.05, 0.16, PALETTE.darkMetal);
+  return b.build();
+}
+
+/**
+ * The frame that lights up over a flight-line bay when a hull is cleared onto it.
+ *
+ * Authored around the painted stand, not on top of it: the corner brackets sit
+ * just outside the white fuselage outline already on the apron, so a bay waking
+ * up adds a signal to the paint instead of hiding it. The bars are thin and
+ * flat — this is paint that lights up, not a fence — and the bar across the nose
+ * is the hold line the crew is being told about. Local +X faces the way the bay
+ * does, exactly as `docks` authors a position, so the frame follows a turned
+ * airfield with the apron it is painted on.
+ */
+export function buildStandClearanceFrame(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.painted;
+  const paint: Color = [0.98, 0.63, 0.12];
+  const bar = 0.16;
+  const lift = 0.03;
+  const halfX = 2.95;
+  const halfZ = 1.45;
+  const armX = 1.5;
+  const armZ = 0.8;
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) {
+      b.box(sx * (halfX - armX / 2), 0, sz * halfZ, armX, lift, bar, paint);
+      b.box(sx * halfX, 0, sz * (halfZ - armZ / 2), bar, lift, armZ, paint);
+    }
+  }
+  // Stop bar across the nose, and a short lead-in dash behind it pointing the
+  // way the hull is meant to finish.
+  b.box(halfX + 0.22, 0, 0, bar, lift, halfZ * 2, paint);
+  b.box(halfX - 0.62, 0, 0, 0.9, lift, bar, paint);
+  return b.build();
+}
+
+/**
+ * The same signal for a rotary pad: a band laid on the touchdown circle.
+ *
+ * A rectangle would either sit inside the airfield's small recovery pad or spill
+ * across the heliport's bigger one, so the marker is a circle sized to land
+ * inside both — 2.12 to 2.30 units out, which is on the paint in either case.
+ * It is a flat band rather than a bar: seen from the tactical camera the ring
+ * reads as one closed line, which no set of short segments would at that size.
+ */
+export function buildStandClearanceRing(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.painted;
+  const paint: Color = [0.98, 0.63, 0.12];
+  const segments = 24;
+  const inner = 2.12;
+  const outer = 2.3;
+  const turn = (Math.PI * 2) / segments;
+  for (let i = 0; i < segments; i++) {
+    const a0 = i * turn;
+    const a1 = (i + 1) * turn;
+    // Wound inner -> inner -> outer -> outer so the face normal points at the
+    // sky: a marking is only ever looked down on.
+    b.addQuad(
+      [Math.cos(a0) * inner, 0, Math.sin(a0) * inner],
+      [Math.cos(a1) * inner, 0, Math.sin(a1) * inner],
+      [Math.cos(a1) * outer, 0, Math.sin(a1) * outer],
+      [Math.cos(a0) * outer, 0, Math.sin(a0) * outer],
+      paint,
+    );
+  }
   return b.build();
 }

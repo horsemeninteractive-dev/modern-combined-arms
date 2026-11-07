@@ -99,6 +99,19 @@ export function fuelPercent(fuel: number, maxFuel: number): number {
 }
 
 /**
+ * How much of a turnaround is done, 0..1, for the ring over a servicing hull.
+ *
+ * The simulation counts the timer down from `serviceTotal`, so the ring reads
+ * the complement: empty when the crew starts, full the moment the hull is
+ * declared ready. A hull with no service model reports 0 rather than a full
+ * ring that never happened.
+ */
+export function serviceProgress(serviceTimer: number, serviceTotal: number): number {
+  if (!Number.isFinite(serviceTimer) || !Number.isFinite(serviceTotal) || serviceTotal <= 0) return 0;
+  return clampFraction(1 - serviceTimer / serviceTotal);
+}
+
+/**
  * Only aircraft and ships carry the sustained-consumption model that makes a
  * service strip worthwhile; a tank's ammunition already lives in its stat row.
  */

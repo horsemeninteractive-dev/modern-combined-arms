@@ -491,8 +491,10 @@ export const OVERLAYS: Record<OverlayId, OverlayProps> = {
   [Overlay.Snow]: {
     id: Overlay.Snow,
     name: 'Snow cover',
-    tint: [0.82, 0.85, 0.88],
-    strength: 0.3,
+    // Snow is close to opaque in the real world: a 30% tint over green grass
+    // reads as frozen ground, which is exactly what the old value looked like.
+    tint: [0.88, 0.91, 0.95],
+    strength: 0.9,
     cover: 0,
     concealment: 0,
     sight: 0,

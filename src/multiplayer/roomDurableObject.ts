@@ -1,3 +1,5 @@
+import { identitySnapshot, type IdentitySnapshot } from '../accounts/identity';
+import { matchIdFor } from '../accounts/matchCareer';
 import { defaultScenarioId } from '../data/scenarioCatalog';
 import { Game } from '../sim/game';
 import {
@@ -100,7 +102,24 @@ export interface MatchRoomEnv {
    * The ticket is verified in the Worker, never in this Durable Object.
    */
   MCA_IDENTITY_TICKET_SECRET?: string;
+  /**
+   * Base URL of the account service (for example `https://host/api/account`)
+   * and the shared secret its result intake expects. Both absent means career
+   * rewards are not wired in this deployment: the room still plays, it simply
+   * reports no result anywhere.
+   */
+  MP_CAREER_URL?: string;
+  MP_CAREER_TOKEN?: string;
   ROOMS: DurableObjectNamespace;
+}
+
+/** Durable record of the one attempt that matters: did the career service get it? */
+interface CareerDelivery {
+  matchId: string;
+  status: 'pending' | 'delivered' | 'failed' | 'disabled';
+  attempts: number;
+  lastAttemptAt: number | null;
+  lastError: string | null;
 }
 
 interface PersistedMeta {
@@ -138,6 +157,8 @@ interface PersistedMeta {
   closedReason: string | null;
   closedAt: number | null;
   finalResult: NeutralMatchResult | null;
+  /** Present once the match ended and a result had anywhere to be sent. */
+  careerDelivery?: CareerDelivery | null;
 }
 
 interface SnapshotIndex {
@@ -427,6 +448,9 @@ export class MatchRoomDurableObject {
     if ((action === 'join' || url.pathname.endsWith('/internal/join')) && request.method === 'POST') {
       return this.handleJoin(request);
     }
+    if ((action === 'career' || url.pathname.endsWith('/internal/career')) && request.method === 'POST') {
+      return this.handleCareer(request);
+    }
     if ((action === 'status' || url.pathname.endsWith('/internal/status')) && request.method === 'GET') {
       return this.handleStatus(request);
     }
@@ -608,6 +632,19 @@ export class MatchRoomDurableObject {
    * time. A started or closed room cannot be joined, and the response never
    * contains the host's token.
    */
+  /**
+   * Staging and recovery action: re-send a finished match's result.
+   *
+   * Safe by construction because intake is idempotent on the match reference. It
+   * exists so a failed delivery is recoverable without replaying the match.
+   */
+  private async handleCareer(request: Request): Promise<Response> {
+    if (!this.adminAllowed(request)) return failure('unauthorized', 'Admin token is not valid.', 403);
+    if (!this.meta) return failure('not-found', 'Room does not exist.', 404);
+    await this.deliverCareer(true);
+    return json({ ok: true, delivery: this.meta.careerDelivery ?? null });
+  }
+
   private async handleJoin(request: Request): Promise<Response> {
     if (!onlineEnabled(this.env)) return failure('online-disabled', 'Online rooms are disabled.', 503);
     if (!this.meta) return failure('room-not-found', 'That room code does not exist.', 404);
@@ -630,8 +667,13 @@ export class MatchRoomDurableObject {
     // Joining is the only moment seat 1's identity can be established, so the
     // verified account is recorded before the token is handed out.
     const joinerAccount = this.verifiedAccount(request);
-    if (joinerAccount && this.meta.seats[1].accountId !== joinerAccount) {
-      this.meta.seats[1] = { ...this.meta.seats[1], accountId: joinerAccount };
+    const joinerIdentity = this.verifiedIdentity(request);
+    if (joinerAccount && (this.meta.seats[1].accountId !== joinerAccount || joinerIdentity)) {
+      this.meta.seats[1] = {
+        ...this.meta.seats[1],
+        accountId: joinerAccount,
+        identity: joinerIdentity ?? this.meta.seats[1].identity ?? null,
+      };
       try {
         await this.persistMeta();
       } catch {
@@ -724,6 +766,7 @@ export class MatchRoomDurableObject {
               team: 0,
               token: this.seatToken(),
               accountId: this.verifiedAccount(request),
+              identity: this.verifiedIdentity(request),
             },
             { seatId: 1, playerId: 1, team: 1, token: this.seatToken(), accountId: null },
           ];
@@ -835,9 +878,10 @@ export class MatchRoomDurableObject {
         team: seat.team,
         token: seat.token,
         // Both seats read this document, so it reports only whether the seat is
-        // a verified account. The account id stays server-side until Stage 2's
-        // profile presentation decides what is public.
+        // a verified account and the identity it plays under. The account id
+        // stays server-side; the callsign is the public handle.
         verified: Boolean(seat.accountId),
+        identity: seat.identity ?? null,
       })),
     };
   }
@@ -857,6 +901,22 @@ export class MatchRoomDurableObject {
   private verifiedAccount(request: Request): string | null {
     const value = request.headers.get('X-MCA-Verified-Account');
     return value && /^[A-Za-z0-9_-]{16,64}$/.test(value) ? value : null;
+  }
+
+  /**
+   * The presentable identity the Worker extracted from the signed ticket.
+   *
+   * Still parsed as untrusted data: a malformed header yields `null` rather than
+   * an exception, and the seat simply shows as an unnamed guest.
+   */
+  private verifiedIdentity(request: Request): IdentitySnapshot | null {
+    const raw = request.headers.get('X-MCA-Verified-Identity');
+    if (!raw || raw.length > 400) return null;
+    try {
+      return identitySnapshot(JSON.parse(raw));
+    } catch {
+      return null;
+    }
   }
 
   /** Human-shareable secret for the guest seat. Ambiguous characters are out. */
@@ -1181,6 +1241,7 @@ export class MatchRoomDurableObject {
       },
       match: matchStatus,
       finalResult: this.meta.finalResult,
+      careerDelivery: this.meta.careerDelivery ?? null,
       ...(timingProbe ? { timingProbe } : {}),
     });
   }
@@ -1731,6 +1792,138 @@ export class MatchRoomDurableObject {
     }
   }
 
+  /**
+   * The authoritative result, shaped for the account service.
+   *
+   * Every number is read from the simulation this room ran, never from a
+   * socket: kills, losses and captures are the players' own counters, the
+   * winner is the neutral result, and the identity is the seat snapshot taken
+   * when the seat was claimed.
+   */
+  private careerPayload(): {
+    matchId: string;
+    roomId: string;
+    mapId: string | null;
+    startedAtMs: number;
+    finishedAtMs: number;
+    winnerTeam: number | null;
+    players: Array<Record<string, unknown>>;
+  } | null {
+    const meta = this.meta;
+    const match = this.match;
+    if (!meta || !match) return null;
+    if (!meta.finalResult || meta.finalResult.phase !== 'finished') return null;
+    if (!meta.startedAtMs || !meta.finishedAtMs) return null;
+    const game = match.game;
+    const players: Array<Record<string, unknown>> = [];
+    for (const seat of meta.seats) {
+      const player = game.state.players.find((candidate) => candidate.id === seat.playerId);
+      if (!player) continue;
+      const structuresDestroyed = player.stats.structuresDestroyed ?? 0;
+      players.push({
+        team: seat.team,
+        accountId: seat.accountId ?? null,
+        nation: player.factionId,
+        callsign: seat.identity?.callsign ?? null,
+        avatar: seat.identity?.avatar ?? null,
+        stats: {
+          // `kills` counts every entity killed, so the unit figure is the
+          // remainder once the buildings it also killed are taken out.
+          unitsDestroyed: Math.max(0, player.stats.kills - structuresDestroyed),
+          unitsLost: player.stats.unitsLost,
+          structuresDestroyed,
+          structuresLost: player.stats.structuresLost ?? 0,
+          structuresBuilt: player.stats.buildingsBuilt,
+          sitesCaptured: player.stats.sitesCaptured ?? 0,
+          // Not tracked by the simulation; reported as zero rather than
+          // estimated, and excluded from the reward's objective term by being 0.
+          superweaponsUsed: 0,
+          objectivesCompleted: 0,
+        },
+      });
+    }
+    if (players.length === 0) return null;
+    return {
+      matchId: matchIdFor(meta.roomId, meta.startedAtMs),
+      roomId: meta.roomId,
+      mapId: meta.lobbyConfig?.mapId ?? null,
+      startedAtMs: meta.startedAtMs,
+      finishedAtMs: meta.finishedAtMs,
+      winnerTeam: meta.finalResult.winnerTeam,
+      players,
+    };
+  }
+
+  /**
+   * Hand the finished match to the career service, at most once per room, with
+   * bounded retries.
+   *
+   * Intake is idempotent on the match reference, so a retry after an ambiguous
+   * timeout cannot pay twice; the durable record exists so an operator can see
+   * that a room finished and whether its result landed. A closed room is not
+   * guaranteed to run again, which is why the retries happen here rather than on
+   * a later timer.
+   */
+  private async deliverCareer(force = false): Promise<void> {
+    const meta = this.meta;
+    if (!meta) return;
+    const base = this.env.MP_CAREER_URL?.trim().replace(/\/+$/, '');
+    const token = this.env.MP_CAREER_TOKEN?.trim();
+    const payload = this.careerPayload();
+    if (!payload) return;
+    if (!base || !token) {
+      meta.careerDelivery = {
+        matchId: payload.matchId,
+        status: 'disabled',
+        attempts: 0,
+        lastAttemptAt: null,
+        lastError: null,
+      };
+      return;
+    }
+    const existing = meta.careerDelivery;
+    if (existing?.matchId === payload.matchId && existing.status === 'delivered' && !force) return;
+    const delivery: CareerDelivery = existing?.matchId === payload.matchId
+      ? existing
+      : { matchId: payload.matchId, status: 'pending', attempts: 0, lastAttemptAt: null, lastError: null };
+    const delays = [0, 300, 900, 1_800, 3_000];
+    for (const delay of delays) {
+      if (delay > 0) await new Promise<void>((resolve) => setTimeout(resolve, delay));
+      delivery.attempts += 1;
+      delivery.lastAttemptAt = Date.now();
+      try {
+        const response = await fetch(`${base}/internal/mp-result`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-MCA-Result-Token': token,
+          },
+          body: JSON.stringify(payload),
+        });
+        if (response.ok) {
+          delivery.status = 'delivered';
+          delivery.lastError = null;
+          break;
+        }
+        delivery.status = 'pending';
+        delivery.lastError = `http-${response.status}`;
+      } catch (error) {
+        delivery.status = 'pending';
+        delivery.lastError = error instanceof Error ? error.message.slice(0, 120) : 'network';
+      }
+    }
+    if (delivery.status !== 'delivered') {
+      delivery.status = 'failed';
+      console.error('MP career delivery failed', meta.roomId, payload.matchId, delivery.lastError);
+    }
+    meta.careerDelivery = delivery;
+    try {
+      await this.persistMeta();
+    } catch (error) {
+      console.error('MP career delivery record failed', error);
+    }
+  }
+
   private finalize(): Promise<void> {
     if (this.finishing) return this.finishing;
     this.finishing = this.doFinalize();
@@ -1826,6 +2019,10 @@ export class MatchRoomDurableObject {
     } catch (error) {
       console.error('MP room final diagnostics failed', error);
     }
+    // The result is durable at this point. Reporting it is the final step: the
+    // account service is the only thing that turns a finished match into a
+    // career award, and it is told exactly once in the normal case.
+    await this.deliverCareer();
     console.log('MP room diagnostics', JSON.stringify(finalSummary));
   }
 }

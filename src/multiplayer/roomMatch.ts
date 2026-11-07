@@ -1,3 +1,4 @@
+import { matchIdFor } from '../accounts/matchCareer';
 import { defaultScenarioId, scenarioById } from '../data/scenarioCatalog';
 import { Game } from '../sim/game';
 import { CommandGate, type GateRejection } from './commandGate';
@@ -82,6 +83,20 @@ export interface RoomSeatDefinition {
    * never trusted from a client-supplied id. `null`/absent means guest.
    */
   accountId?: string | null;
+  /**
+   * The seat's presentable identity, captured from the signed ticket when the
+   * seat was claimed. It is a snapshot on purpose: a player who renames mid-match
+   * keeps the name the match was played under, and the lobby shows one name for
+   * the whole match rather than one that changes under the opponent.
+   */
+  identity?: SeatIdentity | null;
+}
+
+export interface SeatIdentity {
+  callsign: string;
+  avatar: string;
+  /** Career rank id the signed ticket carried, for the lobby's badge. */
+  rank?: string;
 }
 
 interface SeatState extends RoomSeatDefinition {
@@ -1043,7 +1058,12 @@ export class RoomMatch {
 
     for (const seat of this.seats) {
       if (!seat.socket || !seat.connected) continue;
-      const message = resultMessageFor(result, projectedResultForTeam(result, seat.team), seat.team);
+      const message = resultMessageFor(
+        result,
+        projectedResultForTeam(result, seat.team),
+        seat.team,
+        matchIdFor(this.roomId, this.startedAt ?? now),
+      );
       this.sendJson(seat, message);
       this.closeSeat(seat, 1000, 'match-finished');
     }

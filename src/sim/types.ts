@@ -150,6 +150,46 @@ export interface UnitDef {
   submarine?: SubmarineDef;
   /** Passive sonar radius in tiles. Detects dived submarines through fog. */
   sonar?: number;
+  /**
+   * Rotary-wing aircraft. A helicopter uses a helo dock, not a flight-line
+   * position, which is what lets an airfield recover one without basing it.
+   */
+  rotary?: boolean;
+}
+
+/**
+ * How one facility's aircraft positions are used right now.
+ *
+ * `used` is the number of permanent positions promised, which is the capacity
+ * the production gate reads: airborne hulls keep their berth, so `used` does not
+ * fall when a sortie launches. The breakdown below it is what the structure card
+ * reports, because "3 of 4" alone cannot tell a commander whether the missing
+ * hull is on the apron, on approach or still in the queue.
+ */
+export interface AircraftOccupancy {
+  /** Positions promised to hulls or to queued orders. */
+  used: number;
+  capacity: number;
+  /** Hulls down on their own position. */
+  parked: number;
+  /** Hulls airborne and cleared to come home. */
+  inbound: number;
+  /** Hulls airborne on a sortie or patrol, still holding their berth. */
+  airborne: number;
+  /** Production orders holding a berth they have not launched into yet. */
+  queued: number;
+  /** True when these positions are an airfield's recovery-only helicopter pad. */
+  temporary?: boolean;
+}
+
+/** Aircraft docking positions a facility offers, by aircraft kind. */
+export interface AircraftDocks {
+  /** Permanent fixed-wing positions. */
+  fixedWing: number;
+  /** Helicopter positions. */
+  helo: number;
+  /** True when the helicopter positions are recovery-only (see `docks`). */
+  heloTemporary?: boolean;
 }
 
 export interface SubmarineDef {
@@ -192,6 +232,15 @@ export interface BuildingDef {
   refinery?: boolean;
   /** Aircraft recovery point. */
   airfield?: boolean;
+  /**
+   * Aircraft docking positions on this facility.
+   *
+   * `heloTemporary` marks a pad that may recover, rearm and repair a helicopter
+   * but may not base one: the crew relaunches as soon as the servicing run ends
+   * so the pad is free again. Such a pad never produces helicopters, which is
+   * what keeps a heliport necessary for a real helicopter force.
+   */
+  docks?: AircraftDocks;
   /** Naval build / repair point. Requires navigable water adjacency. */
   shipyard?: boolean;
   /** Baseline structure slot this variant specialises, e.g. `mgNest`. */
@@ -393,6 +442,13 @@ export interface QueueItem {
   /** Seconds remaining. */
   remaining: number;
   total: number;
+  /**
+   * Aircraft production only: the berth this item has reserved at the facility
+   * for the hull it will launch. Reserving at order time is what stops a queue
+   * from oversubscribing a flight line or a heliport while earlier hulls are
+   * still airborne. Absent on older saves and on every non-aircraft item.
+   */
+  berth?: number;
 }
 
 export type EntityState =
@@ -425,6 +481,41 @@ export interface HarvesterState {
   oreTileX: number;
   oreTileZ: number;
   refineId: number;
+  /**
+   * The unloading bay this haul was promised, on the refinery in `refineId`.
+   * A bay is claimed when the load is dispatched, not on arrival, so two
+   * haulers never drive at the same mouth and a full refinery can be seen to
+   * hold its queue instead of silently overlapping. Absent while none is free.
+   */
+  bay?: number;
+}
+
+/**
+ * One leg of an aircraft's movement on the ground.
+ *
+ * A sortie no longer begins with an airframe already in the air: it taxis out,
+ * runs the strip and climbs away, and a return is a touch-down, a roll-out and a
+ * turn onto its own stand. Each leg is a straight, timed line between two poses,
+ * which keeps the manoeuvre cheap, deterministic and identical after a reload.
+ * Presentation reads the resulting position and the `climb` share; nothing in
+ * the simulation branches on the leg except the transition at its end.
+ */
+export interface GroundRoll {
+  kind: 'takeoff' | 'landing';
+  /** Seconds elapsed, and the leg's total, so the profile never varies. */
+  t: number;
+  seconds: number;
+  fromX: number;
+  fromZ: number;
+  toX: number;
+  toZ: number;
+  /** Heading held for the whole leg. */
+  facing: number;
+  /**
+   * What the hull does when the leg runs out: the next leg of the manoeuvre, or
+   * release to normal flight.
+   */
+  next?: 'takeoffRun' | 'lift' | 'taxiIn' | 'land' | 'airborne';
 }
 
 export interface AircraftState {
@@ -434,6 +525,38 @@ export interface AircraftState {
   serviceTimer: number;
   serviceTotal: number;
   returningHome: boolean;
+  /**
+   * The permanent position this hull owns at `homeId`, assigned when it is
+   * produced (or when a scenario airframe is placed) and held for its whole
+   * life — through take-off, patrol, return and parking. Taking off does not
+   * release it, so a full flight line cannot be oversubscribed by hulls that
+   * happen to be in the air. Absent on older saves and on an airframe that
+   * landed with no position to call its own (over-capacity overflow), which is
+   * what `waitingForDock` reports.
+   */
+  berth?: number;
+  /**
+   * True when `berth` is an airfield's recovery-only helicopter pad rather than
+   * a permanent helicopter berth. The reservation is released when servicing
+   * finishes, so the pad can take the next damaged rotary hull.
+   */
+  temporaryBerth?: boolean;
+  /**
+   * Set when the aircraft is down but every position of its kind is taken: it
+   * can land, but it neither rearms nor repairs until one frees up. Absent on
+   * older saves and whenever a docking position was available.
+   */
+  waitingForDock?: boolean;
+  /**
+   * Share of cruise altitude the hull has actually reached, 0 on its wheels and
+   * 1 in the pattern. The simulation authors it — a taxi is 0, a take-off run
+   * climbs, a roll-out descends — so the renderer never has to guess how high an
+   * airframe should be from a boolean. Absent on older saves, where `landed`
+   * remains the whole answer.
+   */
+  climb?: number;
+  /** The ground leg in progress, if any. See `GroundRoll`. */
+  roll?: GroundRoll;
 }
 
 export interface SubmarineState {
@@ -575,6 +698,13 @@ export interface Entity {
    * structures, and never sent to the opposing team.
    */
   cooldowns?: Record<string, number>;
+  /**
+   * Timed ability effects currently running on this hull, in seconds of
+   * simulation time remaining, keyed by unit-upgrade id. The multiplier each one
+   * applies lives in `data/abilities.ts`; this is only the clock. Absent on older
+   * saves, on structures, and once the effect has run out.
+   */
+  effects?: Record<string, number>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -851,6 +981,16 @@ export interface PlayerState {
     unitsLost: number;
     kills: number;
     buildingsBuilt: number;
+    /**
+     * Structures destroyed by this player, and lost to this player. Optional
+     * because saves written before career service records existed do not carry
+     * them; a loader fills 0. `kills` remains every entity killed, so the two
+     * counters split it rather than replacing it.
+     */
+    structuresDestroyed?: number;
+    structuresLost?: number;
+    /** Enemy strategic sites taken by capture. Optional for the same reason. */
+    sitesCaptured?: number;
   };
   incomeHistory: number[];
   defeated: boolean;
@@ -897,6 +1037,13 @@ export interface AIControlState {
   activeSiteId: number;
   activeSiteProgress: number;
   activeSiteTick: number;
+  /**
+   * Tick the commander last set materials aside for a planned drop-off. An
+   * affordable drop-off is only finished ahead of other concrete while that
+   * plan is still fresh, so a base that was never saving for one keeps its
+   * ordinary build order.
+   */
+  economyPlanTick?: number;
   /** Last garrison entry or release decision, to avoid thrashing. */
   lastGarrisonTick?: number;
   /** Last strategic-objective capture attempt, to avoid retrying a blocked route. */

@@ -3,32 +3,80 @@
  *
  * A browser holds a session cookie for the Pages origin; the room Worker lives
  * on another origin and never sees it. A ticket is the only thing that crosses:
- * an HMAC over an account id and an issue time, signed with a secret both
- * Workers hold. The room verifies it locally, so no per-request call to the
- * account service sits in the matchmaking path, and the browser cannot forge or
- * extend one.
+ * an HMAC over an account id, an issue time and the player's presentable
+ * identity, signed with a secret both Workers hold. The room verifies it
+ * locally, so no per-request call to the account service sits in the matchmaking
+ * path, and the browser cannot forge or extend one.
  *
- * The account id is opaque and scoped to this purpose through the signed
- * message, so a ticket can never be replayed as a session or vice versa.
+ * v2 adds the callsign and avatar so the lobby can show a real opponent without
+ * asking the account service mid-match. The identity is inside the signed
+ * message, so a seat cannot edit its own name by editing the ticket.
+ *
+ * v1 tickets are still accepted for the remainder of their two-minute life: a
+ * room that was open when the account service was updated must not fail to
+ * verify a ticket it was about to use.
  */
-import { hmacSha256Base64url, hmacSha256Verify } from './crypto';
+import { base64urlDecode, base64urlEncode, hmacSha256Base64url, hmacSha256Verify } from './crypto';
+import { identitySnapshot, type IdentitySnapshot } from './identity';
 
 export const TICKET_VERSION = 'v1';
+export const TICKET_VERSION_V2 = 'v2';
 export const TICKET_TTL_MS = 2 * 60_000;
 const AUDIENCE = 'mca.room-identity';
+const MAX_IDENTITY_BYTES = 256;
 
-function message(accountId: string, issuedAt: number): string {
-  return `${AUDIENCE}|${TICKET_VERSION}|${accountId}|${issuedAt}`;
+function message(version: string, accountId: string, issuedAt: number, identity: string | null): string {
+  return identity === null
+    ? `${AUDIENCE}|${version}|${accountId}|${issuedAt}`
+    : `${AUDIENCE}|${version}|${accountId}|${issuedAt}|${identity}`;
+}
+
+function encodeIdentity(identity: IdentitySnapshot): string {
+  return base64urlEncode(new TextEncoder().encode(JSON.stringify(identity)));
+}
+
+function decodeIdentity(raw: string): IdentitySnapshot | null {
+  if (raw.length > 400) return null;
+  try {
+    const bytes = base64urlDecode(raw);
+    if (bytes.length > MAX_IDENTITY_BYTES) return null;
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    return identitySnapshot(parsed);
+  } catch {
+    return null;
+  }
 }
 
 export async function issueTicket(
   secret: string,
   accountId: string,
   now: number,
+  identity?: IdentitySnapshot | null,
 ): Promise<{ ticket: string; expiresAt: number }> {
-  const signature = await hmacSha256Base64url(secret, message(accountId, now));
+  if (!identity) {
+    const signature = await hmacSha256Base64url(secret, message(TICKET_VERSION, accountId, now, null));
+    return {
+      ticket: `${TICKET_VERSION}.${accountId}.${now}.${signature}`,
+      expiresAt: now + TICKET_TTL_MS,
+    };
+  }
+  // Re-validate rather than trusting the caller: an identity that would be
+  // refused by the lobby must never be sealed into a ticket.
+  const safe = identitySnapshot(identity);
+  if (!safe) {
+    const signature = await hmacSha256Base64url(secret, message(TICKET_VERSION, accountId, now, null));
+    return {
+      ticket: `${TICKET_VERSION}.${accountId}.${now}.${signature}`,
+      expiresAt: now + TICKET_TTL_MS,
+    };
+  }
+  const encoded = encodeIdentity(safe);
+  const signature = await hmacSha256Base64url(
+    secret,
+    message(TICKET_VERSION_V2, accountId, now, encoded),
+  );
   return {
-    ticket: `${TICKET_VERSION}.${accountId}.${now}.${signature}`,
+    ticket: `${TICKET_VERSION_V2}.${accountId}.${now}.${encoded}.${signature}`,
     expiresAt: now + TICKET_TTL_MS,
   };
 }
@@ -36,6 +84,8 @@ export async function issueTicket(
 export interface VerifiedTicket {
   accountId: string;
   issuedAt: number;
+  /** Present for a v2 ticket; a v1 ticket has no identity to offer. */
+  identity?: IdentitySnapshot;
 }
 
 /**
@@ -49,14 +99,35 @@ export async function verifyTicket(
   ttlMs: number = TICKET_TTL_MS,
 ): Promise<VerifiedTicket | null> {
   const parts = ticket.split('.');
-  if (parts.length !== 4) return null;
-  const [version, accountId, issuedRaw, signature] = parts;
-  if (version !== TICKET_VERSION) return null;
+  if (parts.length !== 4 && parts.length !== 5) return null;
+  const [version, accountId, issuedRaw, ...rest] = parts;
+  if (version !== TICKET_VERSION && version !== TICKET_VERSION_V2) return null;
   if (!/^[A-Za-z0-9_-]{16,64}$/.test(accountId)) return null;
   if (!/^\d{1,16}$/.test(issuedRaw)) return null;
   const issuedAt = Number(issuedRaw);
   if (issuedAt > now + 30_000) return null;
   if (now - issuedAt > ttlMs) return null;
-  const valid = await hmacSha256Verify(secret, message(accountId, issuedAt), signature);
-  return valid ? { accountId, issuedAt } : null;
+
+  if (version === TICKET_VERSION) {
+    if (rest.length !== 1) return null;
+    const valid = await hmacSha256Verify(
+      secret,
+      message(TICKET_VERSION, accountId, issuedAt, null),
+      rest[0],
+    );
+    return valid ? { accountId, issuedAt } : null;
+  }
+
+  if (rest.length !== 2) return null;
+  const [encodedIdentity, signature] = rest;
+  if (!/^[A-Za-z0-9_-]{1,400}$/.test(encodedIdentity)) return null;
+  const valid = await hmacSha256Verify(
+    secret,
+    message(TICKET_VERSION_V2, accountId, issuedAt, encodedIdentity),
+    signature,
+  );
+  if (!valid) return null;
+  const identity = decodeIdentity(encodedIdentity);
+  if (!identity) return null;
+  return { accountId, issuedAt, identity };
 }

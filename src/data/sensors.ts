@@ -192,6 +192,7 @@ export const BUILDING_SENSORS: Record<string, SensorProfile> = {
   factory: { ...STRUCTURE_FLOODLIT, label: 'Industrial floodlights' },
   refinery: { ...STRUCTURE_FLOODLIT, label: 'Refinery floodlights' },
   airfield: { ...STRUCTURE_FLOODLIT, nightVision: 0.9, label: 'Airfield lighting' },
+  heliport: { ...STRUCTURE_FLOODLIT, nightVision: 0.9, label: 'Heliport lighting' },
   shipyard: { ...STRUCTURE_FLOODLIT, label: 'Dock lighting' },
   powerPlant: { ...STRUCTURE_FLOODLIT, illuminator: 'windows', label: 'Plant lighting' },
   radar: { ...STRUCTURE_RADAR, label: 'Radar station' },

@@ -80,7 +80,8 @@ describe('automatic construction', () => {
     // A committed engineer is never pulled off its site to start a third.
     expect(builderOf(waiting)).toBeUndefined();
 
-    // Long enough for both engineers to walk to sites found across the base.
+    // Long enough for both engineers to walk to sites found across the base,
+    // and short enough that neither has finished and moved to the third.
     game.advance(20 * 12);
     expect(one.buildProgress).toBeGreaterThan(0);
     expect(two.buildProgress).toBeGreaterThan(0);
@@ -114,7 +115,10 @@ describe('automatic construction', () => {
       x: refinery.x,
       z: refinery.z,
     });
-    game.advance(20 * 12);
+    // The load is delivered at a bay on the refinery, not from anywhere inside
+    // a wide radius, so the haul includes the drive up to the mouth and the
+    // unload itself.
+    game.advance(20 * 25);
     expect(game.player(0)!.stats.matsGathered - gathered).toBeCloseTo(60, 5);
   });
 
@@ -166,6 +170,9 @@ describe('automatic construction', () => {
     game.tick();
     const building = game.entitiesOf(0, 'building').find((e) => e.defId === 'barracks')!;
     const engineer = engineers(game)[0];
+    // A crew has to close on the structure before it can raise it, so the first
+    // seconds are a walk rather than progress. Wait for the work to start.
+    for (let i = 0; i < 20 * 15 && building.buildProgress === 0; i++) game.tick();
     game.advance(20 * 3);
     const paused = building.buildProgress;
     expect(paused).toBeGreaterThan(0);

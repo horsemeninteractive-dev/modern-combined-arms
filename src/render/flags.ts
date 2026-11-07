@@ -138,7 +138,9 @@ export const BUILDING_FLAG_ANCHORS: Record<string, FlagAnchor> = {
   // The launcher trains now, so the pole stands on the rear pad corner where
   // the old rack anchor used to be — a flag must not swing with the turret.
   samBattery: { x: -3.0, y: 1.0, z: 2.9 },
-  mgNest: { x: -1.9, y: 1.67, z: 2.1 },
+  // The pit is netted over now, so the pole stands on the open pad corner just
+  // inside the wire rather than through the camouflage.
+  mgNest: { x: 3.25, y: 0.92, z: 3.25 },
   atTurret: { x: 3.15, y: 0.53, z: -3.05 },
   coastalBattery: { x: -3.0, y: 1.61, z: -2.2 },
   bunker: { x: -0.5, y: 3.0, z: -2.45 },
@@ -146,6 +148,9 @@ export const BUILDING_FLAG_ANCHORS: Record<string, FlagAnchor> = {
   signalsBureau: { x: 0, y: 6.5, z: 0 },
   armourWorks: { x: 0, y: 6.55, z: 1.2 },
   expeditionaryAirfield: { x: 0, y: 0.45, z: 8.8, apron: true },
+  // On the servicing shelter roof, beside the ownership panel rather than on
+  // it, which would push the pole base into the cap.
+  heliport: { x: -3.6, y: 2.96, z: -6.0 },
   longRangeSam: { x: -2.2, y: 8.2, z: 0 },
   garrisonBarracks: { x: -0.4, y: 5.65, z: -1.6 },
   // The yard keeps the shipyard's apron mount: its own gantry would foul the
@@ -169,6 +174,15 @@ export const BUILDING_FLAG_ANCHORS: Record<string, FlagAnchor> = {
   freightShed: { x: 5.6, y: 6.25, z: 2.4 },
   // A span is neutral ground, so its staff is never raised in play; the mount
   // exists so every registered structure has a deterministic one.
+  schoolhouse: { x: 0, y: 6.42, z: 0 },
+  apartmentBlock: { x: 0, y: 13.28, z: 2.2 },
+  motelBlock: { x: 0, y: 6.6, z: 0 },
+  cinema: { x: 0, y: 11.05, z: 5.0 },
+  bankHouse: { x: 0, y: 8.54, z: 0 },
+  stationHouse: { x: 5.4, y: 10.16, z: -2.2 },
+  autoGarage: { x: 0, y: 5.24, z: -1.6 },
+  coldStore: { x: 0, y: 9.02, z: 2.0 },
+  townhouseTerrace: { x: 0, y: 8.26, z: 0 },
   bridge: { x: 6.9, y: 1.19, z: 0 },
 };
 

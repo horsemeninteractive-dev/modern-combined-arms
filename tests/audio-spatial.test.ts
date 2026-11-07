@@ -523,7 +523,7 @@ describe('recorded ambience', () => {
     const internals = audio as unknown as EngineInternals;
     expect(internals.ambienceSamples.size).toBe(0);
     const before = oscillators.length;
-    for (const kind of ['foot', 'buggy', 'truck', 'trackedLight', 'trackedHeavy', 'rotor', 'jet', 'naval', 'facility'] as const) {
+    for (const kind of ['foot', 'buggy', 'truck', 'trackedLight', 'trackedHeavy', 'rotor', 'jet', 'naval', 'facility', 'servicing'] as const) {
       audio.updateAmbience([{ id: 3, kind, gain: 0.6, pan: 0, pitch: 1, muffle: 0, motion: 0.4 }]);
     }
     expect(oscillators.length).toBeGreaterThan(before);

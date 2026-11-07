@@ -12,7 +12,7 @@
  * Installed modules are read from the entity itself, so a structure keeps
  * showing what it has bought even when nothing further is available.
  */
-import { BUILDING_MODULES, installedModuleEffects } from '../data/research';
+import { BUILDING_MODULES, moduleEffectSummary } from '../data/research';
 import type { Game } from '../sim/game';
 
 export type ModuleInstallState = 'available' | 'installed' | 'resources' | 'blocked';
@@ -38,12 +38,16 @@ export interface ModuleActionView {
   detail: string;
 }
 
-function powerOf(moduleId: string): number {
-  return installedModuleEffects([moduleId]).power;
-}
-
-function powerText(power: number): string {
-  return power > 0 ? `+${power} power` : `${power} power`;
+/**
+ * The module's own effect labels, in the panel's lower-case house style.
+ *
+ * Derived from the effects rather than from grid contribution: a servicing crew
+ * and a sonar suite have no power line at all, and reporting them as "0 power"
+ * was technically true and told the player nothing.
+ */
+function effectText(moduleId: string): string {
+  const module = BUILDING_MODULES[moduleId];
+  return module ? moduleEffectSummary(module).join(' · ').toLowerCase() : '';
 }
 
 /**
@@ -71,24 +75,24 @@ export function moduleActions(game: Game, owner: number, buildingId: number): Mo
     if (!module) continue;
     const count = installedIds.filter((id) => id === moduleId).length;
     const capacity = module.capacity ?? 1;
-    const power = powerOf(moduleId);
+    const effects = effectText(moduleId);
     views.push({
       moduleId,
       name: module.name,
       icon: module.icon,
       description: module.description,
       cost: module.cost,
-      power,
+      power: BUILDING_MODULES[moduleId]?.effects.reduce(
+        (sum, effect) => (effect.kind === 'power' ? sum + effect.amount : sum),
+        0,
+      ) ?? 0,
       installed: true,
       count,
       capacity,
       ready: false,
       state: 'installed',
       label: 'INSTALLED',
-      detail:
-        count > 1
-          ? `Installed ×${count} — ${powerText(power * count)} to the grid`
-          : `Installed — ${powerText(power)} to the grid`,
+      detail: `Installed${count > 1 ? ` ×${count}` : ''} — ${effects}`,
     });
   }
 
@@ -96,7 +100,11 @@ export function moduleActions(game: Game, owner: number, buildingId: number): Mo
     if (seen.has(module.id)) continue;
     seen.add(module.id);
     const status = game.moduleStatus(owner, buildingId, module.id);
-    const power = powerOf(module.id);
+    const power = module.effects.reduce(
+      (sum, effect) => (effect.kind === 'power' ? sum + effect.amount : sum),
+      0,
+    );
+    const effects = effectText(module.id);
     const affordable = status.ok;
     // `availableModules` already excludes anything un-researched, ineligible or
     // over capacity, so a refusal here is about the bank or a state the two
@@ -116,7 +124,7 @@ export function moduleActions(game: Game, owner: number, buildingId: number): Mo
       state: affordable ? 'available' : shortOfResources ? 'resources' : 'blocked',
       label: affordable ? 'INSTALL' : shortOfResources ? 'NEED FUNDS' : 'BLOCKED',
       detail: affordable
-        ? `${powerText(power)} · ${module.cost.mats}M · ${module.cost.req}R`
+        ? `${effects} · ${module.cost.mats}M · ${module.cost.req}R`
         : status.reason,
     });
   }

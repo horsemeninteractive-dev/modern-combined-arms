@@ -110,8 +110,9 @@ describe('completed unit roster visual pass', () => {
   it('keeps the Spearhead gun on the MBT-class hardpoint and hull', () => {
     const spearhead = unitStyle('spearhead')!;
     const tank = unitStyle('tank')!;
-    // Sharing a genuine hull component is deliberate; the turret is unique.
-    expect(spearhead.body).toBe(tank.body);
+    // The upgrade carries a longer, heavier hull and its own turret; the gun
+    // still lands on the MBT-class muzzle hardpoint from that new mount.
+    expect(spearhead.body).not.toBe(tank.body);
     expect(spearhead.turret).not.toBe(tank.turret);
     const turret = spearhead.turret!;
     const b = bounds(turret);
@@ -169,6 +170,25 @@ describe('completed unit roster visual pass', () => {
     }
   });
 
+  it('splits the gunship rotors out of the airframe so they can turn', () => {
+    const helo = unitStyle('attackHelo')!;
+    const rotor = helo.rotor;
+    const tail = helo.tailRotor;
+    expect(rotor, 'main rotor').toBeDefined();
+    expect(tail, 'tail rotor').toBeDefined();
+    expect(rotor!.rate).toBeGreaterThan(0);
+    expect(tail!.rate).toBeGreaterThan(rotor!.rate);
+    // The blades live in the rotor part only: leaving a second copy in the body
+    // would draw a static disc under the moving one.
+    const body = bounds(helo.body);
+    const disc = bounds(rotor!.mesh);
+    expect(disc.maxX - disc.minX).toBeGreaterThan(body.maxX - body.minX);
+    expect(rotor!.offset[1]).toBeGreaterThan(body.maxY * 0.6);
+    // The tail rotor sits behind the cabin, on the fin.
+    expect(tail!.offset[0]).toBeLessThan(body.minX * 0.5);
+    expect(tail!.offset[0]).toBeGreaterThan(body.minX);
+  });
+
   it('gives the new naval hulls distinct silhouettes and aligned deck guns', () => {
     const boat = unitStyle('missileBoat')!;
     const corvette = unitStyle('corvette')!;
@@ -179,7 +199,9 @@ describe('completed unit roster visual pass', () => {
     expect(submarine.body).not.toBe(corvette.body);
     expect(submarine.periscope).toBeDefined();
     expect(submarine.turret).toBeUndefined();
-    expect(frigate.turret).toBe(corvette.turret);
+    // The escort mounts its own heavier enclosed gunhouse, not the corvette's
+    // light 76 mm turret.
+    expect(frigate.turret).not.toBe(corvette.turret);
 
     const length = (id: string): number => {
       const b = bounds(unitStyle(id)!.body);

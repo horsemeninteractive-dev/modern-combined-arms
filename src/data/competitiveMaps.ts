@@ -15,6 +15,7 @@ import {
   phaseSettings,
   type Scenario,
   type ScenarioPlayer,
+  type ScenarioProp,
   type ScenarioSettings,
   type ScenarioSlot,
   type ScenarioStructure,
@@ -22,6 +23,7 @@ import {
   type ScenarioUnit,
 } from '../sim/scenario';
 import { BUILDINGS } from './buildings';
+import type { PropKind } from './props';
 
 /**
  * Competitive skirmish and multiplayer battlefields.
@@ -107,6 +109,7 @@ export class Field {
   readonly tiles: ScenarioTile[];
   readonly structures: ScenarioStructure[] = [];
   readonly units: ScenarioUnit[] = [];
+  readonly props: ScenarioProp[] = [];
 
   constructor(readonly size: number) {
     this.tiles = new Array<ScenarioTile>(size * size);
@@ -129,6 +132,30 @@ export class Field {
     tile.t = terrain;
     if (elevation !== undefined) tile.e = elevation;
     if (ore !== undefined) tile.o = ore;
+  }
+
+  /**
+   * One authored prop, stamped at all four rotations.
+   *
+   * The yaw turns with the map, so a lamp that leans over the carriageway in the
+   * authored quadrant leans over the carriageway in the other three as well.
+   * Rubble heaps and brush have no meaningful facing, which is why the rotation
+   * is optional.
+   */
+  prop(kind: PropKind, x: number, z: number, rotation = 0, scale?: number): void {
+    for (const k of ROTATIONS) {
+      const p = rotatePoint(this.size, k, x, z);
+      let yaw = rotation + (k * Math.PI) / 2;
+      while (yaw > Math.PI) yaw -= Math.PI * 2;
+      while (yaw < -Math.PI) yaw += Math.PI * 2;
+      this.props.push({
+        kind,
+        x: p.x,
+        z: p.z,
+        ...(Math.abs(yaw) < 1e-9 ? {} : { rotation: yaw }),
+        ...(scale === undefined ? {} : { scale }),
+      });
+    }
   }
 
   /** One tile, stamped at all four rotations. */
@@ -585,6 +612,7 @@ export function assemble(
     players,
     structures: field.structures,
     units: field.units,
+    ...(field.props.length > 0 ? { props: field.props } : {}),
     objectives,
     settings: {
       ...phaseSettings(settings.timeOfDay ?? 'dusk'),
@@ -674,6 +702,11 @@ export function createOpenFront(): Scenario {
   field.centreBlock(Terrain.Road);
   field.centreStructure('relay');
 
+
+  // The approach is dressed at the verge: one sign where the lane turns and one
+  // lamp where it leaves the pad, both facing the traffic.
+  field.prop('sign', 21, 13, Math.PI / 2);
+  field.prop('lamp', 26, 15, -Math.PI / 2);
   return assemble(
     field,
     {
@@ -1093,6 +1126,12 @@ export function createCrossingPoint(): Scenario {
   // The river farm: a walled yard either side of the bridge approach, worth
   // holding whoever owns the crossing.
   field.neutral('farmhouse', 22, 22);
+
+  // Thick reed beds on the inner bank, placed rather than scattered: the two
+  // approaches to the crossing read as one wetland instead of as noise.
+  field.prop('reed', 41, 33, 0, 1.35);
+  field.prop('reed', 42, 34, 0.7, 1.2);
+  field.prop('reed', 44, 34, 1.4, 1.3);
   return assemble(
     field,
     {
@@ -1368,6 +1407,14 @@ export function createContactZone(): Scenario {
   field.centreBlock(Terrain.Urban);
   field.centreStructure('relay');
 
+
+  // Street dressing, placed one piece at a time. The procedural pass leaves
+  // carriageway bare, so the rubble heaps and the leaning lamp that make the
+  // core read as a place that has been fought over are authored by hand.
+  field.prop('rubble', 23, 18, 0.4);
+  field.prop('rubble', 24, 19, 1.1, 1.15);
+  field.prop('rubble', 27, 18, 0.2, 0.9);
+  field.prop('lamp', 22, 16, Math.PI / 2);
   return assemble(
     field,
     {

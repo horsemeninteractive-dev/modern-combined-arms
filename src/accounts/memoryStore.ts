@@ -11,13 +11,18 @@ import { EMPTY_CAREER, summariseCareer } from './career';
 import type {
   AccountRecord,
   AccountStore,
+  CareerEntryWrite,
   GuestMigrationRecord,
   IdentityRecord,
+  MatchReportRecord,
+  MpResultPlayerRecord,
   NewIdentity,
+  PlayerProfileRecord,
   ProviderId,
   SessionRecord,
   WriteOutcome,
 } from './types';
+import type { StatGroupRow } from './stats';
 
 export class MemoryAccountStore implements AccountStore {
   private accounts = new Map<string, AccountRecord>();
@@ -27,6 +32,9 @@ export class MemoryAccountStore implements AccountStore {
   private migrations = new Map<string, GuestMigrationRecord>();
   private limits = new Map<string, number>();
   private career = new Map<string, CareerMatchRecord[]>();
+  private profiles = new Map<string, PlayerProfileRecord>();
+  private reports = new Map<string, MatchReportRecord>();
+  private audit = new Map<string, MpResultPlayerRecord>();
 
   /** Test hook: change an account's status without going through a route. */
   setStatus(accountId: string, status: AccountRecord['status']): void {
@@ -164,17 +172,162 @@ export class MemoryAccountStore implements AccountStore {
     return 'ok';
   }
 
-  async careerMatches(accountId: string, limit: number): Promise<CareerMatchRecord[]> {
+  async careerMatches(accountId: string, limit: number, offset = 0): Promise<CareerMatchRecord[]> {
     const rows = this.career.get(accountId) ?? [];
+    const start = Math.max(0, Math.floor(offset));
     return [...rows]
       .sort((left, right) => right.recordedAt - left.recordedAt || left.ref.localeCompare(right.ref))
-      .slice(0, Math.max(1, Math.min(200, Math.floor(limit))))
+      .slice(start, start + Math.max(1, Math.min(200, Math.floor(limit))))
       .map((record) => ({ ...record }));
+  }
+
+  async careerMatch(accountId: string, ref: string): Promise<CareerMatchRecord | null> {
+    const row = (this.career.get(accountId) ?? []).find((record) => record.ref === ref);
+    return row ? { ...row } : null;
   }
 
   async careerTotals(accountId: string): Promise<CareerTotals> {
     const rows = this.career.get(accountId);
     return rows && rows.length > 0 ? summariseCareer(rows) : { ...EMPTY_CAREER };
+  }
+
+  async profile(accountId: string): Promise<PlayerProfileRecord | null> {
+    const profile = this.profiles.get(accountId);
+    return profile ? { ...profile } : null;
+  }
+
+  async profileByCallsignKey(callsignKey: string): Promise<PlayerProfileRecord | null> {
+    for (const profile of this.profiles.values()) {
+      if (profile.callsignKey === callsignKey) return { ...profile };
+    }
+    return null;
+  }
+
+  async createProfile(record: PlayerProfileRecord): Promise<WriteOutcome> {
+    if (this.profiles.has(record.accountId)) return 'conflict';
+    for (const existing of this.profiles.values()) {
+      if (existing.callsignKey === record.callsignKey) return 'conflict';
+    }
+    this.profiles.set(record.accountId, { ...record });
+    return 'ok';
+  }
+
+  async updateProfile(
+    accountId: string,
+    patch: {
+      callsign: string;
+      callsignKey: string;
+      avatar: PlayerProfileRecord['avatar'];
+      updatedAt: number;
+      callsignChangedAt: number | null;
+    },
+  ): Promise<WriteOutcome> {
+    const profile = this.profiles.get(accountId);
+    if (!profile) return 'conflict';
+    for (const existing of this.profiles.values()) {
+      if (existing.accountId !== accountId && existing.callsignKey === patch.callsignKey) return 'conflict';
+    }
+    profile.callsign = patch.callsign;
+    profile.callsignKey = patch.callsignKey;
+    profile.avatar = patch.avatar;
+    profile.updatedAt = patch.updatedAt;
+    if (patch.callsignChangedAt !== null) profile.callsignChangedAt = patch.callsignChangedAt;
+    return 'ok';
+  }
+
+  async recordCareerEntry(entry: CareerEntryWrite): Promise<WriteOutcome> {
+    const rows = this.career.get(entry.accountId) ?? [];
+    if (rows.some((existing) => existing.ref === entry.record.ref)) return 'conflict';
+    const xpBefore = rows.reduce((total, record) => total + record.xp, 0);
+    rows.push({ ...entry.record });
+    this.career.set(entry.accountId, rows);
+    if (entry.report) {
+      const key = `${entry.accountId}:${entry.report.ref}`;
+      if (!this.reports.has(key)) {
+        this.reports.set(key, {
+          ...entry.report,
+          xpBefore,
+          xpAfter: xpBefore + entry.record.xp,
+        });
+      }
+    }
+    if (entry.audit) {
+      const key = `${entry.audit.matchId}:${entry.audit.accountId}`;
+      if (!this.audit.has(key)) this.audit.set(key, { ...entry.audit });
+    }
+    return 'ok';
+  }
+
+  async recordMatchReport(accountId: string, report: MatchReportRecord): Promise<void> {
+    const key = `${accountId}:${report.ref}`;
+    if (this.reports.has(key)) return;
+    const totals = await this.careerTotals(accountId);
+    this.reports.set(key, { ...report, xpBefore: totals.xp, xpAfter: totals.xp + report.xpAfter - report.xpBefore });
+  }
+
+  async matchReport(accountId: string, ref: string): Promise<MatchReportRecord | null> {
+    const report = this.reports.get(`${accountId}:${ref}`);
+    return report ? { ...report } : null;
+  }
+
+  async careerStatRows(accountId: string): Promise<StatGroupRow[]> {
+    const rows = this.career.get(accountId) ?? [];
+    const groups = new Map<string, StatGroupRow>();
+    for (const record of rows) {
+      const key = `${record.mode}:${record.nation ?? ''}`;
+      const report = this.reports.get(`${accountId}:${record.ref}`);
+      const group =
+        groups.get(key) ??
+        ({
+          mode: record.mode,
+          nation: record.nation,
+          matches: 0,
+          victories: 0,
+          defeats: 0,
+          draws: 0,
+          playSeconds: 0,
+          xp: 0,
+          unitsDestroyed: 0,
+          unitsLost: 0,
+          structuresDestroyed: 0,
+          structuresLost: 0,
+          structuresBuilt: 0,
+          sitesCaptured: 0,
+          superweaponsUsed: 0,
+          objectivesCompleted: 0,
+        } satisfies StatGroupRow);
+      group.matches += 1;
+      if (record.outcome === 'victory') group.victories += 1;
+      else if (record.outcome === 'defeat') group.defeats += 1;
+      else group.draws += 1;
+      group.playSeconds += record.durationSeconds;
+      group.xp += record.xp;
+      group.unitsDestroyed += record.kills;
+      group.unitsLost += record.unitsLost;
+      if (report) {
+        group.structuresDestroyed += report.structuresDestroyed;
+        group.structuresLost += report.structuresLost;
+        group.structuresBuilt += report.structuresBuilt;
+        group.sitesCaptured += report.sitesCaptured;
+        group.superweaponsUsed += report.superweaponsUsed;
+        group.objectivesCompleted += report.objectivesCompleted;
+      }
+      groups.set(key, group);
+    }
+    return [...groups.values()];
+  }
+
+  async recordMpResultPlayer(record: MpResultPlayerRecord): Promise<void> {
+    const key = `${record.matchId}:${record.accountId}`;
+    if (!this.audit.has(key)) this.audit.set(key, { ...record });
+  }
+
+  async mpResultsSince(accountId: string, since: number): Promise<number> {
+    let count = 0;
+    for (const row of this.audit.values()) {
+      if (row.accountId === accountId && row.status === 'awarded' && row.processedAt >= since) count += 1;
+    }
+    return count;
   }
 
   async countRateLimit(bucket: string, windowStart: number): Promise<number> {

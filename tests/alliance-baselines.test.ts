@@ -65,6 +65,7 @@ function arena(playerNation: string, enemyNation = 'poland'): Scenario {
     { defId: 'commandPost', owner: 0, x: 6, z: 6 },
     { defId: 'factory', owner: 0, x: 16, z: 6 },
     { defId: 'airfield', owner: 0, x: 16, z: 16 },
+    { defId: 'heliport', owner: 0, x: 26, z: 16 },
     { defId: 'commandPost', owner: 1, x: size - 9, z: size - 9 },
   );
   return scenario;
@@ -231,9 +232,13 @@ describe('production and AI resolution', () => {
       expect(actual).toBeTruthy();
       expect(game.productionStatus(0, factory.id, actual).ok, `${slot} → ${actual}`).toBe(true);
     }
+    // Rotary aviation is a heliport product: the airfield's pad recovers a
+    // damaged gunship but cannot build one.
     const airfield = game.entitiesOf(0, 'building').find((e) => e.defId === 'airfield')!;
+    const heliport = game.entitiesOf(0, 'building').find((e) => e.defId === 'heliport')!;
     const helo = game.unitIdFor(0, 'attackHelo')!;
-    expect(game.productionStatus(0, airfield.id, helo).ok).toBe(true);
+    expect(game.productionStatus(0, heliport.id, helo).ok).toBe(true);
+    expect(game.productionStatus(0, airfield.id, helo).ok).toBe(false);
   });
 
   it('produces the eastern platform for an eastern nation', () => {
@@ -268,8 +273,9 @@ describe('production and AI resolution', () => {
     expect(russianFactory).toContain('tankEC');
     expect(russianFactory).toContain('heavyHowitzer');
     expect(russianFactory).not.toContain('tank');
-    expect(productionEntries(russia, 'airfield')).toContain('attackHeloEC');
-    expect(productionEntries(poland, 'airfield')).toContain('attackHelo');
+    expect(productionEntries(russia, 'heliport')).toContain('attackHeloEC');
+    expect(productionEntries(poland, 'heliport')).toContain('attackHelo');
+    expect(productionEntries(russia, 'airfield')).not.toContain('attackHeloEC');
   });
 
   it('marks only nation-specific definitions as national', () => {

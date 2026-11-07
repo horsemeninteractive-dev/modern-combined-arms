@@ -106,7 +106,10 @@ describe('game startup', () => {
     const harvester = playerUnit(game, 'harvester')!;
     harvester.harvester!.ore = HARVESTER_CAPACITY;
     harvester.harvester!.phase = 'seek';
-    game.advance(20 * 4);
+    // A load is tipped at a delivery mouth, so the round trip is a drive to the
+    // apron plus the unloading run — not an instant deposit from anywhere in
+    // the compound.
+    for (let i = 0; i < 20 * 40 && game.player(0)!.stats.matsGathered === 0; i++) game.advance(1);
     expect(game.player(0)!.stats.matsGathered).toBeCloseTo(HARVESTER_CAPACITY, 5);
   });
 });

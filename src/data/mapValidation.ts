@@ -7,6 +7,7 @@ import {
   reachableFrom,
   structureTiles,
   type Scenario,
+  type ScenarioProp,
   type ScenarioStructure,
 } from '../sim/scenario';
 import {
@@ -182,6 +183,30 @@ function compareOwnedContent(scenario: Scenario, problems: MapProblem[]): void {
         code: 'asymmetric-force',
         message: `Unit ${u.defId} for seat ${u.owner} at ${u.x},${u.z} has no opposite counterpart at ${p.x},${p.z}.`,
       });
+    }
+  }
+}
+
+/**
+ * Authored set dressing must be four-way symmetric too.
+ *
+ * A prop is cosmetic, but the roster's promise is that all four quadrants are
+ * the same map. A bush placed in one quadrant without its rotations is either a
+ * slip or a deliberate asymmetry, and both are worth reporting.
+ */
+function compareProps(scenario: Scenario, problems: MapProblem[]): void {
+  const props: ScenarioProp[] = scenario.props ?? [];
+  if (props.length === 0) return;
+  const present = new Set(props.map((prop) => `${prop.kind}@${prop.x},${prop.z}`));
+  for (const prop of props) {
+    for (const k of [1, 2, 3] as const) {
+      const p = rotatePoint(scenario.width, k, prop.x, prop.z);
+      if (present.has(`${prop.kind}@${p.x},${p.z}`)) continue;
+      problems.push({
+        code: 'asymmetric-prop',
+        message: `Prop ${prop.kind} at ${prop.x},${prop.z} has no counterpart at ${p.x},${p.z}.`,
+      });
+      return;
     }
   }
 }
@@ -372,6 +397,7 @@ export function auditCompetitiveMap(entry: ScenarioEntry, scenario: Scenario = e
   for (const k of [1, 2, 3] as const) compareTerrain(scenario, k, problems);
   compareNeutralStructures(scenario, problems);
   compareOwnedContent(scenario, problems);
+  compareProps(scenario, problems);
 
   // 3. Starts.
   checkSlots(entry, scenario, problems);

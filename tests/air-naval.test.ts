@@ -38,8 +38,10 @@ describe('aircraft operations', () => {
 
     const home = game.getEntity(fighter.homeId)!;
     game.enqueueCommand({ type: 'move', team: 0, ids: [fighter.id], x: 200, z: 140 });
-    game.advance(20 * 4);
+    // Taxi out, run the strip, climb: the hull is airborne a few seconds in.
+    for (let i = 0; i < 20 * 20 && fighter.aircraft?.landed; i++) game.advance(1);
     expect(fighter.aircraft?.landed).toBe(false);
+    game.advance(20 * 4);
     expect(fighter.fuel).toBeLessThan(startFuel);
     // It must actually leave the airfield, not hover inside its own footprint.
     expect(Math.hypot(fighter.x - home.x, fighter.z - home.z)).toBeGreaterThan(20);
@@ -47,7 +49,9 @@ describe('aircraft operations', () => {
     game.enqueueCommand({ type: 'return', team: 0, ids: [fighter.id] });
     for (let i = 0; i < 40 && !fighter.aircraft?.landed; i++) game.advance(20);
     expect(fighter.aircraft?.landed).toBe(true);
-    game.advance(20 * 9);
+    // Approach, roll-out and the servicing run: the hull re-arms once it is on
+    // its stand, not the moment it is cleared to land.
+    for (let i = 0; i < 20 * 20 && fighter.fuel < fighter.maxFuel; i++) game.advance(1);
     expect(fighter.ammo).toBe(fighter.maxAmmo);
     expect(fighter.fuel).toBe(fighter.maxFuel);
     expect(fighter.state).toBe('grounded');

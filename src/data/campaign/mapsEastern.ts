@@ -117,7 +117,7 @@ export function createRedBeach(): Scenario {
           'directedEnergyPower',
           'beamTargeting',
         ],
-        buildings: ['researchCentre', 'airfield', 'shipyard'],
+        buildings: ['researchCentre', 'airfield', 'heliport', 'shipyard'],
         // One tank came ashore with the first wave; nothing else in the
         // armoured, artillery, aviation or naval branches did.
         units: [
@@ -208,7 +208,7 @@ export function createFoundryPocket(): Scenario {
       technologies: ['manoeuvre1'],
       restrictions: {
         technologies: ['manoeuvre2', 'fires1', 'fires2', 'air1', 'air2', 'naval1', 'naval2'],
-        buildings: ['airfield', 'shipyard'],
+        buildings: ['airfield', 'heliport', 'shipyard'],
         units: ['td', 'spg', 'rocketArtillery', 'uav', 'fighter', 'attackHelo'],
       },
     },
@@ -276,7 +276,7 @@ export function createStraitBlockade(): Scenario {
       technologies: ['naval1', 'manoeuvre1'],
       restrictions: {
         technologies: ['naval2', 'manoeuvre2', 'fires1', 'fires2', 'air1', 'air2'],
-        buildings: ['airfield'],
+        buildings: ['airfield', 'heliport'],
         units: ['td', 'spg', 'rocketArtillery', 'uav', 'fighter', 'attackHelo'],
       },
     },
@@ -343,7 +343,7 @@ export function createIronColumn(): Scenario {
       technologies: ['manoeuvre1', 'manoeuvre2'],
       restrictions: {
         technologies: ['fires1', 'fires2', 'air1', 'air2', 'naval1', 'naval2'],
-        buildings: ['airfield', 'shipyard'],
+        buildings: ['airfield', 'heliport', 'shipyard'],
         units: ['spg', 'rocketArtillery', 'uav', 'fighter', 'attackHelo'],
       },
     },
@@ -480,7 +480,7 @@ export function createKestrelReach(): Scenario {
       technologies: ['manoeuvre1', 'fires1', 'fires2'],
       restrictions: {
         technologies: ['manoeuvre2', 'air1', 'air2', 'naval1', 'naval2'],
-        buildings: ['airfield', 'shipyard'],
+        buildings: ['airfield', 'heliport', 'shipyard'],
         units: ['td', 'uav', 'fighter', 'attackHelo', 'missileBoat', 'corvette'],
       },
     },
@@ -608,7 +608,7 @@ export function createGunLine(): Scenario {
       technologies: ['manoeuvre1', 'fires1', 'fires2'],
       restrictions: {
         technologies: ['manoeuvre2', 'air1', 'air2', 'naval1', 'naval2'],
-        buildings: ['airfield', 'shipyard'],
+        buildings: ['airfield', 'heliport', 'shipyard'],
         units: ['td', 'uav', 'fighter', 'attackHelo', 'missileBoat', 'corvette'],
       },
     },
@@ -745,7 +745,7 @@ export function createDepotWar(): Scenario {
       technologies: ['manoeuvre1', 'manoeuvre2', 'fires1', 'fires2'],
       restrictions: {
         technologies: ['air1', 'air2', 'naval1', 'naval2'],
-        buildings: ['airfield', 'shipyard'],
+        buildings: ['airfield', 'heliport', 'shipyard'],
         units: ['uav', 'fighter', 'attackHelo', 'missileBoat', 'corvette'],
       },
     },

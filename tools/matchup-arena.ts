@@ -10,6 +10,7 @@
  */
 import { Game } from '../src/sim/game';
 import { createEmptyScenario } from '../src/data/scenarios';
+import { requireScenario } from '../src/data/scenarioCatalog';
 import { UNITS } from '../src/data/units';
 import { BUILDINGS } from '../src/data/buildings';
 import { NATIONS, PLAYABLE_NATION_IDS } from '../src/data/factions';
@@ -20,9 +21,13 @@ export const VARIANT_BY_NATION: Readonly<Record<string, string>> = {
   lithuania: 'pathfinder',
   poland: 'spearhead',
   uk: 'mlrs',
+  finland: 'k9Thunder',
+  sweden: 'cv90',
   russia: 'heavyHowitzer',
   belarus: 'deepReconUAV',
   hungary: 'bunker',
+  iran: 'khordadSam',
+  northKorea: 'bulsae4',
 };
 
 /** All 15 unordered pairings, in registry order. */
@@ -57,12 +62,17 @@ export const ARENA_ORE = (() => {
  * across 27 tiles of open ground; every deposit is mirrored in x.
  */
 export function matchupScenario(westNation: string, eastNation: string, seed: number) {
-  const scenario = createEmptyScenario(64, 64);
-  scenario.meta.id = 'national-matchup-audit';
-  scenario.meta.name = 'National Matchup Audit';
+  // `MCA_MAP` plays the matrix on a shipped skirmish map instead of the 64x64
+  // arena. The map's own terrain, relays, starting units and command posts are
+  // kept; only the match settings and the two seats' nations are rewritten, so
+  // the same harness measures national balance on ground a player actually sees.
+  const mapId = process.env.MCA_MAP?.trim();
+  const scenario = mapId ? requireScenario(mapId).create() : createEmptyScenario(64, 64);
+  scenario.meta.id = mapId ? `national-matchup-${mapId}` : 'national-matchup-audit';
+  scenario.meta.name = mapId ? `National Matchup Audit (${mapId})` : 'National Matchup Audit';
   scenario.settings.seed = seed;
-  scenario.settings.startingMats = 3000;
-  scenario.settings.startingReq = 180;
+  scenario.settings.startingMats = Number(process.env.MCA_START_MATS ?? 3000);
+  scenario.settings.startingReq = Number(process.env.MCA_START_REQ ?? 180);
   scenario.settings.fog = true;
   scenario.settings.victory = 'destroyHQ';
   scenario.settings.timeLimitSec = null;
@@ -72,15 +82,20 @@ export function matchupScenario(westNation: string, eastNation: string, seed: nu
   scenario.players[0].factionId = westNation;
   scenario.players[0].team = 0;
   scenario.players[0].isAI = false;
-  scenario.players[0].startX = 18;
-  scenario.players[0].startZ = 37;
+  if (!mapId) {
+    scenario.players[0].startX = 18;
+    scenario.players[0].startZ = 37;
+  }
   scenario.players[1].name = NATIONS[eastNation]?.name ?? eastNation;
   scenario.players[1].factionId = eastNation;
   scenario.players[1].team = 1;
   scenario.players[1].isAI = false;
-  scenario.players[1].startX = 45;
-  scenario.players[1].startZ = 37;
-  scenario.structures = [
+  scenario.players[1].isAI = false;
+  if (!mapId) {
+    scenario.players[1].startX = 45;
+    scenario.players[1].startZ = 37;
+  }
+  if (!mapId) scenario.structures = [
     { defId: 'commandPost', owner: 0, x: 16, z: 33 },
     { defId: 'commandPost', owner: 1, x: 44, z: 33 },
     { defId: 'relay', owner: -1, x: 30, z: 32 },

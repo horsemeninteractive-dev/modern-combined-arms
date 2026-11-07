@@ -2,18 +2,23 @@
  * National matchup audit harness.
  *
  * This is deliberately separate from the normal unit suite: the full matrix is
- * 15 pairings x 2 seats x N seeds and takes minutes. It answers questions the
- * individual national tests cannot: does a nation actually build its variant,
- * does the variant reach the battlefield, and does the national identity change
- * the outcome of a mirrored AI-vs-AI match?
+ * 45 pairings x 2 seats x 2 personalities x N seeds, which is an hour of CPU at
+ * five seeds. It answers questions the individual national tests cannot: does a
+ * nation actually build its variant, does the variant reach the battlefield,
+ * and does the national identity change the outcome of a mirrored AI-vs-AI
+ * match?
  *
  *   npx tsx tools/nation-matchups.ts [seeds=3] [maxSeconds=600] [difficulty=veteran]
+ *
+ * A long sweep can be split into processes and concatenated afterwards:
+ *   MCA_PAIRS=lithuania-poland,uk-finland MCA_CONTROL=0 npx tsx ...
+ *   MCA_SEEDS=3032,4009 npx tsx ...   # a different seed set
  *
  * Both sides run the real AIController through the public command API. The
  * built-in single-AI hook is disabled, exactly like tests/ai-matchups.test.ts.
  * Every pairing is played with each nation on each side and with both commander
  * personalities swapped between seats, so a seat bias is shared equally by all
- * six nations rather than falling on one. It is not eliminated: the arena is
+ * ten nations rather than falling on one. It is not eliminated: the arena is
  * geometrically mirrored but the simulation is not algorithmically symmetric,
  * and the east seat wins about two thirds of decided matches. Read
  * docs/PHASE_5_MATCHUP_AUDIT.md §1.4 before comparing absolute win rates.
@@ -223,6 +228,10 @@ interface SideResult {
   phase: string;
   wave: number;
   lastDecision: string;
+  /** Technologies completed by the end of the match. */
+  techs: string[];
+  /** Requisition per second at the end of the match. */
+  reqRate: number;
   variant: ReturnType<typeof variantResult>;
   structures: Record<string, number>;
   produced: Record<string, number>;
@@ -307,6 +316,8 @@ function runMatch(
       phase: state.phase,
       wave: state.attackWave,
       lastDecision: state.lastDecision,
+      techs: game.completedTechnologies(id),
+      reqRate: +game.reqRate(id).toFixed(2),
       variant: variantResult(trace.variant),
       structures: trace.structures,
       produced: trace.produced,
@@ -404,9 +415,11 @@ const seeds = SEED_POOL.slice(0, seedCount);
 console.log(
   JSON.stringify({
     event: 'config',
-    arena: 'mirrored 64x64 arena, ore 600/tile (east seat wins ~2/3 of decided matches; see PHASE_5_MATCHUP_AUDIT.md §1.4)',
-    startingMats: 3000,
-    startingReq: 180,
+    arena: process.env.MCA_MAP
+      ? `skirmish map ${process.env.MCA_MAP} (authored terrain, relays and starting units)`
+      : 'mirrored 64x64 arena, ore 600/tile (east seat wins ~2/3 of decided matches; see PHASE_5_MATCHUP_AUDIT.md §1.4)',
+    startingMats: Number(process.env.MCA_START_MATS ?? 3000),
+    startingReq: Number(process.env.MCA_START_REQ ?? 180),
     difficulty,
     seeds,
     eastSeedOffset: 977,
@@ -515,12 +528,31 @@ function runPair(a: string, b: string, trackNations = true): ReturnType<typeof e
   return agg;
 }
 
-// Baseline control: the two legacy presets, which both resolve the shared
-// baseline. They are not part of the six-nation matrix.
-const control = runPair('baltic', 'expeditionary', false);
-console.log(JSON.stringify({ event: 'pair-summary', ...control, control: true }));
+// A full sweep is 45 pairings x 2 seats x 2 personalities x N seeds, so a long
+// run can be split across processes and its JSON lines concatenated afterwards:
+//   MCA_PAIRS=lithuania-poland,uk-finland MCA_CONTROL=0 npx tsx tools/nation-matchups.ts 3 600 elite
+const pairFilter = (process.env.MCA_PAIRS ?? '')
+  .split(',')
+  .map((entry) => entry.trim().toLowerCase())
+  .filter(Boolean);
+const selectedPairs =
+  pairFilter.length > 0
+    ? PAIRS.filter(([a, b]) => {
+        const forward = `${a}-${b}`.toLowerCase();
+        const reverse = `${b}-${a}`.toLowerCase();
+        return pairFilter.includes(forward) || pairFilter.includes(reverse);
+      })
+    : PAIRS;
+const runControl = process.env.MCA_CONTROL !== '0';
 
-for (const [a, b] of PAIRS) {
+// Baseline control: the two legacy presets, which both resolve the shared
+// baseline. They are not part of the nation matrix.
+const control = runControl ? runPair('baltic', 'expeditionary', false) : null;
+if (control) {
+  console.log(JSON.stringify({ event: 'pair-summary', ...control, control: true }));
+}
+
+for (const [a, b] of selectedPairs) {
   const agg = runPair(a, b);
   aggregate.push(agg);
   console.log(JSON.stringify({ event: 'pair-summary', ...agg, avgMargin: +(agg.margin / agg.games).toFixed(0) }));
@@ -537,4 +569,5 @@ console.log(
 );
 
 const elapsed = ((Date.now() - started) / 1000).toFixed(1);
-console.log(JSON.stringify({ event: 'done', matches: aggregate.reduce((n, p) => n + p.games, 0) + control.games, elapsedSeconds: elapsed }));
+const totalMatches = aggregate.reduce((n, p) => n + p.games, 0) + (control?.games ?? 0);
+console.log(JSON.stringify({ event: 'done', pairs: selectedPairs.length, matches: totalMatches, elapsedSeconds: elapsed }));

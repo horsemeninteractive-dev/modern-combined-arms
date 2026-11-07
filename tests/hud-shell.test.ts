@@ -223,6 +223,12 @@ describe('interface sound', () => {
     // Unseen hulls must not give themselves away by their engines.
     const candidates = app.slice(app.indexOf('private ambienceCandidates'));
     expect(candidates).toContain('game.isVisibleTo(this.localPlayerId, e.id)');
+    // A hull on turnaround gives its voice to the kit beside it: the pump and a
+    // beacon chirp on the nearest working apron, not an idling aircraft engine.
+    expect(candidates).toContain('isServicingAircraft(e)');
+    expect(candidates).toContain('serviceKitAmbience({ servicing: true })');
+    expect(app).toContain("this.audio.play('serviceBeacon'");
+    expect(app).toContain('SERVICE_BEACON_CHIRP_SECONDS');
     const audio = readFileSync(new URL('../src/ui/audio.ts', import.meta.url), 'utf8');
     expect(audio).toMatch(/rotor: \{[^}]*filterType: 'bandpass'/);
     expect(audio).toContain('this.bedBus.connect(this.ambient)');

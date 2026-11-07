@@ -90,6 +90,15 @@ const PATHS: Record<string, string> = {
   monitor: `<path d="M2 16h18l2 2H2z"/><path d="M5 16V11h9l3 5"/><circle cx="9" cy="12.5" r="2.2"/><path d="M9 12.5l9-5M18 7.5l2 1.5"/><path d="M3 20c2-1 3 1 5 0s3 1 5 0 3 1 5 0"/>`,
   eye: `<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>`,
   eyeOff: `<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path d="M4 4l16 16"/>`,
+  school: `<path d="M3 21h18M5 21V9l7-4 7 4v12"/><path d="M9 21v-6h6v6"/><circle cx="12" cy="9" r="1.4"/>`,
+  apartment: `<path d="M4 21V6h10v15M14 21V10h6v11M2 21h20"/><path d="M7 9h2v2H7zM11 9h2v2h-2zM7 13h2v2H7zM11 13h2v2h-2zM17 13h1.6v2H17z"/>`,
+  motel: `<path d="M3 21V8h18v13M2 21h20"/><path d="M5 12h14M6 8V5h3v3M15 8V5h3v3"/><path d="M8 21v-4h8v4"/>`,
+  cinema: `<path d="M3 21V8l6-3 12 3v13"/><path d="M3 21h18"/><path d="M9 12h8v3H9z"/><path d="M6 17h3M12 17h3M18 17h2"/>`,
+  bank: `<path d="M3 21h18M5 21V10h14v11"/><path d="M7 10l5-5 5 5"/><path d="M9 13v5M12 13v5M15 13v5"/>`,
+  station: `<path d="M3 21h18M4 21v-6l8-4 8 4v6"/><path d="M9 21v-4h6v4"/><path d="M12 11V4M8 4h8"/>`,
+  garage: `<path d="M3 21V10h18v11M2 21h20"/><path d="M6 21v-5h5v5M14 21v-5h4v5"/><path d="M7 13h10"/>`,
+  coldstore: `<path d="M3 21V6h18v15M2 21h20"/><path d="M6 9h12M6 12h12"/><path d="M9 21v-5h6v5"/><path d="M12 3V1M10 2h4"/>`,
+  terrace: `<path d="M2 21V11l3-4 3 4v10M12 21V7l3-3 3 3v14M20 21V13l2-2"/><path d="M1 21h22"/><path d="M4 14v2M14 12v2"/>`,
 };
 
 export function icon(name: string, cls = ''): string {

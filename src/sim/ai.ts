@@ -10,7 +10,12 @@ import {
   type ResearchBranch,
   type TechDef,
 } from '../data/research';
-import { UNIT_ABILITIES, upgradePlayable } from '../data/abilities';
+import {
+  UNIT_ABILITIES,
+  isGuidedWeapon,
+  upgradePlayable,
+  type UnitAbilityDef,
+} from '../data/abilities';
 import { REPAIR_SUPPRESSION_TICKS, TILE_SIZE } from './constants';
 import { dist } from '../core/math';
 import { Terrain, canStandOn, tileIndex } from './terrain';
@@ -144,6 +149,27 @@ export interface AIProfile {
    * attacked. A recruit does not: its army walks on while its base burns.
    */
   recall: boolean;
+  /**
+   * Whether a commander pulls its haulers out of the line of fire.
+   *
+   * A truck is worth more than the load it carries: it mines for the rest of the
+   * match, and a base that loses its haulers to the first raider never earns the
+   * income that would have answered the raid. A recruit leaves its trucks to work
+   * until they burn, which is why a novice's economy never recovers from its
+   * first scrape.
+   */
+  protectEconomy: boolean;
+  /**
+   * Whether a commander uses the tactical abilities its units have.
+   *
+   * Smoke, hull-down, breaking contact and the rest are crew drills: they have
+   * to be ordered at the right moment and a novice simply does not. A recruit
+   * therefore fights with the plain weapon and nothing else, while a veteran
+   * spends a discharger to break a sight line and an elite does it half a second
+   * sooner. This is the one part of the ladder that is about tactical skill
+   * rather than economy management.
+   */
+  abilities: boolean;
 }
 
 /** Every commander picks one of these from the match seed. */
@@ -227,12 +253,15 @@ const DIFFICULTY_BIAS: Record<
     commitShare: number;
     reserve: number;
     recall: boolean;
+    protectEconomy: boolean;
+    abilities: boolean;
   }
 > = {
   // Same planner, same resources and vision: a level changes judgement, never
-  // income. A recruit decides every three seconds, runs the thinnest economy,
-  // presses early with a small army that ignores what it scouted, and never
-  // turns that wave around: its base is on its own. A veteran is the baseline —
+  // income. A recruit decides every four and a half seconds, runs the thinnest
+  // economy, never expands it and never fortifies, presses early with a small
+  // army that ignores what it scouted, and never turns that wave around: its
+  // base is on its own. A veteran is the baseline —
   // it decides every second, counters what it scouted and recalls a committed
   // wave when its command post itself comes under fire. An elite decides more
   // than twice a second, keeps two units on station, spends its economy bias on
@@ -253,11 +282,15 @@ const DIFFICULTY_BIAS: Record<
     tech: -0.24,
     defence: -0.12,
     armyScale: 0.65,
-    reactionTicks: 60,
+    reactionTicks: 90,
     responseWeight: 0.15,
     commitShare: 0.35,
     reserve: 0,
     recall: false,
+    protectEconomy: false,
+    // A novice fights with the plain weapon: smoke, hull-down and breaking
+    // contact are drills that have to be ordered at the right moment.
+    abilities: false,
   },
   veteran: {
     aggression: 0,
@@ -270,6 +303,8 @@ const DIFFICULTY_BIAS: Record<
     commitShare: 1,
     reserve: 0,
     recall: true,
+    protectEconomy: true,
+    abilities: true,
   },
   elite: {
     aggression: 0,
@@ -282,6 +317,8 @@ const DIFFICULTY_BIAS: Record<
     commitShare: 0.85,
     reserve: 2,
     recall: true,
+    protectEconomy: true,
+    abilities: true,
   },
 };
 
@@ -312,6 +349,8 @@ export function aiProfile(seed: number, difficulty: AIDifficulty = 'veteran'): A
     commitShare: level.commitShare,
     reserve: level.reserve,
     recall: level.recall,
+    protectEconomy: level.protectEconomy,
+    abilities: level.abilities,
   };
 }
 
@@ -419,6 +458,13 @@ export interface ResearchSignals {
    * never becomes a reason to study a node the match has switched off.
    */
   superweaponTechs?: readonly string[];
+  /**
+   * Branches this commander has already opened, counted as completed nodes that
+   * grant a structure. Zero means the only study behind it is the branch it
+   * started the match with, which is exactly when a second tier is worth less
+   * than a first one.
+   */
+  openedBranches?: number;
 }
 
 export interface ResearchOption {
@@ -450,8 +496,13 @@ const SLOT_BASE: Readonly<Record<string, number>> = Object.freeze({
   tank: 1.0,
   ifv: 0.5,
   td: 0.55,
-  spg: 0.6,
-  rocketArtillery: 0.5,
+  // A howitzer is a first-line arm of a combined-arms battlegroup, not only an
+  // answer to a bunker. At 0.6 the branch lost every comparison to an airfield
+  // on an open map — nothing had been fortified yet, so indirect fire was never
+  // studied and the national artillery kits never reached the field. It still
+  // trails the tank, which is what a commander builds its line around.
+  spg: 0.8,
+  rocketArtillery: 0.55,
   uav: 0.45,
   interceptor: 0.35,
   fighter: 0.4,
@@ -526,8 +577,13 @@ function slotDemand(slot: string, signals: ResearchSignals): number {
   // A facility the commander already paid for is a sunk investment: the aircraft
   // or hull it can launch is worth more than one the commander would have to
   // build the facility for first. This is what makes an airfield turn into a
-  // strike wing instead of a warehouse with a radar dish on it.
-  if (AIR_SLOTS.has(slot) && (signals.buildingCounts.get('airfield') ?? 0) > 0) {
+  // strike wing instead of a warehouse with a radar dish on it. A helicopter
+  // counts a heliport as its own facility — an airfield only recovers one.
+  if (
+    AIR_SLOTS.has(slot) &&
+    ((signals.buildingCounts.get('airfield') ?? 0) > 0 ||
+      (signals.buildingCounts.get('heliport') ?? 0) > 0)
+  ) {
     demand *= 1.35;
   }
   if (NAVAL_SLOTS.has(slot) && (signals.buildingCounts.get('shipyard') ?? 0) > 0) {
@@ -543,7 +599,11 @@ function buildingDemand(slot: string, signals: ResearchSignals): number {
   const owned = signals.buildingCounts.get(slot) ?? 0;
   if (slot === 'shipyard') {
     if (!signals.hasWater) return 0;
-    return (0.45 + (signals.enemyNaval > 0 ? 0.3 : 0)) * (owned > 0 ? 0.3 : 1);
+    // A fleet is an answer to a fleet first and a coastal option second. With
+    // nothing hostile on the water, the yard is a hedge against an enemy that may
+    // never appear — so it queues behind the artillery that fights the land battle
+    // the commander is actually in. A sighted hull, or several, puts it ahead.
+    return (0.32 + 0.35 * Math.min(1, signals.enemyNaval)) * (owned > 0 ? 0.3 : 1);
   }
   if (slot === 'airfield') {
     return (0.5 + (signals.enemyAir > 0 ? 0.3 : 0)) * (owned > 0 ? 0.3 : 1);
@@ -597,7 +657,13 @@ function upgradeDemand(upgradeId: string, signals: ResearchSignals): number {
  * worth nothing to study, for the same reason an unimplemented ability is: the
  * research would buy a capability nothing can use.
  */
-const PLAYABLE_MODULES: ReadonlySet<string> = new Set(['advancedTurbine']);
+const PLAYABLE_MODULES: ReadonlySet<string> = new Set([
+  'advancedTurbine',
+  'assemblyLine',
+  'fireControlNet',
+  'flightlineMaintenance',
+  'harbourSonar',
+]);
 
 /**
  * What a researched *module* is worth to this commander.
@@ -612,8 +678,26 @@ function moduleDemand(moduleId: string, signals: ResearchSignals): number {
   if (!module) return 0;
   const slots = module.eligibleSlots.filter((slot) => (signals.buildingCounts.get(slot) ?? 0) > 0);
   if (slots.length === 0) return 0;
-  if (!signals.gridStrain) return 0;
-  return 0.6;
+  // A generation retrofit only pays where the grid is the limiter. The rest are
+  // capability purchases with their own value: a second servicing crew at a
+  // flightline the commander already operates, a sonar suite under a yard on a
+  // coastal map, a production line in an existing factory. None of them need a
+  // brownout to be worth studying, and none of them are bought before the
+  // structure they fit exists.
+  if (module.effects.some((effect) => effect.kind === 'power' && effect.amount > 0)) {
+    return signals.gridStrain ? 0.6 : 0;
+  }
+  if (module.effects.some((effect) => effect.kind === 'sonar')) {
+    if (!signals.hasWater) return 0;
+    // A sonar suite is worth studying when there is something under the water to
+    // find. On a coast nobody has contested it is a harbour fitting, not a reason
+    // to open the naval branch ahead of the artillery.
+    return signals.enemyNaval > 0 ? 0.45 : 0.2;
+  }
+  if (module.effects.some((effect) => effect.kind === 'serviceSpeed')) return 0.35;
+  if (module.effects.some((effect) => effect.kind === 'productionSpeed')) return 0.3;
+  if (module.effects.some((effect) => effect.kind === 'vision')) return 0.2;
+  return 0;
 }
 
 /**
@@ -710,7 +794,18 @@ export function researchOptionScore(
     branchAffinity(signals.seed, tech.branch) *
     (0.85 + signals.profile.tech * 0.3);
   const duration = 1 - Math.min(0.2, tech.seconds / 900);
-  const score = demand * fit * researchTimeFactor(tech, signals) * duration;
+  // Study is breadth-first until the commander has two arms to fight with. A
+  // tier-two node deepens a branch the commander already has — often the one it
+  // started the match with — while artillery, aviation and the fleet are still
+  // a technology away. The kit probe showed what that costs: the first project
+  // after the research centre was the second tier of the opening branch, so a
+  // national kit reached the field only if the match ran long enough for a third
+  // study, and the artillery, airframes and hulls the nations are built around
+  // never appeared at all inside ten minutes. A commander therefore opens two
+  // branches — the airfield and the yard, or the guns and the airfield — before
+  // it deepens either of them.
+  const breadth = tech.requires.length > 0 && (signals.openedBranches ?? 0) < 2 ? 0.35 : 1;
+  const score = demand * fit * researchTimeFactor(tech, signals) * duration * breadth;
   return {
     techId: tech.id,
     score: Math.round(score * 100) / 100,
@@ -775,12 +870,25 @@ interface BuildOption {
    * structure, and it does nothing at all until 70% of the price is banked.
    */
   planned?: boolean;
+  /**
+   * Economy infrastructure — the next drop-off on a saturated field.
+   *
+   * Waiting for spare cash never gets there: a commander with a field army to
+   * replace spends its income the moment it arrives, so the bank never holds
+   * enough for the structure that would have doubled it. An economy build is
+   * therefore funded by splitting the income, not by waiting for a surplus, and
+   * it is the one plan allowed to take a fixed share of every material while a
+   * saturated economy is the thing holding the army back.
+   */
+  economy?: boolean;
 }
 
 interface UnitDemand {
   defId: string;
   priority: number;
   deficit: number;
+  /** Hulls still missing, the count behind the fractional deficit. */
+  short?: number;
   /**
    * Material price to hold back for a planned support arm. Only a demand that
    * carries this field can pause general production while it saves, and only
@@ -987,6 +1095,7 @@ export class AIController {
     // claims every combat unit for a direct counter-attack.
     this.manageGarrison(ctx);
     this.defend(ctx);
+    this.protectHaulers(ctx);
     this.scout(ctx);
     this.scoutAir(ctx);
     const budget = this.manageConstruction(ctx);
@@ -1026,28 +1135,93 @@ export class AIController {
    * command queue, so the simulation still decides whether it was legal.
    */
   private useAbilities(ctx: AIContext): void {
+    if (!ctx.profile.abilities) return;
     const abilityIds = Object.keys(UNIT_ABILITIES);
     if (abilityIds.length === 0 || ctx.visible.length === 0) return;
     for (const unit of ctx.own) {
       if (unit.kind !== 'unit' || unit.hp <= 0) continue;
-      if (unit.hp > unit.maxHp * 0.55) continue;
       for (const abilityId of abilityIds) {
+        const def = UNIT_ABILITIES[abilityId];
+        if (!def) continue;
+        // A running effect is not re-cast. Asking the simulation is cheaper than
+        // teaching the planner a second copy of every duration.
+        if (ctx.game.effectRemaining(unit.id, abilityId) > 0) continue;
         const status = ctx.game.abilityStatus(ctx.aiId, unit.id, abilityId);
         if (!status.ok) continue;
-        if (ctx.game.smokeCoversPoint(unit.x, unit.z)) continue;
-        const pressed = ctx.visible.some(
-          (enemy) =>
-            enemy.hp > 0 && dist(enemy.x, enemy.z, unit.x, unit.z) <= 9 * TILE_SIZE,
-        );
-        if (!pressed) continue;
+        if (!this.wantsAbility(ctx, unit, def)) continue;
         ctx.game.enqueueCommand({
           type: 'useAbility',
           team: ctx.team,
           unitId: unit.id,
           abilityId,
         });
+        // One capability per hull per think: a crew that has just committed is
+        // not asked to commit again on the same tick.
         break;
       }
+    }
+  }
+
+  /**
+   * Whether the tactical picture justifies one specific ability.
+   *
+   * Every test reads `ctx.visible`, the same sighting list the rest of the
+   * planner uses, so the AI never buys an effect with information it has not
+   * earned. Each catalogue entry names its own condition, which keeps the smoke
+   * behaviour exactly as it was while the new capabilities get equally narrow
+   * triggers rather than a generic "use whatever is off cooldown".
+   */
+  private wantsAbility(ctx: AIContext, unit: Entity, def: UnitAbilityDef): boolean {
+    const near = (e: Entity, tiles: number): boolean =>
+      e.hp > 0 && dist(e.x, e.z, unit.x, unit.z) <= tiles * TILE_SIZE;
+    const hurt = unit.hp <= unit.maxHp * 0.55;
+    const engaged = unit.hp <= unit.maxHp * 0.6;
+    const weapons = entityWeapons(unit);
+    const reach = weapons.reduce((best, weapon) => Math.max(best, weapon.range), 0);
+    switch (def.ai) {
+      case 'screenContact':
+        // Smoke exists to break a sight line, so the commander spends it on a
+        // hull that is actually in trouble and not already under its own cloud.
+        if (!hurt) return false;
+        if (ctx.game.smokeCoversPoint(unit.x, unit.z)) return false;
+        return ctx.visible.some((enemy) => near(enemy, 9));
+      case 'holdPosition':
+        // Hull-down is a commitment to a position, so a moving hull does not
+        // take it, and a hull nobody is shooting at has no reason to accept the
+        // loss of mobility.
+        if (unit.state === 'moving') return false;
+        if (ctx.game.state.tick - unit.lastHitTick > 60) return false;
+        return ctx.visible.some((enemy) => near(enemy, 12));
+      case 'breakContact':
+        if (!engaged) return false;
+        return ctx.visible.some((enemy) => near(enemy, 8));
+      case 'missileThreat':
+        // Only a guided launcher already in range is worth the hard-kill burst.
+        return ctx.visible.some(
+          (enemy) =>
+            near(enemy, 14) && entityWeapons(enemy).some((weapon) => isGuidedWeapon(weapon)),
+        );
+      case 'airThreat':
+        return ctx.visible.some(
+          (enemy) => near(enemy, 16) && entityWeapons(enemy).some((weapon) => !!weapon.antiAir),
+        );
+      case 'subHunt':
+        // A surface escort pings when hostile hulls are about; the sweep is the
+        // answer to a boat it cannot see yet, which is exactly why it is spent
+        // on a suspected contact rather than a confirmed one.
+        if ((UNITS[unit.defId]?.sonar ?? 0) <= 0) return false;
+        return ctx.visible.some(
+          (enemy) => near(enemy, 20) && UNITS[enemy.defId]?.domain === 'naval',
+        );
+      case 'firesOnTarget': {
+        // A battery that is already moving is not laid; it needs a target inside
+        // its own reach to have anything to prepare for.
+        if (unit.state === 'moving') return false;
+        if (reach <= 0) return false;
+        return ctx.visible.some((enemy) => near(enemy, reach));
+      }
+      default:
+        return false;
     }
   }
 
@@ -1302,9 +1476,24 @@ export class AIController {
     // emergency, and only a level that watches its own base calls the wave home,
     // so a commander keeps pressing while its base is safe and turns around when
     // it is not.
+    // Recall is for a base in danger, not for every hull that wanders into the
+    // ring. Pulling a committed wave home for a lone scout turned a defence into
+    // a yo-yo: the army spent the match marching back and forth while the
+    // attacker's next raid was already on the way, and constant pressure beat a
+    // commander that answered all of it. A raid becomes an emergency once there
+    // are enough raiders to hurt the base, or once one has actually hit it.
+    const raiders = ctx.threats.filter(
+      (e) => dist(e.x, e.z, ctx.baseX, ctx.baseZ) < RECALL_RING * TILE_SIZE,
+    );
+    const baseHit = ctx.game.state.entities.some(
+      (e) =>
+        e.owner === ctx.aiId &&
+        e.kind === 'building' &&
+        e.hp < e.maxHp &&
+        ctx.game.state.tick - e.lastHitTick < 20 * 10,
+    );
     const emergency =
-      ctx.profile.recall &&
-      dist(target.x, target.z, ctx.baseX, ctx.baseZ) < RECALL_RING * TILE_SIZE;
+      ctx.profile.recall && (raiders.length >= 2 || baseHit) && raiders.length > 0;
     let ordered = 0;
     let recalled = 0;
     for (const unit of ctx.own) {
@@ -1350,6 +1539,48 @@ export class AIController {
         recalled > 0
           ? `recalling ${recalled} units to defend base against ${target.defId}`
           : `defending base against ${target.defId}`;
+    }
+  }
+
+  /**
+   * Pull a hauler out of the line of fire.
+   *
+   * Trucks are the most valuable thing a base owns per material spent, and they
+   * are also the softest: a single raider that reaches the ore line can delete an
+   * income that took two minutes to build. So a hauler that has been shot at, or
+   * that has a hostile inside a raider's reach, drives back to the command post
+   * and waits out the raid. Loading pauses — that is the cost — and the truck
+   * survives to mine again, which a recruit's trucks do not.
+   */
+  private protectHaulers(ctx: AIContext): void {
+    if (!ctx.profile.protectEconomy) return;
+    if (ctx.threats.length === 0) return;
+    const tick = ctx.game.state.tick;
+    for (const hauler of ctx.own) {
+      if (hauler.kind !== 'unit' || hauler.hp <= 0 || !hauler.harvester) continue;
+      // Already driving somewhere (a retreat, or a player-style move order).
+      if (hauler.order) continue;
+      if (this.claimed.has(hauler.id)) continue;
+      const danger = ctx.threats.some((enemy) => {
+        if (dist(enemy.x, enemy.z, hauler.x, hauler.z) > 7 * TILE_SIZE) return false;
+        const weapons = entityWeapons(enemy);
+        return weapons.length > 0;
+      });
+      const shelled = tick - hauler.lastHitTick < 20 * 3;
+      if (!danger && !shelled) continue;
+      // Fall back on the command post: the one structure every base has, and the
+      // place the garrison is already standing.
+      if (
+        this.order(ctx, hauler, {
+          type: 'move',
+          team: ctx.aiId,
+          ids: [hauler.id],
+          x: ctx.baseX,
+          z: ctx.baseZ,
+        })
+      ) {
+        ctx.st.lastDecision = 'haulers pulling back under fire';
+      }
     }
   }
 
@@ -1627,6 +1858,7 @@ export class AIController {
       reason: string,
       essential = false,
       planned = false,
+      economy = false,
     ): void => {
       // Build the actual structure this nation fields for the slot. A roster
       // that excludes it returns undefined, so the option simply disappears.
@@ -1640,7 +1872,7 @@ export class AIController {
       // never succeed consumes the whole think.
       if (ctx.game.missingTech(ctx.aiId, defId).length > 0) return;
       if (!ctx.game.buildingSlotUnlocked(ctx.aiId, buildingFamily(defId))) return;
-      options.push({ defId, score, reason, essential, planned });
+      options.push({ defId, score, reason, essential, planned, economy });
     };
     const counts = ctx.counts;
     const factory = counts.get('factory') ?? 0;
@@ -1682,8 +1914,26 @@ export class AIController {
       // being worked. With every hauler idle it would raise the hauler target
       // and buy more of them, so the demand is withheld until hauling resumes.
       const saturation = harvesters / Math.max(1, refinery);
-      if (refinery < 3 && saturation >= 1.75 && bank > 550) {
-        add('refinery', 58 + ctx.profile.economy * 30 + jitter(), 'saturated harvester round trips');
+      // One drop-off is enough for a recruit: expanding the economy is a
+      // judgement about round-trip time, and a novice keeps feeding the same
+      // mouth instead of compounding its income.
+      if (ctx.profile.difficulty !== 'recruit' && refinery < 3 && saturation >= 1.75) {
+        // A saturated economy is where a second drop-off pays for itself many
+        // times over, so it is a plan rather than an impulse: once most of the
+        // price is in hand the planner withholds the rest, and the field army
+        // stops eating every material the moment it arrives. Requiring the whole
+        // price up front meant a commander that kept producing units never got
+        // there at all — it spent its income as fast as it earned it, and only a
+        // level that happened to bank (because its army was capped) compounded
+        // its economy. Economy is a judgement call, so it belongs in the plan.
+        add(
+          'refinery',
+          58 + ctx.profile.economy * 30 + jitter(),
+          'saturated harvester round trips',
+          false,
+          true,
+          true,
+        );
       }
     }
 
@@ -1692,10 +1942,18 @@ export class AIController {
       add('barracks', 48 + jitter(), 'second infantry queue');
     }
 
-    const defenceNeed = nextDefenceBuild(ctx.mix, {
-      atTurret: counts.get('atTurret') ?? 0,
-      mgNest: counts.get('mgNest') ?? 0,
-    });
+    // A perimeter is an investment in a base nobody has attacked yet, and a
+    // recruit does not make it: it spends every material on the field army and
+    // leaves its structures to the garrison. That is the difference a raid is
+    // meant to find on the easy setting, and it is why a recruit's expansions
+    // are the first things to burn.
+    const defenceNeed =
+      ctx.profile.difficulty === 'recruit'
+        ? null
+        : nextDefenceBuild(ctx.mix, {
+            atTurret: counts.get('atTurret') ?? 0,
+            mgNest: counts.get('mgNest') ?? 0,
+          });
     if (defenceNeed) {
       const scouted = ctx.mix.armour + ctx.mix.infantry > 0;
       const pressure =
@@ -1706,6 +1964,17 @@ export class AIController {
       // While the core is incomplete, the perimeter waits unless something has
       // actually been seen or hit.
       const coreReady = factory > 0 && refinery > 0 && barracks > 0;
+      // A base with no perimeter at all and a landing already reported answers
+      // the report before the next piece of concrete. The report is the only
+      // warning a commander gets, and a brownout power plant was taking the one
+      // construction slot the base had, so the nest the scouts had just called
+      // for was still unaffordable when the first wave arrived. Scoring higher
+      // was not enough: essentials are placed ahead of everything by score, so
+      // the perimeter joins that programme while the base is undefended and the
+      // force has actually been seen. Once a gun stands it competes on its
+      // ordinary score again.
+      const undefended =
+        (counts.get('mgNest') ?? 0) + (counts.get('atTurret') ?? 0) === 0;
       if (coreReady || scouted || threat || damaged) {
         add(
           defenceNeed,
@@ -1713,6 +1982,7 @@ export class AIController {
           defenceNeed === 'atTurret'
             ? `anti-armour perimeter (${ctx.mix.armour} vehicles scouted)`
             : `anti-infantry perimeter (${ctx.mix.infantry} foot scouted)`,
+          undefended && scouted,
         );
       }
     }
@@ -1733,11 +2003,20 @@ export class AIController {
       // for the branch follows through: the field is worth more than a second
       // refinery or a radar, otherwise the study buys nothing it can fly.
       const branchPaid = ctx.game.buildingSlotUnlocked(ctx.aiId, 'airfield') ? 40 : 0;
+      // A nation that actually fields airframes wants somewhere to base them.
+      // Shared deadlock: neither commander buys a strip because neither sees
+      // hostile air, so no airframe ever reaches a land battle and the air half
+      // of every national kit is dead weight. Reading the roster rather than
+      // the enemy breaks it without teaching the AI anything it could not know.
+      const rosterAir = ctx.game
+        .rosterFor(ctx.aiId)
+        .units.some((id) => UNITS[id]?.domain === 'air');
       const score =
         (ctx.strategy === 'air' ? 148 : ctx.profile.tech > 0.58 ? 52 + ctx.profile.tech * 50 : 0) +
         opening.air +
         reconWorth +
         branchPaid +
+        (rosterAir ? 20 : 0) +
         (ctx.enemyAir > 0 ? 24 : 0);
       if (score > 0) {
         add(
@@ -1749,17 +2028,104 @@ export class AIController {
         );
       }
     }
+    else {
+      // A flight line is a hard cap now, not a parking count: four airframes
+      // assigned to a strip means the queue refuses a fifth even while the
+      // first four are in the air. A commander that still wants air power lays
+      // another strip instead of leaving a researched branch with nowhere to
+      // fly from. Three is the practical ceiling; beyond that the army pays for
+      // concrete it will never fill.
+      const strips = ctx.complete.filter((b) => buildingFamily(b.defId) === 'airfield');
+      const full =
+        strips.length > 0 &&
+        strips.every((b) => {
+          const dock = ctx.game.dockStatus(b.id);
+          return !!dock && dock.fixedWing.used >= dock.fixedWing.capacity;
+        });
+      const wantsAir = ctx.strategy === 'air' || ctx.enemyAir > 0 || ctx.profile.tech > 0.58;
+      if (full && wantsAir && strips.length < 3 && bank > 1000) {
+        add('airfield', 78 + jitter(), 'flight line at capacity', false, true);
+      }
+    }
+    // A helicopter force needs its own facility: an airfield's pad recovers a
+    // damaged gunship but can neither base nor build one. The commander studies
+    // the node that grants the heliport, then follows through with the structure,
+    // because a researched rotary branch with nowhere to base it buys nothing.
+    // The rotary branch is force expansion, not an opening: a commander that
+    // spends its first bank on a heliport has no army to escort the gunships it
+    // would build there. The structure is weighed once the ground force exists
+    // and the bank can absorb it, the same way a second production line is.
+    if (
+      (counts.get('heliport') ?? 0) === 0 &&
+      ctx.combat.length >= 6 &&
+      bank > 1100 &&
+      ctx.game.buildingSlotUnlocked(ctx.aiId, 'heliport')
+    ) {
+      const heloId = ctx.game.unitIdFor(ctx.aiId, 'attackHelo');
+      if (heloId) {
+        const score =
+          76 +
+          ctx.profile.tech * 26 +
+          (ctx.strategy === 'air' ? 48 : 0) +
+          (ctx.mix.armour > 0 ? 18 : 0) +
+          jitter();
+        add('heliport', score, 'rotary aviation', false, true);
+      }
+    }
+    else {
+      // Two pads per port is the same hard cap, so a rotary commander that has
+      // filled its first heliport opens a second one rather than sitting on two
+      // airframes for the rest of the match.
+      const ports = ctx.complete.filter((b) => buildingFamily(b.defId) === 'heliport');
+      const full =
+        ports.length > 0 &&
+        ports.every((b) => {
+          const dock = ctx.game.dockStatus(b.id);
+          return !!dock && dock.helo.used >= dock.helo.capacity;
+        });
+      if (full && ports.length < 2 && ctx.combat.length >= 6 && bank > 1400) {
+        add('heliport', 64 + jitter(), 'rotary bays at capacity', false, true);
+      }
+    }
     if (!shipyard && ctx.hasWater) {
       const branchPaid = ctx.game.buildingSlotUnlocked(ctx.aiId, 'shipyard') ? 35 : 0;
+      // Same reasoning as the flight line: a nation whose roster carries hulls
+      // deserves a yard on a map with water even before an enemy fleet has been
+      // sighted.
+      const rosterNaval = ctx.game
+        .rosterFor(ctx.aiId)
+        .units.some((id) => UNITS[id]?.domain === 'naval');
       const score =
         44 + ctx.profile.tech * 34 + opening.naval + branchPaid +
+        (rosterNaval ? 20 : 0) +
         (ctx.known.some((e) => UNITS[e.defId]?.domain === 'naval') ? 36 : 0) +
         (ctx.strategy === 'economy' ? 10 : 0);
-      if (bank > 900) add('shipyard', score + jitter(), 'coastal production', false, true);
+      // No bank gate: the option already requires the naval branch to be open,
+      // and the planner's facility save is what buys it. A 900-material entry
+      // test meant the yard was never even considered by the commanders that
+      // spend their bank every think — which is every commander — so the branch
+      // was studied and the hulls never reached the water.
+      add('shipyard', score + jitter(), 'coastal production', false, true);
     }
     if ((counts.get('samBattery') ?? 0) === 0) {
-      if (ctx.enemyAir > 0) add('samBattery', 178 + jitter(), 'hostile air contact');
-      else if (bank > 2800 && ctx.profile.tech > 0.55) add('samBattery', 38 + jitter(), 'air defence hedge');
+      // A flight line is the threat, not only an airframe already overhead: a
+      // hostile strip is a strike wing that has not launched yet, and a
+      // commander that waits for the first sortie to buy its battery answers it
+      // one raid late. The commander's own strip earns one too — air power
+      // invites counter-air.
+      const enemyStrip = ctx.known.some(
+        (e) => e.kind === 'building' && !!BUILDINGS[e.defId]?.airfield,
+      );
+      const ownStrip = ctx.complete.some((b) => !!BUILDINGS[b.defId]?.airfield);
+      if (ctx.enemyAir > 0) add('samBattery', 178 + jitter(), 'hostile air contact', false, true);
+      else if (enemyStrip) add('samBattery', 96 + jitter(), 'hostile flight line', false, true);
+      // Owning a strip is a reason to want a battery in the sky, not a reason to
+      // buy one before the economy that pays for it: the threat is a strike wing
+      // that has not launched yet, so the battery waits behind a drop-off or a
+      // radar and is bought on the next quiet bank. A sighted flight line above
+      // keeps the higher score, because that is a wing that exists.
+      else if (ownStrip) add('samBattery', 40 + jitter(), 'counter-air for own strip', false, true);
+      else if (bank > 2200 && ctx.profile.tech > 0.5) add('samBattery', 38 + jitter(), 'air defence hedge');
     }
     if (
       ctx.hasWater &&
@@ -1790,16 +2156,39 @@ export class AIController {
         coreReady &&
         wanted &&
         wanted.score >= RESEARCH_MIN_SCORE &&
-        bank >= 700 + 350 &&
+        bank >= 250 &&
         ctx.player.req >= 40
       ) {
         // A thin grid margin does not forbid the centre, it only postpones it:
         // the brownout power plant above outranks everything while the deficit
         // lasts. The draw is 30, which is why the margin is read here at all.
         const powerFactor = powerGap >= 30 ? 1 : powerGap >= 15 ? 0.7 : 0.4;
+        // The centre is the gate every later tier stands behind: the artillery, the
+        // flight line and the yard all sit behind it. Scored as one more optional
+        // facility it was outbid by a 200-material nest on every think, so no
+        // technology past the opening was ever studied in a live match. It is
+        // core programme instead, and weighted to be laid ahead of optional
+        // concrete once it is funded.
         const score =
-          (54 + ctx.profile.tech * 70 + Math.min(40, wanted.score * 22)) * powerFactor;
-        add('researchCentre', score + jitter(), `research capability (${wanted.reason})`);
+          (240 + ctx.profile.tech * 60 + Math.min(40, wanted.score * 22)) * powerFactor;
+        // Planned, not merely scored: a centre is the only route to every
+        // branch tier, and an economy that spends its bank to zero every think
+        // never accumulated the price on its own. Holding the last third of the
+        // cost is what turns "someday" into a standing facility, and the army
+        // still buys until the bank is nearly there.
+        // Core infrastructure, not a late luxury. Every branch tier — the
+        // artillery, the flight line, the yard — sits behind this one building,
+        // so it belongs to the base programme the commander saves for rather
+        // than to the optional list a spending army never reaches. It is still
+        // gated on the core standing, a wanted project and enough of the price
+        // to be a plan instead of a hole in the bank.
+        add(
+          'researchCentre',
+          score + jitter(),
+          `research capability (${wanted.reason})`,
+          true,
+          true,
+        );
       }
     }
 
@@ -1965,11 +2354,78 @@ export class AIController {
 
     const options = this.buildOptions(ctx);
     if (options.length === 0) return { mats: ctx.player.mats, req: ctx.player.req };
-    const affordable = options.filter((option) => {
-      const def = BUILDINGS[option.defId];
-      return !!def && ctx.player.mats >= def.cost.mats && ctx.player.req >= def.cost.req;
-    });
+    const affordable = options
+      .filter((option) => {
+        const def = BUILDINGS[option.defId];
+        return !!def && ctx.player.mats >= def.cost.mats && ctx.player.req >= def.cost.req;
+      })
+      // Core programme first: a facility the base cannot work without — a
+      // plant, a drop-off, the research centre — is placed ahead of optional
+      // concrete even when the optional building scores higher. Ordering by
+      // score alone let a cheap nest take the bank the commander had just
+      // finished saving for, so the centre was never laid.
+      .sort((a, b) => Number(b.essential) - Number(a.essential) || b.score - a.score);
     const top = options[0];
+    // The next drop-off comes out of the income as it arrives, and that decision
+    // is taken before the "nothing is affordable" exit below: that exit is
+    // exactly where a commander with a field army to replace spends the rest of
+    // its bank, and it is where a second refinery used to die. A saturated field
+    // means the army is already as large as the economy can carry, so half of
+    // every material goes to the yard while the other half still buys hulls.
+    // Nothing is withheld while the base is under attack.
+    const plannedEconomy = options.find(
+      (option) =>
+        option.economy && !affordable.some((other) => other.defId === option.defId),
+    );
+    // A planned drop-off may hold the bank, but only while it is the best thing
+    // the commander could actually do. It used to pre-empt the affordable list
+    // outright, so a saturating economy froze 35% of every bank — including the
+    // research centre and flight line that outranked it and were already paid
+    // for. Anything affordable above it is a better use of the same materials.
+    // Only something that actually plans better outranks the drop-off. The
+    // check used to be "anything affordable", so a cheap optional nest that
+    // scored below the refinery vetoed the hold and the bank was spent on it.
+    const outranksEconomy = affordable.find(
+      (option) => option.defId !== plannedEconomy?.defId,
+    );
+    if (plannedEconomy && !top?.essential && !outranksEconomy) {
+      const def = BUILDINGS[plannedEconomy.defId];
+      if (def) {
+        const shortfall = Math.max(0, def.cost.mats - ctx.player.mats);
+        // A site that cannot be found must not become a savings account: holding
+        // for a drop-off the engineer has nowhere to lay would starve the army
+        // for the rest of the match. Under attack the share drops rather than
+        // vanishing — the point is progress, not a freeze.
+        const site = shortfall > 0 ? this.findBuildSite(ctx, ctx.engineer!, plannedEconomy.defId) : null;
+        // Spending pauses for the drop-off, the way a player stops buying hulls
+        // to raise a refinery. Holding a share of the bank never got there: a
+        // commander with a full army plan to replace spends faster than it earns,
+        // so a share of nearly nothing is nearly nothing. It keeps a garrison's
+        // worth of production under fire, and never past the price it is saving.
+        const baseThreat = ctx.threats.some(
+          (e) => dist(e.x, e.z, ctx.baseX, ctx.baseZ) < 10 * TILE_SIZE,
+        );
+        const pause = !baseThreat && ctx.combat.length >= 3;
+        const held =
+          shortfall > 0 && site
+            ? pause
+              ? Math.min(shortfall, ctx.player.mats)
+              : Math.floor(ctx.player.mats * 0.35)
+            : 0;
+        if (held > 0) {
+          ctx.st.lastDecision = `saving for ${plannedEconomy.defId} — ${plannedEconomy.reason}`;
+          // Remember that the bank is being held for this drop-off. The build
+          // order below finishes such a plan when the price arrives; without
+          // the marker it would also jump ahead of the queue for any drop-off
+          // the base simply happens to be able to afford.
+          ctx.st.economyPlanTick = ctx.game.state.tick;
+          return {
+            mats: Math.max(0, ctx.player.mats - held),
+            req: ctx.player.req,
+          };
+        }
+      }
+    }
     if (affordable.length === 0) {
       // Nothing can be built. Put the engineer to work patching the base while
       // the bank recovers instead of idling next to a damaged structure.
@@ -1990,23 +2446,43 @@ export class AIController {
     // of its price. It is checked after the essential branch so a missing
     // factory or drop-off always wins the bank, and the reserve is only the
     // shortfall, so the army keeps spending until the price is nearly in hand.
-    const planned = options.find(
-      (option) =>
-        option.planned && !affordable.some((other) => other.defId === option.defId),
-    );
+    // Only a plan the engineer can actually lay is worth saving for. A flight
+    // line with no legal strip left on the map used to hold the bank forever —
+    // and because the hold returns before the rest of the list, it starved every
+    // other facility behind it, including the yard the commander had also
+    // researched. A candidate without a site is skipped, not funded.
+    let planned: (typeof options)[number] | undefined;
+    for (const candidate of options) {
+      if (!candidate.planned) continue;
+      if (affordable.some((other) => other.defId === candidate.defId)) continue;
+      if (!this.findBuildSite(ctx, ctx.engineer!, candidate.defId)) continue;
+      planned = candidate;
+      break;
+    }
     if (planned && !top?.essential) {
       const def = BUILDINGS[planned.defId];
-      if (
-        def &&
-        ctx.player.mats >= def.cost.mats * 0.7 &&
-        ctx.player.req >= def.cost.req * 0.7
-      ) {
-        const reserve = Math.max(0, def.cost.mats - ctx.player.mats);
-        ctx.st.lastDecision = `saving for ${planned.defId} — ${planned.reason}`;
-        return {
-          mats: Math.max(0, ctx.player.mats - reserve),
-          req: ctx.player.req,
-        };
+      if (def) {
+        // A branch facility is the structure the commander already researched
+        // towards: an airfield, a shipyard, a heliport or the research centre
+        // itself. Waiting until seven tenths of its price is banked meant it was
+        // never saved for at all — the army drained the bank every think and the
+        // branch stayed a technology with nothing on the field to show for it.
+        // Such a facility starts holding its shortfall at four tenths, which is
+        // still a plan rather than a freeze: cheaper purchases continue with the
+        // rest until the concrete is poured.
+        const branchFacility = !!(def.airfield || def.shipyard || def.researchSpeed);
+        const threshold = branchFacility ? 0.4 : 0.7;
+        const nearlyThere =
+          ctx.player.mats >= def.cost.mats * threshold &&
+          ctx.player.req >= def.cost.req * threshold;
+        const held = nearlyThere ? Math.max(0, def.cost.mats - ctx.player.mats) : 0;
+        if (held > 0) {
+          ctx.st.lastDecision = `saving for ${planned.defId} — ${planned.reason}`;
+          return {
+            mats: Math.max(0, ctx.player.mats - held),
+            req: ctx.player.req,
+          };
+        }
       }
     }
 
@@ -2023,7 +2499,43 @@ export class AIController {
       };
     }
 
-    for (const option of affordable) {
+    // A standing centre with a chosen project outranks optional concrete. The
+    // bank has to reach the study price, and fifteen affordable nests — one per
+    // think — were exactly what kept it from ever getting there, so a commander
+    // that has already paid for the laboratory never studied anything in it.
+    const pendingStudy =
+      (ctx.counts.get('researchCentre') ?? 0) > 0 && !ctx.player.research.project
+        ? this.researchOptions(ctx)[0]
+        : undefined;
+    const pendingTech = pendingStudy ? techDef(pendingStudy.techId, ctx.game.research) : undefined;
+    if (
+      pendingTech &&
+      (ctx.player.mats < pendingTech.cost.mats || ctx.player.req < pendingTech.cost.req) &&
+      !affordable.some((option) => option.essential)
+    ) {
+      ctx.st.lastDecision = `holding the bank for ${pendingTech.id}`;
+      return { mats: ctx.player.mats, req: ctx.player.req };
+    }
+    // A drop-off the commander has been saving for is finished before other
+    // concrete as soon as the price is in hand. The research centre and the
+    // headroom plant both win the essential-first sort, so a base that reached
+    // the 600-material price spent it on them instead and never expanded: the
+    // bank crossed the price, lost it, and crossed it again. Only a drop-off
+    // the commander actually set materials aside for is finished this way, and
+    // only while the bank is just enough for it — a funded base plans normally.
+    const planAge =
+      ctx.st.economyPlanTick === undefined
+        ? Number.POSITIVE_INFINITY
+        : ctx.game.state.tick - ctx.st.economyPlanTick;
+    const finishingEconomy =
+      planAge <= 20 * 60
+        ? affordable.find((option) => {
+            if (!option.economy) return false;
+            const cost = BUILDINGS[option.defId]?.cost.mats ?? 0;
+            return ctx.player.mats < cost + 300;
+          })
+        : undefined;
+    for (const option of finishingEconomy ? [finishingEconomy, ...affordable] : affordable) {
       // A pending rebuild reserve owns the bank while the bank is still short
       // of it. The reserves exist so the lifeline can buy the hauler or engineer
       // that earns; letting an optional structure dip into that same shortfall
@@ -2059,6 +2571,7 @@ export class AIController {
       ctx.st.activeSiteId = 0;
       ctx.st.activeSiteTick = ctx.game.state.tick;
       ctx.st.lastDecision = `building ${option.defId} — ${option.reason}`;
+      if (option.economy) delete ctx.st.economyPlanTick;
       return {
         mats: Math.max(0, ctx.player.mats - def.cost.mats),
         req: Math.max(0, ctx.player.req - def.cost.req),
@@ -2112,6 +2625,17 @@ export class AIController {
       return;
     }
     if (ctx.game.state.tick - st.activeSiteTick <= 20 * 45) return;
+    // A crew still walking to the foundation is not a stall. Only a crew that
+    // has arrived and still cannot move the work, or has been called away and
+    // left it, says the site is dead — and reclaiming a site the platoon was
+    // about to reach threw away half its price, after which the commander
+    // re-sited the same facility elsewhere and stalled that one too.
+    const crewWalking =
+      !!ctx.engineer && !ctx.engineer.order && ctx.engineer.state === 'moving';
+    if (crewWalking) {
+      st.activeSiteTick = ctx.game.state.tick;
+      return;
+    }
     const abandoned = ctx.game.abandonConstruction(ctx.aiId, site.id, 0.5);
     st.activeSiteId = 0;
     st.activeSiteProgress = 0;
@@ -2228,6 +2752,7 @@ export class AIController {
           defId,
           priority,
           deficit: (target - count) / Math.max(1, target),
+          short: target - count,
           saveFor,
         });
       }
@@ -2271,6 +2796,11 @@ export class AIController {
       // Interceptors are a counter, not a blind opening purchase. Build them
       // once hostile air has actually been seen or remembered.
       if (ctx.enemyAir > 0) need('interceptor', Math.min(2, 1 + ctx.enemyAir), 148);
+    }
+    if ((ctx.counts.get('heliport') ?? 0) > 0) {
+      // A gunship is a counter to armour, and its two positions are the only
+      // place it can be produced or based, so the commander keeps one on hand.
+      need('attackHelo', 1, 132);
     }
     if ((ctx.counts.get('shipyard') ?? 0) > 0) {
       // The corvette is the long-range core. A missile boat is a cheap second
@@ -2319,10 +2849,88 @@ export class AIController {
       // last to receive fire support.
       const armyFormed = coreForce >= 6;
       const economyCrewed = (ctx.unitCounts.get('harvester') ?? 0) >= 2;
-      const quietBase = ctx.threats.length === 0;
       const spgPrice = UNITS[ctx.game.unitIdFor(ctx.aiId, 'spg') ?? '']?.cost.mats;
+      // A compact map puts both armies in contact from the opening, so a plan
+      // sized for open ground is never whole there: the front is the whole
+      // battlefield. The required line therefore shrinks with the map, and a
+      // small map gets a fallback clock, because the army it is waiting for
+      // is the one the map itself prevents from forming.
+      const extent = Math.max(ctx.game.state.map.width, ctx.game.state.map.height);
+      const compact = extent <= 80;
+      const slack = Math.max(0, Math.min(4, Math.round((96 - extent) / 8)));
+      const lineWhole =
+        ctx.threats.length === 0 ||
+        ctx.combat.length >= Math.max(3, ctx.st.desiredArmy - slack) ||
+        (compact && ctx.game.state.tick >= 20 * 150);
       if (fortified) need('spg', 1, 128, spgPrice);
-      else if (armyFormed && economyCrewed && quietBase) need('spg', 1, 112, spgPrice);
+      // A quiet base was the wrong condition for the one arm that answers a
+      // defended position: the commander that needs indirect fire most is the
+      // one being held at the wire. Under fire it qualifies once the line is
+      // whole instead — a battery is fire support for an army, never a
+      // substitute for the hulls that are holding the perimeter.
+      else if (
+        economyCrewed &&
+        ((armyFormed && lineWhole) ||
+          // A compact battlefield is all front line: the army this measures is
+          // whatever survived the last push, so the battery waits for a force
+          // the map never lets form. A crewed economy and a running clock are
+          // the only gates a small map can actually satisfy.
+          (compact && ctx.game.state.tick >= 20 * 120))
+      ) {
+        need('spg', 1, 112, spgPrice);
+      }
+      // The heavier battery is a second purchase, not the first one repeated:
+      // it lands once a howitzer is already on the field, so the saturation
+      // tier reaches play without displacing the observed-fire tier.
+      const rockets = ctx.game.unitIdFor(ctx.aiId, 'rocketArtillery');
+      const rocketPrice = rockets ? UNITS[rockets]?.cost.mats : undefined;
+      if (rockets && armyFormed && economyCrewed && (ctx.unitCounts.get('spg') ?? 0) >= 1) {
+        need('rocketArtillery', 1, 116, rocketPrice);
+      }
+      // A tank destroyer is a second anti-armour answer, not a second tank: the
+      // gun is casemated, so it belongs behind the line the turrets are holding.
+      // One per army, like the battery — several would simply replace the armour
+      // that can manoeuvre. A nation whose roster swaps this hull (North Korea's
+      // Bulsae-4 over the shared assault gun) fields its own version on the same
+      // order, which is the only order that puts that kit on the field at all.
+      const tankDestroyer = ctx.game.unitIdFor(ctx.aiId, 'td');
+      const tdPrice = tankDestroyer ? UNITS[tankDestroyer]?.cost.mats : undefined;
+      if (
+        tankDestroyer &&
+        armyFormed &&
+        economyCrewed &&
+        // A casemate gun is a formation asset like the battery: it joins once
+        // the line is nearly whole, or immediately against armour that has been
+        // reported. Waiting for a full plan meant a commander in contact never
+        // reached it at all, because contact grows the plan faster than the army.
+        (ctx.mix.armour > 0 || ctx.combat.length >= Math.max(3, ctx.st.desiredArmy - 2))
+      ) {
+        // Below the drone: an eye on the battlefield is worth more than one more
+        // gun, and a commander that bought the gun first could not see what to
+        // shoot at.
+        need('td', 1, 102, tdPrice);
+      }
+      // The infantry fighting vehicle is the mechanised escort, and it is bought
+      // against an infantry line rather than in place of one: a hull with nobody
+      // to carry is a tank without a turret. Sweden's CV90 replaces the shared
+      // IFV, so this is likewise the order that fields a national kit.
+      const ifv = ctx.game.unitIdFor(ctx.aiId, 'ifv');
+      const ifvPrice = ifv ? UNITS[ifv]?.cost.mats : undefined;
+      if (ifv && armyFormed && economyCrewed && (ctx.unitCounts.get('rifle') ?? 0) >= 3) {
+        need('ifv', 1, 96, ifvPrice);
+      }
+      // Air defence is planned as well as reactive. A commander that only
+      // answers aircraft it has already sighted is unarmed against the first
+      // strike, and air is the one arm that reaches a base without crossing the
+      // perimeter. One launcher is the hedge; hostile air raises the target
+      // above. Iran's 3rd Khordad replaces the shared AA vehicle on this slot,
+      // so this is also the order that puts that kit on the field. It reserves
+      // nothing and sits below the drone: a hedge queued behind the army must
+      // never hold the bank or displace the eye that finds targets for it.
+      const aaId = ctx.game.unitIdFor(ctx.aiId, 'aa');
+      if (aaId && armyFormed && economyCrewed && ctx.enemyAir === 0) {
+        need('aa', 1, 74);
+      }
     }
 
     const enemyMilitary = ctx.known.filter(
@@ -2395,6 +3003,14 @@ export class AIController {
       const required = exclusiveUnitTech(defId);
       if (required) exclusiveTechs.add(required);
     }
+    // A branch counts as open once a node that grants a structure is done. The
+    // starting node is not one: it hands out an upgrade, so a commander still
+    // holds zero here and the planner studies breadth-first.
+    const completed = ctx.game.completedTechnologies(ctx.aiId);
+    const done = new Set(completed);
+    const openedBranches = ctx.game.research.techs.filter(
+      (tech) => done.has(tech.id) && tech.effects.some((effect) => effect.kind === 'unlockBuilding'),
+    ).length;
     // A structure the commander has seen and can identify is a reason to want
     // indirect fire; a remembered silhouette is not, so this counts only what is
     // currently visible or confirmed.
@@ -2407,7 +3023,8 @@ export class AIController {
       seed: ctx.st.aiSeed,
       tick: ctx.game.state.tick,
       timeLimitSec: ctx.game.state.scenario.settings.timeLimitSec,
-      completed: ctx.game.completedTechnologies(ctx.aiId),
+      completed,
+      openedBranches,
       unitCounts: ctx.unitCounts,
       buildingCounts: ctx.counts,
       rosterUnits,
@@ -2479,12 +3096,12 @@ export class AIController {
   private researchReserve(ctx: AIContext): { mats: number; req: number } {
     const want = Math.max(1, ctx.st.desiredArmy);
     const fill = ctx.combat.length / want;
-    let mats = 200;
-    if (ctx.threats.length > 0) mats += 300;
-    if (fill < 0.75) mats += 350;
+    let mats = 120;
+    if (ctx.threats.length > 0) mats += 200;
+    if (fill < 0.75) mats += 250;
     const atgmDeficit =
       (ctx.unitCounts.get('atgm') ?? 0) < Math.max(1, Math.round(want * 0.28));
-    return { mats: Math.min(1200, mats), req: atgmDeficit ? 25 : 0 };
+    return { mats: Math.min(800, mats), req: atgmDeficit ? 25 : 0 };
   }
 
   /**
@@ -2505,8 +3122,12 @@ export class AIController {
     if (centreId === null) return budget;
     // Study is what a commander does with a field army, not instead of one. A
     // base missing most of its line answers that first; the technology keeps.
-    const fill = ctx.combat.length / Math.max(1, ctx.st.desiredArmy);
-    if (fill < 0.6) {
+    // The gate is a small standing force rather than a share of the plan: a
+    // commander under constant contact rarely sits near its planned strength,
+    // and a percentage gate that assumes it does means the branch never opens at
+    // all — so its artillery, airframes and hulls never reach the field.
+    const standing = Math.max(2, Math.round(ctx.st.desiredArmy * 0.35));
+    if (ctx.combat.length < standing) {
       ctx.st.lastDecision = `research deferred — army ${ctx.combat.length}/${ctx.st.desiredArmy}`;
       return budget;
     }
@@ -2518,13 +3139,52 @@ export class AIController {
     const tech = techDef(best.techId, ctx.game.research);
     if (!tech) return budget;
     const reserve = this.researchReserve(ctx);
-    if (budget.mats - tech.cost.mats < reserve.mats) {
+    // The reserve is a floor under the army, not a second price. Adding all of
+    // it to the study meant a 300-material branch needed 870 in the bank, and a
+    // commander in contact never has that: the centre stood and nothing was
+    // ever studied in it. A garrison's worth of materials is what the army
+    // actually needs to keep replacing hulls while the project runs.
+    const target = tech.cost.mats + Math.min(reserve.mats, 150);
+    if (budget.mats < target) {
+      // A project the commander has chosen is a plan, not a wish. Once two
+      // fifths of the price is banked the shortfall is held back from the army
+      // for a few seconds. Without this the study never began: the production
+      // line bought a hull every time the bank covered one, so the surplus the
+      // planner waited for never appeared, and a branch it had already decided
+      // on stayed a technology with nothing on the field to show for it.
+      // Only a line that is nearly whole saves for a project. A commander
+      // several hulls short spends on the line first — a laboratory is not a
+      // replacement for the army that protects it.
+      const lineWhole = ctx.st.desiredArmy - ctx.combat.length <= 2;
+      const saving = lineWhole && budget.mats >= tech.cost.mats * 0.2;
+      if (saving) {
+        // A share, never the whole bank: the field army is still being replaced
+        // while the project saves, so a commander short of hulls is not left
+        // waiting on a laboratory. This is the same reason the drop-off save is
+        // capped at a share rather than the full shortfall.
+        const held = Math.min(target - budget.mats, Math.floor(budget.mats * 0.6));
+        ctx.st.lastDecision = `saving ${Math.ceil(held)} mats for ${tech.id}`;
+        return { mats: Math.max(0, budget.mats - held), req: budget.req };
+      }
       ctx.st.lastDecision = `saving for ${tech.id} — army reserve ${reserve.mats}`;
       return budget;
     }
-    if (budget.req - tech.cost.req < reserve.req) {
+    // Authority is the scarce half of a study: requisition trickles in and the
+    // army spends it on every gunner it replaces. Reserving the whole army
+    // reserve on top of the price kept the project waiting for authority it
+    // never saw, so only a garrison's worth is held back.
+    const reqReserve = Math.min(reserve.req, 10);
+    if (budget.req - tech.cost.req < reqReserve) {
+      // Requisition is the scarce half of a project, not the material half: the
+      // commander has the bank, so the only thing standing between it and the
+      // branch is authority. Production spends requisition the moment it has it
+      // — an anti-armour gunner, a medic — so a project the planner has already
+      // chosen never accumulated the 60–110 it needs. Holding the shortfall is
+      // the same rule the material save uses, one resource over, and it is what
+      // lets a researched branch reach the field inside the match.
+      const shortfall = Math.max(0, tech.cost.req + reqReserve - budget.req);
       ctx.st.lastDecision = `saving requisition for ${tech.id}`;
-      return budget;
+      return { mats: budget.mats, req: Math.max(0, budget.req - shortfall) };
     }
     // The same status the command handler will apply, so an order this
     // controller believes in cannot be refused a tick later.
@@ -2559,16 +3219,33 @@ export class AIController {
    * checked first.
    */
   private manageModules(ctx: AIContext): void {
-    if (!ctx.power.brownout && ctx.power.demand <= ctx.power.supply * 0.8) return;
     const want = Math.max(1, ctx.st.desiredArmy);
     if (ctx.combat.length / want < 0.6) {
       ctx.st.lastDecision = `retrofit deferred — army ${ctx.combat.length}/${want}`;
       return;
     }
+    // A build programme owns the bank first. A capability retrofit waits for a
+    // finished build programme and a full-strength army: it is an investment in
+    // a base that is already standing, and it must not outbid the structure
+    // that makes it pay. A generation module is the exception, because it is
+    // the answer to the strain that brought the commander here at all.
+    const underConstruction = ctx.buildings.length > ctx.complete.length;
     const reserve = this.researchReserve(ctx);
+    const strained = ctx.power.brownout || ctx.power.demand > ctx.power.supply * 0.8;
     for (const building of ctx.complete) {
       const available = ctx.game.availableModules(ctx.aiId, building.id);
       for (const module of available) {
+        const generation = module.effects.some(
+          (effect) => effect.kind === 'power' && effect.amount > 0,
+        );
+        if (generation) {
+          // Headroom is only worth buying when the grid is actually short.
+          if (!strained) continue;
+        } else {
+          if (underConstruction) continue;
+          if (ctx.combat.length < want) continue;
+          if (ctx.player.mats < module.cost.mats * 2) continue;
+        }
         if (ctx.player.mats - module.cost.mats < reserve.mats) continue;
         if (ctx.player.req - module.cost.req < reserve.req) continue;
         if (!ctx.game.moduleStatus(ctx.aiId, building.id, module.id).ok) continue;
@@ -2592,40 +3269,81 @@ export class AIController {
     // The reserve is zero whenever the engineer exists, is queued, or cannot be
     // produced, so healthy bases and unrecoverable ones keep their old spending.
     const engineerReserve = this.engineerReserve(ctx);
-    if (engineerReserve > 0 && budget.mats < engineerReserve) {
-      ctx.st.lastDecision = `holding ${Math.ceil(engineerReserve - budget.mats)} mats for a replacement engineer`;
-      return;
-    }
-    // The hauler is the other half of the rebuild chain: a base with no hauler
-    // earns only the lifeline, so the lifeline belongs to the replacement and
-    // not to the army. Engineers are checked first because nothing can be built
-    // at all without one: while the engineer reserve is pending it owns every
-    // material, so its purchase is not preempted by the hauler's larger price.
     const haulerReserve = engineerReserve > 0 ? 0 : this.haulerReserve(ctx);
-    if (haulerReserve > 0 && budget.mats < haulerReserve) {
-      ctx.st.lastDecision = `holding ${Math.ceil(haulerReserve - budget.mats)} mats for a replacement harvester`;
-      return;
+    // The rebuild reserve is a claim on the bank, not on whatever the
+    // construction budget has left after its own plans. Asking the trimmed
+    // budget was a deadlock: a base saving for a power plant handed production
+    // 499 of its 600 materials every think, so the 500-material hauler was
+    // *always* one material short and nothing was ever bought. When the bank
+    // covers the reserve the purchase is made here, ahead of every other line.
+    const rebuildReserve = engineerReserve > 0 ? engineerReserve : haulerReserve;
+    if (rebuildReserve > 0) {
+      const slot = engineerReserve > 0 ? 'engineer' : 'harvester';
+      const label = slot === 'engineer' ? 'engineer' : 'harvester';
+      if (ctx.player.mats < rebuildReserve) {
+        ctx.st.lastDecision = `holding ${Math.ceil(rebuildReserve - ctx.player.mats)} mats for a replacement ${label}`;
+        return;
+      }
+      const defId = ctx.game.unitIdFor(ctx.aiId, slot);
+      const facility = defId
+        ? ctx.complete.find((b) => ctx.game.productionStatus(ctx.aiId, b.id, defId).ok)
+        : undefined;
+      if (defId && facility) {
+        ctx.game.enqueueCommand({
+          type: 'produce',
+          team: ctx.aiId,
+          buildingId: facility.id,
+          defId,
+        });
+        ctx.st.lastDecision = `replacing the lost ${label}`;
+        return;
+      }
     }
-    // A planned support arm may hold the bank for a few seconds, but only when
-    // the army's own line demands are already met and the price is nearly in
-    // hand. Saving 500 for a howitzer while three tanks are missing is how a
-    // commander loses the field and then the base: those deficits buy first.
     const saving = desired.find((item) => (item.saveFor ?? 0) > 0);
     if (saving) {
-      const coreDeficit = desired
+      // Hulls short, not the sum of the fractional deficits: those are shares
+      // of each arm's target and can never total more than three, so a hull
+      // allowance compared against them was always satisfied and the battery
+      // held the bank on every compact map, even with the line several vehicles
+      // short. The allowance only means what it says when it counts vehicles.
+      const coreShortfall = desired
         .filter(
           (item) =>
             item.defId !== saving.defId &&
             ['tank', 'atgm', 'rifle'].includes(unitFamily(item.defId)),
         )
-        .reduce((n, item) => n + item.deficit, 0);
+        .reduce((n, item) => n + (item.short ?? Math.ceil(item.deficit)), 0);
+      // A recruit does not ration its bank against the line: it keeps setting
+      // materials aside for the support arm its plan wants and fields fewer
+      // hulls while it does, which is exactly the handicap the difficulty is
+      // for. Higher levels count the hulls actually missing and stop banking the
+      // moment the line is short. The economy fixes are untouched either way:
+      // this only decides which purchase the bank is held for.
+      const corePressure = ctx.profile.difficulty === 'recruit' ? 0 : coreShortfall;
       const def = UNITS[saving.defId];
+      // Holding for a battery the base cannot train is a freeze, not a plan:
+      // the facility was destroyed or never built, and the line starved behind
+      // a purchase that could never arrive.
+      const canTrainIt = ctx.complete.some((b) =>
+        ctx.game.productionEntries(ctx.aiId, b.defId).includes(saving.defId),
+      );
       const price = saving.saveFor ?? 0;
+      // A compact map never lets the core line come whole, so the ordinary
+      // "save only once the line is met" rule could never apply there: the
+      // battery was demanded from t+80 and still never bought at a 10 000
+      // start. On those maps the commander rations from half the price and
+      // tolerates a line several hulls short, because indirect fire is the one
+      // purchase that can break a 64-tile stalemate.
+      const extent = Math.max(ctx.game.state.map.width, ctx.game.state.map.height);
+      const compact = extent <= 80;
+      const coreAllowance = compact ? 4 : 2;
+      const readyShare = compact ? 0.5 : 0.85;
       if (
         def &&
-        coreDeficit <= 2 &&
+        canTrainIt &&
+        corePressure <= coreAllowance &&
         budget.mats < def.cost.mats &&
-        budget.mats >= price * 0.85 &&
+        budget.mats >= price * readyShare &&
         budget.req >= def.cost.req &&
         (ctx.unitCounts.get('harvester') ?? 0) > 0
       ) {

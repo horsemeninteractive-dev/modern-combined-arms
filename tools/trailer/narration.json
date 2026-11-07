@@ -1,0 +1,15 @@
+{
+  "comment": "Trailer narration. One line per entry; `shot` and `at` place it on the timeline of the take it belongs to. The voice chain is the narrator generator's, so the trailer is read by the game's own sound.",
+  "voice": "am_onyx",
+  "preset": "command-east",
+  "speed": 0.94,
+  "lines": [
+    { "id": "01", "shot": "01-first-light", "at": 1.1, "text": "First light on the straits. The beachhead holds, for now." },
+    { "id": "02", "shot": "02-armour", "at": 0.8, "text": "Armour moves before the sun clears the ridge." },
+    { "id": "03", "shot": "03-contact", "at": 0.5, "text": "Then the line meets the line." },
+    { "id": "04", "shot": "04-urban", "at": 0.5, "text": "Street by street. House by house." },
+    { "id": "05", "shot": "05-night-assault", "at": 0.4, "text": "Dug in behind concrete, they wait for you to break them." },
+    { "id": "06", "shot": "06-air", "at": 0.5, "text": "Rotors in low, ahead of the column." },
+    { "id": "07", "shot": "07-end-card", "at": 1.2, "text": "Modern Combined Arms. Build the base. Break the line." }
+  ]
+}

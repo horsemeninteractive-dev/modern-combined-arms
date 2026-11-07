@@ -10,7 +10,7 @@
  */
 import type { CareerMatchInput, CareerViewData } from './career';
 import { careerViewFrom, summariseCareer } from './career';
-import { AccountApiError, type HttpAccountApi } from './client';
+import { AccountApiError, type CareerView, type HttpAccountApi, type MatchResultView } from './client';
 import {
   guestCareerPayload,
   localCareerMatches,
@@ -20,7 +20,8 @@ import {
 } from './localCareer';
 
 export interface CareerSnapshot {
-  view: CareerViewData;
+  /** Account careers also carry the statistics breakdown and identity. */
+  view: CareerView;
   source: 'account' | 'guest';
   /** True when the account career could not be read; the guest view is shown. */
   unavailable?: boolean;
@@ -106,6 +107,22 @@ export class CareerService {
     };
   }
 
+  /**
+   * The account service's own answer for one authoritative match.
+   *
+   * `pending` means the room has not reported the match yet, which is normal for
+   * a moment after the scoreboard appears. A guest has no authoritative award to
+   * read and gets null, so the end screen can say so instead of inventing XP.
+   */
+  async matchOutcome(ref: string): Promise<MatchResultView | null> {
+    try {
+      return await this.api.matchResult(ref);
+    } catch (error) {
+      if (error instanceof AccountApiError && error.status === 401) return null;
+      throw error;
+    }
+  }
+
   /** The guest ledger as a migration payload; empty when nothing was played. */
   guestPayload(): CareerMatchInput[] {
     return this.storage ? guestCareerPayload(this.storage) : [];
@@ -113,6 +130,6 @@ export class CareerService {
 
   /** Rebuild a view for a career the server just returned (after migration). */
   static fromAccount(view: CareerViewData): CareerSnapshot {
-    return { view, source: 'account' };
+    return { view: view as CareerView, source: 'account' };
   }
 }

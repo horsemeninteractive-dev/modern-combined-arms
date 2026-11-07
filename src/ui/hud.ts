@@ -2086,6 +2086,37 @@ export class HUD {
       const quote = game.sellQuote(e.id);
       statusLines += `<div class="sel-line"><span>DISMANTLING</span><b>${Math.ceil(e.deconstruct.remaining)}s · ${quote?.mats ?? 0}M/${quote?.req ?? 0}R REFUND</b></div>`;
     }
+    // Aircraft positions are the facility's real capacity, so the card reports
+    // them from the simulation: how many of each kind are parked, and whether a
+    // helicopter pad is recovery-only.
+    const flightLine = e.kind === 'building' ? game.dockStatus(e.id) : null;
+    if (flightLine && (flightLine.fixedWing.capacity > 0 || flightLine.helo.capacity > 0)) {
+      // Assigned is the permanent capacity the production gate reads; the rest
+      // explains where those hulls are, because "3/4" alone cannot tell a
+      // commander whether the missing one is on the apron, on approach or still
+      // in the queue. Zero parts are dropped so the row stays one line.
+      const describe = (occ: typeof flightLine.fixedWing, label: string): string => {
+        const parts = [`${label} ASSIGNED ${occ.used}/${occ.capacity}`];
+        parts.push(`PARKED ${occ.parked}`);
+        if (occ.inbound > 0) parts.push(`INBOUND ${occ.inbound}`);
+        if (occ.airborne > 0) parts.push(`AIRBORNE ${occ.airborne}`);
+        if (occ.queued > 0) parts.push(`QUEUED ${occ.queued}`);
+        return parts.join(' · ');
+      };
+      const parts: string[] = [];
+      if (flightLine.fixedWing.capacity > 0) {
+        parts.push(describe(flightLine.fixedWing, 'FLIGHT LINE'));
+      }
+      if (flightLine.helo.capacity > 0) {
+        parts.push(
+          `${describe(
+            flightLine.helo,
+            flightLine.helo.temporary ? 'HELO PAD' : 'HELO BAYS',
+          )}${flightLine.helo.temporary ? ' · RECOVERY ONLY' : ''}`,
+        );
+      }
+      statusLines += `<div class="sel-line"><span>AIRCRAFT</span><b>${escapeHtml(parts.join(' | '))}</b></div>`;
+    }
     if (objective) {
       const radar = BUILDINGS[e.defId]?.scanRadius ?? 0;
       if (radar > 0) {
@@ -2237,9 +2268,15 @@ export class HUD {
     return `<div class="ability-row">
       ${actions
         .map(
-          (action) => `<button class="sel-square ability-btn ${action.ready ? 'ready' : 'reloading'}" data-ability="${escapeHtml(action.upgradeId)}" data-ability-unit="${unit.id}" title="${escapeHtml(`${action.name} — ${action.description} · ${action.detail} · Key ${action.label}`)}" aria-label="${escapeHtml(`${action.name}, ${action.detail}`)}" aria-disabled="${action.ready ? 'false' : 'true'}">
+          (action) => `<button class="sel-square ability-btn ${action.active ? 'active' : action.ready ? 'ready' : 'reloading'}" data-ability="${escapeHtml(action.upgradeId)}" data-ability-unit="${unit.id}" title="${escapeHtml(`${action.name} — ${action.description} · ${action.note} · ${action.detail}`)}" aria-label="${escapeHtml(`${action.name}, ${action.detail}`)}" aria-pressed="${action.active ? 'true' : 'false'}" aria-disabled="${action.ready ? 'false' : 'true'}">
             ${icon(action.icon, 'square-icon')}
-            ${action.ready ? '' : `<span class="square-badge">${escapeHtml(action.cooldown > 0 ? `${Math.ceil(action.cooldown)}s` : '—')}</span>`}
+            ${
+              action.active
+                ? `<span class="square-badge ok">${Math.ceil(action.activeRemaining)}s</span>`
+                : action.ready
+                  ? ''
+                  : `<span class="square-badge">${escapeHtml(action.cooldown > 0 ? `${Math.ceil(action.cooldown)}s` : '—')}</span>`
+            }
           </button>`,
         )
         .join('')}
@@ -2283,7 +2320,7 @@ export class HUD {
     return `<div class="ability-row module-row">
       ${actions
         .map(
-          (action) => `<button class="sel-square module-btn ${action.ready ? 'ready' : action.installed ? 'installed' : 'reloading'}" data-module="${escapeHtml(action.moduleId)}" data-module-building="${building.id}" title="${escapeHtml(`${action.name} — ${action.description} · ${action.detail} · Key ${action.label}`)}" aria-label="${escapeHtml(`${action.name}, ${action.detail}`)}" aria-disabled="${action.ready ? 'false' : 'true'}">
+          (action) => `<button class="sel-square module-btn ${action.ready ? 'ready' : action.installed ? 'installed' : 'reloading'}" data-module="${escapeHtml(action.moduleId)}" data-module-building="${building.id}" title="${escapeHtml(`${action.name} — ${action.description} · ${action.detail}`)}" aria-label="${escapeHtml(`${action.name}, ${action.detail}`)}" aria-disabled="${action.ready ? 'false' : 'true'}">
             ${icon(action.icon, 'square-icon')}
             ${action.installed ? '<span class="square-badge ok">✓</span>' : ''}
           </button>`,

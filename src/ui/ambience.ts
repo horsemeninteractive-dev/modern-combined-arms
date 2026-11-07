@@ -27,7 +27,9 @@ export type AmbienceKind =
   | 'rotor'
   | 'jet'
   | 'naval'
-  | 'facility';
+  | 'facility'
+  /** The fuel pump beside a hull being turned around, on its own apron. */
+  | 'servicing';
 
 export interface AmbienceCandidate {
   /** Entity id: the same hull keeps its voice across frames. */
@@ -179,6 +181,37 @@ export function structureAmbience(def: {
   if (typeof def.power === 'number' && def.power < 0) return { pitch: 0.92, level: 0.3 };
   return null;
 }
+
+/**
+ * The servicing kit's own voice: the pump beside a hull on turnaround.
+ *
+ * A keel and a bowser are not vehicles and not structures. What a player hears
+ * from an active apron is a small pump under load, and that steady throb is how
+ * they learn an aircraft is being brought back rather than merely parked. The
+ * voice runs at one speed from the moment the crew hooks up, so `motion` is held
+ * high: what varies is not the pump but the beacon chirp over it, which the app
+ * schedules on its own clock.
+ */
+export function serviceKitAmbience(input: { servicing: boolean }): {
+  kind: AmbienceKind;
+  level: number;
+  pitch: number;
+  motion: number;
+} | null {
+  if (!input.servicing) return null;
+  return { kind: 'servicing', level: 0.5, pitch: 1, motion: 1 };
+}
+
+/**
+ * Seconds between beacon chirps over a hull being turned around.
+ *
+ * Deliberately slower than the lamp the renderer turns: at a chirp per sweep the
+ * beacon would ring like an alarm and bury the pump. One call every second and a
+ * half reads as a signal without becoming a rhythm the player has to listen
+ * past — and only the nearest apron chirps, so two serviced hulls are a call and
+ * an answer rather than a chorus.
+ */
+export const SERVICE_BEACON_CHIRP_SECONDS = 1.6;
 
 export interface UnitAmbienceInput {
   domain: string;

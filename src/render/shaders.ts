@@ -244,6 +244,104 @@ float triNoise(vec3 p, vec3 n, float scale) {
   return noise2(q.zy) * w.x + noise2(q.xz + 17.3) * w.y + noise2(q.xy + 41.7) * w.z;
 }
 
+/**
+ * The two in-plane coordinates of a face, chosen from its normal.
+ *
+ * Every building here is a hand-authored box, so a wall has no UVs to sample:
+ * its construction pattern has to be derived from world position. Picking the
+ * plane axes from the dominant normal makes one field work on a floor, a wall
+ * and a roof without a texture atlas, and two faces meeting at a corner still
+ * agree about where a joint is.
+ */
+vec2 faceCoords(vec3 p, vec3 n) {
+  vec3 a = abs(n);
+  if (a.y >= a.x && a.y >= a.z) return p.xz;
+  if (a.x >= a.z) return p.zy;
+  return p.xy;
+}
+
+/**
+ * 1 on a joint of the given pitch, 0 across the panel face.
+ *
+ * halfWidth is a floor on the joint width. The caller passes the pixel
+ * footprint, so a 4 cm seam widens to a pixel at distance instead of aliasing
+ * into glitter: the line stays visible and stops being a hazard to the frame.
+ */
+float jointLine(float coord, float period, float halfWidth) {
+  float d = abs(fract(coord / period + 0.5) - 0.5) * period;
+  return 1.0 - smoothstep(halfWidth, halfWidth * 2.6, d);
+}
+
+/** Panel pitch, in metres, of each material's construction system. */
+float skinPitch(float id) {
+  if (id < 0.5) return 1.45;
+  if (id < 1.5) return 0.95;
+  if (id < 2.5) return 2.70;
+  return 0.27;
+}
+
+/**
+ * The material's own structure, in the plane of its face.
+ *
+ * Returns the joint mask (1 on a seam, 0 on a panel) and writes the surface
+ * height in metres, so albedo and shading read the same pattern: a wall that is
+ * darker down a seam is also bent into it. This is the bump map this renderer
+ * can afford — no UVs, no tangent buffer, no extra texture bind — and it gives
+ * every large face a construction sequence instead of one even colour fill.
+ *
+ * painted    plate courses with staggered vertical joints and a rib line
+ * bareMetal  finer plates, riveted at a 22 cm grid
+ * concrete   shuttered formwork: lift and form joints, board marks, tie holes
+ * canvas     coursed blockwork for walls, a soft weave for sandbags
+ */
+float skinJoints(vec2 c, float id, float aa, out float height) {
+  height = 0.0;
+  if (id < 0.5) {
+    float pitch = 1.45;
+    float row = floor(c.y / pitch);
+    float stagger = mod(row, 2.0) > 0.5 ? pitch * 0.52 : 0.0;
+    float jy = jointLine(c.y, pitch, max(0.045, aa));
+    float jx = jointLine(c.x + stagger, pitch * 1.75, max(0.038, aa));
+    float rib = jointLine(c.y + 0.17, 0.34, max(0.012, aa * 0.6));
+    height = 0.030 * jy + 0.024 * jx - 0.005 * rib;
+    return max(jx, jy);
+  }
+  if (id < 1.5) {
+    float pitch = 0.95;
+    float jy = jointLine(c.y, pitch, max(0.030, aa));
+    float jx = jointLine(c.x, pitch * 1.6, max(0.028, aa));
+    vec2 grid = abs(fract(c / 0.22) - 0.5) * 0.22;
+    float rivet = 1.0 - smoothstep(0.014, 0.034, max(grid.x, grid.y));
+    height = 0.022 * jy + 0.018 * jx + 0.012 * rivet;
+    return max(jx, jy);
+  }
+  if (id < 2.5) {
+    // Lift joints every 2.7 m and vertical form joints every 3.4 m are the
+    // layout of a poured wall; the board marks and tie holes sit underneath
+    // them, visible only when the camera is close enough to resolve them.
+    float lift = jointLine(c.y, 2.70, max(0.050, aa));
+    float form = jointLine(c.x, 3.40, max(0.045, aa));
+    float board = jointLine(c.y + 0.09, 0.31, max(0.010, aa * 0.5));
+    vec2 grid = abs(fract(c / 1.35) - 0.5) * 1.35;
+    float tie = 1.0 - smoothstep(0.05, 0.11, length(grid));
+    height = 0.034 * lift + 0.028 * form + 0.005 * board - 0.010 * tie;
+    return max(max(lift, form), max(board * 0.4, tie * 0.7));
+  }
+  // Canvas is the only family that carries masonry: it is what the walls,
+  // sandbags and field structures are coloured with. Asphalt, rock and glass
+  // sit in this id range too, and coursing a runway apron was reading as brick.
+  if (id > 5.5 && id < 6.5) {
+    float course = 0.27;
+    float row = floor(c.y / course);
+    float stagger = mod(row, 2.0) > 0.5 ? 0.26 : 0.0;
+    float bed = jointLine(c.y, course, max(0.009, aa * 0.45));
+    float head = jointLine(c.x + stagger, 0.52, max(0.008, aa * 0.45));
+    height = 0.007 * bed + 0.005 * head;
+    return max(bed, head);
+  }
+  return 0.0;
+}
+
 void main() {
   // A unit hidden behind a structure keeps its shape on screen as a flat team
   // colour. Nothing is lit, textured or fogged here: the pass is a readability
@@ -314,6 +412,44 @@ void main() {
       // Tracks and rubber: fine grain only. Tracks must stay dark next to the
       // hull so running gear reads as running gear.
       base *= mix(1.0, 0.86 + 0.16 * fine, detail);
+    }
+
+    // Structure. Every large face in the game is a box, so the only thing that
+    // stops a hangar wall reading as a colour card is the pattern of the
+    // material it is built from. One field supplies both the seam that darkens
+    // the albedo and the height that bends the normal, so the two can never
+    // disagree about where the joint is. Its joint half-width is raised to the
+    // pixel footprint, which keeps a plate seam legible at battle zoom instead
+    // of letting it alias into glitter.
+    float pixel = max(max(fwidth(vWorld.x), fwidth(vWorld.y)), fwidth(vWorld.z));
+    float aa = pixel * 0.85;
+    vec2 face = faceCoords(vWorld, n);
+    float skinH = 0.0;
+    float joint = skinJoints(face, id, aa, skinH);
+    base *= mix(1.0, 1.0 - 0.26 * joint, detail);
+    // Each plate is rolled, cast or painted a little differently. The tone
+    // spread is what turns a repeated seam grid into built structure rather
+    // than wallpaper.
+    float plate = hash21(floor(face / skinPitch(id)) + vec2(id * 13.0, id * 7.0));
+    base *= mix(1.0, 0.94 + 0.12 * plate, detail * 0.7);
+
+    if (materialId < 3.5 || (materialId > 5.5 && materialId < 6.5)) {
+      // In-plane gradient of that same field. Sampling along two tangents
+      // rather than the world axes keeps the bend inside the face, so a corner
+      // shows a groove on both walls instead of a fold across the edge.
+      vec3 upHint = abs(n.y) > 0.9 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 1.0, 0.0);
+      vec3 tu = normalize(cross(upHint, n));
+      vec3 tv = normalize(cross(n, tu));
+      float e = max(0.05, pixel * 1.4);
+      float hu = 0.0;
+      float hv = 0.0;
+      skinJoints(faceCoords(vWorld + tu * e, n), id, aa, hu);
+      skinJoints(faceCoords(vWorld + tv * e, n), id, aa, hv);
+      vec3 grad = (tu * (hu - skinH) + tv * (hv - skinH)) / e;
+      float relief = id < 0.5 ? 1.1 : id < 1.5 ? 1.3 : id < 2.5 ? 1.2 : 1.8;
+      n = normalize(n - (grad - n * dot(grad, n)) * relief * detail);
+      diffuse = max(dot(n, sunDir), 0.0);
+      hemi = 0.5 + 0.5 * n.y;
     }
 
     // A low-frequency world-space normal bend, projected onto the surface, is
@@ -626,6 +762,7 @@ uniform float uUseFog;
 uniform float uTime;
 uniform float uGrid;
 uniform float uWet;
+uniform float uSnow;
 ${FOG_FIELD}
 ${HAZE_GLSL}
 ${SHADOW_SAMPLE_GLSL}
@@ -773,6 +910,21 @@ void main() {
     float soak = uWet * (0.30 + 0.26 * (1.0 - steep)) * (1.0 - rockMask * 0.45);
     base = mix(base, soaked, soak);
     base = mix(base, soaked * 0.78, puddle * 0.6);
+  }
+
+  // Weather-driven snow. Unlike a painted overlay this is not limited to the
+  // tiles an author touched: a snow map has snow everywhere it can lie, which is
+  // what makes the weather read as weather rather than as a painted strip. It
+  // settles on level ground and thins on the steep faces it slides off, and the
+  // drift field keeps a field from turning into one flat sheet of white.
+  if (uSnow > 0.001) {
+    float settle = 1.0 - smoothstep(0.3, 0.8, steep);
+    float drift = noise2(p * 0.085 + 61.3) * 0.62 + noise2(p * 0.27 + 17.9) * 0.38;
+    float cover = clamp(uSnow * settle * (0.78 + 0.36 * drift), 0.0, 0.95);
+    vec3 snow = vec3(0.87, 0.9, 0.95) * (0.94 + 0.1 * drift);
+    base = mix(base, snow, cover);
+    // A little grain survives the cover, so a drift still has a surface.
+    base *= 1.0 + (fine - 0.5) * 0.035;
   }
 
   float diffuse = max(dot(n, normalize(uSun)), 0.0);

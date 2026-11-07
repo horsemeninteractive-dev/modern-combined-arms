@@ -13,7 +13,7 @@ export { CapacityCoordinatorDurableObject } from './reservationDurableObject';
  * route carries no seat, team or host flag.
  */
 const ROOM_ROUTE =
-  /^\/api\/multiplayer\/rooms\/([A-Za-z0-9_-]{1,64})(?:\/(ws|status|shutdown|restart|snapshot|start|open|join))?$/;
+  /^\/api\/multiplayer\/rooms\/([A-Za-z0-9_-]{1,64})(?:\/(ws|status|shutdown|restart|snapshot|start|open|join|career))?$/;
 
 function securityHeaders(): Record<string, string> {
   return {
@@ -266,6 +266,9 @@ export default {
       return json({ ok: false, code: 'method-not-allowed' }, 405);
     }
     if (action === 'start' && request.method !== 'POST') {
+      return json({ ok: false, code: 'method-not-allowed' }, 405);
+    }
+    if (action === 'career' && request.method !== 'POST') {
       return json({ ok: false, code: 'method-not-allowed' }, 405);
     }
     if (action === 'join' && request.method !== 'POST') {

@@ -167,7 +167,7 @@ function validateEntity(value: unknown, worldWidth: number, worldHeight: number)
     [
       'id', 'kind', 'defId', 'owner', 'team', 'x', 'z', 'facing', 'turretFacing', 'hp', 'maxHp',
       'state', 'stance', 'buildProgress', 'construction', 'remembered', 'queue', 'rallyX',
-      'rallyZ', 'targetId', 'garrisonId', 'xp', 'upgrades', 'modules', 'cooldowns',
+      'rallyZ', 'targetId', 'garrisonId', 'xp', 'upgrades', 'modules', 'cooldowns', 'effects',
       'deconstruct', 'harvester', 'captureTargetId', 'captureProgress',
     ],
     'Entity',
@@ -230,6 +230,16 @@ function validateEntity(value: unknown, worldWidth: number, worldHeight: number)
     for (const [id, remaining] of entries) {
       assert(isText(id, 64), 'Cooldown ability id is invalid.');
       assert(isNum(remaining) && remaining > 0, 'Cooldown remaining time is invalid.');
+    }
+  }
+  if (value.effects !== undefined) {
+    assert(value.remembered === undefined, 'A remembered entity must not carry active effects.');
+    assert(isRecord(value.effects), 'Entity active effects are invalid.');
+    const entries = Object.entries(value.effects);
+    assert(entries.length <= 8, 'Entity has too many active effects.');
+    for (const [id, remaining] of entries) {
+      assert(isText(id, 64), 'Active effect id is invalid.');
+      assert(isNum(remaining) && remaining > 0 && remaining <= 60, 'Active effect time is invalid.');
     }
   }
   if (value.harvester !== undefined) {

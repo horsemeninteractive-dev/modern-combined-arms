@@ -9,6 +9,9 @@
  */
 
 import type { CareerMatchRecord, CareerTotals } from './career';
+import type { AvatarId } from './identity';
+import type { MatchRewardSummary, MpRewardStatus } from './matchCareer';
+import type { StatGroupRow } from './stats';
 
 export type ProviderId = 'google' | 'discord';
 export type AccountStatus = 'active' | 'suspended' | 'deleted';
@@ -50,6 +53,73 @@ export interface GuestMigrationRecord {
   profileDigest: string;
   createdAt: number;
   completedAt: number | null;
+}
+
+/** A player's presentable identity. The account id remains the stable key. */
+export interface PlayerProfileRecord {
+  accountId: string;
+  callsign: string;
+  /** Folded, unique form of the callsign. */
+  callsignKey: string;
+  avatar: AvatarId;
+  createdAt: number;
+  updatedAt: number;
+  callsignChangedAt: number | null;
+}
+
+/**
+ * The match report behind one ledger row. Extended statistics are separate from
+ * the XP ledger because they are presentation and audit data, not currency: the
+ * ledger alone decides a career's XP and rank.
+ */
+export interface MatchReportRecord {
+  ref: string;
+  mode: 'campaign' | 'skirmish' | 'multiplayer';
+  mapId: string | null;
+  opponentAccountId: string | null;
+  opponentCallsign: string | null;
+  opponentNation: string | null;
+  durationSeconds: number;
+  unitsDestroyed: number;
+  unitsLost: number;
+  structuresDestroyed: number;
+  structuresLost: number;
+  structuresBuilt: number;
+  sitesCaptured: number;
+  superweaponsUsed: number;
+  objectivesCompleted: number;
+  rewardVersion: number;
+  rewardStatus: 'awarded' | 'capped' | 'ineligible' | 'local';
+  breakdown: MatchRewardSummary['breakdown'];
+  xpBefore: number;
+  xpAfter: number;
+  recordedAt: number;
+}
+
+/** One player's side of an authoritative result, kept for audit. */
+export interface MpResultPlayerRecord {
+  matchId: string;
+  accountId: string;
+  roomId: string;
+  team: number;
+  outcome: 'victory' | 'defeat' | 'draw';
+  nation: string | null;
+  rewardVersion: number;
+  xpAwarded: number;
+  status: MpRewardStatus;
+  processedAt: number;
+}
+
+/**
+ * Everything one completed match writes: the ledger row that pays, the report
+ * that explains it and the audit row that proves the room said so. They are one
+ * write on purpose, so a crash cannot leave XP without its report.
+ */
+export interface CareerEntryWrite {
+  accountId: string;
+  record: CareerMatchRecord;
+  report: MatchReportRecord | null;
+  audit: MpResultPlayerRecord | null;
 }
 
 export interface NewIdentity {
@@ -102,9 +172,44 @@ export interface AccountStore {
    */
   recordCareerMatch(accountId: string, record: CareerMatchRecord): Promise<WriteOutcome>;
   /** Newest first, capped by the caller so a huge history cannot be requested. */
-  careerMatches(accountId: string, limit: number): Promise<CareerMatchRecord[]>;
+  careerMatches(accountId: string, limit: number, offset?: number): Promise<CareerMatchRecord[]>;
+  /** One ledger row, for an idempotent result read. */
+  careerMatch(accountId: string, ref: string): Promise<CareerMatchRecord | null>;
   /** Aggregated from the ledger, never a separately maintained balance. */
   careerTotals(accountId: string): Promise<CareerTotals>;
+
+  profile(accountId: string): Promise<PlayerProfileRecord | null>;
+  profileByCallsignKey(callsignKey: string): Promise<PlayerProfileRecord | null>;
+  /** `conflict` means the callsign key is taken. */
+  createProfile(record: PlayerProfileRecord): Promise<WriteOutcome>;
+  /** `conflict` means another account already uses that callsign key. */
+  updateProfile(
+    accountId: string,
+    patch: {
+      callsign: string;
+      callsignKey: string;
+      avatar: AvatarId;
+      updatedAt: number;
+      callsignChangedAt: number | null;
+    },
+  ): Promise<WriteOutcome>;
+
+  /**
+   * Record a completed match and its report as one write. `conflict` means this
+   * account already has the reference: report the existing award, never a
+   * second one.
+   */
+  recordCareerEntry(entry: CareerEntryWrite): Promise<WriteOutcome>;
+  /** Idempotent on `(accountId, ref)`; a retried report never duplicates. */
+  recordMatchReport(accountId: string, report: MatchReportRecord): Promise<void>;
+  matchReport(accountId: string, ref: string): Promise<MatchReportRecord | null>;
+  /** Grouped statistics for the service record. */
+  careerStatRows(accountId: string): Promise<StatGroupRow[]>;
+
+  /** Idempotent audit row for one player's side of an authoritative match. */
+  recordMpResultPlayer(record: MpResultPlayerRecord): Promise<void>;
+  /** Rewarded authoritative matches at or after `since`, for the daily cap. */
+  mpResultsSince(accountId: string, since: number): Promise<number>;
 
   /**
    * Increment one fixed-window counter and return the new value. A window is a
@@ -137,6 +242,8 @@ export const RATE_LIMITS = Object.freeze({
 
 export type AccountErrorCode =
   | 'invalid-request'
+  | 'invalid-callsign'
+  | 'callsign-reserved'
   | 'method-not-allowed'
   | 'not-found'
   | 'unauthorized'

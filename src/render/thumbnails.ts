@@ -41,7 +41,7 @@ const UNIFORM_NAMES = [
 type UniformName = (typeof UNIFORM_NAMES)[number];
 
 interface MeshPart {
-  slot: 'body' | 'turret' | 'leg';
+  slot: 'body' | 'turret' | 'leg' | 'rotor';
   mesh: MeshBuffers;
   matrix: Float32Array;
 }
@@ -105,6 +105,27 @@ function unitParts(defId: string): MeshPart[] {
         offset[1] * scale,
         (-offset[0] * s + offset[2] * c) * scale,
         yaw,
+        scale,
+        scale,
+        scale,
+      ),
+    });
+  }
+  // A rotor is a separate part now that it turns in battle, so the card has to
+  // draw it too — held at a three-quarter angle instead of edge-on, or the
+  // gunship reads as a mast with no blades.
+  for (const part of [style.rotor, style.tailRotor]) {
+    if (!part) continue;
+    const c = Math.cos(yaw);
+    const s = Math.sin(yaw);
+    parts.push({
+      slot: 'rotor',
+      mesh: part.mesh,
+      matrix: modelMatrix(
+        (part.offset[0] * c + part.offset[2] * s) * scale,
+        part.offset[1] * scale,
+        (-part.offset[0] * s + part.offset[2] * c) * scale,
+        0.7,
         scale,
         scale,
         scale,

@@ -11,10 +11,14 @@
  * virtual browser-module imports.
  */
 import { verifyTicket } from '../accounts/tickets';
+import type { IdentitySnapshot } from '../accounts/identity';
 
 export type RoomIdentityResult =
-  | { ok: true; request: Request; accountId: string | null }
+  | { ok: true; request: Request; accountId: string | null; identity: IdentitySnapshot | null }
   | { ok: false; status: number; code: string; message: string };
+
+/** The header this module sets for the Durable Object, and always strips. */
+export const VERIFIED_IDENTITY_HEADER = 'X-MCA-Verified-Identity';
 
 /**
  * Rebuild a request with new headers, preserving its body.
@@ -35,12 +39,17 @@ function rebuild(request: Request, headers: Headers): Request {
 
 /** Remove both identity headers, including a spoofed trusted one. */
 export function stripIdentityHeaders(request: Request): Request {
-  if (!request.headers.has('X-MCA-Verified-Account') && !request.headers.has('X-MCA-Identity-Ticket')) {
+  if (
+    !request.headers.has('X-MCA-Verified-Account') &&
+    !request.headers.has('X-MCA-Identity-Ticket') &&
+    !request.headers.has(VERIFIED_IDENTITY_HEADER)
+  ) {
     return request;
   }
   const headers = new Headers(request.headers);
   headers.delete('X-MCA-Verified-Account');
   headers.delete('X-MCA-Identity-Ticket');
+  headers.delete(VERIFIED_IDENTITY_HEADER);
   return rebuild(request, headers);
 }
 
@@ -51,7 +60,7 @@ export async function withVerifiedIdentity(
 ): Promise<RoomIdentityResult> {
   const ticket = request.headers.get('X-MCA-Identity-Ticket');
   const stripped = stripIdentityHeaders(request);
-  if (!ticket) return { ok: true, request: stripped, accountId: null };
+  if (!ticket) return { ok: true, request: stripped, accountId: null, identity: null };
 
   if (!secret) {
     return {
@@ -72,5 +81,7 @@ export async function withVerifiedIdentity(
   }
   const headers = new Headers(stripped.headers);
   headers.set('X-MCA-Verified-Account', verified.accountId);
-  return { ok: true, accountId: verified.accountId, request: rebuild(stripped, headers) };
+  const identity = verified.identity ?? null;
+  if (identity) headers.set(VERIFIED_IDENTITY_HEADER, JSON.stringify(identity));
+  return { ok: true, accountId: verified.accountId, identity, request: rebuild(stripped, headers) };
 }

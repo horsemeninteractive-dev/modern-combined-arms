@@ -1,6 +1,7 @@
 import type { Editor } from './editor';
 import { BUILDINGS } from '../data/buildings';
 import { UNITS } from '../data/units';
+import { PROPS } from '../data/props';
 import { tryIdentityDef } from '../data/factions';
 import { TILE_SIZE } from '../sim/constants';
 import {
@@ -150,6 +151,56 @@ export function drawEditorOverlay(editor: Editor): void {
     ctx.fillText(label, p.x - ctx.measureText(label).width / 2, p.y - 22);
   });
 
+  // Authored set dressing. Every placed prop is ringed while the Forge is open,
+  // so one bush authored by hand is findable on a field of procedural scatter.
+  (scenario.props ?? []).forEach((prop) => {
+    const def = PROPS[prop.kind];
+    if (!def) return;
+    const p = projectTile(
+      editor,
+      prop.x + 0.5 + (prop.offsetX ?? 0),
+      prop.z + 0.5 + (prop.offsetZ ?? 0),
+    );
+    if (!p.visible) return;
+    const chosen = editor.propSelection.includes(prop);
+    ctx.fillStyle = chosen ? 'rgba(255,224,178,1)' : 'rgba(241,194,126,0.9)';
+    ctx.strokeStyle = chosen ? 'rgba(255,255,255,0.95)' : 'rgba(8,13,15,0.85)';
+    ctx.lineWidth = chosen ? 1.6 : 1;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, chosen ? 5 : 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    if (!chosen) return;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(241,194,126,0.55)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  });
+
+  // Marquee in progress.
+  if (editor.propMarquee) {
+    const box = editor.propMarquee;
+    const a = projectTile(editor, box.x0, box.z0);
+    const b = projectTile(editor, box.x1 + 1, box.z0);
+    const c = projectTile(editor, box.x1 + 1, box.z1 + 1);
+    const d = projectTile(editor, box.x0, box.z1 + 1);
+    ctx.save();
+    ctx.setLineDash([4, 3]);
+    ctx.strokeStyle = 'rgba(241,194,126,0.95)';
+    ctx.fillStyle = 'rgba(241,194,126,0.12)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.lineTo(c.x, c.y);
+    ctx.lineTo(d.x, d.y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
   // Validation markers.
   editor.issues.filter((issue) => issue.x !== undefined && issue.z !== undefined).slice(0, 40).forEach((issue, i) => {
     if (issue.x === undefined || issue.z === undefined) return;
@@ -173,7 +224,7 @@ export function drawEditorOverlay(editor: Editor): void {
   // Hover brush / placement preview. Region and entity modes replace it: a
   // brush silhouette under a drawing cursor would promise terrain edits the
   // author has not asked for.
-  if (editor.hover && !editor.mapToolActive) {
+  if (editor.hover && !editor.mapToolActive && !editor.propMarquee) {
     const { x: hx, z: hz } = editor.hover;
     if (editor.tool === 'structure' && editor.structureDef) {
       const def = BUILDINGS[editor.structureDef];
@@ -188,6 +239,8 @@ export function drawEditorOverlay(editor: Editor): void {
       }
     } else if (editor.tool === 'unit' && editor.unitDef) {
       drawCell(ctx, scenario, project, hx, hz, 'rgba(82,197,230,0.3)', 'rgba(166,232,248,0.9)');
+    } else if (editor.tool === 'prop' || editor.tool === 'propPick' || editor.tool === 'propSelect') {
+      drawCell(ctx, scenario, project, hx, hz, 'rgba(241,194,126,0.28)', 'rgba(241,194,126,0.9)');
     } else if (editor.tool === 'start') {
       drawCell(ctx, scenario, project, hx, hz, 'rgba(224,163,74,0.3)', 'rgba(241,194,126,0.95)');
     } else {

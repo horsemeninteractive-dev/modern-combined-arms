@@ -170,16 +170,18 @@ describe('AI research policy', () => {
       arena({ structures: CORE, units: CORE_UNITS, mats: 4000, req: 400, ore: true }),
       { enableAI: false },
     );
-    runAI(game, 200);
-    expect(centreCount(game)).toBe(1);
-    expect(game.researchCentreId(1)).not.toBeNull();
-
+    // The centre is raised early and the first project is opened as soon as the
+    // commander can pay for it, so the whole opening is watched rather than a
+    // second stretch after it: a commander that researched quickly has already
+    // finished by then and holds no project at all.
     let sawProject = false;
     let negative = false;
-    runAI(game, 260, (g) => {
+    runAI(game, 200, (g) => {
       if (g.player(1)!.research.project) sawProject = true;
       if (g.player(1)!.mats < 0 || g.player(1)!.req < 0) negative = true;
     });
+    expect(centreCount(game)).toBe(1);
+    expect(game.researchCentreId(1)).not.toBeNull();
     expect(sawProject).toBe(true);
     expect(negative).toBe(false);
     // The centre bought at least one unlock, and the unlock is real.
@@ -188,6 +190,10 @@ describe('AI research policy', () => {
     expect(new Set(completed).size).toBe(completed.length);
     const factory = game.entitiesOf(1, 'building').find((b) => b.defId === 'factory')!;
     const tank = game.unitIdFor(1, 'tank')!;
+    // The gate being tested is the research unlock, not the bank: a commander
+    // that has spent its income on the field must still be *able* to order the
+    // hull it researched.
+    game.player(1)!.mats += 5000;
     expect(game.productionStatus(1, factory.id, tank).ok).toBe(true);
     // A human seat's availability is untouched by the AI's research.
     const humanFighter = game.unitIdFor(0, 'fighter')!;
@@ -405,7 +411,22 @@ describe('AI research scoring', () => {
   });
 
   it('does not value a slot the commander\u2019s nation never fields', () => {
-    const tech = techDef('manoeuvre2')!;
+    // Advanced Armour used to be this fixture, but it now also grants hull-down
+    // and active protection, which this roster can fire. The invariant is
+    // therefore tested on a node whose only content is the unfielded slot.
+    const tech = {
+      id: 'fixtureSlot',
+      name: 'Fixture Slot',
+      easternName: 'Fixture Slot',
+      branch: 'manoeuvre',
+      tier: 2,
+      cost: { mats: 600, req: 90 },
+      seconds: 80,
+      requires: [],
+      effects: [{ kind: 'unlockUnit', slot: 'td' }],
+      description: '',
+      icon: 'td',
+    } satisfies TechDef;
     const option = researchOptionScore(
       tech,
       signals({ completed: ['manoeuvre1'], rosterUnits: new Set(['tank', 'ifv']) }),

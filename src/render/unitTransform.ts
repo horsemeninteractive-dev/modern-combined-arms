@@ -93,6 +93,31 @@ export function limbModelMatrix(
   return m;
 }
 
+/**
+ * Model matrix for a rotor mounted on an airframe.
+ *
+ * Same mount convention as a turret — the offset is rotated by the hull heading
+ * and the part then spins about its own centre — but the spin axis is the
+ * rotor's, not the gun's. A main rotor turns about local +Y; a tail rotor turns
+ * about local +Z, the tail boom's lateral axis, so its disc sits in the fin
+ * plane instead of lying flat.
+ */
+export function rotorModelMatrix(
+  x: number,
+  y: number,
+  z: number,
+  facing: number,
+  offset: Vec3,
+  spin: number,
+  uniform: number,
+  axis: 'y' | 'z' = 'y',
+): Float32Array {
+  const mount = rotateLocalOffset(offset[0] * uniform, offset[2] * uniform, facing);
+  const base = translation(x + mount.x, y + offset[1] * uniform, z + mount.z);
+  const spinM = axis === 'y' ? rotationY(spin) : rotationZ(spin);
+  return multiply(base, multiply(rotationY(-facing), multiply(spinM, scaling(uniform, uniform, uniform))));
+}
+
 export function turretModelMatrix(
   x: number,
   y: number,

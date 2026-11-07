@@ -18,6 +18,7 @@ export const APP_ORIGIN = 'https://app.test';
 export const GOOGLE_CLIENT_ID = 'google-client-id.apps.googleusercontent.com';
 export const DISCORD_CLIENT_ID = 'discord-client-id';
 export const TICKET_SECRET = 'test-ticket-secret-0123456789abcdef';
+export const RESULT_TOKEN = 'test-result-token-0123456789abcdef';
 
 export interface GoogleSigningKey {
   privateKey: CryptoKey;
@@ -96,6 +97,7 @@ export interface HarnessOptions {
   google?: boolean;
   discord?: boolean;
   ticketSecret?: string | null;
+  mpResultToken?: string | null;
   devMode?: boolean;
 }
 
@@ -142,6 +144,9 @@ export class AccountHarness {
         ? {}
         : { DISCORD_CLIENT_ID: DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET: 'discord-secret' }),
       ...(options.ticketSecret === null ? {} : { MCA_IDENTITY_TICKET_SECRET: options.ticketSecret ?? TICKET_SECRET }),
+      ...(options.mpResultToken === null
+        ? {}
+        : { MCA_MP_RESULT_TOKEN: options.mpResultToken ?? RESULT_TOKEN }),
     };
     // The config reads the shared clock, so advancing it changes expiry
     // behaviour without rebuilding the service.

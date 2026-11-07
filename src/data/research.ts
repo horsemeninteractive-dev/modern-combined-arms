@@ -169,6 +169,13 @@ export interface UnitUpgradeDef {
   cost: Cost;
   cooldownSeconds?: number;
   durationSeconds?: number;
+  /**
+   * Alliances whose crews are trained and equipped for it. Absent means both.
+   * National identity is mostly expressed through the roster (a nation without
+   * submarines never sees a submarine ability); this is for the handful of
+   * capabilities that are a doctrinal choice rather than a platform.
+   */
+  alliances?: readonly string[];
   icon: string;
 }
 
@@ -176,6 +183,22 @@ export interface UnitUpgradeDef {
 export type ModuleEffect =
   | { kind: 'power'; amount: number }
   | { kind: 'researchSpeed'; multiplier: number }
+  /** Extra vision, in tiles, added to the structure's own. */
+  | { kind: 'vision'; amount: number }
+  /** Multiplier on the structure's own production rate. */
+  | { kind: 'productionSpeed'; multiplier: number }
+  /**
+   * Multiplier on the servicing turnaround for aircraft parked here: rearming,
+   * refuelling and repair all run off the same clock, so this is the one number
+   * that shortens them.
+   */
+  | { kind: 'serviceSpeed'; multiplier: number }
+  /**
+   * Passive sonar radius in tiles, added to a structure's own sensors. Read by
+   * the same detection pass that a sonar-equipped escort feeds, so a hull under
+   * the surface is found exactly the way it is found at sea.
+   */
+  | { kind: 'sonar'; radius: number }
   | { kind: 'capability'; capability: string };
 
 export interface BuildingModuleDef {
@@ -188,6 +211,8 @@ export interface BuildingModuleDef {
   /** Modules one structure may hold at once; absent means one. */
   capacity?: number;
   effects: readonly ModuleEffect[];
+  /** Alliances that may fit it. Absent means both. */
+  alliances?: readonly string[];
   icon: string;
 }
 
@@ -220,9 +245,15 @@ const TECH_LIST: readonly TechDef[] = Object.freeze([
       // adding one, so the tier-1 manoeuvre node — already the tree's capability
       // node — carries it. Changing the granting node is a data edit here only.
       { kind: 'grantBuildingModule', module: 'advancedTurbine' },
+      // Mobility is a manoeuvre-doctrine capability: the crew that has practised
+      // formation driving can push its engine for one short burst.
+      { kind: 'grantUnitUpgrade', upgrade: 'emergencyPower' },
+      // Mechanised industry: the same doctrine that fields the factory knows how
+      // to run its line harder.
+      { kind: 'grantBuildingModule', module: 'assemblyLine' },
     ],
     description:
-      'Armoured and mechanised doctrine: main battle tanks, infantry fighting vehicles, smoke dischargers for reconnaissance and the Advanced Turbine retrofit for power plants.',
+      'Armoured and mechanised doctrine: main battle tanks, infantry fighting vehicles, smoke dischargers for reconnaissance, emergency engine power, and the Advanced Turbine and Assembly Line retrofits.',
     icon: 'tank',
   },
   {
@@ -234,8 +265,15 @@ const TECH_LIST: readonly TechDef[] = Object.freeze([
     cost: { mats: 600, req: 90 },
     seconds: 80,
     requires: ['manoeuvre1'],
-    effects: [{ kind: 'unlockUnit', slot: 'td' }],
-    description: 'Purpose-built anti-armour hulls and the tactics that keep them alive.',
+    effects: [
+      { kind: 'unlockUnit', slot: 'td' },
+      // Survival is the other half of armour doctrine: fire from a prepared
+      // position, and answer the guided round that is already in the air.
+      { kind: 'grantUnitUpgrade', upgrade: 'hullDown' },
+      { kind: 'grantUnitUpgrade', upgrade: 'apsBurst' },
+    ],
+    description:
+      'Purpose-built anti-armour hulls, hull-down deployments and hard-kill active protection for the tactics that keep them alive.',
     icon: 'td',
   },
   {
@@ -247,8 +285,15 @@ const TECH_LIST: readonly TechDef[] = Object.freeze([
     cost: { mats: 300, req: 40 },
     seconds: 45,
     requires: [],
-    effects: [{ kind: 'unlockUnit', slot: 'spg' }],
-    description: 'Observed artillery fire: self-propelled guns and the fire-control chain behind them.',
+    effects: [
+      { kind: 'unlockUnit', slot: 'spg' },
+      { kind: 'grantUnitUpgrade', upgrade: 'firePreparation' },
+      // The same fire-control chain that observes a shoot answers the battery's
+      // own guns, which is what a radar net wired for counter-battery does.
+      { kind: 'grantBuildingModule', module: 'fireControlNet' },
+    ],
+    description:
+      'Observed artillery fire: self-propelled guns, a prepared fire mission, and the fire-control radar net behind them.',
     icon: 'spg',
   },
   {
@@ -277,8 +322,10 @@ const TECH_LIST: readonly TechDef[] = Object.freeze([
       { kind: 'unlockBuilding', slot: 'airfield' },
       { kind: 'unlockUnit', slot: 'uav' },
       { kind: 'unlockUnit', slot: 'interceptor' },
+      { kind: 'grantBuildingModule', module: 'flightlineMaintenance' },
     ],
-    description: 'An operational airfield, reconnaissance drones and point air defence.',
+    description:
+      'An operational airfield with its own flightline maintenance, reconnaissance drones and point air defence.',
     icon: 'airfield',
   },
   {
@@ -293,8 +340,16 @@ const TECH_LIST: readonly TechDef[] = Object.freeze([
     effects: [
       { kind: 'unlockUnit', slot: 'fighter' },
       { kind: 'unlockUnit', slot: 'attackHelo' },
+      // The gunship is a rotary platform, and an airfield's single pad exists to
+      // recover one rather than to base it. The heliport is the facility that
+      // actually fields and sustains a helicopter force, so it is granted by the
+      // node that unlocks the helicopter, not by the one that opens the airfield.
+      { kind: 'unlockBuilding', slot: 'heliport' },
+      // Aircrew that fly beyond the forward line are trained to break a lock.
+      { kind: 'grantUnitUpgrade', upgrade: 'countermeasures' },
     ],
-    description: 'Strike fighters and attack helicopters: reach beyond the forward line.',
+    description:
+      'Strike fighters, attack helicopters and the defensive countermeasures that let a crew survive the return leg.',
     icon: 'fighter',
   },
   {
@@ -310,8 +365,12 @@ const TECH_LIST: readonly TechDef[] = Object.freeze([
       { kind: 'unlockBuilding', slot: 'shipyard' },
       { kind: 'unlockUnit', slot: 'missileBoat' },
       { kind: 'unlockUnit', slot: 'corvette' },
+      // Coastal control is an anti-submarine problem as much as an anti-ship one.
+      { kind: 'grantUnitUpgrade', upgrade: 'sonarSweep' },
+      { kind: 'grantBuildingModule', module: 'harbourSonar' },
     ],
-    description: 'A shipyard, missile boats and corvettes for coastal control.',
+    description:
+      'A shipyard, missile boats and corvettes for coastal control, with active sonar and a harbour sonar suite to find what is under the water.',
     icon: 'shipyard',
   },
   {
@@ -512,6 +571,82 @@ const UPGRADE_LIST: readonly UnitUpgradeDef[] = Object.freeze([
     durationSeconds: 8,
     icon: 'eyeOff',
   },
+  {
+    id: 'hullDown',
+    name: 'Hull-Down Posture',
+    description:
+      'The crew drives onto a ramp or into a scrape and fights from behind it. Direct fire has far less to hit; the hull cannot move while it holds.',
+    eligibleSlots: ['tank', 'td', 'ifv'],
+    kind: 'active',
+    cost: { mats: 80, req: 15 },
+    cooldownSeconds: 40,
+    durationSeconds: 8,
+    icon: 'hold',
+  },
+  {
+    id: 'emergencyPower',
+    name: 'Emergency Power',
+    description:
+      'Governors released for one burst of battle speed. It breaks contact or seizes a position; it does not make the hull tougher or its gun better.',
+    eligibleSlots: ['tank', 'ifv', 'td'],
+    kind: 'active',
+    cost: { mats: 70, req: 12 },
+    cooldownSeconds: 35,
+    durationSeconds: 6,
+    icon: 'speed',
+  },
+  {
+    id: 'apsBurst',
+    name: 'Active Protection',
+    description:
+      'A hard-kill system that engages guided ordnance before it reaches the hull. Rifles, tank guns and artillery are unaffected.',
+    eligibleSlots: ['tank', 'td', 'ifv'],
+    // A doctrinal capability rather than a platform: the Western armour school
+    // fields it, the Eastern school answers missiles with reactive armour and
+    // smoke instead. See the catalogue note in docs/PHASE_1_ABILITIES_AND_MODULES.md.
+    alliances: ['defender'],
+    kind: 'active',
+    cost: { mats: 120, req: 25 },
+    cooldownSeconds: 55,
+    durationSeconds: 6,
+    icon: 'alert',
+  },
+  {
+    id: 'countermeasures',
+    name: 'Defensive Countermeasures',
+    description:
+      'Flares and chaff released against a lock. Anti-aircraft fire is far less effective for a few seconds; an enemy fighter is not affected.',
+    eligibleSlots: ['fighter', 'attackHelo', 'interceptor', 'uav'],
+    kind: 'active',
+    cost: { mats: 110, req: 22 },
+    cooldownSeconds: 45,
+    durationSeconds: 5,
+    icon: 'aa',
+  },
+  {
+    id: 'sonarSweep',
+    name: 'Active Sonar Sweep',
+    description:
+      'A hull-mounted active set pings once and listens. It exposes dived boats around the ship and extends her own picture for a few seconds.',
+    eligibleSlots: ['frigate', 'corvette', 'missileBoat', 'submarine', 'navalSupport'],
+    kind: 'active',
+    cost: { mats: 100, req: 18 },
+    cooldownSeconds: 50,
+    durationSeconds: 10,
+    icon: 'radarstation',
+  },
+  {
+    id: 'firePreparation',
+    name: 'Prepared Fire Mission',
+    description:
+      'The battery lays its guns on a pre-registered target and works them faster for one engagement. Nothing is added to its protection.',
+    eligibleSlots: ['spg', 'rocketArtillery'],
+    kind: 'active',
+    cost: { mats: 130, req: 20 },
+    cooldownSeconds: 50,
+    durationSeconds: 10,
+    icon: 'scope',
+  },
 ]);
 
 /** Every runtime effect carried by a set of installed module ids. */
@@ -520,6 +655,14 @@ export interface ResolvedModuleEffects {
   power: number;
   /** Multiplier applied to a structure's base research speed. */
   researchSpeed: number;
+  /** Extra vision, in tiles, added to the structure's own. */
+  vision: number;
+  /** Multiplier applied to a structure's own production rate. */
+  productionSpeed: number;
+  /** Multiplier on aircraft servicing turnaround at this structure. */
+  serviceSpeed: number;
+  /** Widest passive sonar radius, in tiles, from the installed suite. */
+  sonar: number;
   capabilities: Set<string>;
 }
 
@@ -537,6 +680,10 @@ export function installedModuleEffects(
   const resolved: ResolvedModuleEffects = {
     power: 0,
     researchSpeed: 1,
+    vision: 0,
+    productionSpeed: 1,
+    serviceSpeed: 1,
+    sonar: 0,
     capabilities: new Set(),
   };
   for (const id of moduleIds) {
@@ -545,10 +692,49 @@ export function installedModuleEffects(
     for (const effect of module.effects) {
       if (effect.kind === 'power') resolved.power += effect.amount;
       else if (effect.kind === 'researchSpeed') resolved.researchSpeed *= effect.multiplier;
+      else if (effect.kind === 'vision') resolved.vision += effect.amount;
+      else if (effect.kind === 'productionSpeed') resolved.productionSpeed *= effect.multiplier;
+      else if (effect.kind === 'serviceSpeed') resolved.serviceSpeed *= effect.multiplier;
+      else if (effect.kind === 'sonar') resolved.sonar = Math.max(resolved.sonar, effect.radius);
       else if (effect.kind === 'capability') resolved.capabilities.add(effect.capability);
     }
   }
   return resolved;
+}
+
+/**
+ * Short labels for what a module actually does, straight from its effects.
+ *
+ * The selection box used to summarise every module by its grid contribution,
+ * which made a servicing crew and a sonar suite both read "0 power" — true, and
+ * useless. One label per effect means the summary cannot promise an effect the
+ * simulation does not apply, and a new effect kind shows up the moment it is
+ * resolved.
+ */
+export function moduleEffectSummary(module: BuildingModuleDef): string[] {
+  const labels: string[] = [];
+  for (const effect of module.effects) {
+    if (effect.kind === 'power') {
+      labels.push(effect.amount > 0 ? `+${effect.amount} POWER` : `${effect.amount} POWER`);
+    } else if (effect.kind === 'researchSpeed') {
+      labels.push(`${percentDelta(effect.multiplier)} RESEARCH`);
+    } else if (effect.kind === 'vision') {
+      labels.push(`+${effect.amount} VISION`);
+    } else if (effect.kind === 'productionSpeed') {
+      labels.push(`${percentDelta(effect.multiplier)} PRODUCTION`);
+    } else if (effect.kind === 'serviceSpeed') {
+      labels.push(`${percentDelta(effect.multiplier)} SERVICE`);
+    } else if (effect.kind === 'sonar') {
+      labels.push(`SONAR ${effect.radius}`);
+    } else if (effect.kind === 'capability') {
+      labels.push(effect.capability.toUpperCase());
+    }
+  }
+  return labels;
+}
+
+function percentDelta(multiplier: number): string {
+  return `${Math.round((multiplier - 1) * 100)}%`;
 }
 
 const MODULE_LIST: readonly BuildingModuleDef[] = Object.freeze([
@@ -563,6 +749,59 @@ const MODULE_LIST: readonly BuildingModuleDef[] = Object.freeze([
     capacity: 1,
     effects: [{ kind: 'power', amount: 30 }],
     icon: 'power',
+  },
+  {
+    id: 'assemblyLine',
+    name: 'Assembly Line',
+    description:
+      'A second production line inside one vehicle factory. Research makes it available everywhere; each factory still buys its own.',
+    eligibleSlots: ['factory'],
+    cost: { mats: 500, req: 40 },
+    capacity: 1,
+    effects: [{ kind: 'productionSpeed', multiplier: 1.25 }],
+    icon: 'factory',
+  },
+  {
+    id: 'fireControlNet',
+    name: 'Radar Relay Net',
+    description:
+      'A second receiver and plotting table wired into one radar array. It extends the array\'s detection radius by four tiles and nothing else: no weapons, no accuracy bonus. The name says relay, because that is what the simulation does.',
+    eligibleSlots: ['radar'],
+    cost: { mats: 400, req: 60 },
+    capacity: 1,
+    effects: [{ kind: 'vision', amount: 4 }],
+    icon: 'radarstation',
+  },
+  {
+    id: 'flightlineMaintenance',
+    name: 'Flightline Maintenance',
+    // The module is named for the flightline, so it shortens the flightline's
+    // work: rearming, refuelling and repair. Production time is untouched — a
+    // second servicing crew does not build airframes faster.
+    description:
+      'A second servicing crew and a stocked line under one airfield. Aircraft that land there rearm, refuel and repair a third faster; production time and the structure itself are unchanged.',
+    eligibleSlots: ['airfield'],
+    cost: { mats: 450, req: 55 },
+    capacity: 1,
+    effects: [{ kind: 'serviceSpeed', multiplier: 1.3 }],
+    icon: 'airfield',
+  },
+  {
+    id: 'harbourSonar',
+    name: 'Harbour Sonar Suite',
+    // A real passive set, fed into the same detection pass a sonar escort uses:
+    // a dived boat inside the radius is exposed the way the sea already exposes
+    // it, rather than through a separate mechanic.
+    description:
+      'A fixed passive sonar array under one shipyard, watching the approaches. It detects dived submarines within twelve tiles and extends the harbour watch by three tiles; it adds no weapons of its own.',
+    eligibleSlots: ['shipyard'],
+    cost: { mats: 400, req: 50 },
+    capacity: 1,
+    effects: [
+      { kind: 'vision', amount: 3 },
+      { kind: 'sonar', radius: 12 },
+    ],
+    icon: 'shipyard',
   },
 ]);
 
@@ -695,15 +934,35 @@ export function nextTechnologies(
   );
 }
 
+/**
+ * Whether an alliance-restricted capability is open to this alliance.
+ *
+ * An absent restriction is open to everyone, and an unknown alliance (a forged
+ * or nameless seat) is treated as unrestricted rather than silently locked out
+ * of a capability its research has already paid for.
+ */
+export function allianceAllows(
+  restriction: readonly string[] | undefined,
+  allianceId: string | undefined,
+): boolean {
+  if (!restriction || restriction.length === 0) return true;
+  if (!allianceId) return true;
+  return restriction.includes(allianceId);
+}
+
 /** Upgrades researched globally and still legal for this canonical unit slot. */
 export function upgradesForSlot(
   completed: readonly string[],
   unitSlot: string,
   catalog: ResearchCatalog = RESEARCH,
+  allianceId?: string,
 ): UnitUpgradeDef[] {
   const unlocks = resolveResearchUnlocks(completed, catalog);
   return catalog.upgrades.filter(
-    (upgrade) => unlocks.upgrades.has(upgrade.id) && upgrade.eligibleSlots.includes(unitSlot),
+    (upgrade) =>
+      unlocks.upgrades.has(upgrade.id) &&
+      upgrade.eligibleSlots.includes(unitSlot) &&
+      allianceAllows(upgrade.alliances, allianceId),
   );
 }
 
@@ -712,10 +971,14 @@ export function modulesForSlot(
   completed: readonly string[],
   buildingSlot: string,
   catalog: ResearchCatalog = RESEARCH,
+  allianceId?: string,
 ): BuildingModuleDef[] {
   const unlocks = resolveResearchUnlocks(completed, catalog);
   return catalog.modules.filter(
-    (module) => unlocks.modules.has(module.id) && module.eligibleSlots.includes(buildingSlot),
+    (module) =>
+      unlocks.modules.has(module.id) &&
+      module.eligibleSlots.includes(buildingSlot) &&
+      allianceAllows(module.alliances, allianceId),
   );
 }
 
@@ -792,6 +1055,25 @@ export function validateResearchCatalog(catalog: ResearchCatalog = RESEARCH): Re
   const buildingOwners = new Map<string, string>();
   const upgradeOwners = new Map<string, string>();
   const moduleOwners = new Map<string, string>();
+
+  // A capability restriction has to name a real alliance, or a nation silently
+  // loses an ability it was meant to have.
+  for (const entry of [...catalog.upgrades, ...catalog.modules]) {
+    for (const allianceId of entry.alliances ?? []) {
+      if (!Object.hasOwn(ALLIANCES, allianceId)) {
+        issues.push({
+          code: 'alliance-restriction',
+          message: `Capability "${entry.id}" names unknown alliance "${allianceId}".`,
+        });
+      }
+    }
+    if (entry.alliances && entry.alliances.length === 0) {
+      issues.push({
+        code: 'alliance-restriction',
+        message: `Capability "${entry.id}" has an empty alliance restriction.`,
+      });
+    }
+  }
 
   if (catalog.techs.length === 0) {
     issues.push({ code: 'empty', message: 'The research catalog has no technologies.' });
