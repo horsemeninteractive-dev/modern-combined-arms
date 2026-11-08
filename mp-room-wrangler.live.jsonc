@@ -24,6 +24,13 @@
     "MP_DEFAULT_MATCH_SECONDS": "60",
     "MP_MAX_MATCH_SECONDS": "1800",
     "MP_ABANDON_AFTER_MS": "30000",
+    // Where a finished room delivers its own match report so the account
+    // service can award career XP. The Pages host is the only address the
+    // account Worker accepts, and the request keeps that host through the
+    // forwarder. The matching shared secret is `MP_CAREER_TOKEN` on this Worker
+    // and `MCA_MP_RESULT_TOKEN` on the account Worker, set with `wrangler
+    // secret put` and never written to this file.
+    "MP_CAREER_URL": "https://moderncombinedarms.pages.dev/api/account",
     // The live Pages app, its per-deployment preview hosts, and this worker's
     // own origin. One label of wildcard is allowed, so a preview build can be
     // played before it is promoted; the worker refuses any other Origin on both
