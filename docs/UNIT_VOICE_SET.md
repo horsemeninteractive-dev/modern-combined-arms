@@ -5,14 +5,14 @@ listening and recognition tests have **not** been performed. The audition page i
 ready for that review.
 
 - Engine: Kokoro-82M ONNX (`kokoro-onnx` 0.4.7), fully local.
-- Coverage: **62 unit definitions**, 4 cues each, **3 takes per cue**, **744 clips**.
+- Coverage: **64 unit definitions**, 4 cues each, **3 takes per cue**, **768 clips**.
 - Cast: 62 recorded casts drawing on the 28 English Kokoro voices.
 - Text: every unit's 12 lines are unique, and no line is shared between units.
 - Format: 24 kHz mono MP3, 64 kbps, field-radio processing.
 - Location: `public/audio/unit-voice/`.
 - Contract: `public/audio/unit-voice/manifest.json` (version 3).
 
-The 62 definitions are the 22 canonical slots, the 18 Eastern alliance platforms,
+The 64 definitions are the 24 canonical slots, the 18 Eastern alliance platforms,
 the 10 national replacements, the 10 national exclusives and the 2 national naval
 hulls (`visby`, `ghadir`) — the launch six plus Finland, Sweden, Iran and North
 Korea. The existing strategic announcer in `public/audio/narrator/defender/` is untouched.
@@ -51,6 +51,7 @@ borrowed-crew fallback: a unit without recorded lines would be silent, and
 | Recon Vehicle | `recon` | `am_liam` | 1.06 |
 | AA Vehicle | `aa` | `bf_alice` | 1.00 |
 | Field Recovery Vehicle | `recovery` | `bm_fable` | 0.98 |
+| Armoured Personnel Carrier | `apc` | `am_michael` | 1.00 |
 | Harvester | `harvester` | `am_puck` | 0.96 |
 | Strike Fighter | `fighter` | `bf_lily` | 1.12 |
 | Interceptor | `interceptor` | `af_nova` | 1.12 |
@@ -63,6 +64,7 @@ borrowed-crew fallback: a unit without recorded lines would be silent, and
 | Tank Destroyer | `td` | `am_michael` | 1.00 |
 | Multiple Rocket Launcher | `rocketArtillery` | `am_eric` | 1.00 |
 | Attack Helicopter | `attackHelo` | `bf_lily` | 1.06 |
+| Utility Transport Helicopter | `transportHelo` | `bf_lily` | 1.00 |
 | Fire Support Ship | `navalSupport` | `af_nicole` | 0.96 |
 
 ### National replacements and exclusives
@@ -105,7 +107,7 @@ borrowed-crew fallback: a unit without recorded lines would be silent, and
 | Attack Submarine | `submarineEC` | `af_aoede` | 0.98 |
 | Fire Support Ship | `navalSupportEC` | `af_bella` | 1.00 |
 
-The full script — all 744 sentences — is in `tools/unit-voice/lines.json`, and the
+The full script — all 768 sentences — is in `tools/unit-voice/lines.json`, and the
 generated manifest records the text that was actually synthesized.
 
 ## 3. Uniqueness policy
@@ -237,9 +239,9 @@ manifest.
 
 | Check | Result |
 |---|---|
-| Unit definitions covered | 62 |
-| Clip count | 744 (62 units × 4 cues × 3 takes) |
-| Distinct sentences | 744 |
+| Unit definitions covered | 64 |
+| Clip count | 768 (64 units × 4 cues × 3 takes) |
+| Distinct sentences | 768 |
 | Shared sentences | 0 |
 | Distinct voices used | 28 |
 | Missing/zero-byte files | none |

@@ -223,6 +223,66 @@ export function flagMountFor(
  * cloth is a real texture; the alliance cloth is a solid white quad that the
  * shader recolours through the team mask.
  */
+/** The commander's personal flag hangs below the national cloth. */
+const COMMANDER_CLOTH_TOP = POLE_HEIGHT - 2.26;
+const COMMANDER_ASPECT = 1.5;
+
+/**
+ * Horizontal scale that makes the commander cloth exactly as wide as the two
+ * national cloths above it. Its artwork is 3:2, so a wider national flag widens
+ * the third cloth instead of leaving it visibly smaller.
+ */
+export function commandFlagWidthScale(nation: FlagNation): number {
+  return (FLAG_ASPECT[nation] ?? COMMANDER_ASPECT) / COMMANDER_ASPECT;
+}
+
+/**
+ * The third cloth: the local player's command flag.
+ *
+ * It is geometry only, with no pole of its own, because it hangs from the same
+ * mast as the other two and samples a rasterised composition instead of a
+ * national texture. Campaign and menu play never mount it.
+ */
+export function buildCommandFlagCloth(): FlagRig {
+  const b = new MeshBuilder();
+  const wind: number[] = [];
+  const uv: number[] = [];
+  const texMask: number[] = [];
+  const width = CLOTH_HEIGHT * COMMANDER_ASPECT;
+  const hoist = 0.07;
+  const y0 = COMMANDER_CLOTH_TOP - CLOTH_HEIGHT;
+  for (let iy = 0; iy < CLOTH_SEGMENTS_Y; iy++) {
+    const v0 = iy / CLOTH_SEGMENTS_Y;
+    const v1 = (iy + 1) / CLOTH_SEGMENTS_Y;
+    for (let ix = 0; ix < CLOTH_SEGMENTS_X; ix++) {
+      const u0 = ix / CLOTH_SEGMENTS_X;
+      const u1 = (ix + 1) / CLOTH_SEGMENTS_X;
+      const x0 = hoist + u0 * width;
+      const x1 = hoist + u1 * width;
+      const py0 = y0 + v0 * CLOTH_HEIGHT;
+      const py1 = y0 + v1 * CLOTH_HEIGHT;
+      const z0 = Math.sin((u0 + u1) * Math.PI) * 0.035;
+      b.addQuad(
+        [x0, py0, z0],
+        [x1, py0, z0],
+        [x1, py1, z0],
+        [x0, py1, z0],
+        PALETTE.white,
+        0,
+      );
+      wind.push(u0, u1, u1, u0);
+      uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
+      texMask.push(1, 1, 1, 1);
+    }
+  }
+  return {
+    ...b.build(),
+    wind: new Float32Array(wind),
+    uv: new Float32Array(uv),
+    texMask: new Float32Array(texMask),
+  };
+}
+
 export function buildFlagRig(nation: FlagNation): FlagRig {
   const b = new MeshBuilder();
   // Pole, base and finial.

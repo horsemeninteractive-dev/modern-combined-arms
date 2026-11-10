@@ -6,6 +6,7 @@ import { parseScenario, type Scenario } from '../sim/scenario';
 import type { SaveData, SerializedGameState } from '../sim/save';
 import type { Entity, Projectile, VictoryState } from '../sim/types';
 import { evaluateMatchResult, type NeutralMatchResult } from './matchResult';
+import { identitySnapshot, type IdentitySnapshot } from '../accounts/identity';
 
 /**
  * A room snapshot is the server's recovery record, not a client save.
@@ -67,8 +68,19 @@ export interface RoomSnapshotV2 {
   tick: number;
   timing: RoomTimingSnapshot;
   seats: RoomSeatSnapshot[];
+  /**
+   * Frozen match-start identity presentation, one entry per seat. Optional so
+   * snapshots written before Phase 4B still restore; when present it is the
+   * only identity a reconnect or result may display.
+   */
+  identities?: RoomSeatIdentitySnapshot[];
   result: NeutralMatchResult;
   simulation: SaveData;
+}
+
+export interface RoomSeatIdentitySnapshot {
+  seatId: number;
+  identity: IdentitySnapshot | null;
 }
 
 /** The pre-2A.11 envelope, retained only as an explicit migration input. */
@@ -101,6 +113,7 @@ export type RoomSnapshotErrorCode =
   | 'invalid-tick'
   | 'invalid-timing'
   | 'invalid-seats'
+  | 'invalid-identities'
   | 'invalid-scenario'
   | 'invalid-save'
   | 'invalid-map'
@@ -136,6 +149,7 @@ export interface CreateRoomSnapshotOptions {
   timing?: RoomTimingSnapshot;
   now?: number;
   result?: NeutralMatchResult;
+  identities?: readonly RoomSeatIdentitySnapshot[];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -240,6 +254,41 @@ function validateSeats(
     });
   }
   return seats;
+}
+
+/**
+ * Validate the optional match-start identity table. It must cover every seat,
+ * so a malformed or partial table cannot make a reconnect display ambiguous
+ * ownership. Identity fields are sanitised through the same account validator
+ * used by the ticket edge, which drops unknown frames and backgrounds.
+ */
+function validateMatchIdentities(
+  value: unknown,
+  seats: readonly RoomSeatSnapshot[],
+): RoomSeatIdentitySnapshot[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length !== seats.length) {
+    fail('invalid-identities', 'Match identity table must cover every seat.');
+  }
+  const seatIds = new Set(seats.map((seat) => seat.seatId));
+  const seen = new Set<number>();
+  const identities: RoomSeatIdentitySnapshot[] = [];
+  for (const raw of value) {
+    if (!isRecord(raw)) fail('invalid-identities', 'Match identity entry is malformed.');
+    if (!integer(raw.seatId) || !seatIds.has(raw.seatId) || seen.has(raw.seatId)) {
+      fail('invalid-identities', 'Match identity seat is invalid or duplicated.');
+    }
+    if (raw.identity !== null && !isRecord(raw.identity)) {
+      fail('invalid-identities', 'Match identity presentation is malformed.');
+    }
+    const identity = raw.identity === null ? null : identitySnapshot(raw.identity);
+    if (raw.identity !== null && !identity) {
+      fail('invalid-identities', 'Match identity presentation is invalid.');
+    }
+    seen.add(raw.seatId);
+    identities.push({ seatId: raw.seatId, identity });
+  }
+  return identities;
 }
 
 /**
@@ -599,6 +648,7 @@ export function validateRoomSnapshot(
         result.phase === 'finished' || raw.tick > 0,
       )
     : validateSeats(raw.seats, players);
+  const identities = legacy ? undefined : validateMatchIdentities(raw.identities, seats);
   const timing = legacy ? migrateLegacyTiming(result, raw.createdAt) : validateTiming(raw.timing, result);
 
   // A started match must carry a durable start. The only permitted missing
@@ -628,6 +678,7 @@ export function validateRoomSnapshot(
     tick: raw.tick,
     timing: { ...timing, startedAtMs },
     seats,
+    ...(identities ? { identities } : {}),
     result,
     simulation: simulation as unknown as SaveData,
   };
@@ -638,6 +689,7 @@ export function createRoomSnapshot(game: Game, options: CreateRoomSnapshotOption
     throw new RoomSnapshotError('invalid-room', 'Room id is invalid.');
   }
   const seats = validateSeats(options.seats, game.state.players);
+  const identities = validateMatchIdentities(options.identities, seats);
   const abandonedTeams = seats.filter((seat) => seat.abandoned).map((seat) => seat.team);
   const simulation = game.toSave();
   const now = options.now ?? Date.now();
@@ -652,6 +704,7 @@ export function createRoomSnapshot(game: Game, options: CreateRoomSnapshotOption
     tick: game.state.tick,
     timing,
     seats,
+    ...(identities ? { identities } : {}),
     result,
     simulation,
   };

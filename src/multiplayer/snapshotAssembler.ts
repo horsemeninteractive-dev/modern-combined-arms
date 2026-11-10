@@ -168,7 +168,8 @@ function validateEntity(value: unknown, worldWidth: number, worldHeight: number)
       'id', 'kind', 'defId', 'owner', 'team', 'x', 'z', 'facing', 'turretFacing', 'hp', 'maxHp',
       'state', 'stance', 'buildProgress', 'construction', 'remembered', 'queue', 'rallyX',
       'rallyZ', 'targetId', 'garrisonId', 'xp', 'upgrades', 'modules', 'cooldowns', 'effects',
-      'deconstruct', 'harvester', 'captureTargetId', 'captureProgress',
+      'deconstruct', 'harvester', 'captureTargetId', 'captureProgress', 'aircraft',
+      'navalLanding',
     ],
     'Entity',
   );
@@ -257,6 +258,69 @@ function validateEntity(value: unknown, worldWidth: number, worldHeight: number)
     for (const key of ['oreTileX', 'oreTileZ'] as const) {
       assert(isInt(value.harvester[key], -1), `Entity harvester ${key} is invalid.`);
     }
+  }
+  if (value.aircraft !== undefined) {
+    assert(value.remembered === undefined, 'A remembered entity must not carry airframe state.');
+    assert(isRecord(value.aircraft), 'Entity aircraft state is invalid.');
+    checkKeys(
+      value.aircraft,
+      ['landed', 'returningHome', 'climb', 'fieldLanding'],
+      'Entity aircraft',
+    );
+    assert(typeof value.aircraft.landed === 'boolean', 'Entity aircraft landed flag is invalid.');
+    assert(
+      typeof value.aircraft.returningHome === 'boolean',
+      'Entity aircraft returning flag is invalid.',
+    );
+    assert(
+      value.aircraft.climb === undefined ||
+        (isNum(value.aircraft.climb) && value.aircraft.climb >= 0 && value.aircraft.climb <= 1),
+      'Entity aircraft climb is invalid.',
+    );
+    if (value.aircraft.fieldLanding !== undefined) {
+      const landing = value.aircraft.fieldLanding;
+      assert(isRecord(landing), 'Entity field landing is invalid.');
+      checkKeys(landing, ['x', 'z', 'purpose'], 'Entity field landing');
+      assert(
+        isNum(landing.x) && landing.x >= 0 && landing.x <= worldWidth,
+        'Entity field landing x is invalid.',
+      );
+      assert(
+        isNum(landing.z) && landing.z >= 0 && landing.z <= worldHeight,
+        'Entity field landing z is invalid.',
+      );
+      assert(
+        landing.purpose === 'board' || landing.purpose === 'unload' || landing.purpose === 'idle',
+        'Entity field landing purpose is invalid.',
+      );
+    }
+  }
+  if (value.navalLanding !== undefined) {
+    assert(value.remembered === undefined, 'A remembered entity must not carry landing state.');
+    assert(isRecord(value.navalLanding), 'Entity naval landing state is invalid.');
+    checkKeys(value.navalLanding, ['x', 'z', 'purpose', 'beached'], 'Entity naval landing');
+    assert(
+      isNum(value.navalLanding.x) &&
+        value.navalLanding.x >= 0 &&
+        value.navalLanding.x <= worldWidth,
+      'Entity naval landing x is invalid.',
+    );
+    assert(
+      isNum(value.navalLanding.z) &&
+        value.navalLanding.z >= 0 &&
+        value.navalLanding.z <= worldHeight,
+      'Entity naval landing z is invalid.',
+    );
+    assert(
+      value.navalLanding.purpose === 'board' ||
+        value.navalLanding.purpose === 'unload' ||
+        value.navalLanding.purpose === 'idle',
+      'Entity naval landing purpose is invalid.',
+    );
+    assert(
+      typeof value.navalLanding.beached === 'boolean',
+      'Entity naval landing beached flag is invalid.',
+    );
   }
   assert(
     value.captureTargetId === undefined || isInt(value.captureTargetId, 1),

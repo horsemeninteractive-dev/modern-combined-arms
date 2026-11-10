@@ -10,19 +10,29 @@
  * The ledger keeps the most recent matches only; a career is summarised by its
  * totals, and a bounded history is all the UI shows. The server recomputes XP
  * for each imported row, so this file is never trusted for value.
+ *
+ * Version 2 adds the accomplishment counters the guest achievement evaluator
+ * needs (objectives, sites, superweapons, structures). A version 1 ledger is
+ * read as-is with those counters at zero, so an upgrade loses no history.
  */
 import {
   careerRecord,
   parseCareerMatch,
   summariseCareer,
   MAX_GUEST_IMPORT_MATCHES,
+  type CareerAccomplishments,
   type CareerMatchInput,
   type CareerMatchRecord,
   type CareerTotals,
 } from './career';
 
 export const CAREER_STORAGE_KEY = 'mca.career.v1';
-export const CAREER_STORAGE_VERSION = 1 as const;
+export const CAREER_STORAGE_VERSION = 2 as const;
+/** The document version that predates accomplishment counters. */
+export const CAREER_STORAGE_VERSION_LEGACY = 1 as const;
+
+/** A ledger row: the career record plus what the operation accomplished. */
+export type LocalCareerEntry = CareerMatchRecord & { accomplishments?: CareerAccomplishments };
 
 /** The slice of Web Storage this module needs. */
 export interface CareerStorage {
@@ -32,11 +42,33 @@ export interface CareerStorage {
 
 interface StoredCareer {
   version: typeof CAREER_STORAGE_VERSION;
-  matches: CareerMatchRecord[];
+  matches: LocalCareerEntry[];
 }
+
+const ACCOMPLISHMENT_FIELDS = [
+  'objectivesCompleted',
+  'sitesCaptured',
+  'superweaponsUsed',
+  'structuresDestroyed',
+  'structuresBuilt',
+] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
+}
+
+/** Only bounded non-negative integers are kept; anything else is dropped. */
+function parseAccomplishments(value: unknown): CareerAccomplishments | undefined {
+  if (!isRecord(value)) return undefined;
+  const parsed: CareerAccomplishments = {};
+  let any = false;
+  for (const field of ACCOMPLISHMENT_FIELDS) {
+    const raw = value[field];
+    if (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0) continue;
+    parsed[field] = Math.min(10_000, Math.floor(raw));
+    any = true;
+  }
+  return any ? parsed : undefined;
 }
 
 /**
@@ -44,7 +76,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Unknown modes, out-of-range durations and free-form text are dropped rather
  * than rendered.
  */
-function reviveMatch(value: unknown): CareerMatchRecord | null {
+function reviveMatch(value: unknown): LocalCareerEntry | null {
   if (!isRecord(value)) return null;
   const parsed = parseCareerMatch(value);
   if (!parsed.ok) return null;
@@ -56,7 +88,10 @@ function reviveMatch(value: unknown): CareerMatchRecord | null {
     : 'local';
   // XP is recomputed from the shared rules; a stored value is only a cache and
   // disagreement is resolved in favour of the rules.
-  return careerRecord(parsed.value, { provenance, now: recordedAt });
+  const record: LocalCareerEntry = careerRecord(parsed.value, { provenance, now: recordedAt });
+  const accomplishments = parseAccomplishments(value.accomplishments);
+  if (accomplishments) record.accomplishments = accomplishments;
+  return record;
 }
 
 export function readLocalCareer(storage: CareerStorage): StoredCareer {
@@ -73,12 +108,17 @@ export function readLocalCareer(storage: CareerStorage): StoredCareer {
   } catch {
     return { version: CAREER_STORAGE_VERSION, matches: [] };
   }
-  if (!isRecord(parsed) || parsed.version !== CAREER_STORAGE_VERSION || !Array.isArray(parsed.matches)) {
+  if (!isRecord(parsed) || !Array.isArray(parsed.matches)) {
+    return { version: CAREER_STORAGE_VERSION, matches: [] };
+  }
+  // Accept the legacy document as well: it is the same shape without
+  // accomplishments, and dropping it would erase a guest's played history.
+  if (parsed.version !== CAREER_STORAGE_VERSION && parsed.version !== CAREER_STORAGE_VERSION_LEGACY) {
     return { version: CAREER_STORAGE_VERSION, matches: [] };
   }
   const matches = parsed.matches
     .map(reviveMatch)
-    .filter((match): match is CareerMatchRecord => match !== null)
+    .filter((match): match is LocalCareerEntry => match !== null)
     .slice(0, MAX_GUEST_IMPORT_MATCHES);
   return { version: CAREER_STORAGE_VERSION, matches };
 }
@@ -91,6 +131,11 @@ function writeLocalCareer(storage: CareerStorage, career: StoredCareer): void {
   }
 }
 
+/** Every match the local ledger holds, newest first. */
+export function localCareerAllMatches(storage: CareerStorage): LocalCareerEntry[] {
+  return readLocalCareer(storage).matches;
+}
+
 /**
  * Add one match to the guest ledger. `duplicate` means this reference is already
  * recorded, which is what makes a double-clicked end screen harmless.
@@ -99,10 +144,13 @@ export function recordLocalMatch(
   storage: CareerStorage,
   input: CareerMatchInput,
   now: number = Date.now(),
-): { record: CareerMatchRecord; duplicate: boolean } {
+  accomplishments?: CareerAccomplishments,
+): { record: LocalCareerEntry; duplicate: boolean } {
   const career = readLocalCareer(storage);
   const existing = career.matches.find((match) => match.ref === input.ref);
-  const record = careerRecord(input, { provenance: 'local', now });
+  const record: LocalCareerEntry = careerRecord(input, { provenance: 'local', now });
+  const parsed = parseAccomplishments(accomplishments);
+  if (parsed) record.accomplishments = parsed;
   if (existing) return { record: existing, duplicate: true };
   const matches = [record, ...career.matches].slice(0, MAX_GUEST_IMPORT_MATCHES);
   writeLocalCareer(storage, { version: CAREER_STORAGE_VERSION, matches });
@@ -134,4 +182,3 @@ export function guestCareerPayload(storage: CareerStorage): CareerMatchInput[] {
     unitsLost: match.unitsLost,
   }));
 }
-

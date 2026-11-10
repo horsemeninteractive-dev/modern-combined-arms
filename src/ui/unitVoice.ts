@@ -61,6 +61,7 @@ const RECORDED_VOICE_SETS: ReadonlySet<string> = new Set([
   'recon',
   'aa',
   'recovery',
+  'apc',
   'harvester',
   'fighter',
   'interceptor',
@@ -69,11 +70,13 @@ const RECORDED_VOICE_SETS: ReadonlySet<string> = new Set([
   'corvette',
   'submarine',
   'frigate',
+  'landingCraft',
   // Formerly shared roles, now Defender platforms in their own right.
   'ifv',
   'td',
   'rocketArtillery',
   'attackHelo',
+  'transportHelo',
   'navalSupport',
   // National replacements.
   'pathfinder',

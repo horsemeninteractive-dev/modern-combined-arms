@@ -177,7 +177,20 @@ function stateLabel(e: Entity): string {
     }
     return `SURFACED ${Math.round((e.submarine.battery / e.submarine.maxBattery) * 100)}%`;
   }
+  if (e.navalLanding) {
+    if (e.navalLanding.beached) return 'BEACHED';
+    return 'APPROACHING SHORE';
+  }
+  if (e.kind === 'unit' && UNITS[e.defId]?.domain === 'naval' && UNITS[e.defId]?.transport) {
+    return 'AT SEA';
+  }
   if (e.aircraft) {
+    if (UNITS[e.defId]?.transport) {
+      if (e.aircraft.roll?.next === 'fieldLand') return 'LANDING';
+      if (e.aircraft.landed) return 'LANDED';
+      if (e.aircraft.fieldLanding) return 'APPROACHING LZ';
+      return 'AIRBORNE';
+    }
     if (e.aircraft.landed) return e.aircraft.serviceTimer > 0 ? 'REARMING' : 'GROUNDED';
     if (e.aircraft.returningHome) return 'RETURNING TO BASE';
     return e.state === 'attacking' ? 'ENGAGING' : 'AIRBORNE';
@@ -520,9 +533,10 @@ export class HUD {
         <button class="cmd-btn" data-cmd="hold" data-act="hold" title="Hold position (H)">${icon('hold')}<span class="lbl">HOLD POS</span><kbd class="cmd-key" aria-hidden="true">H</kbd></button>
         <button class="cmd-btn" data-cmd="capture" data-act="capture" title="Capture a strategic objective (C)">${icon('capture')}<span class="lbl">CAPTURE</span><kbd class="cmd-key" aria-hidden="true">C</kbd></button>
         <button class="cmd-btn" data-cmd="repair" data-act="repair" title="Repair a damaged structure, or resume your own construction site (then tap/click it)">${icon('repair')}<span class="lbl">REPAIR</span></button>
-        <button class="cmd-btn" data-cmd="garrison" data-act="garrison" title="Garrison a building (G)">${icon('garrison')}<span class="lbl">GARRISON</span><kbd class="cmd-key" aria-hidden="true">G</kbd></button>
-        <button class="cmd-btn" data-cmd="ungarrison" data-act="ungarrison" title="Order infantry out of a building">${icon('ungarrison')}<span class="lbl">EXIT</span></button>
+        <button class="cmd-btn" data-cmd="garrison" data-act="garrison" title="Board a transport or garrison a building (G)">${icon('garrison')}<span class="lbl">GARRISON</span><kbd class="cmd-key" aria-hidden="true">G</kbd></button>
+        <button class="cmd-btn" data-cmd="ungarrison" data-act="ungarrison" title="Unload a transport or order infantry out of a building">${icon('ungarrison')}<span class="lbl">EXIT</span></button>
         <button class="cmd-btn" data-cmd="return" data-act="return" title="Return aircraft / ship to base (R)">${icon('return')}<span class="lbl">RETURN</span><kbd class="cmd-key" aria-hidden="true">R</kbd></button>
+        <button class="cmd-btn" data-cmd="land" data-act="land" title="Land transport helicopters on open ground (then tap/click)">${icon('transportHelo')}<span class="lbl">LAND</span></button>
         <button class="cmd-btn" data-cmd="dive" data-act="dive" title="Dive or surface selected submarines (D)">${icon('submarine')}<span class="lbl">DIVE</span><kbd class="cmd-key" aria-hidden="true">D</kbd></button>
         <div class="cmd-sep" data-cmd="supportSep"></div>
         <button class="cmd-btn accent" data-cmd="build" data-act="build" title="Construction (B)">${icon('build')}<span class="lbl">BUILD</span><kbd class="cmd-key" aria-hidden="true">B</kbd></button>
@@ -565,17 +579,28 @@ export class HUD {
       garrison: has((e) => !!UNITS[e.defId]?.canGarrison && !e.garrisonId),
       ungarrison:
         units.some((e) => !!e.garrisonId) ||
-        own.some(
-          (e) =>
-            e.kind === 'building' &&
-            game
-              .garrisonOccupants(e.id)
-              .some((occupant) => occupant.owner === this.app.localPlayerId),
-        ),
+        this.app.selectedEntities().some((e) => {
+          if (e.kind !== 'building' && !UNITS[e.defId]?.transport) return false;
+          if (e.kind === 'unit') {
+            const domain = UNITS[e.defId]?.domain;
+            if (domain === 'air' || domain === 'naval') {
+              return e.owner === this.app.localPlayerId;
+            }
+          }
+          return game
+            .garrisonOccupants(e.id)
+            .some((occupant) => occupant.owner === this.app.localPlayerId);
+        }),
       return: has((e) => {
         const domain = UNITS[e.defId]?.domain;
         return domain === 'air' || domain === 'naval';
       }),
+      land: has(
+        (e) =>
+          UNITS[e.defId]?.domain === 'air' &&
+          !!UNITS[e.defId]?.transport &&
+          !!e.aircraft,
+      ),
       dive: has((e) => !!UNITS[e.defId]?.submarine),
       supportSep: true,
       build: true,
@@ -1014,6 +1039,9 @@ export class HUD {
         break;
       case 'return':
         this.app.commandReturn();
+        break;
+      case 'land':
+        this.app.setMode('land');
         break;
       case 'dive':
         this.app.commandDive();
@@ -1895,8 +1923,8 @@ export class HUD {
     if (!body) return;
     if (entities.length === 0) {
       const hint = this.layout === 'mobile'
-        ? 'Tap a unit or drag a box. Tap the battlefield to move; tap an enemy to attack. Use GARRISON to occupy a building.'
-        : 'Click a unit or drag a box. Right-click to move or attack. Engineers capture objectives and repair structures; infantry can garrison eligible buildings.';
+        ? 'Tap a unit or drag a box. Tap the battlefield to move; tap an enemy to attack. Use GARRISON to occupy a building or board an APC.'
+        : 'Click a unit or drag a box. Right-click to move or attack. Engineers capture objectives and repair structures; infantry can garrison buildings or board an APC.';
       body.innerHTML = `
         <div class="idle-hint">
           <span class="hint-title">NO FORCES SELECTED</span>
@@ -1963,12 +1991,15 @@ export class HUD {
     const def = e.kind === 'unit' ? UNITS[e.defId] : BUILDINGS[e.defId];
     const p = game.player(e.owner);
     const isOwn = e.owner === this.app.localPlayerId;
+    const isFriendly = e.owner >= 0 && !game.isHostile(e.owner, this.app.localPlayerId);
     const isEnemy = e.owner !== this.app.localPlayerId && p && game.isHostile(e.owner, this.app.localPlayerId);
     const frac = clamp01(e.hp / e.maxHp);
     const iconName = def?.icon ?? 'target';
     const objective = BUILDINGS[e.defId]?.capturable ? objectiveMeterState(game, e) : null;
     const garrisonDef = e.kind === 'building' ? BUILDINGS[e.defId]?.garrison : undefined;
-    const occupants = garrisonDef ? game.garrisonOccupants(e.id) : [];
+    const transportDef = e.kind === 'unit' ? UNITS[e.defId]?.transport : undefined;
+    const occupants =
+      garrisonDef || (transportDef && isFriendly) ? game.garrisonOccupants(e.id) : [];
     const stateText = objective ? objective.caption : stateLabel(e);
     // Role only: the live state is already a value in the middle column, so
     // repeating it here only pushed the role line past the column width.
@@ -2081,6 +2112,26 @@ export class HUD {
             ? 'HOSTILE'
             : 'OCCUPIED';
       statusLines += `<div class="sel-line"><span>GARRISON ${occupancy}/${garrisonDef.capacity} · ${ownerBreakdown}</span><b>${Math.round(garrisonDef.protection * 100)}% PROT · ${garrisonDef.firingSlots} SLOTS</b></div>`;
+    }
+    if (transportDef) {
+      const occupancy = Math.min(transportDef.capacity, occupants.length);
+      const names = [...new Set(occupants.map((u) => UNITS[u.defId]?.shortName ?? u.defId))];
+      const mix = names.length > 0 ? ` · ${names.join(' + ')}` : ' · EMPTY';
+      const airState = e.aircraft
+        ? e.aircraft.roll?.next === 'fieldLand'
+          ? ' · LANDING'
+          : e.aircraft.landed
+            ? ' · LANDED'
+            : ' · AIRBORNE'
+        : '';
+      const seaState = e.navalLanding
+        ? e.navalLanding.beached
+          ? ' · BEACHED'
+          : ' · APPROACHING SHORE'
+        : UNITS[e.defId]?.domain === 'naval'
+          ? ' · AT SEA'
+          : '';
+      statusLines += `<div class="sel-line"><span>PASSENGERS ${occupancy}/${transportDef.capacity}${airState}${seaState}${escapeHtml(mix)}</span><b>${Math.max(0, transportDef.capacity - occupancy)} SPACES</b></div>`;
     }
     if (e.deconstruct) {
       const quote = game.sellQuote(e.id);
@@ -2477,10 +2528,45 @@ export class HUD {
         e.kind === 'building' &&
         game.garrisonOccupants(e.id).some((u) => u.owner === this.app.localPlayerId),
     );
-    if (!eligible && !inside && !holdsBuilding) return '';
+    const holdsTransport = entities.some((e) => {
+      if (
+        e.kind !== 'unit' ||
+        e.owner < 0 ||
+        game.isHostile(e.owner, this.app.localPlayerId) ||
+        !UNITS[e.defId]?.transport
+      ) {
+        return false;
+      }
+      // Air and naval carriers move under their owner's command, so only the
+      // owner may open the carrier-wide unload transaction. A ground carrier
+      // still lets a passenger owner extract their own squad.
+      const domain = UNITS[e.defId]?.domain;
+      if (domain === 'air' || domain === 'naval') return e.owner === this.app.localPlayerId;
+      return game.garrisonOccupants(e.id).some((u) => u.owner === this.app.localPlayerId);
+    });
+    const insideTransport = entities.some((e) => {
+      if (e.kind !== 'unit' || !e.garrisonId) return false;
+      const carrier = game.getEntity(e.garrisonId);
+      if (!carrier || !UNITS[carrier.defId]?.transport) return false;
+      const domain = UNITS[carrier.defId]?.domain;
+      return domain !== 'air' && domain !== 'naval' || carrier.owner === this.app.localPlayerId;
+    });
+    const ownTransport = entities.some(
+      (e) => e.kind === 'unit' && e.owner === this.app.localPlayerId && !!UNITS[e.defId]?.transport,
+    );
+    if (!eligible && !inside && !holdsBuilding && !holdsTransport && !insideTransport && !ownTransport) {
+      return '';
+    }
+    const unload = holdsTransport || insideTransport;
+    const unloadButton =
+      unload || inside || holdsBuilding
+        ? `<button class="mini-btn" data-ungarrison-order>${unload ? 'UNLOAD ALL' : 'EXIT BUILDING'}</button>`
+        : ownTransport
+          ? `<button class="mini-btn" disabled title="No passengers aboard">UNLOAD ALL</button>`
+          : '';
     return `<div class="sel-orders garrison-orders">
-      ${eligible ? `<button class="mini-btn" data-garrison-order>GARRISON</button>` : ''}
-      ${inside || holdsBuilding ? `<button class="mini-btn" data-ungarrison-order>EXIT BUILDING</button>` : ''}
+      ${eligible ? `<button class="mini-btn" data-garrison-order>BOARD / GARRISON</button>` : ''}
+      ${unloadButton}
     </div>`;
   }
 
@@ -3265,7 +3351,7 @@ export class HUD {
       attackMove: 'ATTACK-MOVE — select a destination',
       capture: 'CAPTURE — select a strategic objective',
       repair: 'REPAIR — select a damaged structure or your own building site',
-      garrison: 'GARRISON — select a building',
+      garrison: 'GARRISON / BOARD — select a building or friendly transport',
       box: 'BOX SELECT — drag across units',
       superweapon: 'STRATEGIC OPERATION — choose a target on the map [ESC cancels]',
       place: this.app.placeDefId ? `PLACE ${BUILDINGS[this.app.placeDefId]?.name.toUpperCase() ?? 'STRUCTURE'}` : 'PLACEMENT',
@@ -3734,6 +3820,7 @@ export class HUD {
                 ? missionDebriefMarkup(missionResult, {
                     ...(missionDoc ? { mission: missionDoc } : {}),
                     outlook: campaignOutlook,
+                    flag: this.app.matchFlagSnapshot(game),
                   })
                 : ''
             }

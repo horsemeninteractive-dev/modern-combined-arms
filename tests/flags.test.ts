@@ -10,7 +10,9 @@ import {
   BUILDING_FLAG_ANCHORS,
   FLAG_NATIONS,
   allianceFlagColor,
+  buildCommandFlagCloth,
   buildFlagRig,
+  commandFlagWidthScale,
   flagAnchorFor,
   flagColorForOwner,
   flagMountFor,
@@ -141,6 +143,38 @@ describe('flag rig', () => {
     expect(width('finland')).toBeGreaterThan(width('sweden'));
     expect(width('sweden')).toBeGreaterThan(width('russia'));
     expect(width('northKorea')).toBeCloseTo(width('uk'), 5);
+  });
+
+  it('adds a third textured cloth for the commander flag, hanging below the other two', () => {
+    const cloth = buildCommandFlagCloth();
+    const vertices = cloth.positions.length / 3;
+    expect(vertices).toBe(CLOTH_VERTICES);
+    expect(cloth.wind).toHaveLength(vertices);
+    expect(cloth.uv).toHaveLength(vertices * 2);
+    expect(cloth.texMask.every((mask) => mask === 1)).toBe(true);
+    expect(Math.max(...cloth.uv)).toBe(1);
+    expect(Math.min(...cloth.wind)).toBe(0);
+    expect(Math.max(...cloth.wind)).toBe(1);
+    // Geometry only: the cloth hangs from the shared mast, with no second pole.
+    let minY = Infinity;
+    for (let i = 1; i < cloth.positions.length; i += 3) minY = Math.min(minY, cloth.positions[i]);
+    expect(minY).toBeGreaterThan(1);
+    // Scaled to the national cloth's width, so all three cloths match.
+    expect(commandFlagWidthScale('russia')).toBeCloseTo(1, 5);
+    expect(commandFlagWidthScale('uk')).toBeCloseTo(2 / 1.5, 5);
+    expect(commandFlagWidthScale('lithuania')).toBeCloseTo(5 / 3 / 1.5, 5);
+    for (const nation of FLAG_NATIONS) {
+      expect(commandFlagWidthScale(nation), nation).toBeGreaterThanOrEqual(1);
+    }
+    // Its lower edge sits under the national cloth of every nation's rig.
+    for (const nation of FLAG_NATIONS) {
+      const rig = buildFlagRig(nation);
+      let nationalMinY = Infinity;
+      for (let i = 0; i < rig.texMask.length; i++) {
+        if (rig.texMask[i] === 1) nationalMinY = Math.min(nationalMinY, rig.positions[i * 3 + 1]);
+      }
+      expect(minY, nation).toBeLessThan(nationalMinY);
+    }
   });
 
   it('turns the cloth toward the fixed tactical camera', () => {

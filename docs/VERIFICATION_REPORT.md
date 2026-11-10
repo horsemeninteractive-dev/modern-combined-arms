@@ -3016,3 +3016,22 @@ the Spearhead's efficiency, MLRS reach without counter-battery fire, and the
 Pathfinder's cheap 16-tile vision. Signature abilities, national upgrades and
 national additions/exclusions are deferred; there is no research tree to hang
 them on yet.
+
+---
+
+## Phase 4E verification (2026-11-09)
+
+The current-state audit for identity, career, cosmetics and multiplayer
+integration is recorded in [PHASE_4E_AUDIT.md](PHASE_4E_AUDIT.md). That report,
+not the historical sections above, is the current evidence for the Phase 4C–4E
+working tree.
+
+Two defects were fixed with regressions: guest migration now reserves the guest
+as `pending` before importing (a second account cannot copy another player's
+guest career), and the room Workers' default match length is 600 s rather than
+60 s so a default room clears the 180 s career reward floor. Two broken evidence
+links and the README's test-file count were corrected.
+
+Checks for this change set, with exact commands, are listed in the audit report.
+Remote D1 migration state, Worker secrets and a live two-account multiplayer
+match remain unverified and are listed there as external.

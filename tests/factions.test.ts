@@ -66,8 +66,17 @@ describe('faction content registry', () => {
     const distinct = ALLIANCES.defender.baseline.units.filter(
       (id, index) => id !== ALLIANCES.eastern.baseline.units[index],
     );
-    // The four utility roles are common equipment; every combat slot differs.
-    expect(shared.sort()).toEqual(['engineer', 'harvester', 'medic', 'recovery']);
+    // The four utility roles, the APC and the shared transport helicopter are
+    // common equipment; every combat slot differs.
+    expect(shared.sort()).toEqual([
+      'apc',
+      'engineer',
+      'harvester',
+      'landingCraft',
+      'medic',
+      'recovery',
+      'transportHelo',
+    ]);
     expect(distinct.length).toBe(18);
     // Neither alliance may borrow the other's platform, and both resolve each
     // slot on the same canonical root.

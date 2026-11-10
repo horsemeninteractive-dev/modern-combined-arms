@@ -20,6 +20,14 @@ import { REPAIR_SUPPRESSION_TICKS, TILE_SIZE } from './constants';
 import { dist } from '../core/math';
 import { Terrain, canStandOn, tileIndex } from './terrain';
 import { canWeaponTarget, entityWeapons } from './combat';
+import { containerAcceptsPassenger, containerBoardingReady } from './containers';
+import {
+  coastalStagingPoint,
+  lineCrossesWater,
+  transportDemand,
+  transportKindOf,
+  waterApproachTo,
+} from './transportAI';
 import type {
   AIControlState,
   AIDifficulty,
@@ -27,6 +35,7 @@ import type {
   BuildingDef,
   Entity,
   PlayerState,
+  TransportOperation,
 } from './types';
 
 /**
@@ -987,7 +996,10 @@ export class AIController {
     const strategy: AIStrategy = STRATEGY_OPENING[st.strategy] ? st.strategy : profile.strategy;
     st.strategy = strategy;
 
-    const own = game.entitiesOf(ai.id).filter((e) => e.hp > 0);
+    // A dormant mission group is on the map but not under command yet: it must
+    // not be counted, spent, or ordered by the commander until the mission
+    // releases it.
+    const own = game.entitiesOf(ai.id).filter((e) => e.hp > 0 && !e.missionHold);
     const buildings = own.filter((e) => e.kind === 'building');
     const complete = buildings.filter((e) => !e.construction);
     const hq = complete.find((e) => BUILDINGS[e.defId]?.commandPost);
@@ -1091,6 +1103,9 @@ export class AIController {
     };
 
     this.updateTarget(ctx);
+    // A squad staging for a beach has already been committed to that job, so
+    // transport tasking runs before shelters and assaults can claim it.
+    this.manageTransports(ctx);
     // Reserve a few infantry for nearby cover before general defence tasking
     // claims every combat unit for a direct counter-attack.
     this.manageGarrison(ctx);
@@ -2817,6 +2832,49 @@ export class AIController {
       if (ctx.enemyNaval > 0 && ctx.player.mats > 850) need('frigate', 1, 144);
       if (ctx.enemyAir > 0 && ctx.player.mats > 900) need('frigate', 1, 150);
     }
+    // Transport demand is driven by terrain and distance, not by the roster. A
+    // commander buys one hull only when an objective is genuinely separated from
+    // its army, and stops asking as soon as it owns or has queued one: a second
+    // empty carrier is a hull the line needed instead.
+    const transportCounts: Record<'land' | 'air' | 'naval', number> = { land: 0, air: 0, naval: 0 };
+    for (const unit of ctx.own) {
+      if (unit.kind !== 'unit') continue;
+      const kind = transportKindOf(unit.defId);
+      if (kind) transportCounts[kind]++;
+    }
+    for (const [defId, waiting] of queued) {
+      const kind = transportKindOf(defId);
+      if (kind) transportCounts[kind] += waiting;
+    }
+    const liftable = ctx.own.filter((unit) => {
+      if (unit.kind !== 'unit' || unit.hp <= 0 || unit.garrisonId) return false;
+      const def = UNITS[unit.defId];
+      return !!def && def.armour === 'infantry' && def.canGarrison === true;
+    }).length;
+    const transportNeed = transportDemand({
+      tick: ctx.game.state.tick,
+      map: ctx.game.state.map,
+      baseX: ctx.baseX,
+      baseZ: ctx.baseZ,
+      targetKnown: ctx.st.targetKnown,
+      targetX: ctx.st.targetBaseX,
+      targetZ: ctx.st.targetBaseZ,
+      hasWater: ctx.hasWater,
+      counts: {
+        shipyard: ctx.counts.get('shipyard') ?? 0,
+        heliport: ctx.counts.get('heliport') ?? 0,
+        airfield: ctx.counts.get('airfield') ?? 0,
+        factory: ctx.counts.get('factory') ?? 0,
+        barracks: ctx.counts.get('barracks') ?? 0,
+      },
+      infantry: liftable,
+      transports: transportCounts,
+      combat: ctx.combat.length,
+      ticksSinceTransport: ctx.game.state.tick - (ctx.st.lastTransportTick ?? -20 * 120),
+    });
+    if (transportNeed.kind === 'naval') need('landingCraft', 1, 107);
+    else if (transportNeed.kind === 'air') need('transportHelo', 1, 105);
+    else if (transportNeed.kind === 'land') need('apc', 1, 96);
     if ((ctx.counts.get('barracks') ?? 0) > 0 && (ctx.unitCounts.get('rifle') ?? 0) >= 4) {
       need('medic', 1, 84);
     }
@@ -3368,6 +3426,499 @@ export class AIController {
       ctx.st.lastDecision = `producing ${item.defId} (${ctx.strategy} plan)`;
       return;
     }
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* Transport operations                                                   */
+  /* ---------------------------------------------------------------------- */
+
+  /**
+   * Run transport operations: pick a hull, stage infantry, drive the carrier
+   * and unload it.
+   *
+   * Nothing here writes `garrisonId`, moves a passenger or chooses a beach. Each
+   * step is an ordinary command (`garrison`, `move`, `ungarrison`) that the
+   * simulation validates exactly as it validates a player's, which is also why a
+   * refused operation never strands anyone: the passengers simply stay aboard
+   * or on foot while this commander abandons the plan.
+   */
+  private manageTransports(ctx: AIContext): void {
+    const st = ctx.st;
+    const ops = (st.transportOps ??= []);
+    for (const op of [...ops]) {
+      const carrier = ctx.game.getEntity(op.transportId);
+      if (!carrier || carrier.hp <= 0) {
+        this.cancelTransport(ctx, op, 'carrier lost');
+        continue;
+      }
+      // A carrier used as a passenger is a bug, not a transport; release it.
+      if (carrier.garrisonId) {
+        this.cancelTransport(ctx, op, 'carrier embarked elsewhere');
+        continue;
+      }
+      this.driveTransport(ctx, op, carrier);
+    }
+    if ((st.transportOps?.length ?? 0) > 0) return;
+    const tick = ctx.game.state.tick;
+    if (tick - (st.lastTransportTick ?? -20 * 120) < 20 * 30) return;
+    if (!st.targetKnown || ctx.threats.length > 0) return;
+
+    const targetX = st.targetBaseX;
+    const targetZ = st.targetBaseZ;
+    const acrossWater =
+      ctx.hasWater && lineCrossesWater(ctx.game.state.map, ctx.baseX, ctx.baseZ, targetX, targetZ);
+    const candidates: Array<{ carrier: Entity; kind: 'land' | 'air' | 'naval'; score: number }> = [];
+    for (const unit of ctx.own) {
+      if (unit.kind !== 'unit' || unit.hp <= 0 || unit.garrisonId) continue;
+      const kind = transportKindOf(unit.defId);
+      if (!kind) continue;
+      const distance = Math.hypot(targetX - unit.x, targetZ - unit.z) / TILE_SIZE;
+      if (kind === 'naval') {
+        if (!acrossWater) continue;
+        candidates.push({ carrier: unit, kind, score: 3 + distance * 0.02 });
+      } else if (kind === 'air') {
+        candidates.push({ carrier: unit, kind, score: 2 + distance * 0.02 });
+      } else {
+        // A carrier is worth loading only when walking would be the slower and
+        // more exposed way to arrive; a short hop on foot is not an operation.
+        if (distance < 18) continue;
+        candidates.push({ carrier: unit, kind, score: 1 + distance * 0.005 });
+      }
+    }
+    if (candidates.length === 0) return;
+    candidates.sort((a, b) => b.score - a.score || a.carrier.id - b.carrier.id);
+
+    for (const candidate of candidates) {
+      const carrier = candidate.carrier;
+      if (ctx.game.containerOccupants(carrier.id).length > 0) continue;
+      const passengers = ctx.own
+        .filter(
+          (unit) =>
+            unit.kind === 'unit' &&
+            this.free(unit) &&
+            containerAcceptsPassenger(carrier, unit),
+        )
+        .sort((a, b) => a.id - b.id);
+      if (passengers.length < 2) continue;
+      const capacity = Math.max(1, ctx.game.containerCapacity(carrier));
+      const squad = passengers.slice(0, capacity);
+      const centerX = squad.reduce((sum, unit) => sum + unit.x, 0) / squad.length;
+      const centerZ = squad.reduce((sum, unit) => sum + unit.z, 0) / squad.length;
+      const staging =
+        candidate.kind === 'naval'
+          ? coastalStagingPoint(ctx.game.state.map, centerX, centerZ, 14)
+          : { x: centerX, z: centerZ };
+      if (!staging) continue;
+      const landing =
+        candidate.kind === 'naval'
+          ? coastalStagingPoint(ctx.game.state.map, targetX, targetZ, 26)
+          : { x: targetX, z: targetZ };
+      if (!landing) continue;
+      // The pick-up and the drop-off are both validated before anyone is
+      // ordered: a hull that cannot beach at either end is not a plan.
+      if (candidate.kind === 'naval') {
+        if (!ctx.game.navalLandingAvailable(carrier.id, staging.x, staging.z, 1)) continue;
+        if (!ctx.game.navalLandingAvailable(carrier.id, landing.x, landing.z, squad.length)) continue;
+      }
+      if (candidate.kind === 'air') {
+        if (!ctx.game.transportLandingAvailable(carrier.id, staging.x, staging.z)) continue;
+        if (!ctx.game.transportLandingAvailable(carrier.id, landing.x, landing.z)) continue;
+      }
+      const op: TransportOperation = {
+        id: st.groupCounter++,
+        kind: candidate.kind,
+        transportId: carrier.id,
+        passengerIds: squad.map((unit) => unit.id),
+        stage: 'embark',
+        targetX: landing.x,
+        targetZ: landing.z,
+        stageX: staging.x,
+        stageZ: staging.z,
+        startedTick: tick,
+        lastOrderTick: 0,
+        refusals: 0,
+      };
+      st.transportOps.push(op);
+      st.lastTransportTick = tick;
+      st.lastDecision = `${candidate.kind} transport operation — ${squad.length} infantry staged`;
+      return;
+    }
+  }
+
+  /** Advance one operation by exactly one step per think. */
+  private driveTransport(ctx: AIContext, op: TransportOperation, carrier: Entity): void {
+    const tick = ctx.game.state.tick;
+    const occupants = ctx.game.containerOccupants(carrier.id);
+    const recovering = op.stage === 'recover' || op.stage === 'recoverUnload';
+    const hurt = carrier.hp <= carrier.maxHp * 0.35;
+    const threatened = ctx.visible.some(
+      (enemy) =>
+        enemy.owner >= 0 &&
+        ctx.game.isHostile(ctx.aiId, enemy.owner) &&
+        (UNITS[enemy.defId]?.weapons.length ?? 0) > 0 &&
+        dist(enemy.x, enemy.z, carrier.x, carrier.z) < 9 * TILE_SIZE,
+    );
+    if (!recovering && (hurt || (threatened && op.stage !== 'unload'))) {
+      this.cancelTransport(ctx, op, hurt ? 'transport damaged' : 'landing under fire');
+      return;
+    }
+    // An amphibious run is legitimately long: staging, a shore approach and a
+    // crossing can occupy minutes, so the ceiling only catches an operation
+    // that is genuinely stuck, not one that is simply still at sea.
+    if (!recovering && tick - op.startedTick > 20 * 420) {
+      this.cancelTransport(ctx, op, 'operation timed out');
+      return;
+    }
+    op.passengerIds = op.passengerIds.filter((id) => {
+      const unit = ctx.game.getEntity(id);
+      if (!unit || unit.hp <= 0) return false;
+      return unit.garrisonId === carrier.id || !unit.garrisonId;
+    });
+    if (op.passengerIds.length === 0 && occupants.length === 0) {
+      this.cancelTransport(ctx, op, 'passengers lost');
+      return;
+    }
+
+    if (recovering) {
+      this.recoverTransport(ctx, op, carrier, occupants);
+      return;
+    }
+
+    if (op.stage === 'embark') {
+      const aboard = op.passengerIds.every((id) => occupants.some((unit) => unit.id === id));
+      if (aboard && occupants.length > 0) {
+        op.stage = 'transit';
+        op.refusals = 0;
+        op.lastOrderTick = tick;
+        ctx.st.lastDecision = `${this.transportName(carrier)} loaded with ${occupants.length} infantry`;
+        return;
+      }
+      if (tick - op.startedTick > 20 * 75) {
+        this.cancelTransport(ctx, op, 'infantry could not reach the carrier');
+        return;
+      }
+      if (op.kind === 'naval' && !ctx.game.navalLandingAvailable(carrier.id, op.stageX, op.stageZ, 1)) {
+        this.cancelTransport(ctx, op, 'no embarkation beach');
+        return;
+      }
+      if (op.kind === 'air' && !ctx.game.transportLandingAvailable(carrier.id, op.stageX, op.stageZ)) {
+        this.cancelTransport(ctx, op, 'no landing zone at the staging point');
+        return;
+      }
+      if (tick - op.lastOrderTick < 20 * 4) return;
+      const ready = op.passengerIds.filter((id) => {
+        const unit = ctx.game.getEntity(id);
+        return !!unit && unit.hp > 0 && !unit.garrisonId;
+      });
+      // The squad is counted whole: two men already in the hold plus the last
+      // one walking to the ramp is a full lift, not an empty one.
+      if (ready.length + occupants.length < 2) {
+        this.cancelTransport(ctx, op, 'not enough infantry left to lift');
+        return;
+      }
+      for (const id of ready) {
+        const unit = ctx.game.getEntity(id);
+        if (unit) this.claim(unit);
+      }
+      this.claim(carrier);
+      ctx.game.enqueueCommand({
+        type: 'garrison',
+        team: ctx.aiId,
+        ids: ready,
+        targetId: carrier.id,
+      });
+      op.lastOrderTick = tick;
+      ctx.st.lastDecision = `staging ${ready.length} infantry for ${this.transportName(carrier)}`;
+      return;
+    }
+
+    if (op.stage === 'transit') {
+      if (occupants.length === 0) {
+        this.cancelTransport(ctx, op, 'passengers lost in transit');
+        return;
+      }
+      const destination =
+        op.kind === 'naval'
+          ? waterApproachTo(ctx.game.state.map, op.targetX, op.targetZ, 12)
+          : { x: op.targetX, z: op.targetZ };
+      if (!destination) {
+        this.cancelTransport(ctx, op, 'no water approach to the landing area');
+        return;
+      }
+      if (dist(carrier.x, carrier.z, destination.x, destination.z) <= 5 * TILE_SIZE) {
+        op.stage = 'unload';
+        op.refusals = 0;
+        op.lastOrderTick = tick - 20 * 10;
+        return;
+      }
+      if (tick - op.lastOrderTick < 20 * 5) return;
+      this.claim(carrier);
+      this.escortTransport(ctx, carrier, destination, tick);
+      ctx.game.enqueueCommand({
+        type: 'move',
+        team: ctx.aiId,
+        ids: [carrier.id],
+        x: destination.x,
+        z: destination.z,
+      });
+      op.lastOrderTick = tick;
+      ctx.st.lastDecision = `${this.transportName(carrier)} approaching the landing area`;
+      return;
+    }
+
+    if (occupants.length === 0) {
+      this.finishTransport(ctx, op, carrier);
+      return;
+    }
+    // The shore is the authoritative decision: the unload command finds the
+    // beach, beaches the hull and runs the shared exit transaction. A second
+    // attempt against an already beached hull that still holds troops means the
+    // ground is blocked, so the passengers stay aboard and the plan is dropped.
+    const atShore = containerBoardingReady(carrier);
+    if (atShore && op.refusals > 0) {
+      this.cancelTransport(ctx, op, 'unload blocked at the shore');
+      return;
+    }
+    if (tick - op.lastOrderTick < 20 * 10) return;
+    this.claim(carrier);
+    ctx.game.enqueueCommand({ type: 'ungarrison', team: ctx.aiId, ids: [carrier.id] });
+    op.lastOrderTick = tick;
+    if (atShore) op.refusals++;
+    ctx.st.lastDecision = `${this.transportName(carrier)} unloading ${occupants.length} infantry`;
+  }
+
+  /** Release the hull and give the landed infantry their follow-up task. */
+  private finishTransport(ctx: AIContext, op: TransportOperation, carrier: Entity): void {
+    const released = op.passengerIds.filter((id) => {
+      const unit = ctx.game.getEntity(id);
+      return !!unit && unit.hp > 0 && !unit.garrisonId;
+    });
+    ctx.st.transportOps = (ctx.st.transportOps ?? []).filter((entry) => entry.id !== op.id);
+    ctx.st.lastTransportTick = ctx.game.state.tick;
+    if (released.length > 0) {
+      // The landed section becomes an ordinary attack group aimed at the same
+      // objective the carrier was committed to. No new formation exists: these
+      // are individual infantry entities with one move order, as any player's.
+      ctx.game.enqueueCommand({
+        type: 'move',
+        team: ctx.aiId,
+        ids: released,
+        x: op.targetX,
+        z: op.targetZ,
+        attackMove: true,
+      });
+      ctx.st.lastDecision = `${released.length} infantry landed and advancing`;
+    }
+    // The hull goes home through an ordinary move, which is also what clears a
+    // beached hull's shore state.
+    const home =
+      op.kind === 'naval'
+        ? waterApproachTo(ctx.game.state.map, ctx.baseX, ctx.baseZ, 20)
+        : { x: ctx.baseX, z: ctx.baseZ };
+    if (carrier.hp > 0 && home && dist(carrier.x, carrier.z, home.x, home.z) > 10 * TILE_SIZE) {
+      ctx.game.enqueueCommand({
+        type: 'move',
+        team: ctx.aiId,
+        ids: [carrier.id],
+        x: home.x,
+        z: home.z,
+      });
+    }
+  }
+
+  /**
+   * Abandon an assault, keeping any embarked passengers under command.
+   *
+   * An abandoned assault and a transport's passenger lifecycle are not the same
+   * thing: deleting the operation while troops are still aboard would leave a
+   * loaded hull that nothing owns and nobody unloads. When the hold is empty the
+   * operation is removed as before; when it is not, the same operation becomes a
+   * recovery run so the passengers keep exactly one owner.
+   */
+  private cancelTransport(ctx: AIContext, op: TransportOperation, reason: string): void {
+    const carrier = ctx.game.getEntity(op.transportId);
+    const aboard =
+      carrier && carrier.hp > 0 && !carrier.garrisonId
+        ? ctx.game.containerOccupants(carrier.id)
+        : [];
+    if (carrier && aboard.length > 0) {
+      op.stage = 'recover';
+      op.refusals = 0;
+      op.lastOrderTick = 0;
+      ctx.st.lastDecision = `transport operation abandoned — ${reason}; recovering ${aboard.length} infantry`;
+      return;
+    }
+    ctx.st.transportOps = (ctx.st.transportOps ?? []).filter((entry) => entry.id !== op.id);
+    ctx.st.lastTransportTick = ctx.game.state.tick;
+    ctx.st.lastDecision = `transport operation abandoned — ${reason}`;
+  }
+
+  /**
+   * Bring a loaded carrier home after its assault was abandoned.
+   *
+   * Recovery is a stage of the operation, not a second system: the passengers
+   * never lose their single owner. It waits for a valid beach or landing zone
+   * instead of forcing one, and if none opens it holds the state and reports the
+   * blockade rather than deleting the operation. No passenger is moved, killed
+   * or unloaded except by the authoritative unload command.
+   */
+  private recoverTransport(
+    ctx: AIContext,
+    op: TransportOperation,
+    carrier: Entity,
+    occupants: Entity[],
+  ): void {
+    const tick = ctx.game.state.tick;
+    if (occupants.length === 0) {
+      this.finishRecovery(ctx, op);
+      return;
+    }
+    if (op.kind === 'naval') {
+      const landing = coastalStagingPoint(ctx.game.state.map, ctx.baseX, ctx.baseZ, 22);
+      const approach = landing
+        ? waterApproachTo(ctx.game.state.map, landing.x, landing.z, 14)
+        : null;
+      if (!landing || !approach) {
+        ctx.st.lastDecision = `recovering ${occupants.length} infantry — no home beach yet`;
+        return;
+      }
+      op.targetX = landing.x;
+      op.targetZ = landing.z;
+      if (op.stage === 'recover') {
+        if (dist(carrier.x, carrier.z, approach.x, approach.z) <= 5 * TILE_SIZE) {
+          op.stage = 'recoverUnload';
+          op.refusals = 0;
+          op.lastOrderTick = tick - 20 * 10;
+          return;
+        }
+        if (tick - op.lastOrderTick < 20 * 5) return;
+        this.claim(carrier);
+        ctx.game.enqueueCommand({
+          type: 'move',
+          team: ctx.aiId,
+          ids: [carrier.id],
+          x: approach.x,
+          z: approach.z,
+        });
+        op.lastOrderTick = tick;
+        ctx.st.lastDecision = `${this.transportName(carrier)} returning ${occupants.length} infantry home`;
+        return;
+      }
+    } else {
+      const home = op.kind === 'air' ? this.airRecoveryPoint(ctx, carrier) : { x: ctx.baseX, z: ctx.baseZ };
+      if (!home) {
+        ctx.st.lastDecision = `recovering ${occupants.length} infantry — no landing zone at home`;
+        return;
+      }
+      if (op.stage === 'recover') {
+        if (dist(carrier.x, carrier.z, home.x, home.z) <= 5 * TILE_SIZE) {
+          op.stage = 'recoverUnload';
+          op.refusals = 0;
+          op.lastOrderTick = tick - 20 * 10;
+          return;
+        }
+        if (tick - op.lastOrderTick < 20 * 5) return;
+        this.claim(carrier);
+        ctx.game.enqueueCommand({
+          type: 'move',
+          team: ctx.aiId,
+          ids: [carrier.id],
+          x: home.x,
+          z: home.z,
+        });
+        op.lastOrderTick = tick;
+        ctx.st.lastDecision = `${this.transportName(carrier)} returning ${occupants.length} infantry home`;
+        return;
+      }
+    }
+    // The authoritative unload finds the exit. Refusals are retried at a walking
+    // pace; after several the operation is held — still owned, still reported —
+    // rather than deleted with troops inside.
+    if (op.refusals >= 8) {
+      ctx.st.lastDecision = `recovering ${occupants.length} infantry — waiting for a clear landing`;
+      return;
+    }
+    if (tick - op.lastOrderTick < 20 * 10) return;
+    this.claim(carrier);
+    ctx.game.enqueueCommand({ type: 'ungarrison', team: ctx.aiId, ids: [carrier.id] });
+    op.lastOrderTick = tick;
+    op.refusals++;
+    ctx.st.lastDecision = `${this.transportName(carrier)} unloading ${occupants.length} infantry at home`;
+  }
+
+  /** A field landing near the base, clear of the buildings around it. */
+  private airRecoveryPoint(ctx: AIContext, carrier: Entity): { x: number; z: number } | null {
+    for (const [dx, dz] of [
+      [0, 0], [6, 0], [-6, 0], [0, 6], [0, -6], [10, 0], [-10, 0], [0, 10], [0, -10],
+      [14, 0], [-14, 0], [0, 14], [0, -14],
+    ] as const) {
+      const x = ctx.baseX + dx * TILE_SIZE;
+      const z = ctx.baseZ + dz * TILE_SIZE;
+      if (ctx.game.transportLandingAvailable(carrier.id, x, z)) return { x, z };
+    }
+    return null;
+  }
+
+  /** Release the hull once its passengers are safely off; no assault follow-up. */
+  private finishRecovery(ctx: AIContext, op: TransportOperation): void {
+    const released = op.passengerIds.filter((id) => {
+      const unit = ctx.game.getEntity(id);
+      return !!unit && unit.hp > 0 && !unit.garrisonId;
+    });
+    ctx.st.transportOps = (ctx.st.transportOps ?? []).filter((entry) => entry.id !== op.id);
+    ctx.st.lastTransportTick = ctx.game.state.tick;
+    ctx.st.lastDecision = `${released.length} infantry recovered from an abandoned transport operation`;
+  }
+
+  /**
+   * Put a small escort on the carrier's route while it runs.
+   *
+   * Two hulls, not the army: a transport that drags the whole line across the
+   * map to guard itself is worse than one that risks the crossing. The escort is
+   * only drawn from units that are free, so a unit already holding the perimeter
+   * keeps its post.
+   */
+  private escortTransport(
+    ctx: AIContext,
+    carrier: Entity,
+    destination: { x: number; z: number },
+    tick: number,
+  ): void {
+    if (ctx.threats.length > 0) return;
+    if (tick % (20 * 10) >= 20 * 2) return;
+    // Units already marching on the same objective are the natural escort: they
+    // are re-tasked to the carrier's route rather than waiting for an idle unit
+    // the AI almost never has. Two at most, and never a unit holding a container
+    // or already claimed this think.
+    const escorts = ctx.combat
+      .filter(
+        (unit) =>
+          unit.hp > 0 &&
+          !unit.garrisonId &&
+          !this.claimed.has(unit.id) &&
+          UNITS[unit.defId]?.domain !== 'air' &&
+          dist(unit.x, unit.z, carrier.x, carrier.z) < 30 * TILE_SIZE,
+      )
+      .sort(
+        (a, b) =>
+          dist(a.x, a.z, carrier.x, carrier.z) - dist(b.x, b.z, carrier.x, carrier.z) || a.id - b.id,
+      )
+      .slice(0, 2);
+    for (const escort of escorts) {
+      this.claim(escort);
+      ctx.game.enqueueCommand({
+        type: 'move',
+        team: ctx.aiId,
+        ids: [escort.id],
+        x: destination.x,
+        z: destination.z,
+        attackMove: true,
+      });
+    }
+  }
+
+  private transportName(carrier: Entity): string {
+    return UNITS[carrier.defId]?.name ?? 'transport';
   }
 
   /* ---------------------------------------------------------------------- */

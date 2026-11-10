@@ -4800,6 +4800,237 @@
           }
         ]
       }
+    },
+    "apc": {
+      "name": "Armoured Personnel Carrier",
+      "role": "Infantry transport",
+      "voice": "am_michael",
+      "lang": "en-us",
+      "speed": 1.0,
+      "lines": {
+        "select": [
+          {
+            "text": "Personnel carrier, ready to receive.",
+            "file": "apc/select-1.mp3",
+            "durationMs": 2220
+          },
+          {
+            "text": "APC on station, rear ramp down.",
+            "file": "apc/select-2.mp3",
+            "durationMs": 2755
+          },
+          {
+            "text": "Transport section, waiting for troops.",
+            "file": "apc/select-3.mp3",
+            "durationMs": 2330
+          }
+        ],
+        "move": [
+          {
+            "text": "Carrier rolling, infantry aboard.",
+            "file": "apc/move-1.mp3",
+            "durationMs": 2110
+          },
+          {
+            "text": "Moving the squad forward.",
+            "file": "apc/move-2.mp3",
+            "durationMs": 1545
+          },
+          {
+            "text": "Wheels up, transport under way.",
+            "file": "apc/move-3.mp3",
+            "durationMs": 1995
+          }
+        ],
+        "attack": [
+          {
+            "text": "Machine gun engaging.",
+            "file": "apc/attack-1.mp3",
+            "durationMs": 1570
+          },
+          {
+            "text": "Light fire, suppressing.",
+            "file": "apc/attack-2.mp3",
+            "durationMs": 1475
+          },
+          {
+            "text": "Defensive gun up.",
+            "file": "apc/attack-3.mp3",
+            "durationMs": 1310
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Negative, carrier is full.",
+            "file": "apc/unableToComply-1.mp3",
+            "durationMs": 1635
+          },
+          {
+            "text": "Cannot load that.",
+            "file": "apc/unableToComply-2.mp3",
+            "durationMs": 1175
+          },
+          {
+            "text": "No room for more infantry.",
+            "file": "apc/unableToComply-3.mp3",
+            "durationMs": 1770
+          }
+        ]
+      }
+    },
+    "transportHelo": {
+      "name": "Utility Transport Helicopter",
+      "role": "Utility transport",
+      "voice": "bf_lily",
+      "lang": "en-gb",
+      "speed": 1.0,
+      "lines": {
+        "select": [
+          {
+            "text": "Lift bird, ready to haul.",
+            "file": "transportHelo/select-1.mp3",
+            "durationMs": 1899
+          },
+          {
+            "text": "Transport on station, doors closed.",
+            "file": "transportHelo/select-2.mp3",
+            "durationMs": 2510
+          },
+          {
+            "text": "Utility helo, waiting for a load.",
+            "file": "transportHelo/select-3.mp3",
+            "durationMs": 2520
+          }
+        ],
+        "move": [
+          {
+            "text": "Lift bird moving.",
+            "file": "transportHelo/move-1.mp3",
+            "durationMs": 1620
+          },
+          {
+            "text": "Climbing to the pickup.",
+            "file": "transportHelo/move-2.mp3",
+            "durationMs": 1675
+          },
+          {
+            "text": "Transport en route, passengers aboard.",
+            "file": "transportHelo/move-3.mp3",
+            "durationMs": 2540
+          }
+        ],
+        "attack": [
+          {
+            "text": "No weapons aboard this bird.",
+            "file": "transportHelo/attack-1.mp3",
+            "durationMs": 2230
+          },
+          {
+            "text": "Unarmed — call a gunship.",
+            "file": "transportHelo/attack-2.mp3",
+            "durationMs": 1850
+          },
+          {
+            "text": "Negative, this is a lift bird.",
+            "file": "transportHelo/attack-3.mp3",
+            "durationMs": 2125
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Can't set down there.",
+            "file": "transportHelo/unableToComply-1.mp3",
+            "durationMs": 1640
+          },
+          {
+            "text": "Landing zone blocked.",
+            "file": "transportHelo/unableToComply-2.mp3",
+            "durationMs": 1870
+          },
+          {
+            "text": "Negative, no clear ground.",
+            "file": "transportHelo/unableToComply-3.mp3",
+            "durationMs": 2010
+          }
+        ]
+      }
+    },
+    "landingCraft": {
+      "name": "Naval Landing Craft",
+      "role": "Amphibious transport",
+      "voice": "bm_george",
+      "lang": "en-gb",
+      "speed": 0.96,
+      "lines": {
+        "select": [
+          {
+            "text": "Landing craft, ramp up.",
+            "file": "landingCraft/select-1.mp3",
+            "durationMs": 2150
+          },
+          {
+            "text": "Beach party on the net.",
+            "file": "landingCraft/select-2.mp3",
+            "durationMs": 1920
+          },
+          {
+            "text": "Lift boat standing by.",
+            "file": "landingCraft/select-3.mp3",
+            "durationMs": 1920
+          }
+        ],
+        "move": [
+          {
+            "text": "Lift boat under way.",
+            "file": "landingCraft/move-1.mp3",
+            "durationMs": 1810
+          },
+          {
+            "text": "Making for the next beach.",
+            "file": "landingCraft/move-2.mp3",
+            "durationMs": 1770
+          },
+          {
+            "text": "Helm answered, running the coast.",
+            "file": "landingCraft/move-3.mp3",
+            "durationMs": 2360
+          }
+        ],
+        "attack": [
+          {
+            "text": "Unarmed, no fire mission.",
+            "file": "landingCraft/attack-1.mp3",
+            "durationMs": 2000
+          },
+          {
+            "text": "This is a landing craft, not a gunboat.",
+            "file": "landingCraft/attack-2.mp3",
+            "durationMs": 2860
+          },
+          {
+            "text": "Negative, we carry troops, not guns.",
+            "file": "landingCraft/attack-3.mp3",
+            "durationMs": 2850
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "No usable beach there.",
+            "file": "landingCraft/unableToComply-1.mp3",
+            "durationMs": 1941
+          },
+          {
+            "text": "Ramp stays up, passengers aboard.",
+            "file": "landingCraft/unableToComply-2.mp3",
+            "durationMs": 2660
+          },
+          {
+            "text": "Can't put troops ashore here.",
+            "file": "landingCraft/unableToComply-3.mp3",
+            "durationMs": 1941
+          }
+        ]
+      }
     }
   }
 }

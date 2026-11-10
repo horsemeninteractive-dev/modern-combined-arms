@@ -16,6 +16,8 @@
  * without a Worker.
  */
 import { RANKS } from './ranks';
+import { parseFlagComposition, type FlagComposition } from '../identity/flag';
+import { cosmeticById } from '../identity/cosmetics';
 
 /** Avatar choices. Fixed emblems, not uploads: no image service in this phase. */
 export const AVATARS = Object.freeze([
@@ -164,6 +166,16 @@ export interface IdentitySnapshot {
    * ticket minted before ranks travelled still carries a valid identity.
    */
   rank?: string;
+  /**
+   * The command flag equipped when the seat was claimed. Optional because a
+   * ticket minted before flags travelled, and a guest, carry none. It is a
+   * validated composition, never an image or a URL.
+   */
+  flag?: FlagComposition;
+  /** Equipped profile frame catalogue id, validated against the catalogue. */
+  frame?: string;
+  /** Equipped profile background catalogue id, validated against the catalogue. */
+  background?: string;
 }
 
 const RANK_IDS = new Set(RANKS.map((rank) => rank.id));
@@ -186,5 +198,17 @@ export function identitySnapshot(raw: unknown): IdentitySnapshot | null {
   const avatar = validateAvatar(record.avatar);
   if (!callsign.ok) return null;
   const rank = isRankId(record.rank) ? record.rank : undefined;
-  return { callsign: callsign.callsign, avatar: avatar ?? DEFAULT_AVATAR, ...(rank ? { rank } : {}) };
+  const flag = parseFlagComposition(record.flag);
+  const frame = cosmeticById(typeof record.frame === 'string' ? record.frame : null);
+  const background = cosmeticById(
+    typeof record.background === 'string' ? record.background : null,
+  );
+  return {
+    callsign: callsign.callsign,
+    avatar: avatar ?? DEFAULT_AVATAR,
+    ...(rank ? { rank } : {}),
+    ...(flag.ok ? { flag: flag.composition } : {}),
+    ...(frame?.category === 'frame' ? { frame: frame.id } : {}),
+    ...(background?.category === 'background' ? { background: background.id } : {}),
+  };
 }

@@ -34,6 +34,7 @@ describe('naval roster', () => {
       'corvette',
       'submarine',
       'frigate',
+      'landingCraft',
       'navalSupport',
     ]);
 

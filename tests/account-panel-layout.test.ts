@@ -61,6 +61,15 @@ describe('account screen', () => {
     expect(panel).toContain('serviceRecordMarkup');
   });
 
+  it('offers the command-flag editor to guests as well as accounts', () => {
+    // Flags are a local design first; signing in merges them. Gating the row
+    // behind an account would leave guests with no way in.
+    const guestBranch = panel.slice(panel.indexOf('if (!account) {'), panel.indexOf('const identities = account.identities;'));
+    expect(guestBranch).toContain('this.renderCommandFlag()');
+    expect(panel).toContain("data-account-action=\"flags\"");
+    expect(panel).toContain('openFlagEditor(');
+  });
+
   it('shows the full identity and standing on the page head', () => {
     expect(html).toContain('id="account-view-head"');
     expect(panel).toContain('account-head-avatar');

@@ -43,6 +43,7 @@ describe('attack submarine', () => {
       'corvette',
       'submarine',
       'frigate',
+      'landingCraft',
       'navalSupport',
     ]);
     game.player(0)!.mats = 6000;

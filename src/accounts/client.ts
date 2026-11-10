@@ -18,6 +18,13 @@ import type {
 import { EMPTY_CAREER, type CareerViewData } from './career';
 import type { RankSpec } from './ranks';
 import type { CareerStats, NationLine, StatBlock } from './stats';
+import type {
+  AchievementCategory,
+  AchievementTier,
+  AchievementView,
+  AwardType,
+} from './achievements';
+import type { LevelStanding } from './levels';
 import type { ProviderId } from './types';
 import type { GuestMigrationRequest } from './guest';
 
@@ -122,16 +129,61 @@ export interface IdentityView {
 }
 
 /** The career block: totals, standing and the most recent service record. */
+export interface CareerCampaignView {
+  campaignId: string;
+  completedAt: number;
+}
+
 export interface CareerView extends CareerViewData {
   /** Grouped statistics. Absent on a guest ledger, which has no breakdown. */
   stats?: CareerStats | null;
+  /** Earned and in-progress commendations. */
+  achievements?: AchievementView[];
+  /** Full campaigns recorded from validated campaign-match results. */
+  campaigns?: CareerCampaignView[];
   identity?: IdentityView | null;
+}
+
+export interface AwardView {
+  id: string;
+  achievementId: string;
+  name: string;
+  description: string;
+  type: AwardType;
+  visual: string;
+  priority: number;
+  hidden: boolean;
+  nation: string | null;
+  campaign: string | null;
+  mode: CareerMode | null;
+}
+
+export interface AchievementSummary {
+  id: string;
+  name: string;
+  description: string;
+  category: AchievementCategory;
+  tier: AchievementTier;
+  commendation: string;
+  reward: { kind: 'cosmetic'; cosmeticId: string } | null;
+  award?: AwardView | null;
+}
+
+export interface CareerRewards {
+  achievements: AchievementSummary[];
+  levelBefore: number;
+  levelAfter: number;
+  levelUp: boolean;
+  rankBefore: RankSpec | null;
+  rankAfter: RankSpec | null;
+  promoted: boolean;
 }
 
 /** One row of the paged service record. */
 export interface MatchHistoryItem {
   match: CareerMatchRecord;
   report: MatchReportView | null;
+  achievements?: AchievementSummary[];
 }
 
 export interface MatchReportView {
@@ -180,6 +232,7 @@ export type MatchResultView =
         rankAfter: RankSpec | null;
         promoted: boolean;
       };
+      achievements: AchievementSummary[];
     };
 
 export interface PublicPlayerView {
@@ -198,6 +251,7 @@ export interface PublicPlayerView {
 export interface CareerRecordResult {
   recorded: boolean;
   award: number;
+  rewards: CareerRewards | null;
   career: CareerView;
 }
 
@@ -303,11 +357,152 @@ export function asCareerView(value: unknown): CareerView | null {
     xpInto: num(row.xpInto),
     xpSpan: typeof row.xpSpan === 'number' ? row.xpSpan : null,
     progress: Math.max(0, Math.min(1, num(row.progress))),
+    level: asLevel(row.level) ?? {
+      level: { number: 1, threshold: 0 },
+      xpInto: 0,
+      xpSpan: null,
+      next: null,
+      progress: 0,
+    },
     matches: Array.isArray(row.matches)
       ? row.matches.map(asMatch).filter((match): match is CareerMatchRecord => match !== null)
       : [],
     stats: asCareerStats(row.stats),
+    achievements: Array.isArray(row.achievements)
+      ? row.achievements
+          .map(asAchievement)
+          .filter((entry): entry is AchievementView => entry !== null)
+      : [],
+    campaigns: Array.isArray(row.campaigns)
+      ? row.campaigns
+          .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null)
+          .filter((entry) => typeof entry.campaignId === 'string')
+          .map((entry) => ({
+            campaignId: String(entry.campaignId),
+            completedAt: num(entry.completedAt),
+          }))
+      : [],
     identity: asIdentity(row.identity),
+  };
+}
+
+function asLevel(value: unknown): LevelStanding | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const row = value as Record<string, unknown>;
+  const level = (typeof row.level === 'object' && row.level !== null ? row.level : {}) as Record<
+    string,
+    unknown
+  >;
+  const nextRow = (typeof row.next === 'object' && row.next !== null ? row.next : null) as Record<
+    string,
+    unknown
+  > | null;
+  const number = num(level.number, 1);
+  const threshold = num(level.threshold);
+  return {
+    level: { number, threshold },
+    xpInto: num(row.xpInto),
+    xpSpan: typeof row.xpSpan === 'number' ? row.xpSpan : null,
+    next: nextRow
+      ? { number: num(nextRow.number, number + 1), threshold: num(nextRow.threshold) }
+      : null,
+    progress: Math.max(0, Math.min(1, num(row.progress))),
+  };
+}
+
+function asAward(value: unknown): AwardView | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const row = value as Record<string, unknown>;
+  if (typeof row.id !== 'string') return null;
+  return {
+    id: row.id,
+    achievementId: typeof row.achievementId === 'string' ? row.achievementId : '',
+    name: typeof row.name === 'string' ? row.name : row.id,
+    description: typeof row.description === 'string' ? row.description : '',
+    type:
+      row.type === 'medal' || row.type === 'ribbon' || row.type === 'commendation'
+        ? row.type
+        : 'commendation',
+    visual: typeof row.visual === 'string' ? row.visual : '',
+    priority: num(row.priority, 100),
+    hidden: row.hidden === true,
+    nation: typeof row.nation === 'string' ? row.nation : null,
+    campaign: typeof row.campaign === 'string' ? row.campaign : null,
+    mode: MODES.includes(row.mode as CareerMode) ? (row.mode as CareerMode) : null,
+  };
+}
+
+function asAchievement(value: unknown): AchievementView | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const row = value as Record<string, unknown>;
+  if (typeof row.id !== 'string' || typeof row.name !== 'string') return null;
+  const reward =
+    typeof row.reward === 'object' && row.reward !== null
+      ? (row.reward as Record<string, unknown>)
+      : null;
+  return {
+    id: row.id,
+    name: row.name,
+    description: typeof row.description === 'string' ? row.description : '',
+    category: (typeof row.category === 'string' ? row.category : 'career') as AchievementCategory,
+    tier: (typeof row.tier === 'string' ? row.tier : 'bronze') as AchievementTier,
+    commendation: typeof row.commendation === 'string' ? row.commendation : row.name,
+    hidden: row.hidden === true,
+    reward:
+      reward && reward.kind === 'cosmetic' && typeof reward.cosmeticId === 'string'
+        ? { kind: 'cosmetic', cosmeticId: reward.cosmeticId }
+        : null,
+    award: asAward(row.award),
+    scope: row.scope === 'campaign' ? 'campaign' : 'account',
+    mode: typeof row.mode === 'string' ? (row.mode as AchievementView['mode']) : null,
+    nation: typeof row.nation === 'string' ? row.nation : null,
+    campaign: typeof row.campaign === 'string' ? row.campaign : null,
+    order: num(row.order, 100),
+    awardedAt: typeof row.awardedAt === 'number' ? row.awardedAt : null,
+    progress: num(row.progress),
+    target: Math.max(1, num(row.target, 1)),
+    complete: row.complete === true,
+  };
+}
+
+function asAchievementSummary(value: unknown): AchievementSummary | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const row = value as Record<string, unknown>;
+  if (typeof row.id !== 'string') return null;
+  const reward =
+    typeof row.reward === 'object' && row.reward !== null
+      ? (row.reward as Record<string, unknown>)
+      : null;
+  return {
+    id: row.id,
+    name: typeof row.name === 'string' ? row.name : row.id,
+    description: typeof row.description === 'string' ? row.description : '',
+    category: (typeof row.category === 'string' ? row.category : 'career') as AchievementCategory,
+    tier: (typeof row.tier === 'string' ? row.tier : 'bronze') as AchievementTier,
+    commendation: typeof row.commendation === 'string' ? row.commendation : row.id,
+    reward:
+      reward && reward.kind === 'cosmetic' && typeof reward.cosmeticId === 'string'
+        ? { kind: 'cosmetic', cosmeticId: reward.cosmeticId }
+        : null,
+    award: asAward(row.award),
+  };
+}
+
+function asCareerRewards(value: unknown): CareerRewards | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const row = value as Record<string, unknown>;
+  return {
+    achievements: Array.isArray(row.achievements)
+      ? row.achievements
+          .map(asAchievementSummary)
+          .filter((entry): entry is AchievementSummary => entry !== null)
+      : [],
+    levelBefore: num(row.levelBefore, 1),
+    levelAfter: num(row.levelAfter, 1),
+    levelUp: row.levelUp === true,
+    rankBefore: asRank(row.rankBefore),
+    rankAfter: asRank(row.rankAfter),
+    promoted: row.promoted === true,
   };
 }
 
@@ -379,6 +574,8 @@ function asProviders(value: unknown): ProviderId[] {
   return value.filter((item): item is ProviderId => item === 'google' || item === 'discord');
 }
 
+import { parseFlagSyncDocument, type FlagSyncDocument } from '../identity/flagSync';
+
 export class HttpAccountApi {
   private readonly base: string;
   private readonly fetchImpl: FetchLike;
@@ -439,7 +636,16 @@ export class HttpAccountApi {
       if (typeof entry !== 'object' || entry === null) continue;
       const match = asMatch((entry as Record<string, unknown>).match);
       if (!match) continue;
-      items.push({ match, report: asReport((entry as Record<string, unknown>).report) });
+      const rawAchievements = (entry as Record<string, unknown>).achievements;
+      items.push({
+        match,
+        report: asReport((entry as Record<string, unknown>).report),
+        achievements: Array.isArray(rawAchievements)
+          ? rawAchievements
+              .map(asAchievementSummary)
+              .filter((award): award is AchievementSummary => award !== null)
+          : [],
+      });
     }
     const page = (typeof body.page === 'object' && body.page !== null ? body.page : {}) as Record<
       string,
@@ -476,6 +682,12 @@ export class HttpAccountApi {
         rankAfter: asRank(award.rankAfter),
         promoted: award.promoted === true,
       },
+      achievements: Array.isArray(body.achievements)
+        ? body.achievements
+            .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null)
+            .map((entry) => asAchievementSummary(entry))
+            .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+        : [],
     };
   }
 
@@ -487,6 +699,21 @@ export class HttpAccountApi {
     const identity = asIdentity(body.identity);
     if (!identity) throw new AccountApiError('server-error', 'The identity reply was malformed.', 500);
     return identity;
+  }
+
+  /** Saved command flags, active design and equipped cosmetics. */
+  async flags(): Promise<FlagSyncDocument> {
+    const body = await this.request('/flags');
+    return parseFlagSyncDocument(body.flags, Date.now());
+  }
+
+  /** Replace the account's flag document; `expectedRevision` guards staleness. */
+  async saveFlags(document: Record<string, unknown>): Promise<FlagSyncDocument> {
+    const body = await this.request('/flags', {
+      method: 'POST',
+      body: JSON.stringify(document),
+    });
+    return parseFlagSyncDocument(body.flags, Date.now());
   }
 
   /** A limited public profile, addressed by callsign. */
@@ -561,17 +788,20 @@ export class HttpAccountApi {
     return career;
   }
 
-  async recordMatch(input: CareerMatchInput): Promise<CareerRecordResult> {
+  async recordMatch(
+    input: CareerMatchInput,
+    stats?: import('./career').CareerAccomplishments,
+  ): Promise<CareerRecordResult> {
     const body = await this.request('/matches', {
       method: 'POST',
-      body: JSON.stringify(input),
+      body: JSON.stringify(stats ? { ...input, stats } : input),
     });
     const career = asCareerView(body.career);
     if (!career) throw new AccountApiError('server-error', 'The career record was malformed.', 500);
     const award = typeof body.award === 'object' && body.award !== null
       ? num((body.award as Record<string, unknown>).xp)
       : 0;
-    return { recorded: body.recorded === true, award, career };
+    return { recorded: body.recorded === true, award, rewards: asCareerRewards(body.rewards), career };
   }
 
   async multiplayerTicket(): Promise<{ ticket: string; expiresAt: number }> {

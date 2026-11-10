@@ -18,6 +18,9 @@ import type {
   AccountRecord,
   AccountStore,
   AccountStatus,
+  AchievementAwardWrite,
+  CareerAchievementRecord,
+  CareerCampaignRecord,
   CareerEntryWrite,
   GuestMigrationRecord,
   IdentityRecord,
@@ -25,6 +28,7 @@ import type {
   MigrationState,
   MpResultPlayerRecord,
   NewIdentity,
+  PlayerIdentityDocument,
   PlayerProfileRecord,
   ProviderId,
   SessionRecord,
@@ -149,6 +153,19 @@ interface MatchReportRow {
   xp_before: number;
   xp_after: number;
   recorded_at: number;
+}
+
+interface AchievementRow {
+  account_id: string;
+  achievement_id: string;
+  awarded_at: number;
+  match_ref: string | null;
+}
+
+interface CampaignRow {
+  account_id: string;
+  campaign_id: string;
+  completed_at: number;
 }
 
 interface StatRow {
@@ -379,6 +396,22 @@ export class D1AccountStore implements AccountStore {
     }
   }
 
+  async completeGuestMigration(
+    guestId: string,
+    accountId: string,
+    completedAt: number,
+  ): Promise<WriteOutcome> {
+    const result = await this.db
+      .prepare(
+        `UPDATE guest_migration_records
+            SET state = 'complete', completed_at = ?
+          WHERE guest_id = ? AND account_id = ? AND state = 'pending'`,
+      )
+      .bind(completedAt, guestId, accountId)
+      .run();
+    return changed(result) > 0 ? 'ok' : 'conflict';
+  }
+
   async recordCareerMatch(accountId: string, record: CareerMatchRecord): Promise<WriteOutcome> {
     const result = await this.db
       .prepare(
@@ -505,6 +538,140 @@ export class D1AccountStore implements AccountStore {
       if (isUniqueViolation(error)) return 'conflict';
       throw error;
     }
+  }
+
+  /**
+   * Read the canonical identity document.
+   *
+   * Rows written before migration 0005 have no `document` column value; those
+   * are assembled from the original two tables so no existing profile is lost.
+   * A document read never validates compositions — that belongs to the route,
+   * which can drop an unrenderable design without hiding the rest.
+   */
+  async playerIdentityDocument(accountId: string): Promise<PlayerIdentityDocument | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT account_id, active_design_id, frame, background, camo, revision, updated_at, document
+           FROM player_presentation WHERE account_id = ?`,
+      )
+      .bind(accountId)
+      .first<{
+        account_id: string;
+        active_design_id: string | null;
+        frame: string | null;
+        background: string | null;
+        camo: string | null;
+        revision: number;
+        updated_at: number;
+        document: string | null;
+      }>();
+    if (!row) return null;
+    if (row.document) {
+      try {
+        const stored = JSON.parse(row.document) as Partial<PlayerIdentityDocument>;
+        if (Array.isArray(stored.designs)) {
+          return {
+            designs: stored.designs,
+            activeDesignId: typeof stored.activeDesignId === 'string' ? stored.activeDesignId : null,
+            frame: typeof stored.frame === 'string' ? stored.frame : null,
+            background: typeof stored.background === 'string' ? stored.background : null,
+            camo: typeof stored.camo === 'string' ? stored.camo : null,
+            revision: row.revision,
+            updatedAt: row.updated_at,
+          };
+        }
+      } catch {
+        // A damaged document falls back to the legacy tables below rather than
+        // silently presenting an empty profile.
+      }
+    }
+    const legacy = await this.db
+      .prepare(
+        `SELECT account_id, design_id, name, composition, schema_version, created_at, updated_at
+           FROM player_flags WHERE account_id = ? ORDER BY created_at ASC`,
+      )
+      .bind(accountId)
+      .all<{
+        account_id: string;
+        design_id: string;
+        name: string;
+        composition: string;
+        schema_version: number;
+        created_at: number;
+        updated_at: number;
+      }>();
+    return {
+      designs: (legacy.results ?? []).map((flag) => ({
+        accountId: flag.account_id,
+        designId: flag.design_id,
+        name: flag.name,
+        composition: flag.composition,
+        schemaVersion: flag.schema_version,
+        createdAt: flag.created_at,
+        updatedAt: flag.updated_at,
+      })),
+      activeDesignId: row.active_design_id,
+      frame: row.frame,
+      background: row.background,
+      camo: row.camo,
+      revision: row.revision,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  /**
+   * Persist the complete identity document as one atomic revision-guarded row
+   * write. The old sequence deleted designs, upserted them one by one and only
+   * then checked the presentation revision; two devices could both pass the
+   * check and one would erase the other's designs. A single conditional
+   * statement makes the whole document win or lose together.
+   */
+  async savePlayerIdentityDocument(
+    accountId: string,
+    document: PlayerIdentityDocument,
+    expectedRevision: number,
+  ): Promise<WriteOutcome> {
+    const payload = JSON.stringify(document);
+    if (expectedRevision > 0) {
+      const result = await this.db
+        .prepare(
+          `UPDATE player_presentation
+              SET document = ?, active_design_id = ?, frame = ?, background = ?, camo = ?,
+                  revision = ?, updated_at = ?
+            WHERE account_id = ? AND revision = ?`,
+        )
+        .bind(
+          payload,
+          document.activeDesignId,
+          document.frame,
+          document.background,
+          document.camo,
+          expectedRevision + 1,
+          document.updatedAt,
+          accountId,
+          expectedRevision,
+        )
+        .run();
+      return changed(result) > 0 ? 'ok' : 'conflict';
+    }
+    const result = await this.db
+      .prepare(
+        `INSERT INTO player_presentation
+           (account_id, active_design_id, frame, background, camo, revision, updated_at, document)
+         VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+         ON CONFLICT (account_id) DO NOTHING`,
+      )
+      .bind(
+        accountId,
+        document.activeDesignId,
+        document.frame,
+        document.background,
+        document.camo,
+        document.updatedAt,
+        payload,
+      )
+      .run();
+    return changed(result) > 0 ? 'ok' : 'conflict';
   }
 
   async recordCareerEntry(entry: CareerEntryWrite): Promise<WriteOutcome> {
@@ -637,6 +804,70 @@ export class D1AccountStore implements AccountStore {
       .bind(accountId, ref)
       .first<MatchReportRow>();
     return row ? toMatchReport(row) : null;
+  }
+
+  async awardedAchievements(accountId: string): Promise<CareerAchievementRecord[]> {
+    const result = await this.db
+      .prepare(
+        `SELECT account_id, achievement_id, awarded_at, match_ref
+           FROM career_achievements WHERE account_id = ?
+          ORDER BY awarded_at ASC, achievement_id ASC`,
+      )
+      .bind(accountId)
+      .all<AchievementRow>();
+    return (result.results ?? []).map(toAchievement);
+  }
+
+  async achievementsForMatch(accountId: string, matchRef: string): Promise<CareerAchievementRecord[]> {
+    const result = await this.db
+      .prepare(
+        `SELECT account_id, achievement_id, awarded_at, match_ref
+           FROM career_achievements WHERE account_id = ? AND match_ref = ?
+          ORDER BY awarded_at ASC, achievement_id ASC`,
+      )
+      .bind(accountId, matchRef)
+      .all<AchievementRow>();
+    return (result.results ?? []).map(toAchievement);
+  }
+
+  async recordAchievements(accountId: string, awards: readonly AchievementAwardWrite[]): Promise<number> {
+    let inserted = 0;
+    for (const award of awards) {
+      const result = await this.db
+        .prepare(
+          `INSERT INTO career_achievements (account_id, achievement_id, awarded_at, match_ref)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT (account_id, achievement_id) DO NOTHING`,
+        )
+        .bind(accountId, award.achievementId, award.awardedAt, award.matchRef)
+        .run();
+      inserted += changed(result);
+    }
+    return inserted;
+  }
+
+  async recordCampaignCompletion(accountId: string, campaignId: string, completedAt: number): Promise<WriteOutcome> {
+    const result = await this.db
+      .prepare(
+        `INSERT INTO career_campaigns (account_id, campaign_id, completed_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT (account_id, campaign_id) DO NOTHING`,
+      )
+      .bind(accountId, campaignId, completedAt)
+      .run();
+    return changed(result) > 0 ? 'ok' : 'conflict';
+  }
+
+  async careerCampaigns(accountId: string): Promise<CareerCampaignRecord[]> {
+    const result = await this.db
+      .prepare(
+        `SELECT account_id, campaign_id, completed_at
+           FROM career_campaigns WHERE account_id = ?
+          ORDER BY completed_at ASC, campaign_id ASC`,
+      )
+      .bind(accountId)
+      .all<CampaignRow>();
+    return (result.results ?? []).map(toCampaign);
   }
 
   async careerStatRows(accountId: string): Promise<StatGroupRow[]> {
@@ -840,6 +1071,23 @@ function toStatRow(row: StatRow): StatGroupRow {
     sitesCaptured: Number(row.sites_captured ?? 0),
     superweaponsUsed: Number(row.superweapons_used ?? 0),
     objectivesCompleted: Number(row.objectives_completed ?? 0),
+  };
+}
+
+function toCampaign(row: CampaignRow): CareerCampaignRecord {
+  return {
+    accountId: row.account_id,
+    campaignId: row.campaign_id,
+    completedAt: Number(row.completed_at ?? 0),
+  };
+}
+
+function toAchievement(row: AchievementRow): CareerAchievementRecord {
+  return {
+    accountId: row.account_id,
+    achievementId: row.achievement_id,
+    awardedAt: Number(row.awarded_at ?? 0),
+    matchRef: row.match_ref,
   };
 }
 

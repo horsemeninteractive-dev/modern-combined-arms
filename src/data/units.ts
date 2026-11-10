@@ -232,6 +232,45 @@ const ROSTER: UnitDef[] = [
     targetClass: 'ground',
   },
   {
+    id: 'apc',
+    name: 'Armoured Personnel Carrier',
+    shortName: 'APC',
+    role: 'Infantry transport',
+    domain: 'land',
+    moveClass: 'wheeled',
+    // Faster than a tracked MBT, slower than the unarmoured recon scout. The
+    // hull is meant to cross the open with a squad, not to outrun a screen.
+    speed: 3.05,
+    turnRate: 2.8,
+    radius: 2.7,
+    vision: 9,
+    hp: 320,
+    armour: 'light',
+    cost: { mats: 380, req: 15 },
+    buildTime: 11,
+    producedBy: ['factory'],
+    weapons: ['apcMg'],
+    // Four individual infantry entities, never squads. The light machine gun
+    // is defensive only: it cannot carry the fight against armour and cannot
+    // match the IFV's autocannon and missile.
+    transport: {
+      capacity: 4,
+      mobile: true,
+      boardingRadius: 2.5,
+      onDestroyed: 'kill',
+      canFireEmbarked: false,
+      firingSlots: 0,
+      passenger: 'infantry',
+    },
+    description:
+      'Wheeled armoured personnel carrier for four infantrymen. Faster than a main battle tank and protected against small arms, with a light machine gun for self-defence. It carries the squad across the open; it cannot replace an IFV in a firefight.',
+    icon: 'apc',
+    hotkey: 'P',
+    targetClass: 'ground',
+    muzzle: { forward: 1.35, height: 1.65, turreted: true },
+    turretRate: 3.2,
+  },
+  {
     id: 'harvester',
     name: 'Harvester',
     shortName: 'HARVESTER',
@@ -510,7 +549,7 @@ const ROSTER: UnitDef[] = [
     turnRate: 1.6,
     radius: 2.8,
     vision: 9,
-    hp: 260,
+    hp: 220,
     armour: 'light',
     cost: { mats: 660, req: 75 },
     buildTime: 16,
@@ -551,6 +590,82 @@ const ROSTER: UnitDef[] = [
     icon: 'helo',
     hotkey: 'H',
     targetClass: 'air',
+  },
+  {
+    id: 'transportHelo',
+    name: 'Utility Transport Helicopter',
+    shortName: 'TRANSPORT HELO',
+    role: 'Utility transport',
+    domain: 'air',
+    moveClass: 'air',
+    // Slower than the gunship and much slower than a jet, but still crosses
+    // the map in a fraction of an APC's road time. The hull is sized for a
+    // four-man cabin rather than a gunship's slim tandem cockpit.
+    speed: 7.4,
+    turnRate: 2.3,
+    radius: 3.1,
+    vision: 12,
+    hp: 220,
+    armour: 'air',
+    cost: { mats: 760, req: 140 },
+    buildTime: 20,
+    producedBy: ['heliport'],
+    rotary: true,
+    // Deliberately unarmed: this is a lift platform, not a gunship with seats.
+    weapons: [],
+    fuel: 90,
+    homeRadius: 8,
+    // Four individual infantry entities. Boarding and unloading both require
+    // the hull to be landed; passengers never fire from the cabin.
+    transport: {
+      capacity: 4,
+      mobile: true,
+      boardingRadius: 2.5,
+      onDestroyed: 'kill',
+      canFireEmbarked: false,
+      firingSlots: 0,
+      passenger: 'infantry',
+    },
+    description:
+      'Unarmed utility helicopter that carries four infantrymen across the battlefield. It must land to board or unload, is faster than a wheeled APC over long distances, and is far more fragile than either a gunship or an armoured carrier. Use it to move a squad, not to fight for ground.',
+    icon: 'transportHelo',
+    hotkey: 'U',
+    targetClass: 'air',
+  },
+  {
+    id: 'landingCraft',
+    name: 'Naval Landing Craft',
+    shortName: 'LANDING CRAFT',
+    role: 'Amphibious transport',
+    domain: 'naval',
+    moveClass: 'naval',
+    // A shallow-draft support hull: slower than an attack craft and much slower
+    // than a corvette, but it carries a full fire team across open water.
+    speed: 2.8,
+    turnRate: 0.9,
+    radius: 4.2,
+    vision: 9,
+    hp: 560,
+    armour: 'naval',
+    cost: { mats: 520, req: 95 },
+    buildTime: 18,
+    producedBy: ['shipyard'],
+    // Unarmed by design: it is a vulnerable amphibious lift, not a warship.
+    weapons: [],
+    transport: {
+      capacity: 4,
+      mobile: true,
+      boardingRadius: 2.5,
+      onDestroyed: 'kill',
+      canFireEmbarked: false,
+      firingSlots: 0,
+      passenger: 'infantry',
+    },
+    description:
+      'Unarmed shallow-draft landing craft for four infantrymen. It crosses navigable water, must beach against a usable shore to embark or unload, and cannot fight. Use it to put a fire team on an undefended coast, not to contest the sea.',
+    icon: 'landingCraft',
+    hotkey: 'L',
+    targetClass: 'naval',
   },
   {
     id: 'navalSupport',

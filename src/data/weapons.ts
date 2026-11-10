@@ -14,6 +14,24 @@ export const WEAPONS: Record<string, WeaponDef> = {
     multipliers: { infantry: 1.45, light: 0.55, heavy: 0.12, support: 0.55, structure: 0.08, naval: 0.04, air: 0 },
     suppression: 0.18,
   },
+  /**
+   * APC defensive machine gun. Enough to answer exposed infantry, with almost
+   * no purchase on armour: it must never turn a carrier into an IFV. The
+   * existing `heavyMg` belongs to fixed bunkers and is deliberately unchanged.
+   */
+  apcMg: {
+    id: 'apcMg',
+    name: '7.62mm machine gun',
+    damage: 6,
+    range: 5.2,
+    cooldown: 0.45,
+    accuracy: 0.68,
+    projectile: 'bullet',
+    speed: 65,
+    targets: ['ground'],
+    multipliers: { infantry: 1.3, light: 0.35, heavy: 0.05, support: 0.4, structure: 0.1, naval: 0.03, air: 0 },
+    suppression: 0.2,
+  },
   autocannon: {
     id: 'autocannon',
     name: '25mm autocannon',

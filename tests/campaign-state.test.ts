@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { defaultComposition } from '../src/identity/flag';
 import { CAMPAIGNS, campaignById, type CampaignDef, type CampaignMission } from '../src/data/campaign';
 import { scenarioById, SCENARIOS } from '../src/data/scenarioCatalog';
 import {
@@ -113,6 +114,64 @@ function acceptMission(
   );
   return acceptCampaignResult(submitted, def);
 }
+
+describe('campaign result identity', () => {
+  it('records the flag flown at deployment with the pending result', () => {
+    const launched = launchCampaignMission(started(), DEFENDER);
+    const operation = mission(
+      DEFENDER,
+      DEFENDER.missions.findIndex((entry) => entry.id === launched.currentMissionId),
+    );
+    const flag = defaultComposition();
+    const submitted = submitCampaignResult(
+      launched,
+      DEFENDER,
+      operation.id,
+      resultFor(DEFENDER, operation, 'victory', {}, launched.deployments),
+      flag,
+    );
+    // Persisted with the result, so a debrief reopened after a reload reports the
+    // flag the operation was flown under.
+    expect(submitted.pending?.flag).toEqual(flag);
+  });
+
+  it('leaves the flag absent when the deployment captured none', () => {
+    const launched = launchCampaignMission(started(), DEFENDER);
+    const operation = mission(
+      DEFENDER,
+      DEFENDER.missions.findIndex((entry) => entry.id === launched.currentMissionId),
+    );
+    const submitted = submitCampaignResult(
+      launched,
+      DEFENDER,
+      operation.id,
+      resultFor(DEFENDER, operation, 'defeat'),
+      null,
+    );
+    expect(submitted.pending?.flag).toBeUndefined();
+  });
+
+  it('keeps the flown flag across a campaign save round-trip', () => {
+    const launched = launchCampaignMission(started(), DEFENDER);
+    const operation = mission(
+      DEFENDER,
+      DEFENDER.missions.findIndex((entry) => entry.id === launched.currentMissionId),
+    );
+    const flag = defaultComposition();
+    const submitted = submitCampaignResult(
+      launched,
+      DEFENDER,
+      operation.id,
+      resultFor(DEFENDER, operation, 'victory', {}, launched.deployments),
+      flag,
+    );
+    const save = { ...emptyCampaignSave(), runs: { [DEFENDER.id]: submitted } };
+    const restored = parseCampaignSave(JSON.parse(serializeCampaignSave(save)), CAMPAIGNS).runs[
+      DEFENDER.id
+    ];
+    expect(restored.pending?.flag).toEqual(flag);
+  });
+});
 
 describe('campaign definitions', () => {
   it('validates both authored campaigns without errors', () => {

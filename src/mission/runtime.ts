@@ -70,6 +70,16 @@ export interface MissionRuntimeState {
   variables: Record<string, MissionValue>;
   objectives: MissionObjectiveRuntime[];
   triggers: MissionTriggerRuntime[];
+  /**
+   * AI groups an action has released, in activation order.
+   *
+   * Activation is a one-way latch: a group that has been released stays
+   * released, so a repeating trigger cannot re-task it every time it fires and
+   * a save written afterwards resumes with the same battlefield.
+   */
+  groups: string[];
+  /** Reinforcement waves that have already been placed on the map. */
+  waves: string[];
   outcome: MissionRuntimeOutcome;
   result: MissionResult | null;
 }
@@ -154,6 +164,8 @@ export function createMissionRuntimeState(doc: MissionDoc): MissionRuntimeState 
       armed: false,
       pendingDueTick: null,
     })),
+    groups: [],
+    waves: [],
     outcome: 'playing',
     result: null,
   };
@@ -344,6 +356,23 @@ export function normalizeMissionRuntimeState(
     };
   });
 
+  // Group and wave bookkeeping. Both are one-way latches, so an id that is no
+  // longer authored is dropped rather than resurrected, and a hand-edited file
+  // cannot mark an unknown group active.
+  const knownGroups = new Set(doc.aiGroups.map((group) => group.id));
+  const knownWaves = new Set(doc.reinforcements.map((wave) => wave.id));
+  const latches = (value: unknown, known: ReadonlySet<string>): string[] => {
+    if (!Array.isArray(value)) return [];
+    const seen = new Set<string>();
+    for (const entry of value) {
+      if (typeof entry !== 'string' || !known.has(entry)) continue;
+      seen.add(entry);
+    }
+    return [...seen];
+  };
+  const groups = latches(candidate.groups, knownGroups);
+  const waves = latches(candidate.waves, knownWaves);
+
   let outcome: MissionRuntimeOutcome = 'playing';
   if (candidate.outcome === 'victory' || candidate.outcome === 'defeat') {
     outcome = candidate.outcome;
@@ -359,6 +388,8 @@ export function normalizeMissionRuntimeState(
     variables,
     objectives,
     triggers,
+    groups,
+    waves,
     outcome,
     result,
   };
@@ -389,6 +420,8 @@ export function serializeMissionRuntime(state: MissionRuntimeState): string {
       trigger.armed ? 1 : 0,
       trigger.pendingDueTick ?? -1,
     ]),
+    groups: [...state.groups],
+    waves: [...state.waves],
     outcome: state.outcome,
     result: state.result,
   });
@@ -551,6 +584,61 @@ export class MissionRuntime {
   }
 
   /**
+   * Release an authored AI group, exactly once.
+   *
+   * Returns true only when this call released the group, which is what tells
+   * the trigger evaluator to hand it to the simulation. A second activation of
+   * the same group, an unknown id, or a release after the mission ended is
+   * refused without touching the latch.
+   */
+  activateGroup(id: string): boolean {
+    if (this.isTerminal) return false;
+    if (!this.doc.aiGroups.some((group) => group.id === id)) return false;
+    if (this.state.groups.includes(id)) return false;
+    this.state.groups.push(id);
+    return true;
+  }
+
+  /** Whether an action has already released this group. */
+  isGroupActive(id: string): boolean {
+    return this.state.groups.includes(id);
+  }
+
+  /**
+   * Record that a reinforcement wave has been placed, exactly once.
+   *
+   * Spawning is not idempotent — placing the same column twice would double the
+   * force — so the latch is written before the simulation is asked to place it,
+   * and a save taken afterwards can never spawn it again.
+   */
+  markWaveSpawned(id: string): boolean {
+    if (this.isTerminal) return false;
+    if (!this.doc.reinforcements.some((wave) => wave.id === id)) return false;
+    if (this.state.waves.includes(id)) return false;
+    this.state.waves.push(id);
+    return true;
+  }
+
+  /** Whether this wave has already been placed. */
+  isWaveSpawned(id: string): boolean {
+    return this.state.waves.includes(id);
+  }
+
+  /**
+   * Commit an authored ending.
+   *
+   * This is the only way a trigger can decide the battle. The verdict is
+   * recorded on the authoritative runtime, so the ordinary pipeline captures the
+   * result and finishes the match from the same state every other outcome uses;
+   * there is no client-side shortcut and no second result path.
+   */
+  forceOutcome(outcome: MissionOutcome): boolean {
+    if (this.isTerminal) return false;
+    this.state.outcome = outcome;
+    return true;
+  }
+
+  /**
    * Hold the mission outcome open while a batch of actions is applied.
    *
    * The trigger evaluator wraps one trigger's actions in a batch: completing the
@@ -603,6 +691,8 @@ export class MissionRuntime {
         ...(objective.blockedBy ? { blockedBy: [...objective.blockedBy] } : {}),
       })),
       triggers: this.state.triggers.map((trigger) => ({ ...trigger })),
+      groups: [...this.state.groups],
+      waves: [...this.state.waves],
       outcome: this.state.outcome,
       result: this.state.result ? structuredClone(this.state.result) : null,
     };

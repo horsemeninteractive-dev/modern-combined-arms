@@ -1,4 +1,5 @@
 import { matchIdFor } from '../accounts/matchCareer';
+import { identitySnapshot, type IdentitySnapshot } from '../accounts/identity';
 import { defaultScenarioId, scenarioById } from '../data/scenarioCatalog';
 import { Game } from '../sim/game';
 import { CommandGate, type GateRejection } from './commandGate';
@@ -92,11 +93,29 @@ export interface RoomSeatDefinition {
   identity?: SeatIdentity | null;
 }
 
+import type { FlagComposition } from '../identity/flag';
+
 export interface SeatIdentity {
   callsign: string;
-  avatar: string;
+  avatar: IdentitySnapshot['avatar'];
   /** Career rank id the signed ticket carried, for the lobby's badge. */
   rank?: string;
+  /**
+   * Command flag carried by the signed ticket, captured with the seat. A
+   * validated composition; the room never renders it itself and never accepts
+   * one from a socket message.
+   */
+  flag?: FlagComposition;
+  /** Equipped profile frame catalogue id from the signed ticket. */
+  frame?: string;
+  /** Equipped profile background catalogue id from the signed ticket. */
+  background?: string;
+}
+
+/** One seat's frozen match-start presentation. Guest seats carry null. */
+export interface MatchSeatIdentity {
+  seatId: number;
+  identity: SeatIdentity | null;
 }
 
 interface SeatState extends RoomSeatDefinition {
@@ -149,6 +168,8 @@ export interface RoomMatchOptions {
   promoteOnConnect?: boolean;
   /** Durable per-seat recovery state from the validated room snapshot. */
   restoredSeats?: readonly RoomSeatSnapshot[];
+  /** Frozen match-start identities; supplied on restore, captured otherwise. */
+  identities?: readonly MatchSeatIdentity[];
   /** Test/ops hook: force a checkpoint after this many updates since a sync. */
   maxDeltaChain?: number;
   /** Test hook for sequence-overflow behaviour; production uses 2^31-1. */
@@ -192,6 +213,8 @@ export interface RoomMatchStatus {
     epoch: number;
     seq: number;
     chain: number;
+    /** Identity frozen when this match started; never current account state. */
+    identity: SeatIdentity | null;
   }>;
   result: NeutralMatchResult;
   diagnostics: RoomDiagnosticsSummary;
@@ -309,6 +332,7 @@ export class RoomMatch {
   private commandsAccepted = 0;
   private commandsRejected = 0;
   private heartbeatCount = 0;
+  private readonly matchIdentities: MatchSeatIdentity[];
 
   constructor(options: RoomMatchOptions) {
     assertSeatTable(options.seats);
@@ -448,6 +472,18 @@ export class RoomMatch {
         lastResyncAt: null,
       };
     });
+    // The constructor is the authoritative start boundary. A restored room
+    // supplies the durable snapshot, while a newly started room captures the
+    // identity verified before start. Cloning keeps the snapshot immutable even
+    // if a caller mutates the metadata object it passed in.
+    this.matchIdentities = options.seats.map((seat) => {
+      const supplied = options.identities?.find((entry) => entry.seatId === seat.seatId);
+      const source =
+        options.identities !== undefined
+          ? (supplied?.identity ?? null)
+          : (seat.identity ?? null);
+      return { seatId: seat.seatId, identity: cloneSeatIdentity(source) };
+    });
     this.gate = new CommandGate(
       this.game,
       this.seats.map((seat) => ({
@@ -483,6 +519,11 @@ export class RoomMatch {
 
   get closed(): boolean {
     return this.phase === 'finished' || this.phase === 'closed';
+  }
+
+  /** The immutable identity this match started with for a seat. */
+  identityFor(seatId: number): SeatIdentity | null {
+    return this.matchIdentities.find((entry) => entry.seatId === seatId)?.identity ?? null;
   }
 
   /** Check a seat token without reserving the socket (used before a 101). */
@@ -771,6 +812,7 @@ export class RoomMatch {
       timing: { startedAtMs: this.startedAtMs, finishedAtMs: this.finishedAtMs },
       now,
       result: this.result,
+      identities: this.matchIdentities,
     });
   }
 
@@ -799,6 +841,7 @@ export class RoomMatch {
         epoch: seat.epoch,
         seq: seat.seq,
         chain: seat.chain,
+        identity: cloneSeatIdentity(this.identityFor(seat.seatId)),
       })),
       result: this.result,
       diagnostics: this.diagnostics.summary(),
@@ -864,6 +907,10 @@ export class RoomMatch {
       snapshotHz: SNAPSHOT_HZ,
       keepaliveMs: KEEPALIVE_INTERVAL_MS,
       matchDeadlineAt: this.matchDeadlineAt,
+      identities: this.matchIdentities.map((entry) => ({
+        seatId: entry.seatId,
+        identity: cloneSeatIdentity(entry.identity),
+      })),
     };
   }
 
@@ -1063,6 +1110,10 @@ export class RoomMatch {
         projectedResultForTeam(result, seat.team),
         seat.team,
         matchIdFor(this.roomId, this.startedAt ?? now),
+        this.matchIdentities.map((entry) => ({
+          seatId: entry.seatId,
+          identity: cloneSeatIdentity(entry.identity),
+        })),
       );
       this.sendJson(seat, message);
       this.closeSeat(seat, 1000, 'match-finished');
@@ -1279,9 +1330,17 @@ export function restoreRoomMatch(options: {
     startedAtDerived,
     finishedAtMs: snapshot.timing.finishedAtMs ?? options.finishedAtMs ?? null,
     restoredSeats: snapshot.seats,
+    identities: snapshot.identities,
     abandonAfterMs: options.abandonAfterMs,
     diagnostics: options.diagnostics,
   });
+}
+
+function cloneSeatIdentity(identity: SeatIdentity | null | undefined): SeatIdentity | null {
+  if (!identity) return null;
+  // Re-validate the presentation on every boundary. The frame/background are
+  // catalogue ids, and an unknown one is dropped rather than rendered.
+  return identitySnapshot(identity) as SeatIdentity | null;
 }
 
 /** Narrow helper for the Durable Object's stored status. */

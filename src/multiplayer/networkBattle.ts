@@ -146,16 +146,24 @@ function createEntity(projected: ProjectedEntity, x: number, z: number): Entity 
     aiRole: '',
   };
   if (domain === 'air') {
-    // Landed aircraft draw on their pad; everything else holds altitude.
-    const landed = remembered || state === 'grounded' || state === 'rearming';
+    // The server's airframe state wins. The old state-derived fallback remains
+    // for a snapshot from a build that predates the aircraft projection.
+    const landed =
+      projected.aircraft?.landed ??
+      (remembered || state === 'grounded' || state === 'rearming');
     entity.aircraft = {
       homeId: 0,
       landed,
       serviceTimer: 0,
       serviceTotal: 0,
-      returningHome: state === 'returning',
+      returningHome: projected.aircraft?.returningHome ?? state === 'returning',
+      climb: projected.aircraft?.climb,
+      ...(projected.aircraft?.fieldLanding
+        ? { fieldLanding: { ...projected.aircraft.fieldLanding } }
+        : {}),
     };
   }
+  if (projected.navalLanding) entity.navalLanding = { ...projected.navalLanding };
   if (domain === 'naval' && def?.id === 'submarine') {
     entity.submarine = {
       dived: state !== 'attacking' && state !== 'idle',
@@ -397,12 +405,25 @@ export class NetworkBattle {
         if (projected.effects) entity.effects = { ...projected.effects };
         else delete entity.effects;
         if (entity.aircraft) {
-          entity.aircraft.landed =
-            projected.remembered === true ||
-            entity.state === 'grounded' ||
-            entity.state === 'rearming';
-          entity.aircraft.returningHome = entity.state === 'returning';
+          if (projected.aircraft) {
+            entity.aircraft.landed = projected.aircraft.landed;
+            entity.aircraft.returningHome = projected.aircraft.returningHome;
+            entity.aircraft.climb = projected.aircraft.climb;
+            if (projected.aircraft.fieldLanding) {
+              entity.aircraft.fieldLanding = { ...projected.aircraft.fieldLanding };
+            } else {
+              delete entity.aircraft.fieldLanding;
+            }
+          } else {
+            entity.aircraft.landed =
+              projected.remembered === true ||
+              entity.state === 'grounded' ||
+              entity.state === 'rearming';
+            entity.aircraft.returningHome = entity.state === 'returning';
+          }
         }
+        if (projected.navalLanding) entity.navalLanding = { ...projected.navalLanding };
+        else delete entity.navalLanding;
         if (entity.submarine) {
           entity.submarine.dived = entity.state !== 'attacking' && entity.state !== 'idle';
           entity.submarine.revealed = entity.state === 'attacking';

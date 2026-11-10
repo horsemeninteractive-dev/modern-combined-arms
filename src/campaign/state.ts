@@ -21,6 +21,7 @@ import type { CampaignDef, CampaignMission } from '../data/campaign';
 import { NATIONS } from '../data/factions';
 import { UNITS } from '../data/units';
 import { normaliseCommanderIdentity } from './identity';
+import { parseFlagComposition, type FlagComposition } from '../identity/flag';
 import {
   CampaignStateError,
   type CampaignMissionRecord,
@@ -235,6 +236,12 @@ export function submitCampaignResult(
   def: CampaignDef,
   missionId: string,
   result: MissionResult,
+  /**
+   * The flag flown when the operation launched. It is recorded with the result
+   * so a debrief reopened after a reload still reports the battle that was
+   * fought, not whatever is equipped now.
+   */
+  flag?: FlagComposition | null,
 ): CampaignState {
   if (state.phase !== 'playing') {
     throw new CampaignStateError(
@@ -264,6 +271,7 @@ export function submitCampaignResult(
     missionId,
     result: clone(result),
     deployments: state.deployments.map((entry) => ({ ...entry })),
+    ...(flag ? { flag } : {}),
   };
   return { ...state, phase: 'debrief', pending };
 }
@@ -650,10 +658,15 @@ function readPending(
     outcome,
   );
   if (!result) return null;
+  // The flag is re-validated on read: a hand-edited save must not get an
+  // arbitrary composition into the renderer, and an unreadable one is dropped
+  // rather than failing the whole debrief.
+  const flown = parseFlagComposition(record.flag);
   return {
     missionId,
     result,
     deployments,
+    ...(flown.ok ? { flag: flown.composition } : {}),
   };
 }
 

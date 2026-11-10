@@ -18,9 +18,11 @@ Authoring rules that follow from the runtime:
 
 - Only these conditions exist: `elapsed`, `variable`, `objective`,
   `entityAlive`, `entityDead`, `regionOccupied`.
-- Only these actions execute: `setObjective`, `setVariable`, `message`.
-  `activateAiGroup`, `spawnReinforcement` and `endMission` are deferred
-  placeholders — never author them and never imply they run.
+- Every action the schema declares executes: `setObjective`, `setVariable`,
+  `message`, `activateAiGroup`, `spawnReinforcement`, `endMission`.
+- `endMission` commits an authored verdict through the ordinary result path. It
+  does not bypass the objective tree for anything else: a mission with no such
+  action still ends on its primaries, and a failed primary is still a defeat.
 - Victory is every `primary` objective complete. One failed primary is a
   defeat, and the engine also ends the operation when the player's command post
   (or any other keyed command post the player owns) falls.
@@ -88,6 +90,32 @@ the order the operation is likely to reach.
   approach"), never claims about AI behaviour the mission cannot observe.
 - Every trigger that completes an objective carries a `message` so the player
   sees the transition in the log as well as the objective panel.
+
+## AI groups and reinforcements
+
+- A group is authored in `aiGroups` and its `units` are authored entity keys,
+  so every member must be a keyed placement in the operation's theatre. The
+  simulation marks the members, not the group, so the hold survives save/load.
+- `initial: 'dormant'` places the group but keeps it out of the fight: the units
+  hold their ground, the AI commander does not count or spend them, and nothing
+  orders them until an `activateAiGroup` action releases them. Use it for
+  ambushes, counterattacks and reserves whose arrival is the story beat.
+- A release is latched. The group is ordered to attack-move to its authored
+  `region` once, and is then an ordinary AI command; a repeating trigger cannot
+  re-task it.
+- A wave is authored in `reinforcements` with `owner`, `region` and `units`
+  (`defId` + `count`). It arrives either from a `spawnReinforcement` action or
+  on its own `afterSeconds` timer, never both: the runtime latches the wave id
+  before placing it, so a save taken afterwards cannot deploy it twice.
+- Placement searches outward from the region centre for a free, standable tile,
+  so a blocked entry area cannot drop a column into a cliff or onto a
+  structure. If no tile exists the wave is reported and the latched id prevents
+  a retry that would double the force.
+- Authored waves are ordinary roster units with ordinary simulation rules; there
+  is no mission-only combat entity.
+- The validator reports a dormant group no trigger releases, a wave with no
+  spawn action and no timer, and a wave whose `triggerId` names a trigger that
+  does not request it.
 
 ## Regions
 

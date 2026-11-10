@@ -44,7 +44,6 @@ import {
   ensureMissionForScenario,
   focusForPath,
   formatByteSize,
-  isDeferredAction,
   libraryFilename,
   libraryHealth,
   materialiseEntityKeys,
@@ -75,6 +74,7 @@ import { missionBriefingMarkup } from './missionBriefing';
 import { missionDebriefMarkup } from './missionDebrief';
 import { copyText, downloadJson, readFileText } from './jsonFile';
 import { CAMPAIGNS } from '../data/campaign';
+import { UNITS } from '../data/units';
 import { parseScenario, scenarioToJson } from '../sim/scenario';
 
 const SECTIONS: Array<{ id: MissionSection; label: string; note: string }> = [
@@ -84,6 +84,8 @@ const SECTIONS: Array<{ id: MissionSection; label: string; note: string }> = [
   { id: 'variables', label: 'VARIABLES', note: 'Typed mission state' },
   { id: 'regions', label: 'REGIONS', note: 'Tile rectangles used by triggers' },
   { id: 'triggers', label: 'TRIGGERS', note: 'Conditions, actions and firing policy' },
+  { id: 'aiGroups', label: 'AI GROUPS', note: 'Reserves, ambushes and their release' },
+  { id: 'reinforcements', label: 'REINFORCEMENTS', note: 'Waves, arrival and composition' },
   { id: 'cinematics', label: 'CINEMATICS', note: 'Ordered camera and dialogue beats' },
   { id: 'validation', label: 'VALIDATE', note: 'Diagnostics and test launch' },
   { id: 'recovery', label: 'RECOVERY', note: 'Draft, saved copy, snapshots and storage' },
@@ -107,6 +109,7 @@ const CONDITION_KINDS: MissionCondition['kind'][] = [
   'entityDead',
   'regionOccupied',
 ];
+const AI_TASKS = ['attack', 'defend', 'patrol', 'reinforce'] as const;
 const ACTION_KINDS: MissionAction['kind'][] = [
   'setObjective',
   'setVariable',
@@ -115,6 +118,10 @@ const ACTION_KINDS: MissionAction['kind'][] = [
   'spawnReinforcement',
   'endMission',
 ];
+
+function unitDefName(defId: string): string {
+  return UNITS[defId as keyof typeof UNITS]?.name ?? defId;
+}
 
 function num(value: string, fallback = 0): number {
   const n = Number(value);
@@ -463,6 +470,10 @@ export class MissionWorkbench {
         return this.regions();
       case 'triggers':
         return this.triggers();
+      case 'aiGroups':
+        return this.aiGroups();
+      case 'reinforcements':
+        return this.reinforcements();
       case 'cinematics':
         return this.cinematics();
       case 'validation':
@@ -1034,7 +1045,6 @@ export class MissionWorkbench {
 
   private actionRow(doc: MissionDoc, action: MissionAction, ti: number, ai: number): string {
     let fields = '';
-    let unavailable = '';
     switch (action.kind) {
       case 'setObjective':
         fields = `<div class="wb-grid two">
@@ -1053,25 +1063,196 @@ export class MissionWorkbench {
       case 'message':
         fields = field('Message', `<input data-scope="action" data-trigger="${ti}" data-index="${ai}" data-field="text" value="${escapeHtml(action.text)}">`, 'A transient simulation notice. It never pauses the battle.');
         break;
-      case 'activateAiGroup':
-        unavailable = `Requires the deferred AI-group runtime; accepted by the schema but not executed by S3/S6.`;
+      case 'activateAiGroup': {
+        const group = doc.aiGroups.find((entry) => entry.id === action.group);
+        fields = field(
+          'AI group',
+          `<select data-scope="action" data-trigger="${ti}" data-index="${ai}" data-field="group">${doc.aiGroups.map((entry) => option(entry.id, entry.initial === 'dormant' ? `${entry.id} (dormant)` : entry.id, action.group)).join('')}</select>`,
+          group
+            ? group.initial === 'dormant'
+              ? 'Released once: its units leave their hold and attack the group region.'
+              : 'This group already fights from the first tick; activating it again does nothing.'
+            : 'Author an AI group before referencing it.',
+        );
         break;
-      case 'spawnReinforcement':
-        unavailable = `Reinforcement spawning is a later change set. This action is authored but has no runtime effect.`;
+      }
+      case 'spawnReinforcement': {
+        const wave = doc.reinforcements.find((entry) => entry.id === action.reinforcement);
+        fields = field(
+          'Wave',
+          `<select data-scope="action" data-trigger="${ti}" data-index="${ai}" data-field="reinforcement">${doc.reinforcements.map((entry) => option(entry.id, `${entry.id} (${entry.units.reduce((sum, unit) => sum + unit.count, 0)} units)`, action.reinforcement)).join('')}</select>`,
+          wave
+            ? 'Placed once, on the first free tiles of the wave region, then sent in.'
+            : 'Author a reinforcement wave before referencing it.',
+        );
         break;
+      }
       case 'endMission':
-        unavailable = `Mission outcome is currently determined by objectives and player defeat. This action is authored but has no runtime effect.`;
+        fields = field(
+          'Outcome',
+          `<select data-scope="action" data-trigger="${ti}" data-index="${ai}" data-field="outcome">${option('victory', 'Victory', action.outcome)}${option('defeat', 'Defeat', action.outcome)}</select>`,
+          'Ends the battle through the ordinary result path. No later trigger runs.',
+        );
         break;
     }
-    return `<div class="wb-row action ${isDeferredAction(action.kind) ? 'deferred' : ''}">
+    return `<div class="wb-row action">
       <div class="wb-row-head">
-        <select data-scope="action-kind" data-trigger="${ti}" data-index="${ai}">${ACTION_KINDS.map((kind) => option(kind, isDeferredAction(kind) ? `${actionLabel(kind)} (unavailable)` : actionLabel(kind), action.kind)).join('')}</select>
+        <select data-scope="action-kind" data-trigger="${ti}" data-index="${ai}">${ACTION_KINDS.map((kind) => option(kind, actionLabel(kind), action.kind)).join('')}</select>
         <span class="wb-summary">${escapeHtml(describeAction(action))}</span>
         <span class="wb-row-actions"><button class="btn btn-ghost" data-act="action-up" data-trigger="${ti}" data-index="${ai}" ${ai === 0 ? 'disabled' : ''}>↑</button><button class="btn btn-ghost" data-act="action-down" data-trigger="${ti}" data-index="${ai}">↓</button><button class="btn btn-ghost" data-act="remove-action" data-trigger="${ti}" data-index="${ai}">REMOVE</button></span>
       </div>
       ${fields}
-      ${unavailable ? `<p class="wb-unavailable">${escapeHtml(unavailable)}</p>` : ''}
     </div>`;
+  }
+
+  private aiGroups(): string {
+    const doc = this.mission()!;
+    const keys = authoredEntityKeys(this.editor.scenario);
+    return `
+      <section class="wb-section">
+        ${this.toolbar()}
+        <div class="wb-section-head">
+          <div><h3>AI groups</h3><p>A group commands authored placements, not new units. A dormant group is placed on the map but held out of the fight until a trigger releases it once.</p></div>
+          <button class="btn btn-ghost" data-act="add-ai-group">ADD GROUP</button>
+        </div>
+        <details class="wb-help">
+          <summary>How a group behaves in play</summary>
+          <ul>
+            <li>Members are the stable keys of placements already in this scenario.</li>
+            <li><b>Active</b> groups fight from the first tick; <b>dormant</b> groups stand where authored and the AI commander does not count them.</li>
+            <li><b>Activate AI group</b> releases a dormant group once: it leaves its hold and attack-moves to the group region, then behaves like any AI command.</li>
+            <li>A release is latched and saved, so leaving and reloading cannot task the group twice.</li>
+            <li>The validator warns when a dormant group is never released, when its region does not exist, or when a member is not placed.</li>
+          </ul>
+        </details>
+        ${doc.aiGroups
+          .map((group, index) => {
+            const missing = group.units.filter((key) => !keys.includes(key));
+            const regionKnown = !group.region || doc.regions.some((entry) => entry.id === group.region);
+            const dormant = (group.initial ?? 'active') === 'dormant';
+            const released = doc.triggers.some((trigger) =>
+              trigger.actions.some((action) => action.kind === 'activateAiGroup' && action.group === group.id),
+            );
+            return `<article class="wb-card" data-focus-key="aiGroup:${index}">
+              <header class="wb-card-head">
+                <b>${escapeHtml(group.id)}</b>
+                <span class="wb-chip ${dormant ? 'warn' : 'ok'}">${dormant ? 'DORMANT' : 'ACTIVE'}</span>
+                <span class="wb-chip">${escapeHtml(group.task.toUpperCase())}</span>
+                <span class="wb-chip">${group.units.length} UNIT${group.units.length === 1 ? '' : 'S'} · OWNER ${group.owner}</span>
+                ${group.region ? `<span class="wb-chip ${regionKnown ? '' : 'bad'}">${escapeHtml(group.region)}${regionKnown ? '' : ' · MISSING'}</span>` : '<span class="wb-chip warn">NO REGION</span>'}
+                ${dormant && !released ? '<span class="wb-chip bad">NEVER RELEASED</span>' : ''}
+                ${missing.length ? `<span class="wb-chip bad">${missing.length} NOT PLACED</span>` : ''}
+                <button class="btn btn-ghost" data-act="remove-ai-group" data-index="${index}">REMOVE</button>
+              </header>
+              ${this.inlineIssues(`aiGroups[${index}]`)}
+              <div class="wb-grid two">
+                ${field('ID', `<input data-scope="ai-group" data-index="${index}" data-field="id" value="${escapeHtml(group.id)}" spellcheck="false">`, 'Trigger actions reference this id.')}
+                ${field('Owner', `<input type="number" min="0" max="7" data-scope="ai-group" data-index="${index}" data-field="owner" value="${group.owner}">`, 'Team the members belong to.')}
+                ${field('Task', `<select data-scope="ai-group" data-index="${index}" data-field="task">${AI_TASKS.map((task) => option(task, task, group.task)).join('')}</select>`)}
+                ${field('Initial state', `<select data-scope="ai-group" data-index="${index}" data-field="initial">${option('active', 'Active from the first tick', group.initial ?? 'active')}${option('dormant', 'Dormant until released', group.initial ?? 'active')}</select>`, 'A dormant group must be released by an action or it never fights.')}
+                ${field('Region', `<select data-scope="ai-group" data-index="${index}" data-field="region">${option('', 'No region — task default', group.region ?? '')}${doc.regions.map((entry) => option(entry.id, `${entry.name || entry.id} · ${entry.width}×${entry.height}`, group.region ?? '')).join('')}</select>`, 'Where the group goes after release.')}
+              </div>
+              <div class="wb-subhead"><span>MEMBERS</span><small>The placements this group commands.</small></div>
+              <div class="wb-stack">${
+                group.units
+                  .map((key, unitIndex) => {
+                    const info = describeEntityReference(this.editor.scenario, key);
+                    return `<div class="wb-row">
+                      <div class="wb-row-head">
+                        <select data-scope="group-unit" data-index="${index}" data-unit="${unitIndex}" data-field="key" aria-label="Group member">${keys.map((candidate) => option(candidate, this.entityOptionLabel(candidate), key)).join('')}${info.found ? '' : `<option value="${escapeHtml(key)}" selected>${escapeHtml(key)} (not placed)</option>`}</select>
+                        <span class="wb-summary">${escapeHtml(info.found ? info.detail : 'Not placed in this scenario')}</span>
+                        <span class="wb-row-actions">
+                          ${info.found ? `<button class="btn btn-ghost" data-act="focus-entity" data-key="${escapeHtml(key)}">LOCATE</button>` : ''}
+                          <button class="btn btn-ghost" data-act="remove-group-unit" data-index="${index}" data-unit="${unitIndex}">REMOVE</button>
+                        </span>
+                      </div>
+                    </div>`;
+                  })
+                  .join('') || '<p class="wb-note">No members. A group with no placed units commands nothing.</p>'
+              }</div>
+              ${
+                keys.filter((key) => !group.units.includes(key)).length
+                  ? `<div class="wb-inline wb-ref-add"><select data-scope="group-unit-add" data-index="${index}" aria-label="Add a member"><option value="">Add a placement…</option>${keys
+                      .filter((key) => !group.units.includes(key))
+                      .map((key) => `<option value="${escapeHtml(key)}">${escapeHtml(this.entityOptionLabel(key))}</option>`)
+                      .join('')}</select></div>`
+                  : '<p class="wb-note">Every keyed placement is already a member.</p>'
+              }
+              <p class="wb-note">${dormant ? (released ? 'Released by an authored action.' : 'Held until an action releases it. Add one in TRIGGERS.') : 'Fights from the first tick; activating it later does nothing.'}</p>
+            </article>`;
+          })
+          .join('') || '<p class="wb-note">No AI groups. Add one to hold a reserve, stage an ambush or bring a counterattack in as a story beat.</p>'}
+      </section>`;
+  }
+
+  private reinforcements(): string {
+    const doc = this.mission()!;
+    const defIds = Object.keys(UNITS).sort((a, b) => unitDefName(a).localeCompare(unitDefName(b)));
+    return `
+      <section class="wb-section">
+        ${this.toolbar()}
+        <div class="wb-section-head">
+          <div><h3>Reinforcement waves</h3><p>A wave is an ordinary roster force placed once on the free tiles of a region. It arrives from a <code>spawnReinforcement</code> action or on its own timer — never twice.</p></div>
+          <button class="btn btn-ghost" data-act="add-reinforcement">ADD WAVE</button>
+        </div>
+        <details class="wb-help">
+          <summary>How a wave behaves in play</summary>
+          <ul>
+            <li>Composition names real unit definitions; the units spawned are ordinary units with ordinary rules.</li>
+            <li>Placement searches outward from the region centre for free, standable tiles, so a blocked entry cannot drop a column into a cliff.</li>
+            <li>Arrival is latched and saved: a trigger that fires again, or a reload, cannot duplicate the wave.</li>
+            <li>After placement the wave attack-moves into its region.</li>
+            <li>The validator warns when a wave has neither a spawn action nor a timer, and when its region is missing.</li>
+          </ul>
+        </details>
+        ${doc.reinforcements
+          .map((wave, index) => {
+            const total = wave.units.reduce((sum, unit) => sum + unit.count, 0);
+            const regionKnown = doc.regions.some((entry) => entry.id === wave.region);
+            const requestedBy = doc.triggers
+              .filter((trigger) =>
+                trigger.actions.some(
+                  (action) => action.kind === 'spawnReinforcement' && action.reinforcement === wave.id,
+                ),
+              )
+              .map((trigger) => trigger.id);
+            const scheduled = requestedBy.length > 0 || wave.afterSeconds !== undefined;
+            const triggerKnown = !wave.triggerId || doc.triggers.some((entry) => entry.id === wave.triggerId);
+            return `<article class="wb-card" data-focus-key="reinforcement:${index}">
+              <header class="wb-card-head">
+                <b>${escapeHtml(wave.id)}</b>
+                <span class="wb-chip">${total} UNIT${total === 1 ? '' : 'S'} · OWNER ${wave.owner}</span>
+                <span class="wb-chip ${regionKnown ? '' : 'bad'}">${escapeHtml(wave.region || 'NO REGION')}${wave.region && !regionKnown ? ' · MISSING' : ''}</span>
+                <span class="wb-chip ${scheduled ? 'ok' : 'bad'}">${scheduled ? (requestedBy.length ? `ON ACTION ${requestedBy.join(', ')}` : `AT ${wave.afterSeconds}s`) : 'NEVER ARRIVES'}</span>
+                <button class="btn btn-ghost" data-act="remove-reinforcement" data-index="${index}">REMOVE</button>
+              </header>
+              ${this.inlineIssues(`reinforcements[${index}]`)}
+              <div class="wb-grid four">
+                ${field('ID', `<input data-scope="reinforcement" data-index="${index}" data-field="id" value="${escapeHtml(wave.id)}" spellcheck="false">`, 'Trigger actions reference this id.')}
+                ${field('Owner', `<input type="number" min="0" max="7" data-scope="reinforcement" data-index="${index}" data-field="owner" value="${wave.owner}">`)}
+                ${field('Region', `<select data-scope="reinforcement" data-index="${index}" data-field="region">${!wave.region ? '<option value="">Choose a region…</option>' : ''}${wave.region && !regionKnown ? `<option value="${escapeHtml(wave.region)}" selected>${escapeHtml(wave.region)} (missing)</option>` : ''}${doc.regions.map((entry) => option(entry.id, `${entry.name || entry.id} · ${entry.width}×${entry.height}`, wave.region)).join('')}</select>`, regionKnown ? 'The wave arrives on this region’s free tiles.' : 'No region with this id.')}
+                ${field('After seconds', `<input type="number" min="0" step="0.5" data-scope="reinforcement" data-index="${index}" data-field="afterSeconds" value="${wave.afterSeconds ?? ''}" placeholder="trigger only">`, 'Leave blank when a trigger brings the wave in.')}
+              </div>
+              ${field('Requesting trigger', `<select data-scope="reinforcement" data-index="${index}" data-field="triggerId">${option('', 'None', wave.triggerId ?? '')}${!triggerKnown && wave.triggerId ? `<option value="${escapeHtml(wave.triggerId)}" selected>${escapeHtml(wave.triggerId)} (missing)</option>` : ''}${doc.triggers.map((entry) => option(entry.id, entry.id, wave.triggerId ?? '')).join('')}</select>`, 'A reference for authors and readers; arrival is decided by the action or the timer.')}
+              <div class="wb-subhead"><span>COMPOSITION</span><small>Unit definitions and counts.</small></div>
+              <div class="wb-stack">${
+                wave.units
+                  .map(
+                    (unit, unitIndex) => `<div class="wb-row">
+                      <div class="wb-row-head">
+                        <select data-scope="wave-unit" data-index="${index}" data-unit="${unitIndex}" data-field="defId" aria-label="Unit definition">${defIds.map((defId) => option(defId, unitDefName(defId), unit.defId)).join('')}</select>
+                        <input type="number" min="1" max="64" data-scope="wave-unit" data-index="${index}" data-unit="${unitIndex}" data-field="count" value="${unit.count}" aria-label="Count">
+                        <span class="wb-row-actions"><button class="btn btn-ghost" data-act="remove-wave-unit" data-index="${index}" data-unit="${unitIndex}">REMOVE</button></span>
+                      </div>
+                    </div>`,
+                  )
+                  .join('') || '<p class="wb-note">No composition. A wave with no units arrives empty.</p>'
+              }</div>
+              <div class="wb-inline wb-ref-add"><select data-scope="wave-unit-add" data-index="${index}" aria-label="Add a unit type"><option value="">Add a unit type…</option>${defIds.map((defId) => `<option value="${escapeHtml(defId)}">${escapeHtml(unitDefName(defId))}</option>`).join('')}</select></div>
+            </article>`;
+          })
+          .join('') || '<p class="wb-note">No reinforcement waves. Add one to bring a column in when the mission calls for it.</p>'}
+      </section>`;
   }
 
   private cinematics(): string {
@@ -1625,6 +1806,30 @@ export class MissionWorkbench {
       this.removeRegion(index);
       return;
     }
+    if (act === 'add-ai-group') {
+      this.addAiGroup();
+      return;
+    }
+    if (act === 'remove-ai-group') {
+      this.removeAiGroup(index);
+      return;
+    }
+    if (act === 'remove-group-unit') {
+      this.removeGroupUnit(index, Number(button.dataset.unit ?? 0));
+      return;
+    }
+    if (act === 'add-reinforcement') {
+      this.addReinforcement();
+      return;
+    }
+    if (act === 'remove-reinforcement') {
+      this.removeReinforcement(index);
+      return;
+    }
+    if (act === 'remove-wave-unit') {
+      this.removeWaveUnit(index, Number(button.dataset.unit ?? 0));
+      return;
+    }
     if (act === 'add-trigger') {
       this.addTrigger();
       return;
@@ -1806,6 +2011,55 @@ export class MissionWorkbench {
       if (fieldName === 'z') region.z = Math.max(0, Math.round(num(String(value))));
       if (fieldName === 'width') region.width = Math.max(1, Math.round(num(String(value), 1)));
       if (fieldName === 'height') region.height = Math.max(1, Math.round(num(String(value), 1)));
+    } else if (scope === 'ai-group') {
+      const group = doc.aiGroups[index];
+      if (!group) return;
+      if (fieldName === 'id') group.id = String(value);
+      if (fieldName === 'owner') group.owner = Math.max(0, Math.round(num(String(value))));
+      if (fieldName === 'task') group.task = String(value) as typeof group.task;
+      if (fieldName === 'initial') {
+        if (String(value) === 'dormant') group.initial = 'dormant';
+        else delete group.initial;
+      }
+      if (fieldName === 'region') {
+        if (String(value)) group.region = String(value);
+        else delete group.region;
+      }
+    } else if (scope === 'group-unit') {
+      const group = doc.aiGroups[index];
+      const unitIndex = Number(el.dataset.unit ?? 0);
+      if (!group || group.units[unitIndex] === undefined) return;
+      group.units[unitIndex] = String(value);
+    } else if (scope === 'group-unit-add') {
+      const group = doc.aiGroups[index];
+      const key = String(el.value);
+      if (!group || !key || group.units.includes(key)) return;
+      group.units = [...group.units, key];
+    } else if (scope === 'reinforcement') {
+      const wave = doc.reinforcements[index];
+      if (!wave) return;
+      if (fieldName === 'id') wave.id = String(value);
+      if (fieldName === 'owner') wave.owner = Math.max(0, Math.round(num(String(value))));
+      if (fieldName === 'region') wave.region = String(value);
+      if (fieldName === 'afterSeconds') {
+        if (String(value).trim() === '') delete wave.afterSeconds;
+        else wave.afterSeconds = Math.max(0, num(String(value)));
+      }
+      if (fieldName === 'triggerId') {
+        if (String(value)) wave.triggerId = String(value);
+        else delete wave.triggerId;
+      }
+    } else if (scope === 'wave-unit') {
+      const wave = doc.reinforcements[index];
+      const unit = wave?.units[Number(el.dataset.unit ?? 0)];
+      if (!unit) return;
+      if (fieldName === 'defId') unit.defId = String(value);
+      if (fieldName === 'count') unit.count = Math.max(1, Math.round(num(String(value), 1)));
+    } else if (scope === 'wave-unit-add') {
+      const wave = doc.reinforcements[index];
+      const defId = String(el.value);
+      if (!wave || !defId) return;
+      wave.units = [...wave.units, { defId, count: 1 }];
     } else if (scope === 'trigger') {
       const trigger = doc.triggers[index];
       if (!trigger) return;
@@ -2024,6 +2278,105 @@ export class MissionWorkbench {
         this.commit();
       },
     );
+  }
+
+  /** The first player who is not the local commander. */
+  private opposingOwner(): number {
+    const players = this.editor.scenario.players;
+    const local = players[0]?.id ?? 0;
+    return players.find((player) => player.id !== local)?.id ?? 1;
+  }
+
+  private addAiGroup(): void {
+    const doc = this.mission()!;
+    let id = 'group';
+    let n = doc.aiGroups.length + 1;
+    while (doc.aiGroups.some((entry) => entry.id === id)) id = `group-${n++}`;
+    doc.aiGroups.push({
+      id,
+      owner: this.opposingOwner(),
+      task: 'defend',
+      units: [],
+      initial: 'dormant',
+      ...(doc.regions[0] ? { region: doc.regions[0].id } : {}),
+    });
+    this.commit();
+  }
+
+  private removeAiGroup(index: number): void {
+    const doc = this.mission()!;
+    const group = doc.aiGroups[index];
+    if (!group) return;
+    const refs = doc.triggers
+      .map((trigger, ti) =>
+        trigger.actions.some((action) => action.kind === 'activateAiGroup' && action.group === group.id)
+          ? `triggers[${ti}]`
+          : '',
+      )
+      .filter(Boolean);
+    this.confirmRemove(
+      refs.length
+        ? `"${group.id}" is referenced by ${refs.join(', ')}. Removing it leaves those actions pointing at nothing. Remove anyway?`
+        : `Remove AI group "${group.id}"?`,
+      () => {
+        doc.aiGroups.splice(index, 1);
+        this.commit();
+      },
+    );
+  }
+
+  private removeGroupUnit(index: number, unitIndex: number): void {
+    const group = this.mission()!.aiGroups[index];
+    if (!group) return;
+    group.units.splice(unitIndex, 1);
+    this.commit();
+  }
+
+  private addReinforcement(): void {
+    const doc = this.mission()!;
+    let id = 'wave';
+    let n = doc.reinforcements.length + 1;
+    while (doc.reinforcements.some((entry) => entry.id === id)) id = `wave-${n++}`;
+    const defId = 'rifle' in UNITS ? 'rifle' : (Object.keys(UNITS)[0] ?? 'rifle');
+    doc.reinforcements.push({
+      id,
+      owner: this.opposingOwner(),
+      region: doc.regions[0]?.id ?? '',
+      units: [{ defId, count: 2 }],
+      afterSeconds: 60,
+    });
+    this.commit();
+  }
+
+  private removeReinforcement(index: number): void {
+    const doc = this.mission()!;
+    const wave = doc.reinforcements[index];
+    if (!wave) return;
+    const refs = doc.triggers
+      .map((trigger, ti) =>
+        trigger.actions.some(
+          (action) => action.kind === 'spawnReinforcement' && action.reinforcement === wave.id,
+        )
+          ? `triggers[${ti}]`
+          : '',
+      )
+      .filter(Boolean);
+    this.confirmRemove(
+      refs.length
+        ? `"${wave.id}" is requested by ${refs.join(', ')}. Removing it leaves those actions pointing at nothing. Remove anyway?`
+        : `Remove reinforcement "${wave.id}"?`,
+      () => {
+        doc.reinforcements.splice(index, 1);
+        this.commit();
+      },
+    );
+  }
+
+  private removeWaveUnit(index: number, unitIndex: number): void {
+    const wave = this.mission()!.reinforcements[index];
+    if (!wave) return;
+    wave.units.splice(unitIndex, 1);
+    this.commit();
   }
 
   private addTrigger(): void {
@@ -2517,9 +2870,9 @@ function defaultAction(kind: string, doc: MissionDoc): MissionAction {
     case 'setVariable':
       return { kind: 'setVariable', variable: doc.variables[0]?.id ?? '', value: 0 };
     case 'activateAiGroup':
-      return { kind: 'activateAiGroup', group: '' };
+      return { kind: 'activateAiGroup', group: doc.aiGroups[0]?.id ?? '' };
     case 'spawnReinforcement':
-      return { kind: 'spawnReinforcement', reinforcement: '' };
+      return { kind: 'spawnReinforcement', reinforcement: doc.reinforcements[0]?.id ?? '' };
     case 'endMission':
       return { kind: 'endMission', outcome: 'victory' };
     default:

@@ -81,6 +81,8 @@ export function sameProjectedEntity(a: ProjectedEntity, b: ProjectedEntity): boo
     a.captureTargetId === b.captureTargetId &&
     a.captureProgress === b.captureProgress &&
     sameHarvester(a.harvester, b.harvester) &&
+    sameAircraft(a.aircraft, b.aircraft) &&
+    sameNavalLanding(a.navalLanding, b.navalLanding) &&
     sameDeconstruct(a.deconstruct, b.deconstruct) &&
     sameIds(a.upgrades, b.upgrades) &&
     sameIds(a.modules, b.modules) &&
@@ -88,6 +90,30 @@ export function sameProjectedEntity(a: ProjectedEntity, b: ProjectedEntity): boo
     sameCooldowns(a.effects, b.effects) &&
     sameQueue(a.queue, b.queue)
   );
+}
+
+/** Airframe state is public and continuous; compare every projected field. */
+function sameAircraft(
+  a: ProjectedEntity['aircraft'],
+  b: ProjectedEntity['aircraft'],
+): boolean {
+  if (!a || !b) return a === b;
+  return (
+    a.landed === b.landed &&
+    a.returningHome === b.returningHome &&
+    a.climb === b.climb &&
+    a.fieldLanding?.x === b.fieldLanding?.x &&
+    a.fieldLanding?.z === b.fieldLanding?.z &&
+    a.fieldLanding?.purpose === b.fieldLanding?.purpose
+  );
+}
+
+function sameNavalLanding(
+  a: ProjectedEntity['navalLanding'],
+  b: ProjectedEntity['navalLanding'],
+): boolean {
+  if (!a || !b) return a === b;
+  return a.x === b.x && a.z === b.z && a.purpose === b.purpose && a.beached === b.beached;
 }
 
 function sameDeconstruct(

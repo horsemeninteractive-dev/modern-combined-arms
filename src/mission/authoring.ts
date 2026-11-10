@@ -27,12 +27,13 @@ import {
 } from './types';
 import { isMissionId, validateMission } from './validate';
 
-/** Actions the schema carries but the S3 runtime does not execute yet. */
-export const DEFERRED_ACTIONS = [
-  'activateAiGroup',
-  'spawnReinforcement',
-  'endMission',
-] as const;
+/** Actions the schema carries but the runtime does not execute.
+ *
+ * Empty since the campaign runtime completion: every action the schema declares
+ * is now executed. Kept as an export so the workbench, the authoring tools and
+ * their tests keep one place to ask the question.
+ */
+export const DEFERRED_ACTIONS = [] as const;
 
 export type DeferredActionKind = (typeof DEFERRED_ACTIONS)[number];
 
@@ -44,6 +45,8 @@ export type MissionSection =
   | 'variables'
   | 'regions'
   | 'triggers'
+  | 'aiGroups'
+  | 'reinforcements'
   | 'cinematics'
   | 'validation'
   /** Draft, saved copy, last-valid snapshot and storage state. */
@@ -445,11 +448,11 @@ export function describeAction(action: MissionAction): string {
     case 'message':
       return `Message: “${action.text}”`;
     case 'activateAiGroup':
-      return `Activate AI group ${action.group} (not executed in S6)`;
+      return `Release AI group ${action.group}`;
     case 'spawnReinforcement':
-      return `Spawn reinforcement ${action.reinforcement} (not executed in S6)`;
+      return `Bring in reinforcement ${action.reinforcement}`;
     case 'endMission':
-      return `End mission as ${action.outcome} (not executed in S6)`;
+      return `End mission as ${action.outcome}`;
   }
 }
 
@@ -477,6 +480,8 @@ export function sectionForPath(path: string): MissionSection {
   if (path.startsWith('variables')) return 'variables';
   if (path.startsWith('regions')) return 'regions';
   if (path.startsWith('triggers')) return 'triggers';
+  if (path.startsWith('aiGroups')) return 'aiGroups';
+  if (path.startsWith('reinforcements')) return 'reinforcements';
   if (path.startsWith('cinematics')) return 'cinematics';
   if (path.startsWith('scenario.')) return 'regions';
   return 'overview';

@@ -47,6 +47,10 @@ const COMBAT_SLOTS = [
 
 const UTILITY_SLOTS = ['engineer', 'harvester', 'recovery', 'medic'] as const;
 
+// Shared transports are not combat slots: both alliances field the same hulls
+// and neither has a national replacement chain for them.
+const SHARED_TRANSPORT_SLOTS = ['apc', 'transportHelo', 'landingCraft'] as const;
+
 function arena(playerNation: string, enemyNation = 'poland'): Scenario {
   const size = 48;
   const scenario = createEmptyScenario(size, size);
@@ -82,11 +86,11 @@ function withFacilities(nation: string): Game {
 }
 
 describe('alliance baselines', () => {
-  it('fields distinct equipment in all 18 combat slots and shares the 4 utility roles', () => {
+  it('fields distinct equipment in all 18 combat slots, shares the 4 utility roles and all transports', () => {
     const defender = ALLIANCES.defender.baseline.units;
     const eastern = ALLIANCES.eastern.baseline.units;
-    expect(defender.length).toBe(22);
-    expect(eastern.length).toBe(22);
+    expect(defender.length).toBe(25);
+    expect(eastern.length).toBe(25);
 
     for (const slot of COMBAT_SLOTS) {
       expect(unitSlotId(ALLIANCES.defender.baseline, slot)).toBeTruthy();
@@ -99,6 +103,12 @@ describe('alliance baselines', () => {
       expect(unitSlotId(ALLIANCES.defender.baseline, slot)).toBe(slot);
       expect(unitSlotId(ALLIANCES.eastern.baseline, slot)).toBe(slot);
     }
+    for (const slot of SHARED_TRANSPORT_SLOTS) {
+      expect(defender).toContain(slot);
+      expect(eastern).toContain(slot);
+      expect(unitFamily(slot)).toBe(slot);
+      expect(UNITS[slot].transport?.capacity).toBe(4);
+    }
   });
 
   it('keeps structures common and every slot pointing at one definition', () => {
@@ -108,7 +118,7 @@ describe('alliance baselines', () => {
     for (const roster of [ALLIANCES.defender.baseline, ALLIANCES.eastern.baseline]) {
       const slots = roster.units.map((id) => unitFamily(id));
       expect(new Set(slots).size).toBe(slots.length);
-      expect(slots.sort()).toEqual([...COMBAT_SLOTS, ...UTILITY_SLOTS].sort());
+      expect(slots.sort()).toEqual([...COMBAT_SLOTS, ...UTILITY_SLOTS, ...SHARED_TRANSPORT_SLOTS].sort());
     }
   });
 
@@ -275,7 +285,10 @@ describe('production and AI resolution', () => {
     expect(russianFactory).not.toContain('tank');
     expect(productionEntries(russia, 'heliport')).toContain('attackHeloEC');
     expect(productionEntries(poland, 'heliport')).toContain('attackHelo');
+    expect(productionEntries(russia, 'heliport')).toContain('transportHelo');
+    expect(productionEntries(poland, 'heliport')).toContain('transportHelo');
     expect(productionEntries(russia, 'airfield')).not.toContain('attackHeloEC');
+    expect(productionEntries(russia, 'airfield')).not.toContain('transportHelo');
   });
 
   it('marks only nation-specific definitions as national', () => {

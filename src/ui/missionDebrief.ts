@@ -12,11 +12,26 @@
  */
 import type { MissionDoc, MissionResult, MissionValue } from '../mission';
 import type { CampaignOutlook } from '../campaign/outlook';
+import type { FlagComposition } from '../identity/flag';
+import { commandFlagSvg } from './commandFlag';
 import { escapeHtml } from './modal';
 
 export interface MissionDebriefContext {
   mission?: MissionDoc;
   outlook?: CampaignOutlook | null;
+  /**
+   * The command flag flown when this battle started. Passed explicitly rather
+   * than read from storage at render time: a flag equipped after deployment must
+   * not rewrite the report of a battle fought under the old one.
+   */
+  flag?: FlagComposition | null;
+}
+
+function flagMarkup(flag: FlagComposition): string {
+  return `<div class="mission-debrief-flag">
+    ${commandFlagSvg(flag, { size: 120, title: 'Command flag flown during this operation' })}
+    <small>COMMAND FLAG · AS FLOWN AT DEPLOYMENT</small>
+  </div>`;
 }
 
 export function missionClock(seconds: number): string {
@@ -112,6 +127,7 @@ export function missionDebriefMarkup(
   return `
     <div class="mission-debrief">
       <h3>MISSION DEBRIEF</h3>
+      ${context.flag ? flagMarkup(context.flag) : ''}
       ${objectives ? `<ul class="mission-debrief-objectives">${objectives}</ul>` : ''}
       <div class="mission-debrief-facts">
         <span>MISSION TIME <b>${missionClock(result.elapsedSeconds)}</b></span>

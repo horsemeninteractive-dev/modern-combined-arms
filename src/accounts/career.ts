@@ -12,6 +12,7 @@
  * because a farmable counter is not a measure of a completed operation.
  */
 import { rankForXp, type RankSpec } from './ranks';
+import { levelForXp, type LevelStanding } from './levels';
 import type { AccountErrorCode } from './types';
 
 export type CareerMode = 'campaign' | 'skirmish' | 'multiplayer';
@@ -37,6 +38,31 @@ const OUTCOME_FACTOR: Record<CareerOutcome, number> = { victory: 1, draw: 0.5, d
 const DIFFICULTY_FACTOR: Record<CareerDifficulty, number> = { recruit: 0.8, veteran: 1, elite: 1.25 };
 const MAX_DURATION_BONUS = 60;
 
+export interface CareerAccomplishments {
+  objectivesCompleted?: number;
+  sitesCaptured?: number;
+  superweaponsUsed?: number;
+  structuresDestroyed?: number;
+  structuresBuilt?: number;
+}
+
+/**
+ * A small, capped award for what was actually accomplished in a completed
+ * operation. It is deliberately smaller than the base award and cannot be
+ * farmed by repeating one event: the caps apply to the match, and the ledger
+ * still pays only once per stable reference.
+ */
+export function careerAccomplishmentXp(stats: CareerAccomplishments): number {
+  const objectives = Math.min(30, Math.max(0, Math.floor(stats.objectivesCompleted ?? 0)) * 5);
+  const sites = Math.min(15, Math.max(0, Math.floor(stats.sitesCaptured ?? 0)) * 3);
+  const superweapons = Math.min(15, Math.max(0, Math.floor(stats.superweaponsUsed ?? 0)) * 5);
+  const structures = Math.min(
+    20,
+    Math.floor(Math.max(0, Math.floor(stats.structuresDestroyed ?? 0)) / 5),
+  );
+  return objectives + sites + superweapons + structures;
+}
+
 export interface CareerMatchInput {
   /** Client-stable idempotency key, unique per account. */
   ref: string;
@@ -61,6 +87,9 @@ export interface CareerMatchRecord {
   xp: number;
   provenance: CareerProvenance;
   recordedAt: number;
+  /** What the operation accomplished. Held by the guest ledger only; the
+   *  account service keeps the same facts in its match report. */
+  accomplishments?: CareerAccomplishments;
 }
 
 export interface CareerTotals {
@@ -185,6 +214,7 @@ export function summariseCareer(records: readonly CareerMatchRecord[]): CareerTo
 export interface CareerViewData {
   totals: CareerTotals;
   rank: RankSpec;
+  level: LevelStanding;
   next: { id: string; name: string; grade: string; xpRequired: number } | null;
   xpInto: number;
   xpSpan: number | null;
@@ -197,6 +227,7 @@ export function careerViewFrom(totals: CareerTotals, matches: CareerMatchRecord[
   return {
     totals,
     rank,
+    level: levelForXp(totals.xp),
     next: next ? { id: next.id, name: next.name, grade: next.grade, xpRequired: next.threshold } : null,
     xpInto,
     xpSpan,

@@ -8,6 +8,7 @@
  */
 import { LobbyClient, makeRoomCode, type LobbyView } from '../src/multiplayer/lobbyClient';
 import { defaultLobbyConfig } from '../src/multiplayer/lobbyConfig';
+import { defaultComposition } from '../src/identity/flag';
 import { PLAYABLE_NATION_IDS } from '../src/data/factions';
 import { Game } from '../src/sim/game';
 import { scenarioById } from '../src/data/scenarioCatalog';
@@ -491,6 +492,7 @@ describe('start gating and codes', () => {
       matchDurationMs: 600_000,
       hostSeat: 0,
       seats: [seat({ host: true, ready: true }), seat({ ready: true })],
+      matchIdentities: [],
       ready: true,
       nation: 'lithuania',
       color: '#3f8fd2',
@@ -531,7 +533,8 @@ describe('start gating and codes', () => {
 });
 
 describe('lobby client — verified identity and result reference', () => {
-  it('surfaces the seat identity and rank the room verified', async () => {
+  it('surfaces the seat identity, rank and command flag the room verified', async () => {
+    const flag = defaultComposition();
     const { client, reply, sockets, views } = harness();
     reply({ status: 200, body: { ok: true, seat: 0, token: 'tok-0', joinCode: 'ABCD2345' } });
     await client.createRoom(600_000, 'kestrel');
@@ -541,17 +544,100 @@ describe('lobby client — verified identity and result reference', () => {
       lobbyMessage({
         seat: 0,
         seats: [
-          { connected: true, identity: { callsign: 'Sable', avatar: 'eagle', rank: 'corporal' }, verified: true },
+          {
+            connected: true,
+            identity: {
+              callsign: 'Sable',
+              avatar: 'eagle',
+              rank: 'corporal',
+              flag,
+              frame: 'frame-brass',
+              background: 'bg-deep',
+            },
+            verified: true,
+          },
           { connected: true, identity: { callsign: 'Vesper', avatar: 'bolt' }, verified: true },
         ],
       }),
     );
 
     const view = views.at(-1);
-    expect(view?.seats[0]?.identity).toEqual({ callsign: 'Sable', avatar: 'eagle', rank: 'corporal' });
+    expect(view?.seats[0]?.identity).toEqual({
+      callsign: 'Sable',
+      avatar: 'eagle',
+      rank: 'corporal',
+      flag,
+      frame: 'frame-brass',
+      background: 'bg-deep',
+    });
+    expect(view?.seats[0]?.identity?.flag?.version).toBe(1);
+    expect(view?.matchIdentities).toEqual([]);
+    // A seat whose flag cannot be parsed still presents its identity.
+    expect(view?.seats[1]?.identity?.flag).toBeUndefined();
     expect(view?.seats[0]?.verified).toBe(true);
     // A ticket minted before ranks travelled still presents its callsign.
     expect(view?.seats[1]?.identity).toEqual({ callsign: 'Vesper', avatar: 'bolt' });
+  });
+
+  it('uses the immutable match snapshot from hello and result', async () => {
+    const { client, reply, sockets, views } = harness();
+    reply({ status: 200, body: { ok: true, seat: 0, token: 'tok-0', joinCode: 'ABCD2345' } });
+    await client.createRoom(600_000, 'kestrel');
+    const socket = sockets[0];
+    socket.receive(
+      lobbyMessage({
+        seat: 0,
+        seats: [
+          { connected: true, identity: { callsign: 'Sable', avatar: 'eagle' }, verified: true },
+          { connected: true },
+        ],
+      }),
+    );
+    socket.receive({
+      type: 'hello',
+      v: 2,
+      roomId: 'kestrel',
+      seat: 0,
+      team: 0,
+      phase: 'playing',
+      identities: [
+        {
+          seatId: 0,
+          identity: {
+            callsign: 'Sable',
+            avatar: 'eagle',
+            rank: 'corporal',
+            frame: 'frame-brass',
+            background: 'bg-deep',
+          },
+        },
+        { seatId: 1, identity: null },
+      ],
+    });
+
+    let view = views.at(-1);
+    expect(view?.matchIdentities[0]?.identity).toMatchObject({
+      callsign: 'Sable',
+      frame: 'frame-brass',
+      background: 'bg-deep',
+    });
+    expect(view?.matchIdentities[1]?.identity).toBeNull();
+    expect(view?.seats[1]?.identity).toBeNull();
+
+    socket.receive({
+      type: 'result',
+      v: 2,
+      outcome: 'victory',
+      result: { phase: 'finished', winnerTeam: 0, reason: 'elimination', tick: 900 },
+      matchId: 'mp:kestrel:1700000000000',
+      identities: [
+        { seatId: 0, identity: { callsign: 'Sable', avatar: 'eagle', rank: 'corporal' } },
+        { seatId: 1, identity: null },
+      ],
+    });
+    view = views.at(-1);
+    expect(view?.matchResult?.matchId).toBe('mp:kestrel:1700000000000');
+    expect(view?.matchIdentities[0]?.identity?.callsign).toBe('Sable');
   });
 
   it('keeps the authoritative match reference from the result message', async () => {

@@ -2,7 +2,7 @@
 
 **Verdict:** FAIL  
 **Prepared:** 30 October 2026  
-**Report:** [MULTIPLAYER_PHASE_2A_12_SOAK_REPORT.md](../MULTIPLAYER_PHASE_2A_12_SOAK_REPORT.md)
+**Report:** [MULTIPLAYER_PHASE_2A_12_SOAK_REPORT.md](../docs/MULTIPLAYER_PHASE_2A_12_SOAK_REPORT.md)
 
 This directory preserves the direct evidence for the Phase 2A.12 restart trials. No secret, seat token, admin token or Cloudflare credential is stored here.
 

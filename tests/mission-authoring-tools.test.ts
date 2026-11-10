@@ -23,6 +23,7 @@ import {
   regionBoundsLabel,
   resizeRegion,
   scenarioEntityKeyIssues,
+  sectionForPath,
   validateMission,
   wouldCreateDependencyCycle,
   type MissionDoc,
@@ -490,6 +491,21 @@ describe('scene placements stay untouched by region maths', () => {
     applyRect(mission.regions[0], { x: 9, z: 11, width: 2, height: 6 });
     const parsed = parseMission(JSON.parse(JSON.stringify(mission)), contextFor(scenario));
     expect(parsed.regions[0]).toMatchObject({ id: 'zone', x: 9, z: 11, width: 2, height: 6 });
+  });
+});
+
+describe('workbench section routing for groups and waves', () => {
+  it('sends group and wave diagnostics to their own sections', () => {
+    expect(sectionForPath('aiGroups')).toBe('aiGroups');
+    expect(sectionForPath('aiGroups[1].units[0]')).toBe('aiGroups');
+    expect(sectionForPath('reinforcements[0].region')).toBe('reinforcements');
+    expect(sectionForPath('triggers[0].actions[0].group')).toBe('triggers');
+  });
+
+  it('resolves a deep link to the owning section without inventing an index', () => {
+    const { mission } = fixture();
+    expect(focusForPath('aiGroups[0].units[0]', mission).section).toBe('aiGroups');
+    expect(focusForPath('reinforcements[0].region', mission).section).toBe('reinforcements');
   });
 });
 

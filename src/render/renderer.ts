@@ -47,6 +47,8 @@ import {
 } from './buildingDamage';
 import { buildingModuleMesh } from './buildingModules';
 import {
+  buildCommandFlagCloth,
+  commandFlagWidthScale,
   buildFlagRig,
   flagColorForOwner,
   flagMountFor,
@@ -56,6 +58,8 @@ import {
   flagWindYaw,
   type FlagNation,
 } from './flags';
+import { commandFlagSvg } from '../ui/commandFlag';
+import type { FlagComposition } from '../identity/flag';
 import {
   AIR_UNIT_ALTITUDE,
   PARKED_AIRCRAFT_CLEARANCE,
@@ -395,7 +399,7 @@ export class Renderer {
       rotor: StaticMesh | null;
       rotorOffset: Vec3;
       rotorRate: number;
-      /** Local roof corner where the pole and its two flags stand. */
+      /** Local roof corner where the pole and its two national flags stand. */
       flagMount: Vec3;
     }
   >();
@@ -408,6 +412,12 @@ export class Renderer {
   private moduleMeshes = new Map<string, StaticMesh | null>();
   private flagMeshes = new Map<string, FlagMesh>();
   private flagTextures = new Map<string, WebGLTexture>();
+  /** The local player's personal flag, rasterised from its composition. */
+  private commandFlag: FlagComposition | null = null;
+  private commandFlagMesh: FlagMesh | null = null;
+  private commandFlagTexture: WebGLTexture | null = null;
+  private commandFlagTextureReady = false;
+  private commandFlagTextureKey = '';
   private whiteTexture!: WebGLTexture;
   private materialTexture!: WebGLTexture;  private unitMeshes = new Map<
     string,
@@ -563,6 +573,10 @@ export class Renderer {
     this.damageMeshes.clear();
     this.moduleMeshes.clear();
     this.flagMeshes.clear();
+    this.commandFlagMesh = null;
+    this.commandFlagTexture = null;
+    this.commandFlagTextureReady = false;
+    this.commandFlagTextureKey = '';
     this.flagTextures.clear();
     this.meshProgram = { program: createProgram(gl, MESH_VS, MESH_FS), u: {} };
     this.terrainProgram = { program: createProgram(gl, TERRAIN_VS, TERRAIN_FS), u: {} };
@@ -570,7 +584,7 @@ export class Renderer {
     this.propProgram = { program: createProgram(gl, PROP_VS, PROP_FS), u: {} };
     this.meshProgram.u = uniformMap(gl, this.meshProgram.program, [
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
-      'uModel', 'uTeamColor', 'uSun', 'uTint', 'uAmbient', 'uTone', 'uAlpha', 'uFlash', 'uNightGlow',
+      'uModel', 'uTeamColor', 'uSun', 'uTint', 'uCamo', 'uAmbient', 'uTone', 'uAlpha', 'uFlash', 'uNightGlow',
       'uFogTex', 'uFogTexOld', 'uFogBlend', 'uFlagTex', 'uMatLut', 'uUseFog',
       'uWorldSize', 'uTime', 'uSilhouette', 'uDepthPull', 'uHaze', 'uHazeColor', 'uHazeRef',
       'uShadowMap', 'uLightVP', 'uShadowTexel', 'uShadowStrength', 'uShadowBias',
@@ -677,6 +691,10 @@ export class Renderer {
       this.flagMeshes.set(flagNation, new FlagMesh(gl, buildFlagRig(flagNation)));
       this.loadFlagTexture(flagNation);
     }
+    // The commander cloth hangs from the same mast, so it is a separate mesh
+    // only because it samples its own texture.
+    this.commandFlagMesh = new FlagMesh(gl, buildCommandFlagCloth());
+    if (this.commandFlag) this.setCommandFlag(this.commandFlag);
     this.whiteTexture = this.createWhiteTexture();
     this.materialTexture = this.createMaterialTexture();
 
@@ -845,6 +863,70 @@ export class Renderer {
    */
   flashPromotion(entityId: number): void {
     this.promotionFlashes.set(entityId, this.time);
+  }
+
+  /**
+   * The local player's command flag, flown below the national cloth.
+   *
+   * Null in campaign and menu play: only a skirmish or networked match has a
+   * personal flag to raise, and only the player's own structures raise it. The
+   * composition is rasterised once per design change.
+   */
+  setCommandFlag(composition: FlagComposition | null): void {
+    this.commandFlag = composition;
+    if (!composition) {
+      this.commandFlagTextureKey = '';
+      this.commandFlagTextureReady = false;
+      if (this.commandFlagTexture) this.gl.deleteTexture(this.commandFlagTexture);
+      this.commandFlagTexture = null;
+      return;
+    }
+    const key = JSON.stringify(composition);
+    if (key === this.commandFlagTextureKey) return;
+    this.commandFlagTextureKey = key;
+    this.commandFlagTextureReady = false;
+    this.uploadCommandFlagTexture(composition, key);
+  }
+
+  /**
+   * Rasterise one composition through the shared SVG renderer, so the flag on
+   * the mast is the same design the editor and lobby show.
+   */
+  private uploadCommandFlagTexture(composition: FlagComposition, key: string): void {
+    const gl = this.gl;
+    if (!this.commandFlagTexture) this.commandFlagTexture = this.createTexture();
+    const texture = this.commandFlagTexture;
+    const svg = commandFlagSvg(composition, { size: 384 });
+    const image = new Image();
+    image.onload = () => {
+      // A newer design discarded this upload while the image was decoding.
+      if (this.commandFlagTextureKey !== key) return;
+      const canvas = document.createElement('canvas');
+      canvas.width = 384;
+      canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      this.commandFlagTextureReady = true;
+    };
+    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }
+
+  /** Bind the commander texture once it has decoded, or report it is not ready. */
+  private bindCommandFlagTexture(): boolean {
+    if (!this.commandFlagTextureReady) return false;
+    bindTextureUnit(
+      this.gl,
+      MESH_FLAG_TEXTURE_UNIT,
+      this.commandFlagTexture ?? this.whiteTexture,
+      this.meshProgram.u.uFlagTex ?? null,
+    );
+    return true;
   }
 
   setScenario(scenario: Scenario): void {
@@ -2220,6 +2302,20 @@ export class Renderer {
     return flagColorForOwner(factionId, this.playerColor(owner));
   }
 
+  /**
+   * The equipped unit camo, as a multiplier over the local player's team tint.
+   *
+   * Presentation only: it is read from the local cosmetic store and never
+   * reaches the simulation or the network, so it cannot change a unit's cost,
+   * stats or visibility. Structures and flags keep the unmodified team colour,
+   * which is what keeps ownership readable while a camo is worn.
+   */
+  private unitCamoTint: [number, number, number] | null = null;
+
+  setUnitCamo(tint: [number, number, number] | null): void {
+    this.unitCamoTint = tint;
+  }
+
   render(): void {
     if (this.contextLost) return;
     const gl = this.gl;
@@ -2408,6 +2504,7 @@ export class Renderer {
       gl.uniformMatrix4fv(mp.u.uModel, false, new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]));
       gl.uniform3f(mp.u.uTeamColor, 0.5, 0.5, 0.5);
       gl.uniform3f(mp.u.uTint, 1, 1, 1);
+    gl.uniform3f(mp.u.uCamo, 1, 1, 1);
       gl.uniform1f(mp.u.uAlpha, 1);
       gl.uniform1f(mp.u.uFlash, 0);
       // Roads carry the same fog as the ground they are painted on: full in
@@ -3346,6 +3443,7 @@ export class Renderer {
     gl.uniform3fv(mp.u.uSun, this.sun);
     gl.uniform1f(mp.u.uAmbient, this.ambient);
     gl.uniform3f(mp.u.uTint, 1, 1, 1);
+    gl.uniform3f(mp.u.uCamo, 1, 1, 1);
     // Entities carry their own charting alpha; the shader fog is for roads.
     gl.uniform1f(mp.u.uUseFog, 0);
     gl.uniform1f(mp.u.uSilhouette, 0);
@@ -3555,6 +3653,7 @@ export class Renderer {
       body.draw();
     }
     gl.uniform3f(mp.u.uTint, 1, 1, 1);
+    gl.uniform3f(mp.u.uCamo, 1, 1, 1);
   }
 
   /**
@@ -3583,6 +3682,7 @@ export class Renderer {
     gl.uniform3fv(mp.u.uSun, this.sun);
     gl.uniform1f(mp.u.uAmbient, this.ambient);
     gl.uniform3f(mp.u.uTint, 1, 1, 1);
+    gl.uniform3f(mp.u.uCamo, 1, 1, 1);
     // Entities carry their own charting alpha; the shader fog is for roads.
     gl.uniform1f(mp.u.uUseFog, 0);
     gl.uniform1f(mp.u.uSilhouette, 0);
@@ -3664,6 +3764,15 @@ export class Renderer {
           : 0;
       const char =
         remembered || construction ? [1, 1, 1] : buildingDamageTint(e.hp / e.maxHp);
+      // A camo repaints the hull only: the shader applies it to the un-masked
+      // panels and leaves the team-coloured ones exact, so a camouflaged tank
+      // still reads as its owner's at a glance. Buildings, flags, wrecks and
+      // every other seat keep plain paint, and nothing enters the simulation.
+      const camo =
+        e.kind === 'unit' && this.unitCamoTint && e.owner === game.localPlayerId
+          ? this.unitCamoTint
+          : null;
+      gl.uniform3f(mp.u.uCamo, camo?.[0] ?? 1, camo?.[1] ?? 1, camo?.[2] ?? 1);
       gl.uniform3f(
         mp.u.uTint,
         remembered ? 0.52 : char[0],
@@ -3713,6 +3822,7 @@ export class Renderer {
       );
     }
     gl.uniform3f(mp.u.uTint, 1, 1, 1);
+    gl.uniform3f(mp.u.uCamo, 1, 1, 1);
     gl.disable(gl.BLEND);
   }
 
@@ -3735,6 +3845,7 @@ export class Renderer {
     gl.uniform3fv(mp.u.uSun, this.sun);
     gl.uniform1f(mp.u.uAmbient, this.ambient);
     gl.uniform3f(mp.u.uTint, 1, 1, 1);
+    gl.uniform3f(mp.u.uCamo, 1, 1, 1);
     gl.uniform1f(mp.u.uUseFog, 0);
     this.bindFogFields(mp.u, MESH_FOG_TEXTURE_UNIT, MESH_FOG_OLD_TEXTURE_UNIT);
     gl.uniform1f(mp.u.uSilhouette, 1);
@@ -3889,6 +4000,7 @@ export class Renderer {
             alpha,
             verticalScale,
             remembered,
+            this.game !== null && flagOwner === this.game.localPlayerId,
           );
         }
       }
@@ -4094,10 +4206,12 @@ export class Renderer {
   }
 
   /**
-   * Draw the pole, alliance colour and real national flag. The rig is separate
-   * from the building so the cloth can wave every frame without rebuilding the
-   * structure. Remembered silhouettes show the colours but hold the cloth
-   * still, matching the frozen rotors and shutters elsewhere.
+   * Draw the pole, alliance colour, real national flag and — on the local
+   * player's own structures in a skirmish or networked match — the personal
+   * command flag below them. The rig is separate from the building so the cloth
+   * can wave every frame without rebuilding the structure. Remembered
+   * silhouettes show the colours but hold the cloth still, matching the frozen
+   * rotors and shutters elsewhere.
    */
   private drawBuildingFlags(
     rig: { flagMount: Vec3 },
@@ -4110,6 +4224,7 @@ export class Renderer {
     alpha: number,
     verticalScale: number,
     remembered: boolean,
+    commander = false,
   ): void {
     const mesh = this.flagMeshes.get(flagNation);
     if (!mesh || !this.bindFlagTexture(flagNation)) return;
@@ -4133,6 +4248,27 @@ export class Renderer {
     gl.uniform1f(mp.u.uFlash, 0);
     gl.uniform1f(mp.u.uTime, remembered ? 0 : this.time);
     mesh.draw();
+    if (commander && this.commandFlagMesh && this.bindCommandFlagTexture()) {
+      // Match the national cloth's width for this nation, so the third flag is
+      // never a smaller silhouette than the two above it.
+      gl.uniformMatrix4fv(
+        mp.u.uModel,
+        false,
+        modelFor(
+          x + mount.x,
+          y + rig.flagMount[1] * verticalScale,
+          z + mount.z,
+          flagWindYaw(),
+          commandFlagWidthScale(flagNation as FlagNation),
+          1,
+        ),
+      );
+      gl.uniform3fv(mp.u.uTeamColor, [1, 1, 1]);
+      gl.uniform1f(mp.u.uAlpha, alpha);
+      gl.uniform1f(mp.u.uFlash, 0);
+      gl.uniform1f(mp.u.uTime, remembered ? 0 : this.time);
+      this.commandFlagMesh.draw();
+    }
     gl.uniform1f(mp.u.uTime, this.time);
   }
 

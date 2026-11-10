@@ -106,6 +106,7 @@ const OBJECTIVE_STATES: readonly MissionObjectiveState[] = [
 const OBJECTIVE_KIND_ALIASES = ['primary', 'secondary', 'bonus', 'optional'] as const;
 const OBJECTIVE_INITIAL = ['active', 'hidden'] as const;
 const AI_TASKS = ['attack', 'defend', 'patrol', 'reinforce'] as const;
+const AI_GROUP_INITIAL_STATES = ['active', 'dormant'] as const;
 /** `in-mission` is accepted as authored prose; the model uses `inMission`. */
 const CINEMATIC_KINDS = ['opening', 'inMission', 'intermission', 'ending'] as const;
 /** A legacy dialogue line becomes this many seconds of subtitle. */
@@ -335,6 +336,9 @@ function parseAiGroup(value: unknown, path: string): MissionAiGroupDoc {
       asNonEmpty(entry, `${path}.units[${i}]`),
     ),
     ...(region !== undefined ? { region } : {}),
+    ...(raw.initial === undefined
+      ? {}
+      : { initial: oneOf(raw.initial, `${path}.initial`, AI_GROUP_INITIAL_STATES) }),
   };
 }
 

@@ -26,6 +26,10 @@ const UNIFORM_NAMES = [
   'uTeamColor',
   'uSun',
   'uTint',
+  // Hull paint multiplier. The battle renderer uploads the equipped camo (or
+  // white); this context has no camo, and an unset vec3 is black, which would
+  // paint every hull on every card black.
+  'uCamo',
   'uAmbient',
   'uAlpha',
   'uFlash',
@@ -342,6 +346,8 @@ export class ThumbnailRenderer {
       gl.uniform1f(u.uFar ?? null, 700);
       gl.uniform3fv(u.uSun ?? null, [0.45, 0.82, 0.35]);
       gl.uniform3fv(u.uTint ?? null, [1.28, 1.28, 1.22]);
+      // Card art shows the platform, never a commander's equipped paint.
+      gl.uniform3fv(u.uCamo ?? null, [1, 1, 1]);
       gl.uniform1f(u.uAmbient ?? null, 0.58);
       gl.uniform1f(u.uAlpha ?? null, 1);
       gl.uniform1f(u.uFlash ?? null, 0);

@@ -25,6 +25,7 @@ import {
   missionBriefingMarkup,
 } from '../src/ui/missionBriefing';
 import { missionDebriefMarkup, missionOutcomeCopy } from '../src/ui/missionDebrief';
+import { defaultComposition } from '../src/identity/flag';
 import { CAMPAIGNS } from '../src/data/campaign';
 import { TILE_SIZE } from '../src/sim/constants';
 import {
@@ -511,6 +512,17 @@ describe('result-driven debrief', () => {
     expect(markup).toContain('PERMANENTLY LOST');
     expect(markup).toContain('NEXT OPERATION');
     expect(markup).toContain('Rust Pass');
+  });
+
+  it('flies the command flag captured at deployment in the report', () => {
+    const { result } = pendingCampaign();
+    const markup = missionDebriefMarkup(result, { flag: defaultComposition() });
+    expect(markup).toContain('COMMAND FLAG · AS FLOWN AT DEPLOYMENT');
+    expect(markup).toContain('<svg');
+    expect(markup).toContain('Command flag flown during this operation');
+    // No capture means no flag: the report never invents one or reads storage
+    // to fill the gap after the fact.
+    expect(missionDebriefMarkup(result)).not.toContain('AS FLOWN AT DEPLOYMENT');
   });
 
   it('keeps the legacy debrief caller working without context', () => {

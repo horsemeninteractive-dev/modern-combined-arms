@@ -9,8 +9,10 @@
  * path, and the browser cannot forge or extend one.
  *
  * v2 adds the callsign and avatar so the lobby can show a real opponent without
- * asking the account service mid-match. The identity is inside the signed
- * message, so a seat cannot edit its own name by editing the ticket.
+ * asking the account service mid-match, and now also the equipped command flag.
+ * The identity is inside the signed message, so a seat cannot edit its own name
+ * or flag by editing the ticket. The optional flag keeps older v2 tickets
+ * readable: a ticket without one simply has no flag to show.
  *
  * v1 tickets are still accepted for the remainder of their two-minute life: a
  * room that was open when the account service was updated must not fail to
@@ -23,7 +25,9 @@ export const TICKET_VERSION = 'v1';
 export const TICKET_VERSION_V2 = 'v2';
 export const TICKET_TTL_MS = 2 * 60_000;
 const AUDIENCE = 'mca.room-identity';
-const MAX_IDENTITY_BYTES = 256;
+// A flag composition is bounded at 4 KiB, and base64 adds a third. The limit
+// stays far below anything a URL or header cannot carry.
+const MAX_IDENTITY_BYTES = 8192;
 
 function message(version: string, accountId: string, issuedAt: number, identity: string | null): string {
   return identity === null
@@ -36,7 +40,7 @@ function encodeIdentity(identity: IdentitySnapshot): string {
 }
 
 function decodeIdentity(raw: string): IdentitySnapshot | null {
-  if (raw.length > 400) return null;
+  if (raw.length > 12000) return null;
   try {
     const bytes = base64urlDecode(raw);
     if (bytes.length > MAX_IDENTITY_BYTES) return null;
@@ -120,7 +124,7 @@ export async function verifyTicket(
 
   if (rest.length !== 2) return null;
   const [encodedIdentity, signature] = rest;
-  if (!/^[A-Za-z0-9_-]{1,400}$/.test(encodedIdentity)) return null;
+  if (!/^[A-Za-z0-9_-]{1,12000}$/.test(encodedIdentity)) return null;
   const valid = await hmacSha256Verify(
     secret,
     message(TICKET_VERSION_V2, accountId, issuedAt, encodedIdentity),

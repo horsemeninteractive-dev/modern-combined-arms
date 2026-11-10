@@ -26,6 +26,14 @@ function unit(game: Game, defId: string, owner: number) {
   return game.state.entities.find((e) => e.kind === 'unit' && e.defId === defId && e.owner === owner)!;
 }
 
+function airborneFighter(game: Game) {
+  const fighter = unit(game, 'fighter', 0);
+  game.enqueueCommand({ type: 'move', team: 0, ids: [fighter.id], x: 200, z: 140 });
+  for (let i = 0; i < 20 * 20 && fighter.aircraft?.landed; i++) game.advance(1);
+  expect(fighter.aircraft?.landed).toBe(false);
+  return fighter;
+}
+
 describe('aircraft operations', () => {
   it('starts parked, burns fuel in flight and can be ordered to land and rearm', () => {
     const game = newGame();
@@ -55,6 +63,40 @@ describe('aircraft operations', () => {
     expect(fighter.ammo).toBe(fighter.maxAmmo);
     expect(fighter.fuel).toBe(fighter.maxFuel);
     expect(fighter.state).toBe('grounded');
+  });
+
+  it('announces low fuel once while the fighter returns', () => {
+    const game = newGame();
+    const fighter = airborneFighter(game);
+    fighter.fuel = fighter.maxFuel * 0.2;
+    fighter.ammo = fighter.maxAmmo;
+    fighter.order = null;
+
+    game.advance(20 * 2);
+
+    const alerts = game.state.events.filter(
+      (event) => event.type === 'alert' && /low on fuel/i.test(event.text ?? ''),
+    );
+    expect(alerts).toHaveLength(1);
+    expect(fighter.aircraft?.returningHome).toBe(true);
+    expect(game.getEntity(fighter.id)?.order?.type).toBe('return');
+  });
+
+  it('announces empty ordnance once while the fighter returns', () => {
+    const game = newGame();
+    const fighter = airborneFighter(game);
+    fighter.fuel = fighter.maxFuel;
+    fighter.ammo = 0;
+    fighter.order = null;
+
+    game.advance(20 * 2);
+
+    const alerts = game.state.events.filter(
+      (event) => event.type === 'alert' && /out of ordnance/i.test(event.text ?? ''),
+    );
+    expect(alerts).toHaveLength(1);
+    expect(fighter.aircraft?.returningHome).toBe(true);
+    expect(game.getEntity(fighter.id)?.order?.type).toBe('return');
   });
 
   it('strikes ground targets, consumes missiles and returns when empty', () => {
@@ -254,5 +296,21 @@ describe('naval operations', () => {
     ship.ammo = 0;
     game.advance(20 * 2);
     expect(ship.order?.type === 'return' || ship.state === 'returning').toBe(true);
+  });
+
+  it('announces an empty rack once while the boat is docked for reload', () => {
+    const game = newGame();
+    const ship = unit(game, 'corvette', 0);
+    ship.x = 11.2 * TILE_SIZE;
+    ship.z = 39 * TILE_SIZE;
+    ship.ammo = 0;
+    ship.order = null;
+    game.advance(20 * 2);
+    const emptyAlerts = game.state.events.filter(
+      (event) => event.type === 'alert' && /out of missiles/i.test(event.text ?? ''),
+    );
+    expect(emptyAlerts).toHaveLength(1);
+    expect(game.getEntity(ship.id)?.order?.type).toBe('return');
+    expect(ship.ammo).toBe(0);
   });
 });

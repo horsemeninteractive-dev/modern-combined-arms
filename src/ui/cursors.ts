@@ -194,6 +194,7 @@ export function battleCursor(mode: CommandMode, ctx: CursorContext = {}): Battle
     case 'place':
       return ctx.placementOk === false ? 'placeBlocked' : 'place';
     case 'move':
+    case 'land':
       return 'move';
     case 'attack':
       return 'attack';

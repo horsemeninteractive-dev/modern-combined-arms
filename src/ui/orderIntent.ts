@@ -27,6 +27,28 @@ export function isRepairTarget(
   return !occupants.some((unit) => unit.owner !== localPlayerId);
 }
 
+/**
+ * A live mobile transport that eligible infantry may board.
+ *
+ * `friendly` lets the caller use the simulation's team relationship, so an
+ * allied player's APC is a valid boarding target. Without it the helper keeps
+ * its old player-identity rule for callers that do not have a game instance.
+ */
+export function isTransportTarget(
+  target: Entity | null | undefined,
+  localPlayerId: number,
+  friendly = false,
+): boolean {
+  return (
+    !!target &&
+    target.kind === 'unit' &&
+    target.hp > 0 &&
+    target.owner >= 0 &&
+    (friendly || target.owner === localPlayerId) &&
+    !!UNITS[target.defId]?.transport
+  );
+}
+
 /** A standing building whose data definition permits infantry occupation. */
 export function isGarrisonTarget(target: Entity | null | undefined): target is Entity {
   return (
@@ -70,11 +92,15 @@ export function contextOrderFor(
     return 'repair';
   }
   if (
-    target.kind === 'building' &&
     !hostile &&
-    BUILDINGS[target.defId]?.garrison &&
+    (isTransportTarget(target, localPlayerId, true) ||
+      (target.kind === 'building' && !!BUILDINGS[target.defId]?.garrison)) &&
     selected.some(
-      (e) => e.kind === 'unit' && !e.garrisonId && UNITS[e.defId]?.canGarrison,
+      (e) =>
+        e.kind === 'unit' &&
+        !e.garrisonId &&
+        !!UNITS[e.defId]?.canGarrison &&
+        UNITS[e.defId]?.armour === 'infantry',
     )
   ) {
     return 'garrison';

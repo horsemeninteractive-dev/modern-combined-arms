@@ -13,7 +13,7 @@ export { CapacityCoordinatorDurableObject } from './reservationDurableObject';
  * route carries no seat, team or host flag.
  */
 const ROOM_ROUTE =
-  /^\/api\/multiplayer\/rooms\/([A-Za-z0-9_-]{1,64})(?:\/(ws|status|shutdown|restart|snapshot|start|open|join|career))?$/;
+  /^\/api\/multiplayer\/rooms\/([A-Za-z0-9_-]{1,64})(?:\/(ws|status|shutdown|restart|snapshot|start|open|join|identity|career))?$/;
 
 function securityHeaders(): Record<string, string> {
   return {
@@ -133,7 +133,7 @@ function devPage(): string {
     <div class="row">
       <div><label for="room">Room id</label><input id="room" value="probe-01" autocomplete="off"></div>
       <div><label for="admin">Admin token (header only)</label><input id="admin" type="password" autocomplete="off"></div>
-      <div><label for="duration">Duration (seconds, 10-1800)</label><input id="duration" type="number" min="10" max="1800" value="60"></div>
+      <div><label for="duration">Duration (seconds, 60-1800)</label><input id="duration" type="number" min="60" max="1800" value="60"></div>
     </div>
     <div class="row" style="margin-top:14px">
       <button id="create">Create / resume room</button>
@@ -277,6 +277,9 @@ export default {
     if (action === 'open' && request.method !== 'POST') {
       return json({ ok: false, code: 'method-not-allowed' }, 405);
     }
+    if (action === 'identity' && request.method !== 'POST') {
+      return json({ ok: false, code: 'method-not-allowed' }, 405);
+    }
     if (action === 'ws' && request.method !== 'GET') {
       return json({ ok: false, code: 'method-not-allowed' }, 405);
     }
@@ -285,7 +288,7 @@ export default {
     // The Durable Object trusts only the header this code sets, and any
     // client-supplied copy of that header is always stripped.
     let effective = request;
-    if (action === 'open' || action === 'join') {
+    if (action === 'open' || action === 'join' || action === 'identity') {
       const identity = await withVerifiedIdentity(request, env.MCA_IDENTITY_TICKET_SECRET);
       if (!identity.ok) {
         return json({ ok: false, code: identity.code, message: identity.message }, identity.status);

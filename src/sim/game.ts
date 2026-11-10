@@ -32,6 +32,16 @@ import {
   isIndestructibleStructure,
 } from '../data/buildings';
 import { UNITS, unitFamily } from '../data/units';
+import {
+  containerAcceptsPassenger,
+  containerBoardingRange,
+  containerBoardingReady,
+  containerFiringSlots,
+  containerRequiresLanding,
+  containerOnDestroyed,
+  containerSpec,
+  isMobileContainer,
+} from './containers';
 import { WEAPONS } from '../data/weapons';
 import {
   RESEARCH,
@@ -106,8 +116,10 @@ import {
   MissionRuntime,
   buildMissionResult,
   evaluateMissionTriggers,
+  type MissionAiGroupDoc,
   type MissionObjectiveChange,
   type MissionOutcome,
+  type MissionReinforcementDoc,
   type MissionResult,
   type MissionTransitionResult,
 } from '../mission';
@@ -507,6 +519,9 @@ export class Game {
         ...(u.key ? { authoredKey: u.key } : {}),
       });
     }
+    // A mission may place a group that stays out of the fight until a trigger
+    // releases it, so the hold is applied before anything can order it.
+    this.applyMissionGroupDormancy();
     this.grantScenarioResearch();
     this.blocked.fill(0);
     for (const e of this.state.entities) {
@@ -1716,6 +1731,20 @@ export class Game {
   }
 
   /**
+   * Whether two owners are live players on the same side.
+   *
+   * Transport boarding is a team relationship, not a player-identity check: an
+   * allied player may put their infantry into a teammate's carrier. Neutral
+   * owners never qualify, even though `isHostile` treats them as non-hostile.
+   */
+  isFriendlyOwner(a: number, b: number): boolean {
+    if (a < 0 || b < 0) return false;
+    const ta = this.teamOf(a);
+    const tb = this.teamOf(b);
+    return ta >= 0 && tb >= 0 && ta === tb;
+  }
+
+  /**
    * A neutral shelter becomes a legal target while enemy infantry occupy it.
    * This keeps civilian buildings neutral until someone takes cover, yet lets
    * the opponent clear the position with ordinary anti-structure fire instead
@@ -1753,6 +1782,9 @@ export class Game {
       switch (cmd.type) {
         case 'move':
           this.commandMove(cmd.team, cmd.ids, cmd.x, cmd.z, !!cmd.attackMove);
+          break;
+        case 'land':
+          this.commandLand(cmd.team, cmd.ids, cmd.x, cmd.z);
           break;
         case 'attack':
           this.commandAttack(cmd.team, cmd.ids, cmd.targetId);
@@ -1859,6 +1891,38 @@ export class Game {
     return out;
   }
 
+  /**
+   * Put transport helicopters down on open ground and hold them there.
+   *
+   * Boarding and unloading already request a landing on their own, but a
+   * commander also needs to park a lift hull on a chosen spot — an LZ under
+   * covering fire, or a pickup point the infantry can walk to — instead of
+   * hovering over it. The hull keeps its permanent berth; this is a field stop.
+   */
+  private commandLand(owner: number, ids: number[], x: number, z: number): void {
+    const transports = this.ownedEntities(owner, ids).filter(
+      (e) =>
+        e.kind === 'unit' &&
+        !!e.aircraft &&
+        !!UNITS[e.defId]?.transport &&
+        UNITS[e.defId]?.domain === 'air',
+    );
+    if (transports.length === 0) {
+      this.emit('orderFailed', {
+        team: owner,
+        x,
+        z,
+        text: 'Only transport helicopters can land on open ground.',
+        level: 'warning',
+        sound: 'denied',
+      });
+      return;
+    }
+    for (const transport of transports) {
+      this.requestTransportLanding(transport, x, z, 'idle');
+    }
+  }
+
   private commandMove(owner: number, ids: number[], x: number, z: number, attackMove: boolean): void {
     const selected = this.ownedEntities(owner, ids).filter((e) => e.kind === 'unit');
     const entities = selected.filter((e) => !e.garrisonId);
@@ -1887,6 +1951,10 @@ export class Game {
       const e = entities[i];
       const dest = destinations[i];
       const def = unitDef(e.defId);
+      // An ordinary movement order leaves the beach. A landing craft that is
+      // still approaching shore cancels that approach too; the explicit unload
+      // command is the only thing that keeps a hull beached.
+      if (def.domain === 'naval') e.navalLanding = undefined;
       // A player order takes an engineer off its site; construction pauses.
       this.releaseBuildTarget(e);
       // A movement order replaces any combat order. The direct target is part
@@ -1907,6 +1975,9 @@ export class Game {
         if (e.aircraft) {
           e.aircraft.serviceTimer = 0;
           e.aircraft.returningHome = false;
+          // An ordinary move ends a field stop: the hull takes its passengers
+          // with it and does not keep trying to land where it just left.
+          e.aircraft.fieldLanding = undefined;
           this.launchAircraft(e);
         }
         continue;
@@ -2327,8 +2398,12 @@ export class Game {
       if (e.kind !== 'unit' || e.garrisonId) continue;
       const def = unitDef(e.defId);
       if (def.domain === 'air' && e.aircraft) {
+        // An explicit return cancels a battlefield stop; the hull is going
+        // home, not waiting at a landing zone.
+        e.aircraft.fieldLanding = undefined;
         this.orderAircraftReturn(e);
       } else if (def.domain === 'naval') {
+        e.navalLanding = undefined;
         const home = this.getEntity(e.homeId);
         if (home && home.hp > 0) {
           e.order = { type: 'return', x: home.x, z: home.z };
@@ -2616,11 +2691,71 @@ export class Game {
   /* Garrisons                                                          */
   /* ------------------------------------------------------------------ */
 
-  /** Living infantry inside a building, in stable id order. */
-  garrisonOccupants(buildingId: number): Entity[] {
+  /**
+   * Every live passenger inside a container, in stable id order.
+   *
+   * The list is derived from the passengers' own `garrisonId`; no container
+   * keeps a duplicate roster. Seats are therefore the index in this list, and a
+   * passenger can only ever appear in one container.
+   */
+  containerOccupants(containerId: number): Entity[] {
     return this.state.entities
-      .filter((e) => e.kind === 'unit' && e.hp > 0 && e.garrisonId === buildingId)
+      .filter((e) => e.kind === 'unit' && e.hp > 0 && e.garrisonId === containerId)
       .sort((a, b) => a.id - b.id);
+  }
+
+  /** Historical name for a static container's occupants. */
+  garrisonOccupants(buildingId: number): Entity[] {
+    return this.containerOccupants(buildingId);
+  }
+
+  /**
+   * Fail loudly if the authoritative occupancy graph is inconsistent.
+   *
+   * Boarding is already gated by `enterContainer`, but a snapshot is the point
+   * where a corrupted or forged association would otherwise leave the server.
+   * This is the cross-entity check the per-entity wire schema cannot express:
+   * the container must exist and be alive, be the right kind for the passenger,
+   * be owned by the passenger's side when mobile, and never exceed capacity.
+   * Called before every full sync and available to tests and diagnostics.
+   */
+  assertContainerIntegrity(): void {
+    const seats = new Map<number, number>();
+    for (const passenger of this.state.entities) {
+      if (passenger.kind !== 'unit' || !passenger.garrisonId) continue;
+      const container = this.getEntity(passenger.garrisonId);
+      const spec = containerSpec(container);
+      if (!container || !spec || container.hp <= 0 || passenger.hp <= 0) {
+        throw new Error(`Container integrity: passenger ${passenger.id} has no live container.`);
+      }
+      const def = UNITS[passenger.defId];
+      if (!def || def.armour !== 'infantry' || !def.canGarrison) {
+        throw new Error(`Container integrity: ${passenger.defId} cannot be a passenger.`);
+      }
+      if (spec.def.passenger && spec.def.passenger !== 'infantry') {
+        throw new Error(`Container integrity: ${passenger.defId} is the wrong passenger class.`);
+      }
+      if (spec.mobile && !this.isFriendlyOwner(container.owner, passenger.owner)) {
+        throw new Error(
+          `Container integrity: passenger ${passenger.id} is not on the transport's side.`,
+        );
+      }
+      const used = (seats.get(container.id) ?? 0) + 1;
+      if (used > spec.capacity) {
+        throw new Error(`Container integrity: ${container.defId} exceeds capacity ${spec.capacity}.`);
+      }
+      seats.set(container.id, used);
+    }
+  }
+
+  /** The shared container rules for an entity, or null when it holds nobody. */
+  containerOf(entity: Entity | undefined): ReturnType<typeof containerSpec> {
+    return containerSpec(entity);
+  }
+
+  /** Capacity of a container entity, or 0 when it is not one. */
+  containerCapacity(entity: Entity): number {
+    return containerSpec(entity)?.capacity ?? 0;
   }
 
   /**
@@ -2685,8 +2820,8 @@ export class Game {
 
   private commandGarrison(owner: number, ids: number[], targetId: number): void {
     const target = this.getEntity(targetId);
-    const def = target ? BUILDINGS[target.defId] : undefined;
-    if (!target || target.kind !== 'building' || target.hp <= 0 || !def?.garrison) {
+    const spec = containerSpec(target);
+    if (!target || !spec || target.hp <= 0) {
       this.emit('orderFailed', {
         team: owner,
         x: target?.x ?? 0,
@@ -2697,19 +2832,60 @@ export class Game {
       });
       return;
     }
-    if (this.isHostile(owner, target.owner)) {
-      this.emit('orderFailed', {
-        team: owner,
-        x: target.x,
-        z: target.z,
-        text: 'Enemy-held buildings cannot be entered. Clear them first.',
-        level: 'warning',
-        sound: 'denied',
-      });
-      return;
+    const mobile = spec.mobile;
+    const air = mobile && UNITS[target.defId]?.domain === 'air';
+    const naval = mobile && UNITS[target.defId]?.domain === 'naval';
+    const label = mobile ? entityName(target) : buildingDef(target.defId).name;
+    if (mobile) {
+      if (!this.isFriendlyOwner(owner, target.owner)) {
+        this.emit('orderFailed', {
+          team: owner,
+          x: target.x,
+          z: target.z,
+          text: 'Only a transport from your side can carry your infantry.',
+          level: 'warning',
+          sound: 'denied',
+        });
+        return;
+      }
+    } else {
+      if (this.isHostile(owner, target.owner)) {
+        this.emit('orderFailed', {
+          team: owner,
+          x: target.x,
+          z: target.z,
+          text: 'Enemy-held buildings cannot be entered. Clear them first.',
+          level: 'warning',
+          sound: 'denied',
+        });
+        return;
+      }
+      if (target.hp / target.maxHp <= GARRISON_ABANDON_FRACTION) {
+        this.emit('orderFailed', {
+          team: owner,
+          x: target.x,
+          z: target.z,
+          text: `${label} is too badly damaged to hold infantry — repair it first.`,
+          level: 'warning',
+          sound: 'denied',
+        });
+        return;
+      }
     }
-    const occupants = this.garrisonOccupants(target.id);
-    if (occupants.some((occupant) => this.isHostile(owner, occupant.owner))) {
+    const occupants = this.containerOccupants(target.id);
+    if (mobile) {
+      if (occupants.some((occupant) => this.isHostile(occupant.owner, owner))) {
+        this.emit('orderFailed', {
+          team: owner,
+          x: target.x,
+          z: target.z,
+          text: 'That transport already carries another side’s infantry.',
+          level: 'warning',
+          sound: 'denied',
+        });
+        return;
+      }
+    } else if (occupants.some((occupant) => this.isHostile(owner, occupant.owner))) {
       this.emit('orderFailed', {
         team: owner,
         x: target.x,
@@ -2720,54 +2896,106 @@ export class Game {
       });
       return;
     }
-    if (target.hp / target.maxHp <= GARRISON_ABANDON_FRACTION) {
-      this.emit('orderFailed', {
-        team: owner,
-        x: target.x,
-        z: target.z,
-        text: `${def.name} is too badly damaged to hold infantry — repair it first.`,
-        level: 'warning',
-        sound: 'denied',
-      });
-      return;
-    }
-    const occupied = occupants.length;
-    const remaining = Math.max(0, def.garrison.capacity - occupied);
+    const remaining = Math.max(0, spec.capacity - occupants.length);
     if (remaining <= 0) {
       this.emit('orderFailed', {
         team: owner,
         x: target.x,
         z: target.z,
-        text: `${def.name} is full (${occupied}/${def.garrison.capacity}).`,
+        text: `${label} is full (${occupants.length}/${spec.capacity}).`,
         level: 'warning',
         sound: 'denied',
       });
       return;
     }
     const eligible = this.ownedEntities(owner, ids)
-      .filter((e) => e.kind === 'unit' && e.hp > 0 && !e.garrisonId && !!unitDef(e.defId).canGarrison)
+      .filter((e) => containerAcceptsPassenger(target, e))
       .sort((a, b) => a.id - b.id);
     if (eligible.length === 0) {
       this.emit('orderFailed', {
         team: owner,
         x: target.x,
         z: target.z,
-        text: 'Only infantry can garrison a building.',
+        text: mobile
+          ? 'Only exposed infantry can board a transport.'
+          : 'Only infantry can garrison a building.',
         level: 'warning',
         sound: 'denied',
       });
       return;
     }
+    // A helicopter cannot pick infantry up in flight. The boarding command
+    // still goes into the same garrison pipeline; the carrier first gets a
+    // field-landing request near the squad, and the infantry wait for the
+    // authoritative landed state before they start walking.
+    if (air) {
+      const landed = containerBoardingReady(target);
+      const unitX = eligible.reduce((sum, unit) => sum + unit.x, 0) / eligible.length;
+      const unitZ = eligible.reduce((sum, unit) => sum + unit.z, 0) / eligible.length;
+      // A parked helicopter already near the squad keeps its spot. One still at
+      // its home pad flies to the squad instead of trying to land on its own
+      // heliport roof and then relocating.
+      const nearSquad = dist(target.x, target.z, unitX, unitZ) <= TILE_SIZE * 4;
+      const centerX = landed && nearSquad ? target.x : unitX;
+      const centerZ = landed && nearSquad ? target.z : unitZ;
+      if (!this.requestTransportLanding(target, centerX, centerZ, 'board')) return;
+    } else if (naval) {
+      const unitX = eligible.reduce((sum, unit) => sum + unit.x, 0) / eligible.length;
+      const unitZ = eligible.reduce((sum, unit) => sum + unit.z, 0) / eligible.length;
+      // An allied landing craft is controlled by its owner, so only the owner's
+      // squad may bring it to the shore. Anyone else boards a hull already there.
+      if (!containerBoardingReady(target)) {
+        if (target.owner !== owner) {
+          this.emit('orderFailed', {
+            team: owner,
+            x: target.x,
+            z: target.z,
+            text: `${label} must be beached; only its owner can move it to shore.`,
+            level: 'warning',
+            sound: 'denied',
+          });
+          return;
+        }
+        if (!this.requestNavalLanding(target, unitX, unitZ, 'board')) return;
+      }
+    }
     let accepted = 0;
+    const range = mobile ? containerBoardingRange(target) : 0;
     for (const unit of eligible) {
       if (accepted >= remaining) break;
-      const approach = this.findGarrisonApproach(unit, target);
+      if (mobile && !containerBoardingReady(target)) {
+        this.releaseBuildTarget(unit);
+        unit.order = { type: 'garrison', targetId: target.id, x: target.x, z: target.z };
+        unit.path = [];
+        unit.pathIndex = 0;
+        unit.destX = unit.x;
+        unit.destZ = unit.z;
+        unit.guardX = unit.x;
+        unit.guardZ = unit.z;
+        unit.targetId = 0;
+        unit.aimTargetId = 0;
+        unit.captureTargetId = 0;
+        unit.captureProgress = 0;
+        unit.blockedTicks = 0;
+        unit.state = 'idle';
+        accepted++;
+        continue;
+      }
+      // A carrier boards infantry that is already alongside it immediately;
+      // everyone else walks to it, exactly as they walk to a shelter door.
+      if (mobile && dist(unit.x, unit.z, target.x, target.z) <= range) {
+        if (this.enterContainer(unit, target)) accepted++;
+        continue;
+      }
+      const approach = mobile
+        ? this.findTransportApproach(unit, target)
+        : this.findGarrisonApproach(unit, target);
       if (!approach) {
         this.emit('orderFailed', {
           team: owner,
           x: unit.x,
           z: unit.z,
-          text: `${entityName(unit)} cannot reach a door at ${def.name}.`,
+          text: `${entityName(unit)} cannot reach ${label}.`,
           level: 'warning',
           entityId: unit.id,
           sound: 'denied',
@@ -2791,29 +3019,583 @@ export class Game {
       accepted++;
     }
     if (accepted === 0) return;
+    if (eligible.length > remaining) {
+      this.emit('orderFailed', {
+        team: owner,
+        x: target.x,
+        z: target.z,
+        text: `${label} has room for ${remaining}; ${eligible.length - remaining} infantry remain outside.`,
+        entityId: target.id,
+        level: 'warning',
+        sound: 'denied',
+      });
+    }
     this.emit('orderAck', {
       team: owner,
       x: target.x,
       z: target.z,
-      text: `${accepted} infantry moving to garrison ${def.name}`,
+      text: mobile
+        ? air && !containerBoardingReady(target)
+          ? `${accepted} infantry waiting for ${label} to land`
+          : naval && !containerBoardingReady(target)
+            ? `${accepted} infantry waiting for ${label} to beach`
+            : `${accepted} infantry moving to board ${label}`
+        : `${accepted} infantry moving to garrison ${label}`,
       entityId: target.id,
       level: 'info',
     });
   }
 
+  /**
+   * A mobile container is boarded by walking to it. The route is re-planned
+   * by `updateGarrisonOrder` when it runs out, so a carrier that drives on is
+   * followed instead of being abandoned at its old position.
+   */
+  private findTransportApproach(unit: Entity, container: Entity) {
+    if (this.isNavalTransport(container)) return this.findNavalBoardingApproach(unit, container);
+    const path = this.findPathFor(unit, container.x, container.z);
+    if (!path) return null;
+    return { path, x: container.x, z: container.z };
+  }
+
+  private isNavalTransport(entity: Entity | null | undefined): boolean {
+    return (
+      !!entity &&
+      entity.kind === 'unit' &&
+      UNITS[entity.defId]?.domain === 'naval' &&
+      !!UNITS[entity.defId]?.transport
+    );
+  }
+
+  /**
+   * Read-only planning query: could this hull find and reach a validated beach
+   * near a point?
+   *
+   * It runs the same beach planner the order uses but writes nothing, so a
+   * commander can decline an operation instead of watching the authoritative
+   * command refuse it every few seconds. Every validation — navigable water,
+   * hull clearance, distinct foot-standable exits, an actual naval route — is
+   * the one `requestNavalLanding` will apply.
+   */
+  navalLandingAvailable(
+    containerId: number,
+    centerX: number,
+    centerZ: number,
+    exits = 1,
+  ): boolean {
+    const hull = this.getEntity(containerId);
+    if (!hull || !this.isNavalTransport(hull) || hull.hp <= 0) return false;
+    if (hull.navalLanding?.beached) return true;
+    return this.findNavalBeachingSpot(hull, centerX, centerZ, Math.max(1, exits)) !== null;
+  }
+
+  /** Read-only counterpart for a transport helicopter's field landing. */
+  transportLandingAvailable(containerId: number, centerX: number, centerZ: number): boolean {
+    const aircraft = this.getEntity(containerId);
+    if (!aircraft || !containerRequiresLanding(aircraft) || aircraft.hp <= 0) return false;
+    if (aircraft.aircraft?.landed && !aircraft.aircraft.roll) return true;
+    return this.findTransportLandingSpot(centerX, centerZ, aircraft.id) !== null;
+  }
+
+  /**
+   * The land end of a landing-craft boarding. Infantry cannot walk onto water,
+   * so the approach is a real foot-standable shore tile within the shared
+   * boarding radius of the beached hull.
+   */
+  private findNavalBoardingApproach(unit: Entity, container: Entity) {
+    const range = containerBoardingRange(container);
+    const cx = Math.floor(container.x / TILE_SIZE);
+    const cz = Math.floor(container.z / TILE_SIZE);
+    const candidates: Array<{ x: number; z: number; d: number }> = [];
+    for (let ring = 1; ring <= 3; ring++) {
+      for (let dz = -ring; dz <= ring; dz++) {
+        for (let dx = -ring; dx <= ring; dx++) {
+          if (Math.abs(dx) !== ring && Math.abs(dz) !== ring) continue;
+          const tx = cx + dx;
+          const tz = cz + dz;
+          if (!inBounds(this.state.map.width, this.state.map.height, tx, tz)) continue;
+          const idx = tileIndex(this.state.map.width, tx, tz);
+          if (TERRAIN[this.state.map.terrain[idx] as TerrainId].water) continue;
+          if (this.blocked[idx]) continue;
+          if (!canStandOn(this.state.map.width, this.state.map.height, this.state.map.terrain, idx, 'foot')) continue;
+          const wx = (tx + 0.5) * TILE_SIZE;
+          const wz = (tz + 0.5) * TILE_SIZE;
+          if (dist(wx, wz, container.x, container.z) > range) continue;
+          if (!this.isExitClear(wx, wz, unitDef(unit.defId).radius, [], container.id)) continue;
+          candidates.push({ x: wx, z: wz, d: dist(unit.x, unit.z, wx, wz) });
+        }
+      }
+    }
+    candidates.sort((a, b) => a.d - b.d || a.z - b.z || a.x - b.x);
+    for (const candidate of candidates) {
+      const path = this.findPathFor(unit, candidate.x, candidate.z);
+      if (path) return { path, x: candidate.x, z: candidate.z };
+    }
+    return null;
+  }
+
+  /** One safe land-side exit next to a hull stopped at `(tx, tz)`. */
+  private findNavalExitSpotAt(
+    tx: number,
+    tz: number,
+    radius: number,
+    planned: Array<{ x: number; z: number; radius: number }>,
+    ignoreId?: number,
+  ): { x: number; z: number } | null {
+    const candidates: Array<{ x: number; z: number; d: number }> = [];
+    const hullX = (tx + 0.5) * TILE_SIZE;
+    const hullZ = (tz + 0.5) * TILE_SIZE;
+    for (let ring = 1; ring <= 4; ring++) {
+      for (let dz = -ring; dz <= ring; dz++) {
+        for (let dx = -ring; dx <= ring; dx++) {
+          if (Math.abs(dx) !== ring && Math.abs(dz) !== ring) continue;
+          const x = tx + dx;
+          const z = tz + dz;
+          if (!inBounds(this.state.map.width, this.state.map.height, x, z)) continue;
+          const idx = tileIndex(this.state.map.width, x, z);
+          if (TERRAIN[this.state.map.terrain[idx] as TerrainId].water) continue;
+          if (this.blocked[idx]) continue;
+          if (!canStandOn(this.state.map.width, this.state.map.height, this.state.map.terrain, idx, 'foot')) continue;
+          const wx = (x + 0.5) * TILE_SIZE;
+          const wz = (z + 0.5) * TILE_SIZE;
+          if (!this.isExitClear(wx, wz, radius, planned, ignoreId)) continue;
+          candidates.push({ x: wx, z: wz, d: dist(wx, wz, hullX, hullZ) });
+        }
+      }
+      if (candidates.length > 0) break;
+    }
+    candidates.sort((a, b) => a.d - b.d || a.z - b.z || a.x - b.x);
+    return candidates[0] ? { x: candidates[0].x, z: candidates[0].z } : null;
+  }
+
+  private findNavalExitSpot(
+    container: Entity,
+    radius: number,
+    planned: Array<{ x: number; z: number; radius: number }>,
+  ): { x: number; z: number } | null {
+    return this.findNavalExitSpotAt(
+      Math.floor(container.x / TILE_SIZE),
+      Math.floor(container.z / TILE_SIZE),
+      radius,
+      planned,
+      container.id,
+    );
+  }
+
+  /**
+   * A beach is a navigable water tile whose land side can actually receive the
+   * whole passenger load. A shoreline pixel is not enough: every planned exit
+   * must be foot-standable, unblocked, unoccupied and distinct.
+   */
+  private navalExitPlan(
+    tx: number,
+    tz: number,
+    count: number,
+    ignoreId?: number,
+  ): Array<{ x: number; z: number; radius: number }> | null {
+    const planned: Array<{ x: number; z: number; radius: number }> = [];
+    for (let i = 0; i < count; i++) {
+      const spot = this.findNavalExitSpotAt(tx, tz, 1.5, planned, ignoreId);
+      if (!spot) return null;
+      planned.push({ ...spot, radius: 1.5 });
+    }
+    return planned;
+  }
+
+  private findNavalBeachingSpot(
+    container: Entity,
+    centerX: number,
+    centerZ: number,
+    exits: number,
+  ): { x: number; z: number; path: import('./types').PathPoint[] } | null {
+    const def = unitDef(container.defId);
+    const radius = def.radius;
+    const centerTx = Math.floor(centerX / TILE_SIZE);
+    const centerTz = Math.floor(centerZ / TILE_SIZE);
+    const candidates: Array<{ x: number; z: number; d: number; deep: number; shore: number }> = [];
+    for (let ring = 0; ring <= 18; ring++) {
+      for (let dz = -ring; dz <= ring; dz++) {
+        for (let dx = -ring; dx <= ring; dx++) {
+          if (ring > 0 && Math.abs(dx) !== ring && Math.abs(dz) !== ring) continue;
+          const tx = centerTx + dx;
+          const tz = centerTz + dz;
+          if (!inBounds(this.state.map.width, this.state.map.height, tx, tz)) continue;
+          const idx = tileIndex(this.state.map.width, tx, tz);
+          const terrain = TERRAIN[this.state.map.terrain[idx] as TerrainId];
+          if (!terrain.water) continue;
+          if (this.blocked[idx]) continue;
+          if (!canStandOn(this.state.map.width, this.state.map.height, this.state.map.terrain, idx, 'naval')) continue;
+          const wx = (tx + 0.5) * TILE_SIZE;
+          const wz = (tz + 0.5) * TILE_SIZE;
+          if (!this.isSpawnClear(wx, wz, radius, container.id)) continue;
+          const plan = this.navalExitPlan(tx, tz, exits, container.id);
+          if (!plan) continue;
+          const shore = Math.min(...plan.map((spot) => dist(spot.x, spot.z, wx, wz)));
+          candidates.push({
+            x: wx,
+            z: wz,
+            d: dist(wx, wz, centerX, centerZ),
+            deep: terrain.deep ? 1 : 0,
+            shore,
+          });
+        }
+      }
+      // Shallow water is the intended beaching ground; deep water is only a
+      // last resort and loses to a slightly farther shallow approach.
+      if (candidates.length >= 12) break;
+    }
+    // The best beach is the one whose land side is closest to the hull, not the
+    // one closest to where the order was issued: a hull stopped four tiles
+    // offshore is not actually beached even if it can technically reach land.
+    candidates.sort(
+      (a, b) =>
+        a.shore - b.shore ||
+        a.d + a.deep * TILE_SIZE * 2 - (b.d + b.deep * TILE_SIZE * 2) ||
+        a.z - b.z ||
+        a.x - b.x,
+    );
+    for (const candidate of candidates.slice(0, 24)) {
+      const path = this.findPathFor(container, candidate.x, candidate.z);
+      if (path) return { x: candidate.x, z: candidate.z, path };
+    }
+    return null;
+  }
+
+  /**
+   * Send a landing craft to a usable beach, or hold it there if already beached.
+   * The whole transaction is validated before a route is written, so a refused
+   * landing never leaves the hull in a half-ordered state.
+   */
+  private requestNavalLanding(
+    container: Entity,
+    centerX: number,
+    centerZ: number,
+    purpose: 'board' | 'unload',
+  ): boolean {
+    if (!this.isNavalTransport(container)) return false;
+    const def = unitDef(container.defId);
+    if (container.navalLanding?.beached) {
+      container.navalLanding.purpose = purpose;
+      return true;
+    }
+    if (container.navalLanding) {
+      if (container.navalLanding.purpose === purpose) return true;
+      // A boarding approach only promised one exit. A later unload needs room
+      // for the whole load, so the beach is planned again rather than reusing a
+      // promise that may not fit four infantrymen.
+      container.navalLanding = undefined;
+    }
+    const exits =
+      purpose === 'unload' ? Math.max(1, this.containerOccupants(container.id).length) : 1;
+    const spot = this.findNavalBeachingSpot(container, centerX, centerZ, exits);
+    if (!spot) {
+      this.emit('orderFailed', {
+        team: container.owner,
+        x: container.x,
+        z: container.z,
+        text: `No usable beach for ${def.name}; passengers remain aboard.`,
+        entityId: container.id,
+        level: 'warning',
+        sound: 'denied',
+      });
+      return false;
+    }
+    container.navalLanding = { x: spot.x, z: spot.z, purpose, beached: false };
+    container.order = { type: 'move', x: spot.x, z: spot.z };
+    container.path = spot.path;
+    container.pathIndex = 0;
+    container.destX = spot.x;
+    container.destZ = spot.z;
+    container.targetId = 0;
+    container.aimTargetId = 0;
+    container.state = spot.path.length > 0 ? 'moving' : 'idle';
+    container.blockedTicks = 0;
+    this.emit('orderAck', {
+      team: container.owner,
+      x: spot.x,
+      z: spot.z,
+      text:
+        purpose === 'unload'
+          ? `${def.name} moving to a beach to unload`
+          : `${def.name} moving to a beach to pick up infantry`,
+      entityId: container.id,
+      level: 'info',
+    });
+    return true;
+  }
+
+  /** Finish a shore approach and, for an unload, release the passengers. */
+  private finishNavalLanding(e: Entity): void {
+    const landing = e.navalLanding;
+    if (!landing || landing.beached) return;
+    const def = unitDef(e.defId);
+    landing.beached = true;
+    // Snap to the planned tile centre. A movement stop can be a fraction of a
+    // tile short, which would put the exit ring's reach into water instead of
+    // the shore the beach was validated against.
+    e.x = landing.x;
+    e.z = landing.z;
+    e.path = [];
+    e.pathIndex = 0;
+    e.order = null;
+    e.destX = e.x;
+    e.destZ = e.z;
+    e.state = 'idle';
+    e.blockedTicks = 0;
+    const purpose = landing.purpose;
+    let unloaded = false;
+    if (purpose === 'unload') {
+      unloaded = this.exitContainer(e, null);
+      if (!unloaded) {
+        this.emit('orderFailed', {
+          team: e.owner,
+          x: e.x,
+          z: e.z,
+          text: `No safe space to unload ${def.name}; passengers remain aboard.`,
+          entityId: e.id,
+          level: 'warning',
+          sound: 'denied',
+        });
+      }
+    }
+    landing.purpose = 'idle';
+    this.emit('orderAck', {
+      team: e.owner,
+      x: e.x,
+      z: e.z,
+      text: unloaded
+        ? `${def.name} beached and unloaded`
+        : purpose === 'unload'
+          ? `${def.name} beached — unload blocked`
+          : `${def.name} beached — waiting for infantry`,
+      entityId: e.id,
+      level: 'info',
+      sound: 'land',
+    });
+  }
+
+  /**
+   * A clear patch of ground for a transport helicopter, searched outward from
+   * the requested point. The landing footprint is checked against the terrain
+   * and blocked grid, and the hull clearance is checked against live units so
+   * a vehicle or infantryman cannot be landed on.
+   */
+  private findTransportLandingSpot(
+    centerX: number,
+    centerZ: number,
+    ignoreId: number,
+  ): { x: number; z: number } | null {
+    const container = this.getEntity(ignoreId);
+    if (!container) return null;
+    const radius = unitDef(container.defId).radius;
+    const centerTx = Math.floor(centerX / TILE_SIZE);
+    const centerTz = Math.floor(centerZ / TILE_SIZE);
+    const reach = Math.max(1, Math.ceil(radius / TILE_SIZE));
+    const candidates: Array<{ x: number; z: number; d: number }> = [];
+    for (let ring = 0; ring <= 14; ring++) {
+      for (let dz = -ring; dz <= ring; dz++) {
+        for (let dx = -ring; dx <= ring; dx++) {
+          if (ring > 0 && Math.abs(dx) !== ring && Math.abs(dz) !== ring) continue;
+          const tx = centerTx + dx;
+          const tz = centerTz + dz;
+          if (!inBounds(this.state.map.width, this.state.map.height, tx, tz)) continue;
+          let footprintClear = true;
+          for (let fz = -reach; fz <= reach && footprintClear; fz++) {
+            for (let fx = -reach; fx <= reach; fx++) {
+              const sx = tx + fx;
+              const sz = tz + fz;
+              if (!inBounds(this.state.map.width, this.state.map.height, sx, sz)) {
+                footprintClear = false;
+                break;
+              }
+              const idx = tileIndex(this.state.map.width, sx, sz);
+              if (this.blocked[idx]) {
+                footprintClear = false;
+                break;
+              }
+              if (!canStandOn(this.state.map.width, this.state.map.height, this.state.map.terrain, idx, 'foot')) {
+                footprintClear = false;
+                break;
+              }
+            }
+          }
+          if (!footprintClear) continue;
+          const wx = (tx + 0.5) * TILE_SIZE;
+          const wz = (tz + 0.5) * TILE_SIZE;
+          if (!this.isExitClear(wx, wz, radius, [], ignoreId)) continue;
+          candidates.push({ x: wx, z: wz, d: dist(wx, wz, centerX, centerZ) });
+        }
+      }
+      // Take a clear ring as soon as one exists: the nearest valid patch is
+      // better than scanning the whole map for a marginally closer one.
+      if (candidates.length > 0) break;
+    }
+    candidates.sort((a, b) => a.d - b.d || a.z - b.z || a.x - b.x);
+    return candidates[0] ?? null;
+  }
+
+  /**
+   * Send an air transport to a field landing, or hold it where it already is.
+   * The permanent berth is untouched: this is a stop on open ground, not a
+   * rebasing operation.
+   */
+  private requestTransportLanding(
+    container: Entity,
+    centerX: number,
+    centerZ: number,
+    purpose: 'board' | 'unload' | 'idle',
+  ): boolean {
+    const def = unitDef(container.defId);
+    const ac = container.aircraft;
+    if (!ac) return false;
+    if (ac.roll?.next === 'fieldLand') {
+      if (ac.fieldLanding) ac.fieldLanding.purpose = purpose;
+      return true;
+    }
+    if (ac.roll) {
+      this.emit('orderFailed', {
+        team: container.owner,
+        x: container.x,
+        z: container.z,
+        text: `${def.name} is already on a ground roll.`,
+        entityId: container.id,
+        level: 'warning',
+        sound: 'denied',
+      });
+      return false;
+    }
+    const spot = this.findTransportLandingSpot(centerX, centerZ, container.id);
+    if (!spot) {
+      this.emit('orderFailed', {
+        team: container.owner,
+        x: container.x,
+        z: container.z,
+        text: `No clear landing zone for ${def.name}. Move it over open ground and try again.`,
+        entityId: container.id,
+        level: 'warning',
+        sound: 'denied',
+      });
+      return false;
+    }
+    ac.fieldLanding = { x: spot.x, z: spot.z, purpose };
+    ac.returningHome = false;
+    if (ac.landed) {
+      if (dist(container.x, container.z, spot.x, spot.z) <= TILE_SIZE * 1.5) {
+        container.order = null;
+        container.path = [];
+        container.pathIndex = 0;
+        container.destX = container.x;
+        container.destZ = container.z;
+        container.state = 'grounded';
+        return true;
+      }
+    }
+    container.order = { type: 'move', x: spot.x, z: spot.z };
+    container.path = [{ x: spot.x, z: spot.z }];
+    container.pathIndex = 0;
+    container.destX = spot.x;
+    container.destZ = spot.z;
+    container.state = 'moving';
+    if (ac.landed) this.launchAircraft(container);
+    this.emit('orderAck', {
+      team: container.owner,
+      x: spot.x,
+      z: spot.z,
+      text:
+        purpose === 'unload'
+          ? `${def.name} moving to a landing zone to unload`
+          : purpose === 'idle'
+            ? `${def.name} landing at the chosen zone`
+            : `${def.name} moving to a landing zone to pick up infantry`,
+      entityId: container.id,
+      level: 'info',
+    });
+    return true;
+  }
+
+  /** Finish a battlefield landing and, for an unload, release the passengers. */
+  private finishFieldLanding(e: Entity, def: UnitDef, ac: AircraftState): void {
+    ac.landed = true;
+    ac.climb = 0;
+    ac.roll = undefined;
+    e.path = [];
+    e.pathIndex = 0;
+    e.order = null;
+    e.destX = e.x;
+    e.destZ = e.z;
+    e.state = 'grounded';
+    const purpose = ac.fieldLanding?.purpose ?? 'board';
+    let unloaded = false;
+    if (purpose === 'unload') {
+      unloaded = this.exitContainer(e, null);
+      if (!unloaded) {
+        this.emit('orderFailed', {
+          team: e.owner,
+          x: e.x,
+          z: e.z,
+          text: `No safe space to unload ${def.name}; passengers remain aboard.`,
+          entityId: e.id,
+          level: 'warning',
+          sound: 'denied',
+        });
+      }
+    }
+    if (ac.fieldLanding) ac.fieldLanding.purpose = 'idle';
+    this.emit('orderAck', {
+      team: e.owner,
+      x: e.x,
+      z: e.z,
+      text: unloaded
+        ? `${def.name} landed and unloaded`
+        : purpose === 'unload'
+          ? `${def.name} landed — unload blocked`
+          : `${def.name} landed — waiting for infantry`,
+      entityId: e.id,
+      level: 'info',
+      sound: 'land',
+    });
+  }
+
   private commandUngarrison(owner: number, ids: number[]): void {
-    const buildings = new Set<Entity>();
+    const containers = new Set<Entity>();
     for (const id of ids) {
       const e = this.getEntity(id);
       if (!e) continue;
-      if (e.kind === 'building') {
-        if (this.garrisonOccupants(e.id).some((unit) => unit.owner === owner)) buildings.add(e);
+      const spec = containerSpec(e);
+      if (spec) {
+        // Carrier owners unload everyone aboard, including allied infantry. A
+        // passenger owner may still unload only their own infantry from an APC;
+        // air and naval transports are different because their owner controls
+        // the landing or beaching, so a non-owner cannot command the unload.
+        const air = e.kind === 'unit' && UNITS[e.defId]?.domain === 'air';
+        const naval = this.isNavalTransport(e);
+        if (spec.mobile) {
+          if ((air || naval) && e.owner !== owner) continue;
+          if (
+            e.owner === owner ||
+            this.containerOccupants(e.id).some((unit) => unit.owner === owner)
+          ) {
+            containers.add(e);
+          }
+        } else if (this.containerOccupants(e.id).some((unit) => unit.owner === owner)) {
+          containers.add(e);
+        }
       } else if (e.kind === 'unit' && e.owner === owner && e.garrisonId) {
-        const building = this.getEntity(e.garrisonId);
-        if (building) buildings.add(building);
+        const container = this.getEntity(e.garrisonId);
+        if (
+          container &&
+          !(
+            container.kind === 'unit' &&
+            (UNITS[container.defId]?.domain === 'air' ||
+              this.isNavalTransport(container)) &&
+            container.owner !== owner
+          )
+        ) {
+          containers.add(container);
+        }
       }
     }
-    if (buildings.size === 0) {
+    if (containers.size === 0) {
       this.emit('orderFailed', {
         team: owner,
         x: 0,
@@ -2824,81 +3606,102 @@ export class Game {
       });
       return;
     }
-    for (const building of [...buildings].sort((a, b) => a.id - b.id)) {
-      if (!this.exitGarrisonBuilding(building, owner)) {
+    for (const container of [...containers].sort((a, b) => a.id - b.id)) {
+      const isAir = container.kind === 'unit' && UNITS[container.defId]?.domain === 'air';
+      const isNaval = this.isNavalTransport(container);
+      if (isAir && !containerBoardingReady(container)) {
+        // The unload command is not refused or silently queued: the transport
+        // first flies to a clear patch and lands, then the roll's end releases
+        // every passenger through the same exit transaction an APC uses.
+        this.requestTransportLanding(container, container.x, container.z, 'unload');
+        continue;
+      }
+      if (isNaval && !containerBoardingReady(container)) {
+        // Beaching is the naval equivalent of a field landing. Only the carrier
+        // owner may bring the hull to shore; the shared carrier-owner rule has
+        // already filtered every other player out of this set.
+        this.requestNavalLanding(container, container.x, container.z, 'unload');
+        continue;
+      }
+      const unloadAll = container.kind === 'unit' && container.owner === owner;
+      if (!this.exitContainer(container, unloadAll ? null : owner)) {
+        const label = containerSpec(container)?.mobile
+          ? entityName(container)
+          : buildingDef(container.defId).name;
         this.emit('orderFailed', {
           team: owner,
-          x: building.x,
-          z: building.z,
-          text: `No safe exit from ${buildingDef(building.defId).name}; occupants remain inside.`,
+          x: container.x,
+          z: container.z,
+          text: `No safe exit from ${label}; occupants remain inside.`,
           level: 'warning',
-          entityId: building.id,
+          entityId: container.id,
           sound: 'denied',
         });
       }
     }
   }
 
-  private enterGarrison(unit: Entity, building: Entity): boolean {
-    const def = BUILDINGS[building.defId];
-    if (!def?.garrison || unit.garrisonId || unit.hp <= 0 || building.hp <= 0) return false;
-    if (this.isHostile(unit.owner, building.owner)) {
-      unit.order = null;
-      unit.path = [];
-      unit.state = 'idle';
-      return false;
-    }
-    const current = this.garrisonOccupants(building.id);
-    if (current.some((occupant) => this.isHostile(unit.owner, occupant.owner))) {
-      unit.order = null;
-      unit.path = [];
-      unit.state = 'idle';
-      this.emit('orderFailed', {
-        team: unit.owner,
-        x: building.x,
-        z: building.z,
-        text: `${def.name} is held by hostile infantry. Clear it first.`,
-        level: 'warning',
-        entityId: unit.id,
-        sound: 'denied',
-      });
-      return false;
-    }
-    if (building.hp / building.maxHp <= GARRISON_ABANDON_FRACTION) {
+  /**
+   * Shared occupancy transaction.
+   *
+   * The passenger's `garrisonId` is the only reference written; the roster is
+   * always derived by scanning, so a seat can never be held in two places.
+   * Validation and the write happen in this one synchronous step, which makes
+   * simultaneous boarding deterministic: commands are processed in id order and
+   * capacity is re-read from the derived list on every attempt.
+   */
+  private enterContainer(unit: Entity, container: Entity): boolean {
+    const spec = containerSpec(container);
+    if (!spec || !containerAcceptsPassenger(container, unit) || container.hp <= 0) return false;
+    const label = spec.mobile ? entityName(container) : buildingDef(container.defId).name;
+    const reject = (text: string): false => {
       unit.order = null;
       unit.path = [];
       unit.state = 'idle';
       this.emit('orderFailed', {
         team: unit.owner,
-        x: building.x,
-        z: building.z,
-        text: `${def.name} is too badly damaged to hold infantry.`,
+        x: container.x,
+        z: container.z,
+        text,
         level: 'warning',
         entityId: unit.id,
         sound: 'denied',
       });
       return false;
+    };
+    if (spec.mobile && !containerBoardingReady(container)) {
+      return reject(
+        `${label} must be ${this.isNavalTransport(container) ? 'beached' : 'landed'} before infantry can board.`,
+      );
     }
-    if (current.length >= def.garrison.capacity) {
-      unit.order = null;
-      unit.path = [];
-      unit.state = 'idle';
-      this.emit('orderFailed', {
-        team: unit.owner,
-        x: building.x,
-        z: building.z,
-        text: `${def.name} filled before ${entityName(unit)} arrived.`,
-        level: 'warning',
-        entityId: unit.id,
-        sound: 'denied',
-      });
-      return false;
+    const current = this.containerOccupants(container.id);
+    if (spec.mobile) {
+      if (!this.isFriendlyOwner(unit.owner, container.owner)) {
+        return reject(`${label} belongs to another side.`);
+      }
+      if (current.some((occupant) => this.isHostile(unit.owner, occupant.owner))) {
+        return reject(`${label} already carries another side’s infantry.`);
+      }
+    } else {
+      if (this.isHostile(unit.owner, container.owner)) {
+        return reject(`${label} belongs to the enemy.`);
+      }
+      if (current.some((occupant) => this.isHostile(unit.owner, occupant.owner))) {
+        return reject(`${label} is held by hostile infantry. Clear it first.`);
+      }
+      if (container.hp / container.maxHp <= GARRISON_ABANDON_FRACTION) {
+        return reject(`${label} is too badly damaged to hold infantry.`);
+      }
     }
-    unit.garrisonId = building.id;
-    unit.x = building.x;
-    unit.z = building.z;
-    unit.facing = building.facing;
-    unit.turretFacing = building.facing;
+    if (current.length >= spec.capacity) {
+      return reject(`${label} filled before ${entityName(unit)} arrived.`);
+    }
+    if (current.some((occupant) => occupant.id === unit.id)) return false;
+    unit.garrisonId = container.id;
+    unit.x = container.x;
+    unit.z = container.z;
+    unit.facing = container.facing;
+    unit.turretFacing = container.facing;
     unit.state = 'garrisoned';
     unit.order = null;
     unit.path = [];
@@ -2914,10 +3717,10 @@ export class Game {
     const count = current.length + 1;
     this.emit('notice', {
       team: unit.owner,
-      x: building.x,
-      z: building.z,
-      text: `${entityName(unit)} garrisoned ${def.name} (${count}/${def.garrison.capacity})`,
-      entityId: building.id,
+      x: container.x,
+      z: container.z,
+      text: `${entityName(unit)} garrisoned ${label} (${count}/${spec.capacity})`,
+      entityId: container.id,
       level: 'info',
       sound: 'ui',
     });
@@ -2929,8 +3732,10 @@ export class Game {
     z: number,
     radius: number,
     planned: Array<{ x: number; z: number; radius: number }>,
+    ignoreId?: number,
   ): boolean {
     for (const other of this.state.entities) {
+      if (other.id === ignoreId) continue;
       if (other.kind !== 'unit' || other.hp <= 0 || other.garrisonId) continue;
       const min = (radius + unitDef(other.defId).radius) * 0.7;
       if (dist2(x, z, other.x, other.z) < min * min) return false;
@@ -2947,18 +3752,21 @@ export class Game {
     radius: number,
     planned: Array<{ x: number; z: number; radius: number }>,
   ): { x: number; z: number } | null {
-    const def = buildingDef(building.defId);
-    const left = Math.round(building.x / TILE_SIZE - def.footprint.w / 2);
-    const top = Math.round(building.z / TILE_SIZE - def.footprint.h / 2);
+    const footprint =
+      building.kind === 'building'
+        ? buildingDef(building.defId).footprint
+        : { w: 1, h: 1 };
+    const left = Math.round(building.x / TILE_SIZE - footprint.w / 2);
+    const top = Math.round(building.z / TILE_SIZE - footprint.h / 2);
     const candidates: Array<{ x: number; z: number; d: number }> = [];
     for (let ring = 1; ring <= 8; ring++) {
-      for (let z = top - ring; z < top + def.footprint.h + ring; z++) {
-        for (let x = left - ring; x < left + def.footprint.w + ring; x++) {
+      for (let z = top - ring; z < top + footprint.h + ring; z++) {
+        for (let x = left - ring; x < left + footprint.w + ring; x++) {
           const onRing =
             x === left - ring ||
-            x === left + def.footprint.w + ring - 1 ||
+            x === left + footprint.w + ring - 1 ||
             z === top - ring ||
-            z === top + def.footprint.h + ring - 1;
+            z === top + footprint.h + ring - 1;
           if (!onRing) continue;
           if (!inBounds(this.state.map.width, this.state.map.height, x, z)) continue;
           const idx = tileIndex(this.state.map.width, x, z);
@@ -2978,12 +3786,44 @@ export class Game {
   }
 
   private exitGarrisonBuilding(building: Entity, owner: number): boolean {
-    const occupants = this.garrisonOccupants(building.id).filter((e) => e.owner === owner);
+    return this.exitContainer(building, owner);
+  }
+
+  /**
+   * Return a container's passengers to the battlefield at distinct, safe spots.
+   *
+   * Static shelters scan the ring around their footprint; a mobile carrier
+   * scans the ring around its own hull. Both refuse deep water, blocked tiles,
+   * occupied spots and off-map positions, so an unload either lands everyone or
+   * changes nothing.
+   */
+  private exitContainer(container: Entity, owner: number | null): boolean {
+    const spec = containerSpec(container);
+    if (!spec) return false;
+    if (!containerBoardingReady(container)) return false;
+    const occupants = this.containerOccupants(container.id).filter(
+      (e) => owner === null || e.owner === owner,
+    );
     if (occupants.length === 0) return false;
+    // A moving carrier is halted before anyone steps out. Passengers are then
+    // placed against the hull's current, stable position rather than a stale
+    // waypoint it would have reached after the unload transaction.
+    if (spec.mobile) {
+      container.order = null;
+      container.path = [];
+      container.pathIndex = 0;
+      container.destX = container.x;
+      container.destZ = container.z;
+      container.state = 'idle';
+      container.blockedTicks = 0;
+    }
+    const naval = this.isNavalTransport(container);
     const planned: Array<{ x: number; z: number; radius: number }> = [];
     for (const unit of occupants) {
       const radius = unitDef(unit.defId).radius;
-      const spot = this.findExitSpot(building, radius, planned);
+      const spot = naval
+        ? this.findNavalExitSpot(container, radius, planned)
+        : this.findExitSpot(container, radius, planned);
       if (!spot) return false;
       planned.push({ ...spot, radius });
     }
@@ -3007,12 +3847,13 @@ export class Game {
       unit.captureProgress = 0;
       unit.blockedTicks = 0;
     }
+    const label = spec.mobile ? entityName(container) : buildingDef(container.defId).name;
     this.emit('orderAck', {
-      team: owner,
-      x: building.x,
-      z: building.z,
-      text: `${occupants.length} infantry exited ${buildingDef(building.defId).name}`,
-      entityId: building.id,
+      team: owner ?? container.owner,
+      x: container.x,
+      z: container.z,
+      text: `${occupants.length} infantry exited ${label}`,
+      entityId: container.id,
       level: 'info',
       sound: 'ui',
     });
@@ -3026,16 +3867,82 @@ export class Game {
    */
   private updateGarrisonOrder(unit: Entity): boolean {
     if (unit.order?.type !== 'garrison') return false;
-    const building = this.getEntity(unit.order.targetId ?? 0);
-    const def = building ? BUILDINGS[building.defId] : undefined;
-    if (!building || !def?.garrison || building.hp <= 0 || this.isHostile(unit.owner, building.owner)) {
+    const container = this.getEntity(unit.order.targetId ?? 0);
+    const spec = containerSpec(container);
+    if (
+      !container ||
+      !spec ||
+      container.hp <= 0 ||
+      (spec.mobile
+        ? !this.isFriendlyOwner(unit.owner, container.owner)
+        : this.isHostile(unit.owner, container.owner))
+    ) {
       unit.order = null;
       unit.path = [];
       unit.state = 'idle';
       return true;
     }
-    if (this.structureClearance(building, unit.x, unit.z) <= GARRISON_ENTRY_CLEARANCE) {
-      this.enterGarrison(unit, building);
+    if (spec.mobile) {
+      const naval = this.isNavalTransport(container);
+      if (!containerBoardingReady(container)) {
+        // Keep the infantry waiting rather than walking to an airborne hull or
+        // abandoning the order while the crew is still settling.
+        unit.path = [];
+        unit.pathIndex = 0;
+        unit.destX = unit.x;
+        unit.destZ = unit.z;
+        unit.state = 'idle';
+        return true;
+      }
+      if (dist(unit.x, unit.z, container.x, container.z) <= containerBoardingRange(container)) {
+        this.enterContainer(unit, container);
+        return true;
+      }
+      // The carrier may have driven on while the infantry walked. Re-plan
+      // against its current position instead of finishing a route to where it
+      // used to be; the old position would otherwise end in an endless chase.
+      // A beached landing craft does not move, and its shore approach is a
+      // land point rather than the hull itself, so this check is skipped.
+      if (
+        !naval &&
+        unit.path.length > 0 &&
+        dist(unit.destX, unit.destZ, container.x, container.z) > TILE_SIZE
+      ) {
+        unit.path = [];
+        unit.pathIndex = 0;
+      }
+      if (unit.path.length > 0) return false;
+      if (unit.blockedTicks <= GARRISON_APPROACH_BUDGET) {
+        const approach = naval
+          ? this.findNavalBoardingApproach(unit, container)
+          : (() => {
+              const path = this.findPathFor(unit, container.x, container.z);
+              return path ? { path, x: container.x, z: container.z } : null;
+            })();
+        if (approach) {
+          unit.path = approach.path;
+          unit.pathIndex = 0;
+          unit.destX = approach.x;
+          unit.destZ = approach.z;
+          unit.state = approach.path.length > 0 ? 'moving' : 'idle';
+          return true;
+        }
+      }
+      unit.order = null;
+      unit.state = 'idle';
+      this.emit('orderFailed', {
+        team: unit.owner,
+        x: container.x,
+        z: container.z,
+        text: `${entityName(unit)} could not reach ${entityName(container)}.`,
+        level: 'warning',
+        entityId: unit.id,
+        sound: 'denied',
+      });
+      return true;
+    }
+    if (this.structureClearance(container, unit.x, unit.z) <= GARRISON_ENTRY_CLEARANCE) {
+      this.enterContainer(unit, container);
       return true;
     }
     if (unit.path.length > 0) return false;
@@ -3043,7 +3950,7 @@ export class Game {
     // structure, a crowd, a jammed corridor). Take a fresh approach until the
     // no-progress budget runs out instead of abandoning the order at the curb.
     if (unit.blockedTicks <= GARRISON_APPROACH_BUDGET) {
-      const approach = this.findGarrisonApproach(unit, building);
+      const approach = this.findGarrisonApproach(unit, container);
       if (approach) {
         unit.path = approach.path;
         unit.pathIndex = 0;
@@ -3057,9 +3964,9 @@ export class Game {
     unit.state = 'idle';
     this.emit('orderFailed', {
       team: unit.owner,
-      x: building.x,
-      z: building.z,
-      text: `${entityName(unit)} could not reach ${def.name}.`,
+      x: container.x,
+      z: container.z,
+      text: `${entityName(unit)} could not reach ${buildingDef(container.defId).name}.`,
       level: 'warning',
       entityId: unit.id,
       sound: 'denied',
@@ -3075,24 +3982,35 @@ export class Game {
       list.push(e);
       occupants.set(e.garrisonId, list);
     }
-    for (const building of [...this.state.entities].sort((a, b) => a.id - b.id)) {
-      if (building.kind !== 'building' || building.hp <= 0) continue;
-      const cfg = BUILDINGS[building.defId]?.garrison;
-      if (!cfg) continue;
-      const inside = (occupants.get(building.id) ?? []).sort((a, b) => a.id - b.id);
+    for (const container of [...this.state.entities].sort((a, b) => a.id - b.id)) {
+      if (container.hp <= 0) continue;
+      const spec = containerSpec(container);
+      if (!spec) continue;
+      const inside = (occupants.get(container.id) ?? []).sort((a, b) => a.id - b.id);
+      if (inside.length === 0) continue;
+      // An embarked passenger has no independent battlefield position: it sits
+      // at its container, which is what makes every collision, targeting and
+      // vision exclusion elsewhere in the simulation correct without a second
+      // cargo simulation.
       for (const unit of inside) {
-        unit.x = building.x;
-        unit.z = building.z;
+        unit.x = container.x;
+        unit.z = container.z;
         unit.state = 'garrisoned';
         unit.cooldown = Math.max(0, unit.cooldown - dt);
         unit.suppression = Math.max(0, unit.suppression - dt * 0.12);
       }
+      const slots = containerFiringSlots(container);
+      if (slots <= 0) continue;
+      // A mobile carrier keeps its passengers under armour. They fire only when
+      // its definition grants firing positions and passenger fire; shipped
+      // transports do not, and Phase 5B does not introduce it.
+      if (spec.mobile && spec.def.canFireEmbarked !== true) continue;
       // Rotate the available firing positions so one occupant cannot starve
       // the others of every shot. The offset is deterministic (tick + id).
       let shots = 0;
-      const start = inside.length > 0 ? (this.state.tick + building.id) % inside.length : 0;
+      const start = (this.state.tick + container.id) % inside.length;
       for (let offset = 0; offset < inside.length; offset++) {
-        if (shots >= cfg.firingSlots) break;
+        if (shots >= slots) break;
         const unit = inside[(start + offset) % inside.length];
         const weapons = entityWeapons(unit);
         if (weapons.length === 0 || unit.cooldown > 0) continue;
@@ -3104,6 +4022,12 @@ export class Game {
         shots++;
       }
     }
+  }
+
+  /** True for a passenger whose effective position is a mobile carrier. */
+  private isMobilePassenger(entity: Entity): boolean {
+    if (entity.kind !== 'unit' || !entity.garrisonId) return false;
+    return isMobileContainer(this.getEntity(entity.garrisonId));
   }
 
   /** Split part of a structure hit through the garrison envelope. */
@@ -3165,9 +4089,39 @@ export class Game {
   }
 
   /** A destroyed shelter kills every occupant outright, so none are left sealed inside. */
-  private destroyGarrison(building: Entity, attackerOwner: number): void {
-    const inside = this.garrisonOccupants(building.id);
+  /**
+   * Apply a container's configured passenger-loss policy exactly once.
+   *
+   * `kill` (the default, and the only policy any shipped definition uses)
+   * destroys everyone still inside. `eject` is reserved for a container that
+   * opts in and reuses the normal safe disembark ring; if any owner cannot be
+   * placed the fallback is still a kill, never an orphaned passenger.
+   */
+  private destroyContainer(container: Entity, attackerOwner: number): void {
+    const spec = containerSpec(container);
+    if (!spec) return;
+    const inside = this.containerOccupants(container.id);
     if (inside.length === 0) return;
+    if (containerOnDestroyed(container) === 'eject') {
+      const owners = [...new Set(inside.map((unit) => unit.owner))].sort((a, b) => a - b);
+      let allOut = true;
+      for (const owner of owners) {
+        if (!this.exitContainer(container, owner)) allOut = false;
+      }
+      if (allOut) {
+        this.emit('notice', {
+          team: container.owner >= 0 ? container.owner : owners[0],
+          x: container.x,
+          z: container.z,
+          text: `${entityName(container)} destroyed — passengers escaped`,
+          entityId: container.id,
+          level: 'warning',
+          sound: 'explosion',
+        });
+        return;
+      }
+    }
+    const label = spec.mobile ? entityName(container) : buildingDef(container.defId).name;
     const lostByOwner = new Map<number, number>();
     for (const unit of inside) {
       const victim = this.player(unit.owner);
@@ -3186,10 +4140,10 @@ export class Game {
     for (const [owner, count] of [...lostByOwner].sort((a, b) => a[0] - b[0])) {
       this.emit('notice', {
         team: owner,
-        x: building.x,
-        z: building.z,
-        text: `${count} infantry lost with ${buildingDef(building.defId).name}`,
-        entityId: building.id,
+        x: container.x,
+        z: container.z,
+        text: `${count} infantry lost with ${label}`,
+        entityId: container.id,
         level: 'critical',
         sound: 'explosion',
       });
@@ -5339,6 +6293,11 @@ export class Game {
   private updateMissionTriggers(): void {
     const mission = this.mission;
     if (!mission || mission.isTerminal) return;
+    // A wave with an authored arrival time needs no trigger, so it is placed
+    // before the trigger list is consulted (and on a mission with no triggers
+    // at all).
+    this.spawnDueMissionWaves();
+    if (mission.isTerminal) return;
     if (mission.doc.triggers.length === 0) return;
     const units = this.state.entities
       .filter((entity) => entity.kind === 'unit' && entity.hp > 0)
@@ -5366,6 +6325,9 @@ export class Game {
           objectiveChanged: (changes) => {
             for (const change of changes) this.announceObjectiveChange(change);
           },
+          groupActivated: (group) => this.releaseMissionGroup(group),
+          waveSpawned: (wave) => this.spawnMissionWave(wave),
+          missionEnded: (outcome) => this.endMissionByScript(outcome),
         },
       );
     } finally {
@@ -5382,6 +6344,179 @@ export class Game {
       level: 'info',
       code: 'missionMessage',
     });
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Mission-driven battlefield changes                                  */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * Centre of an authored mission region, in world units.
+   *
+   * The same convention every other region consumer uses: a region is a tile
+   * rectangle and its centre is the middle of that rectangle, so a group and a
+   * wave told to go to the same region head for the same ground.
+   */
+  private missionRegionCentre(id: string | undefined): { x: number; z: number } | null {
+    if (!id) return null;
+    const region = this.mission?.doc.regions.find((entry) => entry.id === id);
+    if (!region) return null;
+    return {
+      x: (region.x + region.width / 2) * TILE_SIZE,
+      z: (region.z + region.height / 2) * TILE_SIZE,
+    };
+  }
+
+  /**
+   * Hold every authored dormant group at its placements.
+   *
+   * Called once, as the battle is set up, so a unit that is waiting for its
+   * trigger never takes an AI or auto-acquired order first. The hold is marked
+   * on the entity, which is what the commander checks, rather than on the
+   * group, because the entity is what survives save and load.
+   */
+  private applyMissionGroupDormancy(): void {
+    const doc = this.mission?.doc;
+    if (!doc || doc.aiGroups.length === 0) return;
+    for (const group of doc.aiGroups) {
+      if (group.initial !== 'dormant') continue;
+      this.holdMissionUnits(group);
+    }
+  }
+
+  private holdMissionUnits(group: MissionAiGroupDoc): void {
+    for (const entity of this.state.entities) {
+      if (entity.kind !== 'unit' || entity.hp <= 0) continue;
+      if (!entity.authoredKey || !group.units.includes(entity.authoredKey)) continue;
+      entity.missionHold = true;
+      entity.stance = 'hold';
+      entity.order = null;
+      entity.path = [];
+      entity.pathIndex = 0;
+      entity.targetId = 0;
+      entity.state = 'idle';
+      entity.destX = entity.x;
+      entity.destZ = entity.z;
+      entity.guardX = entity.x;
+      entity.guardZ = entity.z;
+    }
+  }
+
+  /**
+   * Release an AI group the mission has just activated.
+   *
+   * The runtime has already latched the activation, so this runs at most once
+   * per group: the units drop the hold, take an aggressive stance and are given
+   * one attack-move toward the group's authored region. From there they are
+   * ordinary AI units under the ordinary commander.
+   */
+  private releaseMissionGroup(group: MissionAiGroupDoc): void {
+    const ids: number[] = [];
+    for (const entity of this.state.entities) {
+      if (entity.kind !== 'unit' || entity.hp <= 0) continue;
+      if (!entity.authoredKey || !group.units.includes(entity.authoredKey)) continue;
+      entity.missionHold = false;
+      entity.stance = 'aggressive';
+      ids.push(entity.id);
+    }
+    if (ids.length === 0) return;
+    const target = this.missionRegionCentre(group.region);
+    if (!target) return;
+    this.commandMove(group.owner, ids, target.x, target.z, true);
+  }
+
+  /**
+   * Place one reinforcement wave and send it in.
+   *
+   * Every hull is an ordinary entity from the ordinary roster: no mission-only
+   * unit exists. Placement searches outward from the wave region for a free,
+   * standable tile so a blocked entry area cannot drop a column into a cliff or
+   * on top of a structure, and the wave is told to attack-move to the region
+   * centre once it is on the ground.
+   */
+  private spawnMissionWave(wave: MissionReinforcementDoc): void {
+    const anchor = this.missionRegionCentre(wave.region);
+    if (!anchor) return;
+    const spawned: number[] = [];
+    for (const spec of wave.units) {
+      for (let i = 0; i < spec.count; i++) {
+        const spot = this.missionSpawnTile(anchor, spec.defId);
+        if (!spot) {
+          this.announceMissionMessage(`Reinforcements are late — no room to deploy ${wave.id}.`);
+          break;
+        }
+        const unit = this.spawnUnit(wave.owner, spec.defId, spot.x, spot.z);
+        spawned.push(unit.id);
+      }
+    }
+    if (spawned.length === 0) return;
+    this.commandMove(wave.owner, spawned, anchor.x, anchor.z, true);
+  }
+
+  /** Place any wave whose authored arrival time has come due. */
+  private spawnDueMissionWaves(): void {
+    const mission = this.mission;
+    if (!mission || mission.doc.reinforcements.length === 0) return;
+    const elapsed = (this.state.tick - this.state.startedAtTick) / TICK_RATE;
+    for (const wave of mission.doc.reinforcements) {
+      if (wave.afterSeconds === undefined) continue;
+      if (elapsed < wave.afterSeconds) continue;
+      if (!mission.markWaveSpawned(wave.id)) continue;
+      this.spawnMissionWave(wave);
+    }
+  }
+
+  /**
+   * First free tile for a reinforcement, searched outward from the region.
+   *
+   * Deterministic: ring by ring from the region centre, then row order inside
+   * the ring, so the same mission and the same save place the same column in
+   * the same tiles.
+   */
+  private missionSpawnTile(
+    anchor: { x: number; z: number },
+    defId: string,
+  ): { x: number; z: number } | null {
+    const map = this.state.map;
+    const def = unitDef(defId);
+    const ax = Math.floor(anchor.x / TILE_SIZE);
+    const az = Math.floor(anchor.z / TILE_SIZE);
+    const occupied = new Set<number>();
+    for (const entity of this.state.entities) {
+      if (entity.hp <= 0) continue;
+      const tx = Math.floor(entity.x / TILE_SIZE);
+      const tz = Math.floor(entity.z / TILE_SIZE);
+      if (!inBounds(map.width, map.height, tx, tz)) continue;
+      occupied.add(tileIndex(map.width, tx, tz));
+    }
+    for (let radius = 0; radius <= 14; radius++) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dz)) !== radius) continue;
+          const x = ax + dx;
+          const z = az + dz;
+          if (!inBounds(map.width, map.height, x, z)) continue;
+          const idx = tileIndex(map.width, x, z);
+          if (this.blocked[idx]) continue;
+          if (!canStandOn(map.width, map.height, map.terrain, idx, def.moveClass)) continue;
+          if (occupied.has(idx)) continue;
+          return { x: (x + 0.5) * TILE_SIZE, z: (z + 0.5) * TILE_SIZE };
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Finish the battle because a mission action said so.
+   *
+   * The verdict is already on the mission runtime (`forceOutcome`), so this uses
+   * the ordinary `finish` path: the result is captured from the same state every
+   * other ending uses, and a second scripted ending is refused by the terminal
+   * mission.
+   */
+  private endMissionByScript(outcome: MissionOutcome): void {
+    this.finish(outcome);
   }
 
   syncRng(): void {
@@ -5916,8 +7051,9 @@ export class Game {
     return null;
   }
 
-  private isSpawnClear(x: number, z: number, radius: number): boolean {
+  private isSpawnClear(x: number, z: number, radius: number, ignoreId?: number): boolean {
     for (const e of this.state.entities) {
+      if (e.id === ignoreId) continue;
       if (e.kind !== 'unit' || e.hp <= 0) continue;
       const min = (radius + unitDef(e.defId).radius) * 0.7;
       if (dist2(x, z, e.x, e.z) < min * min) return false;
@@ -5959,6 +7095,10 @@ export class Game {
       }
       for (const e of this.state.entities) {
         if (e.hp <= 0) continue;
+        // A building's garrison keeps its existing sight lines: the shelter is
+        // the observation post. A mobile passenger has no independent vision;
+        // the carrier's own optics are the only eyes it contributes.
+        if (this.isMobilePassenger(e)) continue;
         const ownerTeam = this.teamOf(e.owner);
         if (ownerTeam !== team) continue;
         // Darkness shortens what a unit can pick out; optics decide by how much.
@@ -6033,6 +7173,7 @@ export class Game {
   private seesLitTarget(target: Entity, team: number, dayNight: DayNightState): boolean {
     for (const source of this.state.entities) {
       if (source.hp <= 0 || source.owner < 0 || this.teamOf(source.owner) !== team) continue;
+      if (this.isMobilePassenger(source)) continue;
       const reach =
         entityVision(source) *
         visionFactor(sensorFor(source), dayNight) *
@@ -6061,6 +7202,7 @@ export class Game {
     if (radius <= 0) return false;
     for (const source of this.state.entities) {
       if (source.hp <= 0 || source.owner < 0 || this.teamOf(source.owner) !== team) continue;
+      if (this.isMobilePassenger(source)) continue;
       if (dist(source.x, source.z, target.x, target.z) > radius * 1.3 * TILE_SIZE) continue;
       if (!hasLineOfSight(this.state.map, source.x, source.z, target.x, target.z)) continue;
       return true;
@@ -6175,6 +7317,7 @@ export class Game {
           let close = false;
           for (const source of this.state.entities) {
             if (source.hp <= 0 || source.owner < 0 || this.teamOf(source.owner) !== team) continue;
+            if (this.isMobilePassenger(source)) continue;
             if (dist(source.x, source.z, e.x, e.z) <= closeRange * TILE_SIZE) {
               close = true;
               break;
@@ -6190,6 +7333,7 @@ export class Game {
         let close = false;
         for (const source of this.state.entities) {
           if (source.hp <= 0 || source.owner < 0 || this.teamOf(source.owner) !== team) continue;
+          if (this.isMobilePassenger(source)) continue;
           if (dist(source.x, source.z, e.x, e.z) <= (def?.closeDetect ?? 4.5) * TILE_SIZE) {
             close = true;
             break;
@@ -6666,6 +7810,32 @@ export class Game {
   }
 
   private updateNaval(e: Entity, dt: number): void {
+    if (e.navalLanding && !e.navalLanding.beached) {
+      if (dist(e.x, e.z, e.navalLanding.x, e.navalLanding.z) <= TILE_SIZE * 0.8) {
+        this.finishNavalLanding(e);
+      } else if (e.blockedTicks > 120) {
+        // A beach that cannot be reached is refused once, not retried forever:
+        // the passengers stay aboard and the player can pick another coast.
+        const def = unitDef(e.defId);
+        e.navalLanding = undefined;
+        e.order = null;
+        e.path = [];
+        e.pathIndex = 0;
+        e.destX = e.x;
+        e.destZ = e.z;
+        e.state = 'idle';
+        e.blockedTicks = 0;
+        this.emit('orderFailed', {
+          team: e.owner,
+          x: e.x,
+          z: e.z,
+          text: `${def.name} could not reach the beach; passengers remain aboard.`,
+          entityId: e.id,
+          level: 'warning',
+          sound: 'denied',
+        });
+      }
+    }
     const home = this.getEntity(e.homeId);
     const docked =
       !!home &&
@@ -6692,7 +7862,7 @@ export class Game {
         }
       }
     }
-    if (e.ammo <= 0 && e.order?.type !== 'return') {
+    if (e.maxAmmo > 0 && e.ammo <= 0 && e.order?.type !== 'return') {
       const homeAlive = home && home.hp > 0;
       if (homeAlive) {
         this.emit('alert', {
@@ -6715,7 +7885,15 @@ export class Game {
     }
     if (e.order?.type === 'return') {
       const home2 = this.getEntity(e.homeId);
-      if (home2 && home2.hp > 0 && dist(e.x, e.z, home2.x, home2.z) < 6 * TILE_SIZE) {
+      // Keep the return order until the first round is aboard. Clearing it as
+      // soon as the hull touches the yard left the empty-rack branch to fire
+      // again every tick for the whole reload, flooding the alert feed.
+      if (
+        e.ammo > 0 &&
+        home2 &&
+        home2.hp > 0 &&
+        dist(e.x, e.z, home2.x, home2.z) < 6 * TILE_SIZE
+      ) {
         e.order = null;
         e.path = [];
         e.state = 'idle';
@@ -6786,7 +7964,7 @@ export class Game {
     from: { x: number; z: number },
     to: { x: number; z: number; facing: number },
     seconds: number,
-    next: 'takeoffRun' | 'lift' | 'taxiIn' | 'land' | 'airborne',
+    next: 'takeoffRun' | 'lift' | 'taxiIn' | 'land' | 'fieldLand' | 'airborne',
   ): void {
     const ac = e.aircraft;
     if (!ac) return;
@@ -6835,6 +8013,7 @@ export class Game {
     e.state = roll.kind === 'takeoff' ? 'moving' : 'returning';
     if (roll.next === 'airborne') ac.climb = eased;
     else if (roll.next === 'taxiIn') ac.climb = 1 - 0.9 * eased;
+    else if (roll.next === 'fieldLand') ac.climb = 1 - eased;
     else ac.climb = 0;
     if (u < 1) return;
     this.finishGroundRoll(e, def, ac);
@@ -6845,6 +8024,10 @@ export class Game {
     const roll = ac.roll;
     if (!roll) return;
     ac.roll = undefined;
+    if (roll.next === 'fieldLand') {
+      this.finishFieldLanding(e, def, ac);
+      return;
+    }
     const home = this.getEntity(ac.homeId);
     const kind = this.aircraftSlotKind(e.defId) as DockKind;
     if (roll.next === 'takeoffRun') {
@@ -6994,6 +8177,22 @@ export class Game {
     this.startGroundRoll(e, 'landing', { x: e.x, z: e.z }, to, HELO_LIFT_SECONDS, 'land');
   }
 
+  /** Settle a transport onto open ground, away from its permanent berth. */
+  private beginFieldLanding(e: Entity, ac: AircraftState): void {
+    const target = ac.fieldLanding;
+    if (!target) return;
+    this.startGroundRoll(
+      e,
+      'landing',
+      { x: e.x, z: e.z },
+      { x: target.x, z: target.z, facing: e.facing },
+      HELO_LIFT_SECONDS,
+      'fieldLand',
+    );
+    ac.climb = 1;
+    e.state = 'returning';
+  }
+
   /**
    * Send a parked airframe out.
    *
@@ -7075,6 +8274,29 @@ export class Game {
     if (ac.roll) {
       this.stepGroundRoll(e, def, ac, dt);
       return;
+    }
+    if (ac.landed && ac.fieldLanding) {
+      // A transport that has landed on open ground stays there until it is
+      // ordered away. In particular it must not be parked back onto its home
+      // pad by the normal servicing branch below.
+      e.fuel = Math.max(0, e.fuel);
+      e.state = 'grounded';
+      return;
+    }
+    if (!ac.landed && ac.fieldLanding) {
+      const target = ac.fieldLanding;
+      if (dist(e.x, e.z, target.x, target.z) <= TILE_SIZE * 1.5) {
+        this.beginFieldLanding(e, ac);
+        return;
+      }
+      if (e.path.length === 0) {
+        e.order = { type: 'move', x: target.x, z: target.z };
+        e.path = [{ x: target.x, z: target.z }];
+        e.pathIndex = 0;
+        e.destX = target.x;
+        e.destZ = target.z;
+        e.state = 'moving';
+      }
     }
     if (ac.landed) {
       // A field destroyed under a parked hull must not leave the airframe homed
@@ -9763,8 +10985,8 @@ export class Game {
     }
     target.hp = 0;
     target.state = 'dead';
-    if (target.kind === 'building' && BUILDINGS[target.defId]?.garrison) {
-      this.destroyGarrison(target, attackerOwner);
+    if (containerSpec(target)) {
+      this.destroyContainer(target, attackerOwner);
     }
     const attacker = this.player(attackerOwner);
     const victim = this.player(target.owner);
@@ -9863,6 +11085,42 @@ export class Game {
     });
   }
 
+  /**
+   * Make loaded occupancy safe without changing any legal relationship.
+   *
+   * The lowest passenger ids keep their seats first, so trimming an over-full
+   * container after a hand-edited save is deterministic. Missing, dead or
+   * wrong-owner containers only clear the passenger's own reference; nothing is
+   * recreated, so entity ids and all other state survive.
+   */
+  reconcileContainers(): void {
+    const counts = new Map<number, number>();
+    const ordered = [...this.state.entities].sort(
+      (a, b) => a.id - b.id || a.owner - b.owner,
+    );
+    for (const e of ordered) {
+      if (e.kind !== 'unit' || !e.garrisonId) continue;
+      const container = this.byId.get(e.garrisonId);
+      const spec = containerSpec(container);
+      const invalid =
+        !container ||
+        !spec ||
+        container.hp <= 0 ||
+        e.hp <= 0 ||
+        (spec.mobile && !this.isFriendlyOwner(container.owner, e.owner));
+      const used = container ? (counts.get(container.id) ?? 0) : 0;
+      if (invalid || used >= (spec?.capacity ?? 0)) {
+        e.garrisonId = 0;
+        if (e.state === 'garrisoned') e.state = 'idle';
+        continue;
+      }
+      counts.set(container!.id, used + 1);
+      e.x = container!.x;
+      e.z = container!.z;
+      e.state = 'garrisoned';
+    }
+  }
+
   private cleanup(): void {
     // A dropped span is kept on purpose, so only a removable death is a reason
     // to walk the entity list.
@@ -9877,9 +11135,7 @@ export class Game {
     // initial dead list, so recompute it before removing ids, or a stale id
     // would keep them selectable through getEntity after death.
     for (const e of this.state.entities) {
-      if (e.kind === 'building' && e.hp <= 0 && BUILDINGS[e.defId]?.garrison) {
-        this.destroyGarrison(e, e.owner);
-      }
+      if (e.hp <= 0 && containerSpec(e)) this.destroyContainer(e, e.owner);
     }
     const dead = this.state.entities.filter((e) => e.hp <= 0);
     for (const e of dead) {
@@ -10340,6 +11596,10 @@ export class Game {
         stampFootprint(game.blocked, game.state.map, e.defId, tx, tz, 1);
       }
     }
+    // Occupancy is restored before the first tick: orphaned references are
+    // cleared and an illegally over-full container is trimmed deterministically,
+    // while every legal garrison survives byte for byte.
+    game.reconcileContainers();
     game.visible = [[], []].map(() => new Set<number>());
     game.state.charted = Array.isArray(state.charted) ? state.charted : [];
     game.rebuildChartedIndex();

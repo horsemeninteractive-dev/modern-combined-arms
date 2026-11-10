@@ -27,8 +27,23 @@ function documentHidden(): boolean {
   return typeof document !== 'undefined' && document.visibilityState === 'hidden';
 }
 
+import { parseFlagComposition, type FlagComposition } from '../identity/flag';
+
 export type LobbyPhase = 'idle' | 'creating' | 'joining' | 'lobby' | 'playing' | 'closed' | 'failed';
 export type SocketPhase = 'idle' | 'connecting' | 'open' | 'closed';
+
+export interface LobbyIdentityView {
+  callsign: string;
+  avatar: string;
+  /** Career rank id carried by the signed ticket, when present. */
+  rank?: string;
+  /** Equipped command flag carried by the signed ticket, if any. */
+  flag?: FlagComposition;
+  /** Equipped profile frame catalogue id. */
+  frame?: string;
+  /** Equipped profile background catalogue id. */
+  background?: string;
+}
 
 export interface LobbySeatView {
   nation: string;
@@ -37,13 +52,18 @@ export interface LobbySeatView {
   host: boolean;
   connected: boolean;
   /**
-   * Presentable identity the room was given at seat claim; null for a guest.
-   * `rank` is the career rank id the signed ticket carried, absent for a ticket
-   * minted before ranks travelled.
+   * Presentable identity the room was given at seat claim or before start;
+   * null for a guest. Optional fields keep older tickets readable.
    */
-  identity?: { callsign: string; avatar: string; rank?: string } | null;
+  identity?: LobbyIdentityView | null;
   /** True when the seat presents a verified account. */
   verified?: boolean;
+}
+
+/** One seat's immutable match-start identity, as delivered by the room. */
+export interface LobbySeatIdentityView {
+  seatId: number;
+  identity: LobbyIdentityView | null;
 }
 
 export interface LobbyMatchView {
@@ -72,6 +92,8 @@ export interface LobbyView {
   matchDurationMs: number;
   hostSeat: number;
   seats: LobbySeatView[];
+  /** Frozen identities for the running match; empty before the start message. */
+  matchIdentities: LobbySeatIdentityView[];
   ready: boolean;
   nation: string | null;
   color: string | null;
@@ -121,6 +143,7 @@ function emptyView(): LobbyView {
     matchDurationMs: 0,
     hostSeat: 0,
     seats: [],
+    matchIdentities: [],
     ready: false,
     nation: null,
     color: null,
@@ -138,16 +161,45 @@ function record(value: unknown): value is Record<string, unknown> {
 }
 
 /** Identity as the room reported it. Shape check only; the room verified it. */
-function seatIdentity(value: unknown): { callsign: string; avatar: string; rank?: string } | null {
+function seatIdentity(value: unknown): LobbyIdentityView | null {
   if (!record(value)) return null;
   const callsign = typeof value.callsign === 'string' ? value.callsign.trim() : '';
   if (!callsign) return null;
   const rank = typeof value.rank === 'string' && /^[a-z-]{2,24}$/.test(value.rank) ? value.rank : undefined;
+  const flag = parseFlagComposition(value.flag);
+  const frame =
+    typeof value.frame === 'string' && /^frame-[a-z-]{2,24}$/.test(value.frame)
+      ? value.frame
+      : undefined;
+  const background =
+    typeof value.background === 'string' && /^bg-[a-z-]{2,24}$/.test(value.background)
+      ? value.background
+      : undefined;
   return {
     callsign: callsign.slice(0, 32),
     avatar: typeof value.avatar === 'string' ? value.avatar.slice(0, 16) : 'insignia',
     ...(rank ? { rank } : {}),
+    // Parsed, never trusted: a flag this build cannot render is simply absent.
+    ...(flag.ok ? { flag: flag.composition } : {}),
+    ...(frame ? { frame } : {}),
+    ...(background ? { background } : {}),
   };
+}
+
+/** Parse the immutable match identity table, ignoring malformed entries. */
+function matchIdentities(value: unknown): LobbySeatIdentityView[] {
+  if (!Array.isArray(value)) return [];
+  const result: LobbySeatIdentityView[] = [];
+  const seen = new Set<number>();
+  for (const entry of value) {
+    if (!record(entry)) continue;
+    const seatId = entry.seatId;
+    if (typeof seatId !== 'number' || !Number.isInteger(seatId) || seatId < 0 || seatId > 1) continue;
+    if (seen.has(seatId)) continue;
+    seen.add(seatId);
+    result.push({ seatId, identity: seatIdentity(entry.identity) });
+  }
+  return result.sort((a, b) => a.seatId - b.seatId);
 }
 
 /** A room id a human can read out: no ambiguous characters, no separators. */
@@ -292,6 +344,7 @@ export class LobbyClient {
       // The room's own message carries the authoritative duration; this keeps
       // the first frame from reading "Lobby —" before it arrives.
       matchDurationMs,
+      matchIdentities: [],
     };
     // The seat token lives only here, never in the rendered view.
     this.token = token;
@@ -313,7 +366,7 @@ export class LobbyClient {
     if (seat === null || !token) {
       return this.fail(500, { code: 'invalid-response', message: 'The room did not return a seat.' });
     }
-    this.view = { ...this.view, phase: 'lobby', roomId: cleanRoom, seat, joinCode: null };
+    this.view = { ...this.view, phase: 'lobby', roomId: cleanRoom, seat, joinCode: null, matchIdentities: [] };
     this.token = token;
     this.openSocket();
     return true;
@@ -322,6 +375,10 @@ export class LobbyClient {
   /** Host-only. The room re-validates every precondition and answers 409/403. */
   async startMatch(): Promise<boolean> {
     if (!this.token || !this.view.roomId) return false;
+    // Capture the latest verified cosmetics before the immutable match
+    // snapshot is taken. A guest or an expired session simply keeps what the
+    // room already has; the start itself remains the host's decision.
+    await this.refreshIdentity();
     const response = await this.post(
       `/api/multiplayer/rooms/${encodeURIComponent(this.view.roomId)}/start`,
       { body: {}, roomToken: this.token },
@@ -375,7 +432,23 @@ export class LobbyClient {
       this.note('Not connected to the room.', 'error');
       return;
     }
+    if (ready) void this.refreshIdentity();
     socket.send(JSON.stringify({ type: 'ready', v: LOBBY_PROTOCOL_VERSION, ready }));
+  }
+
+  /**
+   * Ask the room to re-read this seat's signed identity. This is deliberately
+   * a token-authorised HTTP action, not a socket message: a client can never
+   * place callsign, rank or cosmetics into the room protocol directly.
+   */
+  async refreshIdentity(): Promise<boolean> {
+    if (!this.identityTicket || !this.token || !this.view.roomId) return false;
+    if (this.view.phase !== 'lobby') return false;
+    const response = await this.post(
+      `/api/multiplayer/rooms/${encodeURIComponent(this.view.roomId)}/identity`,
+      { body: {}, roomToken: this.token },
+    );
+    return response.ok;
   }
 
   leave(): void {
@@ -439,6 +512,10 @@ export class LobbyClient {
       this.reconnectAttempts = 0;
       this.startKeepalive();
       this.emit();
+      // Reconnecting before start is also a chance to refresh identity from
+      // the account service. During a match the snapshot is immutable, so the
+      // method refuses at that point.
+      if (this.view.phase === 'lobby') void this.refreshIdentity();
     });
     socket.addEventListener('message', (event) => {
       if (typeof event.data !== 'string') return;
@@ -491,6 +568,16 @@ export class LobbyClient {
     }
     if (type === 'hello') {
       const started = type === 'hello' && message.phase === 'playing';
+      const frozenIdentities = matchIdentities(message.identities);
+      const seats =
+        frozenIdentities.length > 0
+          ? this.view.seats.map((seat, index) => {
+              const frozen = frozenIdentities.find((entry) => entry.seatId === index);
+              return frozen
+                ? { ...seat, identity: frozen.identity, verified: frozen.identity !== null }
+                : seat;
+            })
+          : this.view.seats;
       this.assembler = new SnapshotAssembler({
         roomId: String(message.roomId ?? this.view.roomId ?? ''),
         team: typeof message.team === 'number' ? message.team : (this.view.seat ?? 0),
@@ -499,6 +586,8 @@ export class LobbyClient {
         ...this.view,
         phase: started ? 'playing' : 'lobby',
         seat: typeof message.seat === 'number' ? message.seat : this.view.seat,
+        seats,
+        ...(frozenIdentities.length > 0 ? { matchIdentities: frozenIdentities } : {}),
         match: started
           ? {
               tick: 0,
@@ -550,8 +639,10 @@ export class LobbyClient {
     }
     if (type === 'result') {
       const outcome = message.outcome;
+      const frozenIdentities = matchIdentities(message.identities);
       this.view = {
         ...this.view,
+        ...(frozenIdentities.length > 0 ? { matchIdentities: frozenIdentities } : {}),
         matchResult: {
           outcome: outcome === 'victory' || outcome === 'defeat' || outcome === 'draw' ? outcome : 'draw',
           matchId: typeof message.matchId === 'string' && message.matchId.length > 0 ? message.matchId : null,
@@ -715,9 +806,9 @@ export class LobbyClient {
     path: string,
     options: { body: unknown; roomToken?: string },
   ): Promise<{ ok: boolean; status: number; body: Record<string, unknown> }> {
-    // Only the two routes that establish a seat carry identity. Every other
-    // action is authorised by the seat token and needs no ticket.
-    const wantsIdentity = /\/(open|join)$/.test(path);
+    // Seat-establishing and pre-start refresh routes carry identity. Every
+    // other action is authorised by the seat token and needs no ticket.
+    const wantsIdentity = /\/(open|join|identity)$/.test(path);
     let ticket: string | null = null;
     if (wantsIdentity && this.identityTicket) {
       try {

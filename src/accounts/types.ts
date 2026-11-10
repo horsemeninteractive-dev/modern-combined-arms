@@ -115,11 +115,70 @@ export interface MpResultPlayerRecord {
  * that explains it and the audit row that proves the room said so. They are one
  * write on purpose, so a crash cannot leave XP without its report.
  */
+/** One saved command-flag design, exactly as the account stores it. */
+export interface PlayerFlagRecord {
+  accountId: string;
+  designId: string;
+  name: string;
+  /** Validated composition, serialised. Parsed again on every read. */
+  composition: string;
+  schemaVersion: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** The active flag plus equipped profile cosmetics, one row per account. */
+export interface PlayerPresentationRecord {
+  accountId: string;
+  activeDesignId: string | null;
+  frame: string | null;
+  background: string | null;
+  camo: string | null;
+  revision: number;
+  updatedAt: number;
+}
+
+/**
+ * The complete player-identity document: saved designs, active design and
+ * equipped cosmetics with one revision. It is persisted as a single row so a
+ * concurrent writer can never split designs from the selection that names them.
+ */
+export interface PlayerIdentityDocument {
+  designs: PlayerFlagRecord[];
+  activeDesignId: string | null;
+  frame: string | null;
+  background: string | null;
+  camo: string | null;
+  revision: number;
+  updatedAt: number;
+}
+
 export interface CareerEntryWrite {
   accountId: string;
   record: CareerMatchRecord;
   report: MatchReportRecord | null;
   audit: MpResultPlayerRecord | null;
+}
+
+/** One earned commendation. Unique on `(accountId, achievementId)`. */
+export interface CareerAchievementRecord {
+  accountId: string;
+  achievementId: string;
+  awardedAt: number;
+  matchRef: string | null;
+}
+
+export interface AchievementAwardWrite {
+  achievementId: string;
+  awardedAt: number;
+  matchRef: string | null;
+}
+
+/** A campaign is complete only once; the unique key is account + campaign. */
+export interface CareerCampaignRecord {
+  accountId: string;
+  campaignId: string;
+  completedAt: number;
 }
 
 export interface NewIdentity {
@@ -164,6 +223,15 @@ export interface AccountStore {
   guestMigration(guestId: string): Promise<GuestMigrationRecord | null>;
   guestMigrationForAccount(accountId: string): Promise<GuestMigrationRecord | null>;
   recordGuestMigration(record: GuestMigrationRecord): Promise<WriteOutcome>;
+  /**
+   * Flip a reserved (`pending`) migration to `complete` after its import has
+   * finished. `conflict` means the reservation is no longer this account's.
+   */
+  completeGuestMigration(
+    guestId: string,
+    accountId: string,
+    completedAt: number,
+  ): Promise<WriteOutcome>;
 
   /**
    * Append one career match. `conflict` means this account already has a match
@@ -194,6 +262,19 @@ export interface AccountStore {
     },
   ): Promise<WriteOutcome>;
 
+  /** One canonical identity document, or null before the first save. */
+  playerIdentityDocument(accountId: string): Promise<PlayerIdentityDocument | null>;
+  /**
+   * Atomically replace designs, active selection and equipped cosmetics at
+   * `expectedRevision + 1`. `conflict` means another device wrote first: not a
+   * single design or presentation field may have changed.
+   */
+  savePlayerIdentityDocument(
+    accountId: string,
+    document: PlayerIdentityDocument,
+    expectedRevision: number,
+  ): Promise<WriteOutcome>;
+
   /**
    * Record a completed match and its report as one write. `conflict` means this
    * account already has the reference: report the existing award, never a
@@ -205,6 +286,21 @@ export interface AccountStore {
   matchReport(accountId: string, ref: string): Promise<MatchReportRecord | null>;
   /** Grouped statistics for the service record. */
   careerStatRows(accountId: string): Promise<StatGroupRow[]>;
+
+  /** Every commendation this account has earned, oldest first. */
+  awardedAchievements(accountId: string): Promise<CareerAchievementRecord[]>;
+  /** Awards attached to one authoritative match, for the result screen. */
+  achievementsForMatch(accountId: string, matchRef: string): Promise<CareerAchievementRecord[]>;
+  /** Insert-only and idempotent on `(accountId, achievementId)`. */
+  recordAchievements(
+    accountId: string,
+    awards: readonly AchievementAwardWrite[],
+  ): Promise<number>;
+
+  /** Idempotent completion record for a full campaign. */
+  recordCampaignCompletion(accountId: string, campaignId: string, completedAt: number): Promise<WriteOutcome>;
+  /** Completed campaigns, oldest first. */
+  careerCampaigns(accountId: string): Promise<CareerCampaignRecord[]>;
 
   /** Idempotent audit row for one player's side of an authoritative match. */
   recordMpResultPlayer(record: MpResultPlayerRecord): Promise<void>;
@@ -259,6 +355,7 @@ export type AccountErrorCode =
   | 'guest-already-migrated'
   | 'account-already-migrated'
   | 'migration-conflict'
+  | 'stale-write'
   | 'server-error';
 
 export class AccountError extends Error {

@@ -198,6 +198,8 @@ uniform vec3 uTeamColor;
 uniform vec3 uSun;
 uniform vec3 uEye;
 uniform vec3 uTint;
+/** Hull paint multiplier: an equipped camo, or white for every other surface. */
+uniform vec3 uCamo;
 uniform float uAmbient;
 /** Global time-of-day grade: warm at dusk, cool and dim at night. */
 uniform vec3 uTone;
@@ -361,7 +363,10 @@ void main() {
   float specular = clamp(mat.a, 0.0, 1.0);
   float materialId = floor(vMaterial + 0.5);
 
-  vec3 base = mix(vColor, uTeamColor, clamp(vTeam, 0.0, 1.0)) * uTint;
+  // A camo is paint, not ownership: only the un-masked hull takes it, so the
+  // panels that say whose vehicle this is keep their exact alliance colour.
+  vec3 hull = vColor * uCamo;
+  vec3 base = mix(hull, uTeamColor, clamp(vTeam, 0.0, 1.0)) * uTint;
   bool isFlag = vTexMask > 0.5 || vWind > 0.001;
   // The national flag is a real texture; the alliance flag stays a solid team
   // colour. Cloth is deliberately left untextured so a distant flag stays a

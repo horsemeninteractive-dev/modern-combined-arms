@@ -3,6 +3,8 @@ import type { Game } from '../sim/game';
 import type {
   ContactRecord,
   Entity,
+  FieldLandingState,
+  NavalLandingState,
   PlayerState,
   Projectile,
   QueueItem,
@@ -127,6 +129,23 @@ export interface ProjectedEntity {
    * information, not something the projection hands over.
    */
   effects?: Record<string, number>;
+  /**
+   * Public airframe state. Passenger identities stay on their own redacted
+   * garrison references; this only lets the client draw a landed transport,
+   * an approach to a field landing zone, and its altitude share correctly.
+   */
+  aircraft?: {
+    landed: boolean;
+    returningHome: boolean;
+    climb?: number;
+    fieldLanding?: FieldLandingState;
+  };
+  /**
+   * Public shore approach of a landing craft. This is what lets both clients
+   * draw a beached hull and exposes its boarding readiness without revealing
+   * any passenger identity.
+   */
+  navalLanding?: NavalLandingState;
 }
 
 export interface ProjectedTeamResult {
@@ -260,6 +279,17 @@ function liveEntity(game: Game, entity: Entity, team: number, own: boolean): Pro
       oreTileZ: entity.harvester.oreTileZ,
     };
   }
+  if (entity.aircraft) {
+    projected.aircraft = {
+      landed: entity.aircraft.landed,
+      returningHome: entity.aircraft.returningHome,
+      climb: entity.aircraft.climb,
+      ...(entity.aircraft.fieldLanding
+        ? { fieldLanding: { ...entity.aircraft.fieldLanding } }
+        : {}),
+    };
+  }
+  if (entity.navalLanding) projected.navalLanding = { ...entity.navalLanding };
   if (!own) return projected;
   projected.stance = entity.stance;
   projected.queue = entity.queue.map((item) => ({ ...item }));
@@ -404,6 +434,10 @@ export function createTeamState(
       knownIds.add(entity.id);
       continue;
     }
+    // An embarked passenger is never projected to the opposing side, even
+    // when a coarse visibility test matches its carrier's tile. Its identity,
+    // seat and cargo state stay with its owner.
+    if (entity.garrisonId) continue;
     if (game.isVisibleTo(team, entity.id)) {
       entities.push(liveEntity(game, entity, team, false));
       knownIds.add(entity.id);
@@ -481,6 +515,10 @@ export function createTeamSnapshot(
   result?: NeutralMatchResult,
   map?: ProjectedMap,
 ): TeamSnapshot {
+  // Cross-entity occupancy is checked before the wire shape is built. A
+  // passenger's row only carries its container id, so an invalid association
+  // (dead carrier, alien transport, fifth seat) must not leave the server.
+  game.assertContainerIntegrity();
   const state = createTeamState(game, team, sinceSeq, result, true);
   if (!state.fog) throw new Error('A full team snapshot requires the fog array.');
   return {

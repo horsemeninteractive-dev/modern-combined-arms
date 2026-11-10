@@ -34,7 +34,7 @@ and the measurements behind both — is in
 npm install
 npm run dev        # http://127.0.0.1:5173
 npm run build      # typecheck + production bundle in dist/
-npm test           # the full Vitest suite (163 files)
+npm test           # the full Vitest suite (190 files)
 npm run bench      # measured simulation/save/pathfinding performance
 ```
 
@@ -88,6 +88,9 @@ npx wrangler secret put MCA_RESERVATION_TOKEN
 npm run rooms:deploy                       # build the worker and deploy it live
 npm run release                            # build the app and publish it to Pages
 ```
+
+The full ordered procedure — including checking the remote D1 migration state
+before applying anything — is in [docs/DEPLOYMENT_RUNBOOK.md](docs/DEPLOYMENT_RUNBOOK.md).
 
 `npm run rooms:deploy` uses the live config, which has development mode off: no
 probe page, no loopback exemption. `npm run rooms:dev` keeps using

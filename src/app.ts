@@ -1,4 +1,5 @@
 import { Renderer } from './render/renderer';
+import { AIR_UNIT_ALTITUDE, PARKED_AIRCRAFT_CLEARANCE } from './render/unitMeshes';
 import { Game } from './sim/game';
 import { TICK_MS, TICK_RATE, TILE_SIZE } from './sim/constants';
 import { BUILDINGS } from './data/buildings';
@@ -161,7 +162,11 @@ import { buildLobbyScenario, validateLobbyConfig } from './multiplayer/lobbyConf
 import { NetworkBattle } from './multiplayer/networkBattle';
 import { enterFullscreen, isFullscreen, toggleFullscreen } from './ui/fullscreen';
 import { MenuAttractMatch } from './ui/menuAttract';
+import { readFlagState } from './identity/flagStore';
+import { camoTintFor } from './identity/cosmetics';
 import { AccountPanel } from './ui/accountPanel';
+import { FlagStore } from './identity/flagStore';
+import { parseFlagComposition, type FlagComposition } from './identity/flag';
 import { HttpAccountApi, takeAuthOutcome } from './accounts/client';
 import { ensureGuestProfile } from './accounts/guest';
 import { CareerService } from './accounts/careerService';
@@ -218,6 +223,7 @@ export type SettingsTab = 'display' | 'input' | 'audio' | 'music';
 export type CommandMode =
   | 'none'
   | 'move'
+  | 'land'
   | 'attack'
   | 'attackMove'
   | 'capture'
@@ -410,6 +416,10 @@ export class App {
   /** null until the player picks a view: the menu opens with nothing selected. */
   menuView: MenuView | null = null;
   game: Game | null = null;
+  /** The flag flown by the battle on screen, captured when it started. */
+  private matchFlag: FlagComposition | null = null;
+  /** The battle that flag belongs to, so a load cannot inherit an old one. */
+  private matchFlagGame: Game | null = null;
   /** Scripted training overlay; null outside the tutorial mission. */
   tutorial: TutorialDirector | null = null;
   selected: number[] = [];
@@ -870,6 +880,23 @@ export class App {
    * writes one small local record and nothing else: no account, no request. A
    * blocked localStorage still leaves a usable session-only guest identity.
    */
+  /**
+   * Apply the equipped unit camo to the local player's own units.
+   *
+   * Read from the same local document the flag editor writes, so a camo worn in
+   * the menu is already in place on the first painted frame of a battle. The
+   * renderer tints hull panels only; nothing here touches the simulation.
+   */
+  private applyUnitCamo(): void {
+    let camo: string | null = null;
+    try {
+      camo = typeof localStorage === 'undefined' ? null : readFlagState(localStorage).equipped.camo;
+    } catch {
+      camo = null;
+    }
+    this.renderer.setUnitCamo(camoTintFor(camo));
+  }
+
   private installAccount(): void {
     const storage = this.localStore();
     const guest = storage ? ensureGuestProfile(storage) : null;
@@ -886,6 +913,17 @@ export class App {
       navigate: (view) => {
         if (this.screen !== 'menu') return;
         this.showMenuView(view && this.menuView === view ? null : view);
+        this.glitchSwitch();
+      },
+      // A result card is mid-debrief, so its award notice points at the menu
+      // rather than yanking the player out of the acceptance flow.
+      openLegacy: () => {
+        if (this.screen !== 'menu') {
+          this.notify('Commander Legacy is in the main menu under Account.', 'info');
+          return;
+        }
+        this.showMenuView('account');
+        this.accountPanel?.showLegacy();
         this.glitchSwitch();
       },
     });
@@ -1313,6 +1351,7 @@ export class App {
     this.attractFocusTimer = 0;
     this.attractWarmup = 0;
     this.renderer.setGame(null);
+    this.renderer.setCommandFlag(null);
   }
 
   /** Spend a few milliseconds per frame bringing a new bot battle up to tempo. */
@@ -2066,12 +2105,14 @@ export class App {
     if (!state?.pending) return;
     const mission = this.campaignMission();
     const result = state.pending.result;
+    const flown = parseFlagComposition(state.pending.flag);
     openModal({
       title: `${mission.name} — ${result.outcome === 'victory' ? 'Victory' : 'Defeat'}`,
       wide: true,
       body: missionDebriefMarkup(result, {
         mission: mission.mission,
         outlook: campaignResultOutlook(state, this.campaignDef()),
+        flag: flown.ok ? flown.composition : null,
       }),
       actions: [
         {
@@ -2161,6 +2202,7 @@ export class App {
         run.campaign,
         run.mission.id,
         missionResult,
+        this.game ? this.matchFlagSnapshot(this.game) : null,
       );
       this.setCampaignState(submitted);
     } catch (error) {
@@ -2495,6 +2537,7 @@ export class App {
     this.paused = false;
     this.overlay.clear();
     this.renderer.setGame(null);
+    this.renderer.setCommandFlag(null);
     this.audio.stopMatchMusic();
     this.audio.stopAmbience();
     this.audio.resetAnnouncer();
@@ -2541,6 +2584,7 @@ export class App {
     this.menuScenario = scenario;
     this.menuDrift = 0;
     this.renderer.setGame(null);
+    this.renderer.setCommandFlag(null);
     this.renderer.setScenario(scenario);
     this.renderer.settings.grid = false;
     this.renderer.settings.showFog = false;
@@ -2665,6 +2709,11 @@ export class App {
         aiDifficulty: this.settings.difficulty,
       });
       this.game = game;
+      this.applyUnitCamo();
+      this.captureCommandFlag(game);
+      // The third mast flag is a skirmish and multiplayer identity; a campaign
+      // operation flies only its alliance and national colours.
+      this.renderer.setCommandFlag(this.campaignRun() ? null : this.matchFlagSnapshot(game));
       // The reporting voice belongs to the seat's faction, not to the map. It is
       // set before the opening line so the first words of a battle are already
       // in the right voice.
@@ -2752,6 +2801,30 @@ export class App {
    * An unknown faction resolves to the Defender voice rather than falling
    * silent, so a malformed save still reports its battlefield.
    */
+  /**
+   * Capture the command flag for the battle that is starting.
+   *
+   * This is the whole point of the snapshot: a player who edits or equips a
+   * different flag after deploying still gets the report of the flag that was
+   * flown. The snapshot is tied to the game instance so a loaded save, which
+   * has no deployment moment, cannot inherit the previous battle's flag.
+   */
+  private captureCommandFlag(game: Game): void {
+    this.matchFlag = null;
+    this.matchFlagGame = game;
+    try {
+      if (typeof localStorage === 'undefined') return;
+      this.matchFlag = new FlagStore(localStorage).activeDesign()?.composition ?? null;
+    } catch {
+      /* Storage is blocked: the report simply shows no flag. */
+    }
+  }
+
+  /** The flag flown when `game` started, or null for a battle with no capture. */
+  matchFlagSnapshot(game: Game): FlagComposition | null {
+    return this.matchFlagGame === game ? this.matchFlag : null;
+  }
+
   private applyNarrator(game: Game): void {
     const factionId = game.player(game.localPlayerId)?.factionId;
     this.audio.setNarrator(narratorForFaction(factionId).id);
@@ -2874,6 +2947,11 @@ export class App {
         visibleIds: [],
       });
       this.game = game;
+      this.applyUnitCamo();
+      this.captureCommandFlag(game);
+      // The third mast flag is a skirmish and multiplayer identity; a campaign
+      // operation flies only its alliance and national colours.
+      this.renderer.setCommandFlag(this.campaignRun() ? null : this.matchFlagSnapshot(game));
       // A networked seat reports in its own faction's voice; the room's other
       // seats never hear it, because each client resolves its own narrator.
       this.applyNarrator(game);
@@ -3552,11 +3630,21 @@ export class App {
       unitsLost: player?.stats.unitsLost ?? 0,
     };
     try {
-      const outcome = await this.careerService.record(input);
+      const objectivesCompleted = missionResult
+        ? missionResult.objectives.filter((objective) => objective.state === 'complete').length
+        : 0;
+      const outcome = await this.careerService.record(input, {
+        objectivesCompleted,
+        structuresBuilt: player?.stats.buildingsBuilt ?? 0,
+        structuresDestroyed: player?.stats.structuresDestroyed ?? 0,
+        sitesCaptured: player?.stats.sitesCaptured ?? 0,
+        superweaponsUsed: 0,
+      });
       this.paintEndCareer(slot, {
         status: 'recorded',
         xp: outcome.award,
         snapshot: outcome.snapshot,
+        rewards: outcome.rewards,
       });
       void this.accountPanel?.refresh();
     } catch (error) {
@@ -3679,8 +3767,24 @@ export class App {
       unitsLost: pending.result.friendly.unitsLost,
     };
     void this.careerService
-      .record(input)
-      .then(() => this.accountPanel?.refresh())
+      .record(input, {
+        objectivesCompleted: pending.result.objectives.filter((objective) => objective.state === 'complete').length,
+        structuresBuilt: pending.result.friendly.buildingsBuilt,
+        structuresDestroyed: 0,
+        sitesCaptured: 0,
+        superweaponsUsed: 0,
+      })
+      .then((outcome) => {
+        for (const award of outcome.rewards?.achievements ?? []) {
+          this.notify(`Commendation earned: ${award.name}.`, 'success');
+        }
+        if (outcome.rewards?.promoted && outcome.rewards.rankAfter) {
+          this.notify(`Promoted to ${outcome.rewards.rankAfter.name}.`, 'success');
+        } else if (outcome.rewards?.levelUp) {
+          this.notify(`Service level ${outcome.rewards.levelAfter}.`, 'info');
+        }
+        void this.accountPanel?.refresh();
+      })
       .catch((error: unknown) =>
         this.notify(
           `Career record not saved: ${error instanceof Error ? error.message : 'account service unavailable'}`,
@@ -3878,6 +3982,20 @@ export class App {
     this.audio.play('ui');
   }
 
+  /**
+   * Vertical offset of a unit's click target. Air hulls are drawn at a blended
+   * altitude, never at a flat cruising height, so a parked or landing airframe
+   * has to be picked where it actually is — the old fixed cruising offset put
+   * its hotspot far above the model and left every stationed plane and
+   * helicopter unclickable.
+   */
+  private unitPickHeight(e: Entity): number {
+    if (e.kind !== 'unit' || UNITS[e.defId]?.domain !== 'air') return 1;
+    const ac = e.aircraft;
+    const climb = ac ? ac.climb ?? (ac.landed ? 0 : 1) : 1;
+    return PARKED_AIRCRAFT_CLEARANCE + (AIR_UNIT_ALTITUDE - PARKED_AIRCRAFT_CLEARANCE) * climb;
+  }
+
   pickAt(clientX: number, clientY: number): Entity | null {
     if (!this.game) return null;
     const rect = this.rendererCanvasRect();
@@ -3887,11 +4005,15 @@ export class App {
     let bestD = Infinity;
     for (const e of this.game.state.entities) {
       if (e.hp <= 0) continue;
+      // A passenger is part of its container, not a separate click target: the
+      // hull (or building) underneath owns selection and orders, so a loaded
+      // transport can still be right-clicked to take more troops.
+      if (e.kind === 'unit' && e.garrisonId) continue;
       if (
         e.owner !== this.localPlayerId &&
         !this.game.isKnownTo(this.game.teamOf(this.localPlayerId), e.id)
       ) continue;
-      const y = terrainVisualHeight(this.game.state.scenario, e.x, e.z) + (e.kind === 'unit' && UNITS[e.defId]?.domain === 'air' ? 12 : 1);
+      const y = terrainVisualHeight(this.game.state.scenario, e.x, e.z) + this.unitPickHeight(e);
       const p = this.renderer.camera.worldToScreen(e.x, y, e.z);
       if (!p.visible) continue;
       const dx = p.x - px;
@@ -3928,8 +4050,12 @@ export class App {
     const maxY = Math.max(y0, y1) - rect.top;
     const ids: number[] = [];
     for (const e of this.game.state.entities) {
-      if (e.owner !== this.localPlayerId || e.hp <= 0 || e.kind === 'building') continue;
-      const p = this.renderer.camera.worldToScreen(e.x, terrainVisualHeight(this.game.state.scenario, e.x, e.z) + 1, e.z);
+      if (e.owner !== this.localPlayerId || e.hp <= 0 || e.kind === 'building' || e.garrisonId) continue;
+      const p = this.renderer.camera.worldToScreen(
+        e.x,
+        terrainVisualHeight(this.game.state.scenario, e.x, e.z) + this.unitPickHeight(e),
+        e.z,
+      );
       if (p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY) ids.push(e.id);
     }
     const base = additive ? this.selected : [];
@@ -3970,8 +4096,14 @@ export class App {
     }
     const target = this.pickAt(clientX, clientY);
     const hostile = !!target && this.game.isHostile(target.owner, this.localPlayerId);
+    // A mobile transport exposes the same occupancy list as a shelter, but only
+    // its owner may see who is inside; the projection already enforces that on
+    // the wire, and a right-click on an enemy APC falls through to attack.
     const occupants =
-      target?.kind === 'building' ? this.game.garrisonOccupants(target.id) : [];
+      target &&
+      (target.kind === 'building' || UNITS[target.defId]?.transport)
+        ? this.game.garrisonOccupants(target.id)
+        : [];
     switch (contextOrderFor(target, this.ownSelected(), this.localPlayerId, hostile, occupants)) {
       case 'capture':
         if (target) this.commandCapture(target.id);
@@ -4078,7 +4210,7 @@ export class App {
       (e) => e.kind === 'unit' && !e.garrisonId && UNITS[e.defId]?.canGarrison,
     );
     if (infantry.length === 0) {
-      this.notify('Select riflemen or ATGM teams to garrison a building.', 'warning');
+      this.notify('Select exposed infantry to board a transport or garrison a building.', 'warning');
       this.audio.play('denied');
       return;
     }
@@ -4089,15 +4221,29 @@ export class App {
 
   commandUngarrison(): void {
     if (!this.game) return;
+    const game = this.game;
     const selected = this.selectedEntities();
     const ids = selected
       .filter((e) => {
-        if (e.kind === 'unit') return e.owner === this.localPlayerId && !!e.garrisonId;
-        return this.game!.garrisonOccupants(e.id).some((u) => u.owner === this.localPlayerId);
+        // A selected passenger is one form of this order; the hull or building
+        // carrying them is the other. Without the container branch a loaded APC
+        // was rejected even though the panel had offered UNLOAD ALL for it.
+        if (e.kind === 'unit' && e.garrisonId) return e.owner === this.localPlayerId;
+        if (e.kind === 'unit') {
+          if (!UNITS[e.defId]?.transport) return false;
+          // Air and naval unloads depend on the owner's landing or beaching, so
+          // only that owner may issue them. A ground carrier only needs one of
+          // the player's own infantry aboard, even when a teammate owns it.
+          const domain = UNITS[e.defId]?.domain;
+          if ((domain === 'air' || domain === 'naval') && e.owner !== this.localPlayerId) {
+            return false;
+          }
+        }
+        return game.garrisonOccupants(e.id).some((u) => u.owner === this.localPlayerId);
       })
       .map((e) => e.id);
     if (ids.length === 0) {
-      this.notify('Select garrisoned infantry or an occupied building to order them out.', 'warning');
+      this.notify('Select passengers, an occupied building, or a loaded transport to unload.', 'warning');
       this.audio.play('denied');
       return;
     }
@@ -4215,6 +4361,32 @@ export class App {
     this.audio.play('ui');
   }
 
+  /** Land selected transport helicopters on open ground at the click point. */
+  commandLand(x: number, z: number): boolean {
+    if (!this.game) return false;
+    const transports = this.ownSelected().filter(
+      (e) =>
+        e.kind === 'unit' &&
+        !!UNITS[e.defId]?.transport &&
+        UNITS[e.defId]?.domain === 'air',
+    );
+    if (transports.length === 0) {
+      this.notify('Select a transport helicopter to land.', 'warning');
+      this.audio.play('denied');
+      return false;
+    }
+    this.dispatchCommand({
+      type: 'land',
+      team: this.localPlayerId,
+      ids: transports.map((e) => e.id),
+      x,
+      z,
+    });
+    this.audio.play('order');
+    this.mode = 'none';
+    return true;
+  }
+
   commandReturn(): void {
     if (!this.game) return;
     const ids = this.ownSelected()
@@ -4245,7 +4417,20 @@ export class App {
         (e) => e.kind === 'unit' && !e.garrisonId && UNITS[e.defId]?.canGarrison,
       )
     ) {
-      this.notify('Select riflemen or ATGM teams to garrison a building.', 'warning');
+      this.notify('Select exposed infantry to board a transport or garrison a building.', 'warning');
+      this.audio.play('denied');
+      return;
+    }
+    if (
+      mode === 'land' &&
+      !this.ownSelected().some(
+        (e) =>
+          e.kind === 'unit' &&
+          !!UNITS[e.defId]?.transport &&
+          UNITS[e.defId]?.domain === 'air',
+      )
+    ) {
+      this.notify('Select a transport helicopter to land.', 'warning');
       this.audio.play('denied');
       return;
     }
@@ -4634,6 +4819,12 @@ export class App {
     try {
       const game = Game.fromSave(record.data, { localPlayerId: record.data.localPlayerId ?? 0, enableAI: true });
       this.game = game;
+      this.applyUnitCamo();
+      // A load is not a deployment: there is no match-start snapshot to report,
+      // and the previous battle's flag must not be lent to it.
+      this.matchFlag = null;
+      this.matchFlagGame = null;
+      this.renderer.setCommandFlag(null);
       this.applyNarrator(game);
       // A save has already passed its authored in-mission scenes; opening it
       // must not replay dialogue the player has already seen.
@@ -5300,6 +5491,7 @@ export class App {
     this.game = null;
     this.overlay.clear();
     this.renderer.setGame(null);
+    this.renderer.setCommandFlag(null);
     this.renderer.camera.setScreenLift(0);
     this.renderer.settings.showFog = false;
     this.editor.open(scenario ?? createIslandAssault());

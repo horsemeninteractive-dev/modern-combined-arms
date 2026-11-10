@@ -10,8 +10,14 @@
 import { NATIONS, PLAYABLE_NATION_IDS } from '../data/factions';
 import { scenarioById, scenariosForMode, type ScenarioEntry } from '../data/scenarioCatalog';
 import { LOBBY_COLORS, MAX_MATCH_DURATION_MS, MIN_MATCH_DURATION_MS } from '../multiplayer/lobbyConfig';
-import { LobbyClient, type LobbySeatView, type LobbyView } from '../multiplayer/lobbyClient';
+import {
+  LobbyClient,
+  type LobbyIdentityView,
+  type LobbySeatView,
+  type LobbyView,
+} from '../multiplayer/lobbyClient';
 import { AVATARS } from '../accounts/identity';
+import { cosmeticById } from '../identity/cosmetics';
 import { RANKS, type RankSpec } from '../accounts/ranks';
 import type { PublicPlayerView } from '../accounts/client';
 import { formatPercent, formatPlaytime } from '../accounts/stats';
@@ -129,6 +135,8 @@ function rankForId(id: string | undefined): RankSpec | null {
   return RANKS.find((rank) => rank.id === id) ?? null;
 }
 
+import { commandFlagSvg } from './commandFlag';
+
 function avatarGlyph(id: string): string {
   return AVATARS.find((avatar) => avatar.id === id)?.glyph ?? AVATARS[0].glyph;
 }
@@ -136,10 +144,10 @@ function avatarGlyph(id: string): string {
 /**
  * The presentable half of a seat: who is sitting in it and what they have
  * earned. A guest has no account identity, and says so rather than borrowing
- * the opponent's.
+ * the opponent's. The same markup serves lobby seats and the immutable match
+ * snapshot, so identity cannot drift between the two screens.
  */
-function identityMarkup(seat: LobbySeatView): string {
-  const identity = seat.identity ?? null;
+function identityMarkupFor(identity: LobbyIdentityView | null, verified: boolean): string {
   if (!identity) {
     return `<div class="mp-identity mp-identity-guest">
       <span class="mp-avatar" aria-hidden="true">◌</span>
@@ -149,19 +157,31 @@ function identityMarkup(seat: LobbySeatView): string {
       </span>
     </div>`;
   }
+  const flag = identity.flag;
   const rank = rankForId(identity.rank);
+  const frameItem = cosmeticById(identity.frame);
+  const backgroundItem = cosmeticById(identity.background);
+  const frame =
+    frameItem?.category === 'frame' ? ` identity-frame-${frameItem.render}` : '';
+  const background =
+    backgroundItem?.category === 'background' ? ` identity-bg-${backgroundItem.render}` : '';
   const rankLine = rank
     ? `<span class="mp-rank-insignia">${rankInsigniaSvg(rank, { label: `${rank.name} insignia` })}</span>
        <small class="mp-rank">${escapeHtml(rank.name.toUpperCase())} · ${escapeHtml(rank.grade)}</small>`
     : '<small class="mp-rank">RANK NOT VERIFIED</small>';
-  return `<div class="mp-identity">
-    <span class="mp-avatar" aria-hidden="true">${escapeHtml(avatarGlyph(identity.avatar))}</span>
+  return `<div class="mp-identity${background}">
+    <span class="mp-avatar${frame}" aria-hidden="true">${escapeHtml(avatarGlyph(identity.avatar))}</span>
     <span class="mp-identity-text">
       <b class="mp-callsign">${escapeHtml(identity.callsign)}</b>
       ${rankLine}
     </span>
-    ${seat.verified ? '<span class="mp-verified" title="Seat identity verified by the account service">VERIFIED</span>' : ''}
+    ${verified ? '<span class="mp-verified" title="Seat identity verified by the account service">VERIFIED</span>' : ''}
+    ${flag ? `<span class="mp-flag" title="Command flag">${commandFlagSvg(flag, { title: `${identity.callsign} command flag` })}</span>` : ''}
   </div>`;
+}
+
+function identityMarkup(seat: LobbySeatView): string {
+  return identityMarkupFor(seat.identity ?? null, seat.verified === true);
 }
 
 function publicProfileMarkup(player: PublicPlayerView): string {
@@ -635,7 +655,37 @@ export class MultiplayerPanel {
 
   private renderMatch(view: LobbyView): void {
     const match = view.match;
-    const opponent = view.seats[1 - (view.seat ?? 0)];
+    const mySeat = view.seat ?? 0;
+    const me = view.seats[mySeat];
+    const opponent = view.seats[1 - mySeat];
+    // The live match and its result read the immutable match-start identities,
+    // not whatever the lobby or the account says now. A missing snapshot (an
+    // older room) falls back to the last lobby identity.
+    const frozenFor = (seatId: number) => view.matchIdentities.find((entry) => entry.seatId === seatId);
+    const frozenMe = frozenFor(mySeat);
+    const frozenOpponent = frozenFor(1 - mySeat);
+    const meIdentity = frozenMe ? frozenMe.identity : (me?.identity ?? null);
+    const opponentIdentity = frozenOpponent
+      ? frozenOpponent.identity
+      : (opponent?.identity ?? null);
+    const meVerified = frozenMe ? frozenMe.identity !== null : me?.verified === true;
+    const opponentVerified = frozenOpponent
+      ? frozenOpponent.identity !== null
+      : opponent?.verified === true;
+    const versus = `<div class="mp-versus">
+      <div class="mp-versus-side">${identityMarkupFor(meIdentity, meVerified)}</div>
+      <span class="mp-versus-vs">VS</span>
+      <div class="mp-versus-side">${identityMarkupFor(opponentIdentity, opponentVerified)}</div>
+    </div>`;
+    const outcomeLine = view.matchResult
+      ? `<p class="mp-result">${
+          view.matchResult.outcome === 'victory'
+            ? 'VICTORY'
+            : view.matchResult.outcome === 'defeat'
+              ? 'DEFEAT'
+              : 'DRAW'
+        } · the identities both seats carried are recorded in the result.</p>`
+      : '';
     this.host.innerHTML = `
       <div class="mp-shell">
         <div class="menu-view-head">
@@ -645,6 +695,8 @@ export class MultiplayerPanel {
             The room is authoritative and both seats are receiving the match stream.
           </p>
         </div>
+        ${versus}
+        ${outcomeLine}
         <div class="mp-columns">
           <section class="mp-card">
             <span class="mp-card-head">AUTHORITATIVE STATE</span>
@@ -724,6 +776,7 @@ function emptyView(): LobbyView {
     matchDurationMs: 0,
     hostSeat: 0,
     seats: [],
+    matchIdentities: [],
     ready: false,
     nation: null,
     color: null,

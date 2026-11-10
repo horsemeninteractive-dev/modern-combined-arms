@@ -7,17 +7,38 @@
  * is provably no session (a 401), never as a silent fallback after a failed
  * write — a signed-in result that failed to record must be reported, not quietly
  * filed where it can never be joined to the account.
+ *
+ * Achievements run through the same evaluator on both sides. For a guest the
+ * facts come from the local ledger, which is why the ledger keeps the
+ * accomplishment counters a match reported; the account service rebuilds the
+ * same facts from its own match report.
  */
-import type { CareerMatchInput, CareerViewData } from './career';
+import type { CareerAccomplishments, CareerMatchInput, CareerViewData } from './career';
 import { careerViewFrom, summariseCareer } from './career';
-import { AccountApiError, type CareerView, type HttpAccountApi, type MatchResultView } from './client';
+import { achievementById, awardForAchievement, type AchievementMatchFacts } from './achievements';
+import { levelForXp } from './levels';
+import { rankForXp } from './ranks';
+import { buildCareerStats } from './stats';
 import {
   guestCareerPayload,
-  localCareerMatches,
-  localCareerTotals,
+  localCareerAllMatches,
   recordLocalMatch,
   type CareerStorage,
+  type LocalCareerEntry,
 } from './localCareer';
+import {
+  evaluateLocalAchievements,
+  localMatchFacts,
+  type LocalAchievementState,
+} from './localAchievements';
+import {
+  AccountApiError,
+  type AchievementSummary,
+  type CareerRewards,
+  type CareerView,
+  type HttpAccountApi,
+  type MatchResultView,
+} from './client';
 
 export interface CareerSnapshot {
   /** Account careers also carry the statistics breakdown and identity. */
@@ -30,11 +51,44 @@ export interface CareerSnapshot {
 export interface CareerRecordOutcome {
   snapshot: CareerSnapshot;
   award: number;
+  rewards: CareerRewards | null;
   recorded: boolean;
   duplicate: boolean;
 }
 
 export const CAREER_HISTORY_LIMIT = 20;
+
+/** A reward summary for one achievement, as the end card needs it. */
+function rewardSummary(id: string): AchievementSummary | null {
+  const definition = achievementById(id);
+  if (!definition) return null;
+  return {
+    id: definition.id,
+    name: definition.name,
+    description: definition.description,
+    category: definition.category,
+    tier: definition.tier,
+    commendation: definition.commendation,
+    reward: definition.reward ?? null,
+    award: awardForAchievement(definition.id),
+  };
+}
+
+function guestView(
+  entries: readonly LocalCareerEntry[],
+  state: LocalAchievementState,
+): CareerView {
+  return {
+    ...careerViewFrom(state.totals, entries.slice(0, CAREER_HISTORY_LIMIT)),
+    stats: state.stats,
+    achievements: state.views,
+    campaigns: state.completed.map((entry) => ({
+      campaignId: entry.campaignId,
+      completedAt: entry.completedAt,
+    })),
+    identity: null,
+  };
+}
 
 export class CareerService {
   private readonly api: HttpAccountApi;
@@ -45,18 +99,34 @@ export class CareerService {
     this.storage = storage;
   }
 
-  private guestView(): CareerSnapshot {
-    if (!this.storage) {
+  /** Rebuild, evaluate and persist the guest view. Null when storage is blocked. */
+  private guestState(match: AchievementMatchFacts | null = null): {
+    view: CareerView;
+    state: LocalAchievementState;
+  } | null {
+    if (!this.storage) return null;
+    const entries = localCareerAllMatches(this.storage);
+    const state = evaluateLocalAchievements(this.storage, entries, match);
+    return { view: guestView(entries, state), state };
+  }
+
+  private guestSnapshot(match: AchievementMatchFacts | null = null): CareerSnapshot {
+    const built = this.guestState(match);
+    if (!built) {
+      // No storage: the career is empty, but the same screen must still render.
+      const totals = summariseCareer([]);
       return {
-        view: careerViewFrom(summariseCareer([]), []),
+        view: {
+          ...careerViewFrom(totals, []),
+          stats: buildCareerStats([]),
+          achievements: [],
+          campaigns: [],
+          identity: null,
+        },
         source: 'guest',
       };
     }
-    const matches = localCareerMatches(this.storage, CAREER_HISTORY_LIMIT);
-    return {
-      view: careerViewFrom(localCareerTotals(this.storage), matches),
-      source: 'guest',
-    };
+    return { view: built.view, source: 'guest' };
   }
 
   /** Read the career: the account's when signed in, the guest ledger otherwise. */
@@ -65,8 +135,8 @@ export class CareerService {
       const career = await this.api.career();
       return { view: career, source: 'account' };
     } catch (error) {
-      if (error instanceof AccountApiError && error.status === 401) return this.guestView();
-      return { ...this.guestView(), unavailable: true };
+      if (error instanceof AccountApiError && error.status === 401) return this.guestSnapshot();
+      return { ...this.guestSnapshot(), unavailable: true };
     }
   }
 
@@ -78,12 +148,16 @@ export class CareerService {
    * Every other failure is reported so the end screen can say the result was
    * not recorded.
    */
-  async record(input: CareerMatchInput): Promise<CareerRecordOutcome> {
+  async record(
+    input: CareerMatchInput,
+    stats?: CareerAccomplishments,
+  ): Promise<CareerRecordOutcome> {
     try {
-      const result = await this.api.recordMatch(input);
+      const result = await this.api.recordMatch(input, stats);
       return {
         snapshot: { view: result.career, source: 'account' },
         award: result.award,
+        rewards: result.rewards,
         recorded: result.recorded,
         duplicate: !result.recorded,
       };
@@ -92,16 +166,34 @@ export class CareerService {
     }
     if (!this.storage) {
       return {
-        snapshot: this.guestView(),
+        snapshot: this.guestSnapshot(),
         award: 0,
+        rewards: null,
         recorded: false,
         duplicate: false,
       };
     }
-    const local = recordLocalMatch(this.storage, input);
+    // The standing before the match is read first: the local ledger keeps only
+    // the most recent rows, so it cannot be reconstructed afterwards.
+    const before = summariseCareer(localCareerAllMatches(this.storage));
+    const local = recordLocalMatch(this.storage, input, Date.now(), stats);
+    const built = this.guestState(localMatchFacts(local.record));
+    const view = built?.view ?? this.guestSnapshot().view;
+    const rewards: CareerRewards = {
+      achievements: (built?.state.newlyAwarded ?? [])
+        .map(rewardSummary)
+        .filter((entry): entry is AchievementSummary => entry !== null),
+      levelBefore: levelForXp(before.xp).level.number,
+      levelAfter: levelForXp(view.totals.xp).level.number,
+      levelUp: levelForXp(view.totals.xp).level.number > levelForXp(before.xp).level.number,
+      rankBefore: rankForXp(before.xp).rank,
+      rankAfter: rankForXp(view.totals.xp).rank,
+      promoted: rankForXp(view.totals.xp).rank.id !== rankForXp(before.xp).rank.id,
+    };
     return {
-      snapshot: this.guestView(),
+      snapshot: { view, source: 'guest' },
       award: local.duplicate ? 0 : local.record.xp,
+      rewards,
       recorded: !local.duplicate,
       duplicate: local.duplicate,
     };

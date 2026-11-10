@@ -11,6 +11,8 @@ import {
 } from './roomMatch';
 import { RoomLobby } from './roomLobby';
 import {
+  MAX_MATCH_DURATION_MS,
+  MIN_MATCH_DURATION_MS,
   buildLobbyScenario,
   defaultLobbyConfig,
   lobbyConfigProblem,
@@ -247,6 +249,13 @@ export function validatePersistedMeta(meta: unknown, roomId: string): string | n
     ) {
       return 'metadata seat account is invalid';
     }
+    if (
+      seat.identity !== undefined &&
+      seat.identity !== null &&
+      !identitySnapshot(seat.identity)
+    ) {
+      return 'metadata seat identity is invalid';
+    }
     seatIds.add(seat.seatId);
     playerIds.add(seat.playerId);
   }
@@ -448,6 +457,9 @@ export class MatchRoomDurableObject {
     if ((action === 'join' || url.pathname.endsWith('/internal/join')) && request.method === 'POST') {
       return this.handleJoin(request);
     }
+    if ((action === 'identity' || url.pathname.endsWith('/internal/identity')) && request.method === 'POST') {
+      return this.handleIdentity(request);
+    }
     if ((action === 'career' || url.pathname.endsWith('/internal/career')) && request.method === 'POST') {
       return this.handleCareer(request);
     }
@@ -487,6 +499,12 @@ export class MatchRoomDurableObject {
       return;
     }
     const meta = storedMeta as PersistedMeta;
+    // Re-validate every persisted identity before it can reach the lobby or a
+    // restored match. Unknown catalogue references are dropped, never rendered.
+    meta.seats = meta.seats.map((seat) => ({
+      ...seat,
+      identity: seat.identity ? identitySnapshot(seat.identity) : null,
+    }));
     this.meta = meta;
     this.closed = meta.closed;
     this.diagnostics.markActivated(meta.createdAt);
@@ -578,12 +596,21 @@ export class MatchRoomDurableObject {
   }
 
   private durationBounds(): { min: number; max: number; fallback: number } {
+    // Creation must use the lobby's own duration range. A shorter room would be
+    // reserved for less than the configured match plus lobby allowance, then
+    // fail its start window even though the room had been created.
     const max = Math.max(
-      10_000,
-      Math.min(30 * 60 * 1000, envNumber(this.env.MP_MAX_MATCH_SECONDS, 1800) * 1000),
+      MIN_MATCH_DURATION_MS,
+      Math.min(MAX_MATCH_DURATION_MS, envNumber(this.env.MP_MAX_MATCH_SECONDS, 1800) * 1000),
     );
-    const fallback = Math.min(max, Math.max(10_000, envNumber(this.env.MP_DEFAULT_MATCH_SECONDS, 60) * 1000));
-    return { min: 10_000, max, fallback };
+    const fallback = Math.min(
+      max,
+      // The default has to be long enough to clear the career reward's minimum
+      // length, or every room created without an explicit duration would be
+      // ineligible for XP by construction.
+      Math.max(MIN_MATCH_DURATION_MS, envNumber(this.env.MP_DEFAULT_MATCH_SECONDS, 600) * 1000),
+    );
+    return { min: MIN_MATCH_DURATION_MS, max, fallback };
   }
 
   private async handleCreate(request: Request): Promise<Response> {
@@ -679,6 +706,9 @@ export class MatchRoomDurableObject {
       } catch {
         return failure('room-state-unavailable', 'Seat identity could not be recorded.', 503);
       }
+      // The lobby keeps its own seat copy so the joiner's identity is visible
+      // in the same message that hands out the seat.
+      this.lobby?.setSeatIdentity(1, joinerAccount, joinerIdentity);
     }
     return json({
       ok: true,
@@ -688,6 +718,62 @@ export class MatchRoomDurableObject {
       protocol: ROOM_PROTOCOL_VERSION,
       matchDurationMs: this.meta.matchDurationMs,
       lobby: lobby.state(1),
+    });
+  }
+
+  /**
+   * Refresh the calling seat's verified presentation before the match starts.
+   *
+   * Only a fresh signed ticket can change it. The seat token proves which seat
+   * is calling, but it cannot prove who the player is, so no body field is
+   * trusted. Once the match exists this route refuses: the start snapshot is
+   * immutable for the rest of the match, including reconnects.
+   */
+  private async handleIdentity(request: Request): Promise<Response> {
+    if (!this.meta) return failure('room-not-found', 'Room does not exist.', 404);
+    if (this.meta.closed) return failure('room-closed', 'This room has already closed.', 410);
+    if (this.starting) {
+      try {
+        await this.starting;
+      } catch {
+        /* the start request reports its own failure */
+      }
+    }
+    if (this.match || this.meta.started) {
+      return failure('match-started', 'The match has already started.', 409);
+    }
+    const caller = this.seatFromAuthorization(request);
+    if (caller === null) return failure('unauthorized', 'A valid seat token is required.', 401);
+    const lobby = this.lobby;
+    if (!lobby) return failure('room-not-found', 'Room does not exist.', 404);
+
+    const accountId = this.verifiedAccount(request);
+    const identity = this.verifiedIdentity(request);
+    if (!accountId || !identity) {
+      return failure('identity-unavailable', 'A verified account identity is required.', 400);
+    }
+    const seat = this.meta.seats[caller];
+    if (!seat) return failure('invalid-seat', 'Seat is not valid.', 400);
+    if (seat.accountId && seat.accountId !== accountId) {
+      return failure('identity-mismatch', 'That identity belongs to another seat.', 403);
+    }
+
+    const previous = { accountId: seat.accountId, identity: seat.identity };
+    seat.accountId = accountId;
+    seat.identity = identity;
+    try {
+      await this.persistMeta();
+    } catch {
+      seat.accountId = previous.accountId;
+      seat.identity = previous.identity;
+      return failure('room-state-unavailable', 'Seat identity could not be recorded.', 503);
+    }
+    lobby.setSeatIdentity(caller, accountId, identity);
+    return json({
+      ok: true,
+      seat: caller,
+      identity: seat.identity ?? null,
+      verified: Boolean(seat.accountId),
     });
   }
 
@@ -911,7 +997,9 @@ export class MatchRoomDurableObject {
    */
   private verifiedIdentity(request: Request): IdentitySnapshot | null {
     const raw = request.headers.get('X-MCA-Verified-Identity');
-    if (!raw || raw.length > 400) return null;
+    // The identity now carries a command flag, so it is larger than a name; the
+    // ticket itself bounds the flag at 4 KiB before this header is ever set.
+    if (!raw || raw.length > 12000) return null;
     try {
       return identitySnapshot(JSON.parse(raw));
     } catch {
@@ -1820,12 +1908,13 @@ export class MatchRoomDurableObject {
       const player = game.state.players.find((candidate) => candidate.id === seat.playerId);
       if (!player) continue;
       const structuresDestroyed = player.stats.structuresDestroyed ?? 0;
+      const identity = match.identityFor(seat.seatId);
       players.push({
         team: seat.team,
         accountId: seat.accountId ?? null,
         nation: player.factionId,
-        callsign: seat.identity?.callsign ?? null,
-        avatar: seat.identity?.avatar ?? null,
+        callsign: identity?.callsign ?? null,
+        avatar: identity?.avatar ?? null,
         stats: {
           // `kills` counts every entity killed, so the unit figure is the
           // remainder once the buildings it also killed are taken out.

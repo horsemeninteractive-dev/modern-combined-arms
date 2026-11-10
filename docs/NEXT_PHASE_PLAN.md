@@ -211,3 +211,17 @@ isolate.
   gaps; §31 — AI commander revision evidence.
 - [README.md](../README.md) — current test count and known limitations.
 - [NEXT_TASK_PROMPT.md](NEXT_TASK_PROMPT.md) — historical AI-03 brief.
+
+---
+
+## Update — Phase 4E close-out (2026-11-09)
+
+The identity, career and multiplayer integration audit is complete in source;
+see [PHASE_4E_AUDIT.md](PHASE_4E_AUDIT.md). It fixes the guest-migration race and
+the room default-duration mismatch and adds regressions for both.
+
+The next phase should start from the audit's external list rather than from new
+features: apply the pending account migrations to the deployed database, confirm
+or rotate the five Worker secrets, deploy the account and room Workers with the
+Pages bundle, and play a real two-account match (identity ticket, lobby display,
+reconnect, result delivery). Only after that can Phase 4 be called released.

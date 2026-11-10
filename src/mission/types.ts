@@ -208,6 +208,17 @@ export interface MissionAiGroupDoc {
   units: string[];
   /** Region the group is told to operate in, when the task uses one. */
   region?: string;
+  /**
+   * Whether the group fights from the first tick.
+   *
+   * A `dormant` group is placed on the map but held: its units stand where they
+   * were authored, are not counted by the AI commander and take no orders until
+   * an `activateAiGroup` action releases them. This is how a mission keeps a
+   * counterattack or an ambush off the board until the story calls for it.
+   * Absent means `active`, which is what every group authored before this field
+   * meant.
+   */
+  initial?: 'active' | 'dormant';
 }
 
 /** One reinforcement wave. */

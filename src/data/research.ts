@@ -43,6 +43,9 @@ export const TIER_ZERO_UNITS: readonly string[] = Object.freeze([
   'recon',
   'aa',
   'recovery',
+  // The shared APC is a tier-0 transport: both alliances can build it from
+  // the factory without a technology or national unlock.
+  'apc',
 ]);
 
 /** Canonical structure slots that need no technology. */
@@ -340,6 +343,9 @@ const TECH_LIST: readonly TechDef[] = Object.freeze([
     effects: [
       { kind: 'unlockUnit', slot: 'fighter' },
       { kind: 'unlockUnit', slot: 'attackHelo' },
+      // The utility lift helicopter shares the rotary branch and heliport with
+      // the gunship; it is not a separate research programme.
+      { kind: 'unlockUnit', slot: 'transportHelo' },
       // The gunship is a rotary platform, and an airfield's single pad exists to
       // recover one rather than to base it. The heliport is the facility that
       // actually fields and sustains a helicopter force, so it is granted by the
@@ -349,7 +355,7 @@ const TECH_LIST: readonly TechDef[] = Object.freeze([
       { kind: 'grantUnitUpgrade', upgrade: 'countermeasures' },
     ],
     description:
-      'Strike fighters, attack helicopters and the defensive countermeasures that let a crew survive the return leg.',
+      'Strike fighters, attack and utility helicopters, and the defensive countermeasures that let a crew survive the return leg.',
     icon: 'fighter',
   },
   {
@@ -365,6 +371,7 @@ const TECH_LIST: readonly TechDef[] = Object.freeze([
       { kind: 'unlockBuilding', slot: 'shipyard' },
       { kind: 'unlockUnit', slot: 'missileBoat' },
       { kind: 'unlockUnit', slot: 'corvette' },
+      { kind: 'unlockUnit', slot: 'landingCraft' },
       // Coastal control is an anti-submarine problem as much as an anti-ship one.
       { kind: 'grantUnitUpgrade', upgrade: 'sonarSweep' },
       { kind: 'grantBuildingModule', module: 'harbourSonar' },

@@ -12,6 +12,7 @@
  * every mission document.
  */
 import type { MissionResult, MissionValue, MissionVariableType } from '../mission/types';
+import type { FlagComposition } from '../identity/flag';
 
 /** Save envelope. A campaign save is a set of runs plus the deck's selection. */
 export const CAMPAIGN_SAVE_FORMAT = 'mca-campaign-save';
@@ -127,6 +128,11 @@ export interface CampaignPendingResult {
   missionId: string;
   result: MissionResult;
   deployments: CampaignVeteranDeployment[];
+  /**
+   * The command flag flown when the operation launched, captured once. Optional
+   * so results recorded before flags travelled still load and report normally.
+   */
+  flag?: FlagComposition;
 }
 
 /**

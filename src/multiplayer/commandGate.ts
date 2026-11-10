@@ -1,5 +1,6 @@
 import { BUILDINGS, isIndestructibleStructure } from '../data/buildings';
 import { UNITS } from '../data/units';
+import { containerAcceptsPassenger, containerSpec } from '../sim/containers';
 import { entityWeapons, usesPrimaryAmmo, weaponCanHurt } from '../sim/combat';
 import { TILE_SIZE } from '../sim/constants';
 import type { Game } from '../sim/game';
@@ -103,6 +104,7 @@ type CommandType = Command['type'];
 
 const ALLOWED_FIELDS: Record<CommandType, readonly string[]> = {
   move: ['type', 'ids', 'x', 'z', 'attackMove'],
+  land: ['type', 'ids', 'x', 'z'],
   attack: ['type', 'ids', 'targetId'],
   stop: ['type', 'ids'],
   hold: ['type', 'ids'],
@@ -329,6 +331,30 @@ export class CommandGate {
         return { ok: true, command };
       }
 
+      case 'land': {
+        const selected = this.requireOwned(ids, seat, 'unit');
+        if (!selected.ok) return selected;
+        if (selected.entities.some((entity) => entity.garrisonId)) {
+          return reject('entity-garrisoned', 'Garrisoned infantry cannot receive a landing order.');
+        }
+        if (
+          !selected.entities.some(
+            (entity) =>
+              !!entity.aircraft &&
+              !!UNITS[entity.defId]?.transport &&
+              UNITS[entity.defId]?.domain === 'air',
+          )
+        ) {
+          return reject('wrong-entity-type', 'No selected unit can land on open ground.');
+        }
+        const x = readCoordinate(raw.x, this.game.state.map.width * TILE_SIZE);
+        const z = readCoordinate(raw.z, this.game.state.map.height * TILE_SIZE);
+        if (x === null || z === null) {
+          return reject('out-of-bounds', 'Landing zone is outside the map.');
+        }
+        return { ok: true, command: { type: 'land', team: seat.team, ids, x, z } };
+      }
+
       case 'attack': {
         const selected = this.requireOwned(ids, seat);
         if (!selected.ok) return selected;
@@ -498,40 +524,63 @@ export class CommandGate {
       case 'garrison': {
         const selected = this.requireOwned(ids, seat, 'unit');
         if (!selected.ok) return selected;
-        if (
-          selected.entities.some(
-            (entity) => entity.garrisonId || !UNITS[entity.defId]?.canGarrison,
-          )
-        ) {
-          return reject('wrong-entity-type', 'Only exposed infantry can garrison.');
-        }
         const targetId = this.readTargetId(raw.targetId);
         if (targetId === null) return reject('invalid-target', 'Target is not valid.');
         const target = this.game.getEntity(targetId);
-        if (
-          !target ||
-          target.hp <= 0 ||
-          target.kind !== 'building' ||
-          !this.game.isKnownTo(seat.team, target.id)
-        ) {
+        if (!target || target.hp <= 0 || !this.game.isKnownTo(seat.team, target.id)) {
           return reject('target-hidden', 'Target is not known.');
         }
-        const def = BUILDINGS[target.defId];
-        if (!def?.garrison) return reject('target-not-attackable', 'That structure cannot be garrisoned.');
-        if (this.game.isHostile(seat.playerId, target.owner)) {
-          return reject('friendly-target', 'That structure is held by the enemy.');
+        const spec = containerSpec(target);
+        if (!spec) return reject('target-not-attackable', 'That entity cannot be garrisoned.');
+        // A mixed selection sends only its eligible infantry. The simulation
+        // filters again, so an invalid member can never hold a seat or make the
+        // whole order fail for the soldiers who can board.
+        const eligible = selected.entities.filter(
+          (entity) =>
+            entity.kind === 'unit' &&
+            !entity.garrisonId &&
+            !!UNITS[entity.defId]?.canGarrison &&
+            containerAcceptsPassenger(target, entity),
+        );
+        if (eligible.length === 0) {
+          return reject('wrong-entity-type', 'Only exposed infantry can board or garrison.');
         }
-        if (target.hp / target.maxHp <= 0.25) {
-          return reject('target-not-attackable', 'That structure is too damaged to garrison.');
+        if (spec.mobile) {
+          // A carrier is not a neutral shelter: only its own side may board it.
+          // The seat's player and a teammate may use the same transport, but an
+          // enemy owner is rejected here and again by the simulation hook.
+          if (target.owner < 0 || this.game.isHostile(seat.playerId, target.owner)) {
+            return reject('friendly-target', 'That transport belongs to another side.');
+          }
+          if (target.kind !== 'unit') {
+            return reject('target-not-attackable', 'That entity is not a transport.');
+          }
+        } else {
+          if (target.kind !== 'building') {
+            return reject('target-not-attackable', 'That structure cannot be garrisoned.');
+          }
+          if (this.game.isHostile(seat.playerId, target.owner)) {
+            return reject('friendly-target', 'That structure is held by the enemy.');
+          }
+          if (target.hp / target.maxHp <= 0.25) {
+            return reject('target-not-attackable', 'That structure is too damaged to garrison.');
+          }
         }
-        const occupants = this.game.garrisonOccupants(target.id);
-        if (occupants.some((occupant) => this.game.isHostile(seat.playerId, occupant.owner))) {
+        const occupants = this.game.containerOccupants(target.id);
+        if (spec.mobile) {
+          if (occupants.some((occupant) => this.game.isHostile(seat.playerId, occupant.owner))) {
+            return reject('target-not-attackable', 'That transport already carries another side.');
+          }
+        } else if (occupants.some((occupant) => this.game.isHostile(seat.playerId, occupant.owner))) {
           return reject('target-not-attackable', 'Hostile infantry hold that structure.');
         }
-        if (occupants.length >= def.garrison.capacity) {
+        if (occupants.length >= spec.capacity) {
           return reject('target-not-attackable', 'That structure is full.');
         }
-        return { ok: true, command: { type: 'garrison', team: seat.team, ids, targetId } };
+        return {
+          ok: true,
+          command: { type: 'garrison', team: seat.team, ids: eligible.map((entity) => entity.id), targetId },
+        };
       }
 
       case 'ungarrison': {
@@ -544,16 +593,34 @@ export class CommandGate {
           if (!entity || entity.hp <= 0) {
             return reject('not-your-entity', 'That entity is not under this player\u2019s command.');
           }
-          if (entity.kind === 'unit') {
-            if (entity.owner !== seat.playerId || !entity.garrisonId) {
+          if (entity.kind === 'unit' && entity.garrisonId) {
+            if (entity.owner !== seat.playerId) {
               return reject('not-your-entity', 'That unit is not garrisoned under this player.');
             }
             valid = true;
-          } else {
-            if (!this.game.garrisonOccupants(entity.id).some((unit) => unit.owner === seat.playerId)) {
-              return reject('not-your-entity', 'No friendly infantry occupy that structure.');
+          } else if (containerSpec(entity)) {
+            // A building, or a transport, that currently holds a friendly
+            // passenger. The same order unloads either kind of container. A
+            // mobile carrier's owner may unload everyone aboard; a passenger
+            // owner may unload only their own infantry from a ground carrier.
+            const air = entity.kind === 'unit' && UNITS[entity.defId]?.domain === 'air';
+            const naval =
+              entity.kind === 'unit' &&
+              UNITS[entity.defId]?.domain === 'naval' &&
+              !!UNITS[entity.defId]?.transport;
+            const ownsCarrier = entity.owner === seat.playerId;
+            if ((air || naval) && !ownsCarrier) {
+              return reject(
+                'not-your-entity',
+                'Only the transport owner can order this transport to unload.',
+              );
+            }
+            if (!ownsCarrier && !this.game.containerOccupants(entity.id).some((unit) => unit.owner === seat.playerId)) {
+              return reject('not-your-entity', 'No friendly infantry occupy that container.');
             }
             valid = true;
+          } else {
+            return reject('not-your-entity', 'That entity is not under this player\u2019s command.');
           }
         }
         if (!valid) return reject('no-controllable-entity', 'Nothing can be ungarrisoned.');

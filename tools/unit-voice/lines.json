@@ -589,6 +589,34 @@
         ]
       }
     },
+    "transportHelo": {
+      "name": "Utility Transport Helicopter",
+      "role": "Utility transport",
+      "voice": "bf_lily",
+      "speed": 1.0,
+      "cues": {
+        "select": [
+          "Lift bird, ready to haul.",
+          "Transport on station, doors closed.",
+          "Utility helo, waiting for a load."
+        ],
+        "move": [
+          "Lift bird moving.",
+          "Climbing to the pickup.",
+          "Transport en route, passengers aboard."
+        ],
+        "attack": [
+          "No weapons aboard this bird.",
+          "Unarmed — call a gunship.",
+          "Negative, this is a lift bird."
+        ],
+        "unableToComply": [
+          "Can't set down there.",
+          "Landing zone blocked.",
+          "Negative, no clear ground."
+        ]
+      }
+    },
     "navalSupport": {
       "name": "Fire Support Ship",
       "role": "Naval support",
@@ -614,6 +642,34 @@
           "Guns can't range it.",
           "Out of range of the shore.",
           "No mission, no guns."
+        ]
+      }
+    },
+    "landingCraft": {
+      "name": "Naval Landing Craft",
+      "role": "Amphibious transport",
+      "voice": "bm_george",
+      "speed": 0.96,
+      "cues": {
+        "select": [
+          "Landing craft, ramp up.",
+          "Beach party on the net.",
+          "Lift boat standing by."
+        ],
+        "move": [
+          "Lift boat under way.",
+          "Making for the next beach.",
+          "Helm answered, running the coast."
+        ],
+        "attack": [
+          "Unarmed, no fire mission.",
+          "This is a landing craft, not a gunboat.",
+          "Negative, we carry troops, not guns."
+        ],
+        "unableToComply": [
+          "No usable beach there.",
+          "Ramp stays up, passengers aboard.",
+          "Can't put troops ashore here."
         ]
       }
     },
@@ -1734,6 +1790,34 @@
           "Too far off the shelf for that.",
           "Cannot reach it, batteries low.",
           "Negative, no water for that."
+        ]
+      }
+    },
+    "apc": {
+      "name": "Armoured Personnel Carrier",
+      "role": "Infantry transport",
+      "voice": "am_michael",
+      "speed": 1,
+      "cues": {
+        "select": [
+          "Personnel carrier, ready to receive.",
+          "APC on station, rear ramp down.",
+          "Transport section, waiting for troops."
+        ],
+        "move": [
+          "Carrier rolling, infantry aboard.",
+          "Moving the squad forward.",
+          "Wheels up, transport under way."
+        ],
+        "attack": [
+          "Machine gun engaging.",
+          "Light fire, suppressing.",
+          "Defensive gun up."
+        ],
+        "unableToComply": [
+          "Negative, carrier is full.",
+          "Cannot load that.",
+          "No room for more infantry."
         ]
       }
     }

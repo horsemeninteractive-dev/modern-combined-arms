@@ -1635,6 +1635,87 @@ function buildDeepReconUav(): MeshBuffers {
  * Pathfinder. Four road wheels, a low armoured body and a rear optics mast; the
  * Pathfinder simply omits the autocannon turret, so its mast is the role cue.
  */
+/**
+ * Shared wheeled APC. Four axles and a tall, slab-sided troop box distinguish it
+ * at a glance from the low scout car, the tracked IFV and the tank family; the
+ * rear ramp and roof hatches are the transport cues. A small remote machine-gun
+ * station is the only weapon, deliberately much smaller than an IFV turret.
+ */
+function buildApc(): MeshBuffers {
+  const b = new MeshBuilder();
+  const wheelX = [-1.30, -0.44, 0.44, 1.30];
+  for (const x of wheelX) {
+    for (const z of [-0.72, 0.72]) {
+      b.cylinderZ(x, 0.40, z, 0.40, 0.30, 12, PALETTE.rubber);
+      b.cylinderZ(x, 0.40, z, 0.17, 0.32, 10, PALETTE.metal);
+      b.cylinderZ(x, 0.40, z, 0.08, 0.34, 8, PALETTE.darkMetal);
+      b.box(x, 0.82, z * 1.03, 0.88, 0.06, 0.36, PALETTE.hullDark);
+    }
+  }
+  // Slab-sided troop compartment over a lower mine-protected hull. The roof is
+  // flat and full length, unlike the tapering scout or the IFV's sloped nose.
+  b.box(0, 0.54, 0, 3.62, 0.40, 1.34, PALETTE.hullDark);
+  b.box(0, 0.82, 0, 3.50, 0.42, 1.44, PALETTE.hull);
+  b.box(-0.08, 1.13, 0, 3.22, 0.38, 1.36, PALETTE.hull);
+  b.box(-0.08, 1.34, 0, 2.96, 0.08, 1.28, PALETTE.hullLight);
+  b.addQuad([1.75, 0.94, -0.66], [1.75, 0.94, 0.66], [2.02, 0.56, 0.54], [2.02, 0.56, -0.54], PALETTE.hullLight);
+  // Driver visors and a protected front bumper.
+  b.box(1.57, 1.12, -0.34, 0.10, 0.18, 0.34, PALETTE.glassDark);
+  b.box(1.57, 1.12, 0.34, 0.10, 0.18, 0.34, PALETTE.glassDark);
+  b.box(1.96, 0.62, 0, 0.14, 0.22, 1.30, PALETTE.hullDark);
+  // Side armour, firing ports and painted team panels. The panel has to sit
+  // proud of the armour's outer face: inset inside it, the slab sealed the
+  // marker completely and the APC read as an unowned hull.
+  for (const z of [-0.73, 0.73]) {
+    b.box(-0.05, 1.04, z, 2.72, 0.32, 0.04, PALETTE.hullDark);
+    b.box(-0.05, 1.04, z + Math.sign(z) * 0.031, 1.34, 0.18, 0.02, PALETTE.hull, 0.84);
+    for (const x of [-0.78, 0.02, 0.82]) {
+      b.box(x, 1.04, z * 1.02, 0.16, 0.10, 0.03, PALETTE.glassDark);
+    }
+  }
+  // Rear ramp, hinges and tow eyes: the infantry entrance is a deliberate cue.
+  b.box(-1.86, 0.98, 0, 0.10, 0.76, 1.10, PALETTE.hullDark);
+  b.box(-1.93, 0.98, 0, 0.03, 0.60, 0.94, PALETTE.hull);
+  for (const z of [-0.44, 0.44]) {
+    b.box(-1.92, 0.62, z, 0.05, 0.12, 0.08, PALETTE.metal);
+  }
+  for (const z of [-0.56, 0.56]) {
+    b.box(-2.01, 0.50, z, 0.10, 0.10, 0.10, PALETTE.darkMetal);
+  }
+  // Roof hatches and stowage, plus the remote weapon station ring.
+  b.box(-0.72, 1.39, 0, 1.20, 0.06, 1.02, PALETTE.hullDark);
+  b.box(-0.72, 1.43, 0.02, 0.92, 0.06, 0.74, PALETTE.hullLight);
+  // A broad recognition panel on the rear roof, as the tank family carries: at
+  // the isometric battle angle the flanks are foreshortened to a few pixels,
+  // so the roof is the surface that actually shows ownership in play.
+  b.box(-0.72, 1.462, 0.02, 0.80, 0.012, 0.60, PALETTE.hullLight, 0.9);
+  b.box(-1.38, 1.41, 0, 0.42, 0.08, 0.34, PALETTE.canvas);
+  b.cylinder(0.72, 1.42, 0, 0.38, 0.08, 12, PALETTE.darkMetal);
+  // Antenna, mirrors and rear marker lights.
+  b.box(-1.62, 1.62, -0.56, 0.025, 0.58, 0.025, PALETTE.metal);
+  b.box(1.61, 1.20, -0.80, 0.16, 0.03, 0.03, PALETTE.darkMetal);
+  b.box(1.61, 1.20, 0.80, 0.16, 0.03, 0.03, PALETTE.darkMetal);
+  for (const z of [-0.48, 0.48]) b.box(-2.02, 0.90, z, 0.03, 0.10, 0.10, PALETTE.red);
+  return b.build();
+}
+
+/** Small remote machine-gun station; no autocannon or missile box. */
+function buildApcTurret(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.cylinder(0, 0.02, 0, 0.34, 0.08, 10, PALETTE.hullDark);
+  b.box(-0.05, 0.18, 0, 0.62, 0.24, 0.54, PALETTE.hullDark);
+  b.box(-0.10, 0.34, 0, 0.46, 0.12, 0.40, PALETTE.hull);
+  b.cylinderX(0.52, 0.19, 0, 0.035, 0.86, 6, PALETTE.darkMetal);
+  b.cylinderX(0.97, 0.19, 0, 0.055, 0.08, 6, PALETTE.hullDark);
+  b.box(0.26, 0.26, 0, 0.20, 0.12, 0.16, PALETTE.metal);
+  // Sight head and a small ammunition box.
+  b.box(-0.02, 0.44, 0.16, 0.16, 0.13, 0.20, PALETTE.hullDark);
+  b.box(-0.02, 0.48, 0.18, 0.08, 0.03, 0.10, PALETTE.glass);
+  b.box(-0.32, 0.18, -0.28, 0.18, 0.16, 0.12, PALETTE.oliveDark);
+  b.box(-0.36, 0.44, 0, 0.012, 0.24, 0.012, PALETTE.metal);
+  return b.build();
+}
+
 function buildRecon(): MeshBuffers {
   const b = new MeshBuilder();
   // Four wheels with visible hubs and simple fender arches.
@@ -2143,6 +2224,57 @@ function buildMissileBoatBody(): MeshBuffers {
   return b.build();
 }
 
+/**
+ * Naval landing craft. A wide, flat-bottomed well deck with a blunt bow ramp
+ * and a small stern pilot house: it must read as a shore lift, not a warship.
+ */
+function buildLandingCraftBody(): MeshBuffers {
+  const b = new MeshBuilder();
+  const hull: Color = [0.35, 0.39, 0.37];
+  const upper: Color = [0.43, 0.46, 0.42];
+  // Broad shallow hull with a flat keel and a squared-off bow.
+  b.box(0.10, 0.36, 0, 6.40, 0.40, 2.10, hull);
+  b.box(0.10, 0.58, 0, 6.10, 0.08, 2.18, upper);
+  b.box(0.10, 0.10, 0, 6.20, 0.12, 1.74, PALETTE.hullDark);
+  // Bow ramp, lowered onto the beach. The hinge and two ribs make the ramp
+  // read as a working door rather than a pointed prow.
+  b.addQuad(
+    [3.10, 0.58, -1.05],
+    [3.10, 0.58, 1.05],
+    [4.36, 0.16, 0.92],
+    [4.36, 0.16, -0.92],
+    PALETTE.hullDark,
+  );
+  b.box(3.12, 0.61, 0, 0.12, 0.09, 2.10, PALETTE.metal);
+  for (const z of [-0.62, 0, 0.62]) b.box(3.72, 0.39, z, 1.30, 0.06, 0.10, PALETTE.metal);
+  // Open vehicle well between the ramp and the stern house.
+  b.box(0.62, 0.66, 0, 4.80, 0.04, 1.62, PALETTE.darkMetal);
+  for (const z of [-0.90, 0.90]) b.box(0.60, 0.78, z, 4.90, 0.30, 0.16, upper);
+  // Stern pilot house with a raked screen and a short mast.
+  b.box(-2.10, 1.02, 0, 1.55, 0.84, 1.82, upper);
+  b.addQuad([-1.32, 0.70, -0.91], [-1.32, 0.70, 0.91], [-1.48, 1.42, 0.78], [-1.48, 1.42, -0.78], PALETTE.glassDark);
+  b.box(-2.10, 1.46, 0, 1.42, 0.10, 1.70, upper);
+  b.box(-1.38, 1.05, 0, 0.03, 0.30, 1.38, PALETTE.glass);
+  for (const z of [-0.88, 0.88]) b.box(-1.42, 1.08, z, 1.12, 0.16, 0.03, PALETTE.glass);
+  b.box(-2.08, 2.12, 0, 0.06, 1.24, 0.06, PALETTE.metal);
+  b.box(-2.08, 2.50, 0, 0.72, 0.05, 0.06, PALETTE.metal);
+  b.box(-2.08, 2.64, 0, 0.36, 0.08, 0.14, PALETTE.darkMetal);
+  // Stern transom, twin shallow propellers and the beach recovery cable.
+  b.box(-3.12, 0.52, 0, 0.24, 0.64, 2.00, PALETTE.hullDark);
+  for (const z of [-0.52, 0.52]) {
+    b.box(-3.18, 0.20, z, 0.18, 0.32, 0.12, PALETTE.metal);
+    b.cylinderX(-3.24, 0.18, z, 0.12, 0.24, 6, PALETTE.darkMetal);
+  }
+  b.cylinderZ(-3.22, 0.86, 0, 0.18, 0.52, 8, PALETTE.oliveDark);
+  // Life rings, deck cleats and a low recognition panel on the well deck.
+  for (const z of [-1.03, 1.03]) {
+    b.box(-0.90, 1.22, z, 0.34, 0.22, 0.04, PALETTE.warning);
+    b.box(2.40, 0.84, z * 0.96, 0.14, 0.12, 0.14, PALETTE.darkMetal);
+  }
+  b.box(0.35, 0.695, 0, 1.10, 0.02, 0.82, PALETTE.oliveDark, 0.9);
+  return b.build();
+}
+
 /** Compact automatic mount for the fast attack craft. */
 function buildMissileBoatTurret(): MeshBuffers {
   const b = new MeshBuilder();
@@ -2548,6 +2680,72 @@ function buildAttackHelo(): MeshBuffers {
 }
 
 /**
+ * Wide-cabin utility transport helicopter. It shares the rotor hardware with
+ * the gunship but deliberately not its silhouette: a deep square cabin with
+ * large sliding doors, a rear ramp, a high tail boom and no stub wings or
+ * ordnance. At battle zoom the broad box and rescue stripe read as a lift
+ * aircraft, not a slim attack hull with seats added.
+ */
+function buildTransportHelo(): MeshBuffers {
+  const b = new MeshBuilder();
+  const hull: Color = [0.38, 0.41, 0.35];
+  const skin: Color = [0.46, 0.48, 0.42];
+  const rescue: Color = [0.78, 0.62, 0.18];
+  const navRed: Color = [0.62, 0.15, 0.13];
+  const navGreen: Color = [0.16, 0.52, 0.24];
+  // ── Cabin and nose ─────────────────────────────────────────────────────
+  b.box(0.10, 1.12, 0, 3.10, 1.02, 1.24, hull, 0.9);
+  b.box(1.88, 1.02, 0, 0.70, 0.72, 1.06, skin, 0.8);
+  b.addQuad([2.20, 1.36, -0.44], [2.20, 1.36, 0.44], [2.44, 0.98, 0.28], [2.44, 0.98, -0.28], PALETTE.glass, 0.1);
+  b.addQuad([2.20, 0.72, -0.44], [2.20, 0.72, 0.44], [2.44, 0.98, 0.28], [2.44, 0.98, -0.28], skin);
+  // Broad cockpit glazing and the roof over the crew.
+  b.box(1.86, 1.47, 0, 0.46, 0.34, 1.00, PALETTE.glass, 0.12);
+  b.box(2.06, 1.47, 0, 0.08, 0.26, 0.90, PALETTE.glassDark);
+  b.box(0.56, 1.68, 0, 2.42, 0.20, 1.10, skin, 0.35);
+  b.box(1.36, 1.78, 0, 0.34, 0.12, 0.72, PALETTE.darkMetal);
+  // ── Sliding doors and the rear ramp ────────────────────────────────────
+  for (const z of [-0.635, 0.635]) {
+    b.box(0.40, 1.10, z, 1.42, 0.72, 0.08, PALETTE.track);
+    b.box(0.40, 1.12, z * 1.02, 1.28, 0.58, 0.035, PALETTE.glassDark, 0.1);
+    b.box(0.90, 1.42, z * 1.03, 0.10, 0.10, 0.04, PALETTE.metal);
+    // A step below each door so the infantry boarding pitch is readable.
+    b.box(0.40, 0.56, z * 1.08, 0.48, 0.06, 0.26, PALETTE.metal);
+  }
+  b.addQuad([-1.44, 0.66, -0.56], [-1.44, 0.66, 0.56], [-1.92, 0.48, 0.50], [-1.92, 0.48, -0.50], skin);
+  b.addQuad([-1.44, 1.55, -0.56], [-1.44, 1.55, 0.56], [-1.92, 0.48, 0.50], [-1.92, 0.48, -0.50], PALETTE.track);
+  // Rescue stripe along both cabin flanks, plus a roof beacon.
+  for (const z of [-0.632, 0.632]) b.box(0.10, 0.80, z, 2.30, 0.10, 0.02, rescue);
+  b.box(-0.70, 1.82, 0, 0.14, 0.10, 0.14, PALETTE.red);
+  // ── Engines, mast and tail boom ────────────────────────────────────────
+  for (const z of [-0.58, 0.58]) {
+    b.box(0.30, 1.48, z, 1.10, 0.42, 0.42, skin);
+    b.box(0.82, 1.50, z, 0.18, 0.30, 0.34, PALETTE.darkMetal);
+    b.box(-0.32, 1.48, z * 1.04, 0.32, 0.30, 0.34, PALETTE.darkMetal);
+    b.box(-0.48, 1.34, z * 1.04, 0.08, 0.18, 0.24, PALETTE.track);
+  }
+  b.box(-0.10, 1.84, 0, 0.80, 0.20, 0.68, skin);
+  b.cylinder(-0.10, 1.98, 0, 0.15, 0.18, 8, PALETTE.darkMetal);
+  b.box(-1.76, 1.32, 0, 1.50, 0.34, 0.42, hull, 0.35);
+  b.box(-2.70, 1.28, 0, 1.90, 0.24, 0.26, hull, 0.3);
+  b.box(-3.45, 1.50, 0, 0.34, 0.84, 0.14, PALETTE.darkMetal, 0.3);
+  b.addQuad([-3.20, 1.06, -0.07], [-3.20, 1.06, 0.07], [-3.42, 2.02, 0.07], [-3.42, 2.02, -0.07], hull, 0.3);
+  b.box(-3.52, 1.50, 0.16, 0.20, 0.24, 0.20, PALETTE.darkMetal);
+  b.box(-3.86, 1.22, 0, 0.22, 0.10, 1.08, skin);
+  b.box(-3.48, 2.06, 0, 0.10, 0.08, 0.08, PALETTE.red);
+  // ── Skids ──────────────────────────────────────────────────────────────
+  for (const z of [-0.70, 0.70]) {
+    b.box(0.10, 0.24, z, 3.00, 0.12, 0.14, PALETTE.darkMetal);
+    b.box(0.10, 0.32, z, 2.55, 0.06, 0.08, PALETTE.metal);
+    for (const x of [1.04, -1.00]) beam(b, [x, 0.92, z], [x, 0.32, z], 0.08, 0.08, PALETTE.metal);
+    b.box(1.48, 0.32, z, 0.28, 0.10, 0.10, PALETTE.metal);
+  }
+  // Formation lights and a simple serial plate.
+  for (const z of [-0.90, 0.90]) b.box(-2.92, 1.32, z, 0.12, 0.06, 0.10, z < 0 ? navRed : navGreen);
+  b.box(-2.30, 1.36, 0.17, 0.42, 0.12, 0.02, PALETTE.white);
+  return b.build();
+}
+
+/**
  * Main rotor: two blades and a hub, authored flat around their own mount.
  *
  * A two-blade disc this long strobes at a real rotor's speed on a 60 Hz frame,
@@ -2828,7 +3026,9 @@ const VISUAL_SCALE: Record<string, number> = {
   td: 1,
   rocketArtillery: 1,
   attackHelo: 1,
+  transportHelo: 1,
   missileBoat: 0.7,
+  landingCraft: 0.7,
   corvette: 0.7,
   submarine: 0.7,
   frigate: 0.7,
@@ -2867,6 +3067,7 @@ const SHADOW_RADIUS: Record<string, [number, number]> = {
   heavyHowitzer: [2.05, 0.90],
   aa: [1.95, 1.05],
   recovery: [2.15, 1.05],
+  apc: [2.05, 0.88],
   harvester: [2.75, 1.30],
   fighter: [2.40, 2.20],
   interceptor: [2.40, 2.20],
@@ -2882,6 +3083,7 @@ const SHADOW_RADIUS: Record<string, [number, number]> = {
   uavEC: [1.80, 1.00],
   mohajer6: [1.60, 0.90],
   attackHeloEC: [2.20, 0.95],
+  transportHelo: [2.35, 1.10],
   bulsae4: [1.55, 0.95],
   khordadSam: [1.50, 0.95],
   wilk: [1.95, 0.98],
@@ -2970,6 +3172,7 @@ const BANNER_HEIGHT: Record<string, number> = {
   spearhead: 1.80,
   aa: 2.40,
   recovery: 3.00,
+  apc: 2.05,
   harvester: 3.10,
   fighter: 1.75,
   interceptor: 1.95,
@@ -2997,6 +3200,7 @@ const BANNER_HEIGHT: Record<string, number> = {
   tosp: 2.05,
   sprut: 1.95,
   missileBoat: 2.05,
+  landingCraft: 1.95,
   corvette: 2.75,
   submarine: 2.10,
   frigate: 3.35,
@@ -3589,11 +3793,20 @@ const STYLES: Record<string, EntityStyle> = {
     turretOffset: [0, 1.15, 0],
   },
   recovery: { body: buildRecovery(), turretOffset: [0, 0, 0] },
+  apc: {
+    body: buildApc(),
+    turret: buildApcTurret(),
+    turretOffset: [0.35, 1.46, 0],
+  },
   harvester: { body: buildHarvester(), turretOffset: [0, 0, 0], load: buildHarvesterLoad() },
   fighter: { body: buildFighter(), turretOffset: [0, 0, 0] },
   interceptor: { body: buildInterceptor(), turretOffset: [0, 0, 0] },
   uav: { body: buildUav(), turretOffset: [0, 0, 0] },
   deepReconUAV: { body: buildDeepReconUav(), turretOffset: [0, 0, 0] },
+  landingCraft: {
+    body: buildLandingCraftBody(),
+    turretOffset: [0, 0, 0],
+  },
   missileBoat: {
     body: buildMissileBoatBody(),
     turret: buildMissileBoatTurret(),
@@ -3648,6 +3861,12 @@ const STYLES: Record<string, EntityStyle> = {
     turretOffset: [0, 0, 0],
     rotor: { mesh: buildHeloRotor(), offset: [0, 1.82, 0], rate: 7.2 },
     tailRotor: { mesh: buildHeloTailRotor(), offset: [-3.45, 1.35, 0.24], rate: 15 },
+  },
+  transportHelo: {
+    body: buildTransportHelo(),
+    turretOffset: [0, 0, 0],
+    rotor: { mesh: buildHeloRotor(), offset: [0, 1.98, 0], rate: 6.4 },
+    tailRotor: { mesh: buildHeloTailRotor(), offset: [-3.57, 1.44, 0.24], rate: 14 },
   },
   // Alliance and expansion airframes. Each is authored rather than borrowed:
   // a canard delta, a light canard delta, a heavy twin-fin interceptor, a

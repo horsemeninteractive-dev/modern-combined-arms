@@ -7,7 +7,7 @@
 **Health label:** `phase2a13-staging`
 **Verdict:** **CONDITIONAL** — operational soak passed; combat workload was one-sided and the deployed final snapshot bytes were not independently re-read.
 
-The full analysis and verdict are in [`MULTIPLAYER_PHASE_2A_14_SOAK_REPORT.md`](../MULTIPLAYER_PHASE_2A_14_SOAK_REPORT.md).
+The full analysis and verdict are in [`MULTIPLAYER_PHASE_2A_14_SOAK_REPORT.md`](../docs/MULTIPLAYER_PHASE_2A_14_SOAK_REPORT.md).
 
 ---
 

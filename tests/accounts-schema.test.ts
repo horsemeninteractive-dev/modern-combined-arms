@@ -27,6 +27,7 @@ describe('account migrations', () => {
       'account_sessions',
       'guest_migration_records',
       'auth_rate_limits',
+      'career_achievements',
     ]) {
       expect(sql).toMatch(new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`));
     }
@@ -50,9 +51,29 @@ describe('account migrations', () => {
     expect(sql).toMatch(/state TEXT NOT NULL CHECK \(state IN \('pending', 'complete', 'conflict'\)\)/);
   });
 
+  it('stores the identity document on the revision row for atomic saves', () => {
+    expect(sql).toMatch(/ALTER TABLE player_presentation ADD COLUMN document TEXT/);
+  });
+
+  it('makes every achievement award unique per account', () => {
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS career_achievements/);
+    expect(sql).toMatch(/PRIMARY KEY \(account_id, achievement_id\)/);
+    expect(sql).toMatch(/account_id TEXT NOT NULL REFERENCES accounts \(id\) ON DELETE CASCADE/);
+    expect(sql).toMatch(/CREATE INDEX IF NOT EXISTS career_achievements_by_match/);
+  });
+
   it('constrains account status and rate-limit windows', () => {
     expect(sql).toMatch(/status TEXT NOT NULL DEFAULT 'active'/);
     expect(sql).toMatch(/CHECK \(status IN \('active', 'suspended', 'deleted'\)\)/);
     expect(sql).toMatch(/PRIMARY KEY \(bucket, window_start\)/);
+  });
+});
+
+describe('Phase 4D campaign records', () => {
+  it('records one campaign completion per account, keyed and indexed', () => {
+    expect(sql).toMatch(/CREATE TABLE IF NOT EXISTS career_campaigns\b/);
+    expect(sql).toMatch(/PRIMARY KEY \(account_id, campaign_id\)/);
+    expect(sql).toMatch(/REFERENCES accounts \(id\) ON DELETE CASCADE/);
+    expect(sql).toMatch(/career_campaigns_by_account_time/);
   });
 });

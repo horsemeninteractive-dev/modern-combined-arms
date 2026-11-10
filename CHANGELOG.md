@@ -12,6 +12,233 @@ rendered in game from **Changelog** in the main-menu footer.
 When the version is bumped, rename it to the new `## [x.y.z STAGE] — date`
 heading: `tools/release.mjs` refuses to ship unless that heading exists.
 
+## [0.7.0 BETA] — 2026-11-10
+
+Phase 4C–4E and Phase 5C land together: earned commendations, campaign
+completion and legacy, the cosmetics inventory with unit camo, the Phase 4E
+identity hardening, and the shared APC, transport helicopter and landing craft.
+This build also makes transport control usable in the field.
+
+### Transport controls and identification
+
+- **Parked aircraft can be selected again.** Every airframe was hit-tested
+  twelve world units above the ground, while the renderer draws a parked hull on
+  its pad; the pick height now follows the same landed/climb blend as the model,
+  so a parked transport helicopter or plane can be clicked, box-selected and
+  right-clicked to take infantry aboard.
+- **Transport helicopters have a LAND order.** A LAND button appears for a
+  selected transport helicopter; clicking open ground flies it there, sets it
+  down as a field stop and waits for infantry. The landing is authoritative,
+  keeps the hull's permanent berth, and never ejects or teleports a passenger.
+- **The shared APC shows its alliance colour again.** Its flank recognition
+  panels were buried inside the side armour; they now sit on the outer skin and
+  a roof panel was added, so both alliances read the hull at a glance.
+
+### Transport recovery and hardening
+
+- **Cancelling an assault no longer orphans its passengers.** When a loaded
+  carrier is damaged, threatened, stranded or refused an unload, the operation
+  becomes a recovery run: the same hull is sailed or flown home and unloaded by
+  the ordinary authoritative order, and the troops keep exactly one owner. If no
+  safe beach or landing zone exists the state is held and reported, never
+  deleted. Recovery has no assault timeout and never teleports, kills or forces
+  a passenger out.
+- **Escorts are now actually assigned.** The AI re-tasks up to two combat units
+  already marching on the same objective instead of requiring idle ones, while
+  still refusing aircraft, garrisoned units and units already claimed that
+  think. Nothing is persisted, so escorts return to ordinary tasking as soon as
+  the operation ends or is abandoned.
+- **Recovery is covered by regression tests** alongside the threat boundaries
+  (35 % health, nine tiles), escort limits, a full AI helicopter insertion and
+  save/load in transit and mid-recovery.
+
+### Transport AI and amphibious coordination
+
+- **The AI now plans transport operations instead of ignoring its carriers.**
+  A landing craft is requested only when the objective lies across water and a
+  usable beach exists at both ends; a transport helicopter needs a long approach
+  over ground the army cannot cross quickly; an APC needs a formed field army
+  and a 22-tile advance. All three wait out the opening and stop asking once a
+  hull is owned or queued, so a transport never displaces the line it serves.
+- **Operations run through the ordinary command queue.** The commander stages
+  infantry with `garrison`, moves the carrier with `move`, and beaches or lands
+  it with `ungarrison`; beach selection, exit planning and passenger release
+  stay authoritative in the simulation. Landed infantry receive one attack-move
+  toward the original objective, and the carrier returns home by a normal move,
+  which also clears its beached state.
+- **Failures are abandoned, never retried or rescued.** A destroyed, damaged or
+  engaged carrier, a missing beach or landing zone, a blocked shore or a lost
+  squad cancels the operation without moving, destroying or teleporting a
+  passenger. Embarked passengers still die exactly once with their carrier.
+- **Two read-only planning queries were added** (`navalLandingAvailable`,
+  `transportLandingAvailable`) so a commander can decline an impossible landing
+  instead of generating refusal events every think.
+
+### Shared APC and land infantry transport
+
+- **Both alliances can build the same wheeled APC at the existing vehicle
+  factory.** It carries four individual infantry entities, costs 380 materials
+  and 15 requisition, builds in 11 seconds and needs no research.
+- **Infantry board by right-clicking a friendly APC, or through the existing
+  garrison order.** Mixed selections send only eligible infantry; capacity is
+  checked authoritatively and a fifth soldier is left outside with feedback.
+- **Passengers keep their entity ids, health, veterancy and upgrades while
+  embarked.** They follow the carrier, cannot be selected or targeted, add no
+  independent vision, and do not fire from inside. Infantry may board a
+  teammate's APC; enemy transport boarding is rejected authoritatively, and an
+  unload order releases only the issuing player's passengers.
+- **Unload-all returns every passenger to a distinct safe tile.** A moving APC
+  stops first; if no safe ring exists, everyone stays aboard and the order is
+  refused rather than losing a passenger.
+- **Passengers die with the APC exactly once.** Save/load, reconnect, owner
+  projection and the multiplayer command gate carry the same occupancy, and a
+  cross-entity check rejects an over-capacity or orphaned snapshot before it is
+  sent.
+- **The APC is a transport, not an IFV.** Its 7.62mm machine gun has almost no
+  anti-armour effect, and its 320 HP light hull is weaker than the IFV's.
+
+### Shared utility transport helicopter
+
+- **Both alliances can build the same unarmed utility helicopter at the existing
+  heliport.** It carries four individual infantry, costs 760 materials and 140
+  requisition, builds in 20 seconds and uses the existing Air Superiority rotary
+  unlock; there is no national variant or new research branch.
+- **Boarding and unloading require the helicopter to land.** A boarding order
+  sends it to the nearest clear field landing zone; infantry wait while it is
+  airborne or rolling and board only after it is down. Normal movement takes off
+  with the passengers still aboard rather than ejecting them.
+- **UNLOAD ALL lands first and places every passenger on distinct safe ground.**
+  If no complete exit ring exists, everyone remains aboard and the order is
+  refused. Passengers keep their entity ids, health, veterancy and upgrades and
+  return to their original owner.
+- **Allied infantry may board, and a mobile carrier's owner unloads everyone.**
+  A non-owner may release only their own infantry from an APC; an air transport
+  accepts only its owner's unload order because the owner controls the landing.
+  Enemy boarding is rejected authoritatively.
+- **Heliport capacity is unchanged at two helicopters and the airfield's single
+  helicopter pad remains recovery-only.** A field landing does not replace the
+  hull's permanent berth, and the gunship's production and behaviour are
+  unchanged.
+- **Passengers die with the helicopter exactly once.** Save/load, reconnect,
+  owner projection, fog-of-war privacy and the multiplayer command gate carry
+  the same occupancy contract.
+
+### Shared naval landing craft
+
+- **Both alliances can build the same unarmed landing craft at the existing
+  shipyard.** It carries four individual infantry, costs 520 materials and 95
+  requisition, builds in 18 seconds and uses the existing Naval Operations
+  unlock; there is no national variant, new facility or new research branch.
+- **Infantry board from a real shore, not across open water.** A boarding order
+  sends the craft to a navigable tile whose land side has foot-standable,
+  unblocked and unoccupied exits; the infantry then walk to that shore. A craft
+  that cannot find a usable beach keeps its passengers aboard and reports why.
+- **UNLOAD ALL beaches the hull and releases only a complete safe plan.** Every
+  passenger receives a distinct land-side tile; blocked, occupied, off-map and
+  deep-water exits are rejected, and a failed plan changes nothing. The craft
+  can leave the beach on the next normal move order.
+- **Passengers keep their identity, owner, health, veterancy and upgrades.**
+  They follow the hull, add no independent vision, do not fire, and die with it
+  exactly once. Save/load, reconnect, team projection and the command gate use
+  the shared `garrisonId` contract; enemy players see the craft but not the
+  identities of the infantry inside.
+- **The hull is a vulnerable support vessel, not a warship.** It is unarmed and
+  does not join the automatic empty-missile return used by armed naval hulls.
+
+### Career and awards
+
+- **Commendations are earned from the ledger, not from a claim.** 42 achievement
+definitions are evaluated from server-owned match rows and progress; the award
+is inserted once per account and achievement, so a retried or replayed result
+cannot pay twice.
+- **Campaign completion is derived from trusted mission victories.** A campaign
+is recorded only when every authored operation has a winning ledger row and the
+new result is the final mission, so a client-supplied completion flag does
+nothing.
+- **Commander Legacy shows medals, ribbons, commendations and completed campaigns**
+from the same persisted awards, for guests and accounts alike.
+
+### Cosmetics
+
+- **An earned cosmetics inventory in the profile.** Avatar frames, player-card
+backgrounds, unit camos and flag emblems are unlocked by XP, matches, victories
+or a specific commendation; there is no shop and no currency.
+- **Unit camo paints the hull, not the alliance markings.** The equipped camo is
+a renderer uniform applied before the team-colour mix, so team panels, flags and
+silhouettes keep their exact colour.
+- **The account service validates every equip.** Frames, backgrounds, camos and
+emblems are checked against progress the service derived from its own career
+rows, and an unowned or unknown id is refused.
+
+### Persistence and integration
+
+- **Migration 0008 adds the equipped camo to the identity document**, beside the
+frame and background, so one revision-guarded write still persists the whole
+presentation.
+- **Guest migration reserves the guest before importing.** A pending row claims
+the guest, an interrupted import can be resumed, and a second account can never
+copy another player's guest career into its own ledger.
+- **The default online match length is ten minutes, matching the client** and
+above the three-minute floor a career reward requires; a room created without an
+explicit duration can now qualify.
+
+### Verification
+
+- **190 test files and 2,734 tests pass** (exit 0); `npx tsc --noEmit` and
+`npm run build` are clean.
+- Focused Phase 4E regressions cover the room duration floor, refusal to import
+another account's reserved guest, and resumption of an interrupted migration
+without duplicating a match.
+- `docs/PHASE_4E_AUDIT.md` lists the exact commands, counts, the defects fixed and
+the deployment checks that remain external.
+
+## [0.6.1 BETA] — 2026-11-08
+
+A command-flag and identity patch. Player flags, finishes and the active design
+now survive sign-in as one account-owned document; edits made while the session
+is unavailable are sent as updates rather than imported as duplicates; and every
+label added since 0.6.0 is back on the HUD's 11px legibility floor.
+
+### Command flags and identity
+
+- **A player's flag designs, active design and equipped cosmetics persist together.**
+  The account service stores one atomic identity document per player and applies a
+  revision guard, so a finished match or a second device cannot overwrite newer
+  choices with a stale copy.
+- **The account service decides what may be equipped.** Emblems, frames and
+  backgrounds are checked against the player's earned progress on the server, not
+  only in the editor; the Eagle emblem has an explicit free catalogue entry rather
+  than being free by omission.
+- **A session expiry no longer duplicates a pending edit.** The browser records the
+  server revision and a pending marker with the local document. Re-signing into the
+  same account pushes those edits with their existing design ids; a stale write is
+  rebased over the server document, while a clean cache adopts the server copy and
+  a genuine guest profile still imports additively.
+- **Two additive D1 migrations support the document.**
+  `migrations/0004_player_flags.sql` adds the flag tables and
+  `migrations/0005_player_identity_document.sql` adds the atomic identity document.
+  Both are applied to the production account database.
+
+### Interface
+
+- **The legibility floor is enforced again.** Twelve raw 8.5px, 9px and 10px
+  declarations in the account panel, command-flag editor, lobby result view and
+  after-action report now use `--fs-xs`, the shared 11px minimum type scale.
+
+### Verification
+
+- Full `vitest` run: **184 files and 2,663 tests, all passing**.
+- The command-flag coverage includes persistence across reload, in-place rename
+  after an auth expiry, stale-revision rebase without duplicate designs, clean
+  same-owner adoption and the full AccountPanel expiry/re-login flow.
+- `npx tsc --noEmit` and the production build are clean, and `git diff --check`
+  reports no whitespace errors.
+
+### Deployment
+
+- The account and multiplayer Workers already run the matching API and room code;
+  0.6.1's remaining changes are in the Pages browser bundle and its stylesheet.
+
 ## [0.6.0 BETA] — 2026-11-07
 
 Phase 1 and Phase 2 of the roadmap land together: tactical abilities and

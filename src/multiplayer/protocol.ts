@@ -1,4 +1,5 @@
 import type { NeutralMatchResult } from './matchResult';
+import type { FlagComposition } from '../identity/flag';
 import type {
   ProjectedEntity,
   ProjectedMap,
@@ -39,6 +40,25 @@ export const KEEPALIVE_MIN_INTERVAL_MS = 5_000;
 export const MAX_KEEPALIVE_MESSAGE_BYTES = 256;
 
 export type RoomPhase = 'waiting' | 'playing' | 'finished' | 'closed';
+
+/**
+ * The presentable identity carried by a match. The account id is deliberately
+ * absent: it is server-side ownership, not something the opponent may enumerate.
+ */
+export interface IdentityPresentation {
+  callsign: string;
+  avatar: string;
+  rank?: string;
+  flag?: FlagComposition;
+  frame?: string;
+  background?: string;
+}
+
+/** One seat's identity in the immutable match-start snapshot. */
+export interface SeatIdentityMessage {
+  seatId: number;
+  identity: IdentityPresentation | null;
+}
 
 export interface ClientCommandMessage {
   type: 'command';
@@ -244,6 +264,8 @@ export interface HelloMessage {
   snapshotHz: number;
   keepaliveMs: number;
   matchDeadlineAt: number;
+  /** Frozen match-start identities, sent on first connect and reconnect. */
+  identities: SeatIdentityMessage[];
 }
 
 /**
@@ -279,8 +301,12 @@ export interface LobbyMessage {
       ready: boolean;
       host: boolean;
       connected: boolean;
-      /** Captured when the seat was claimed; null for a guest with no identity. */
-      identity: { callsign: string; avatar: string } | null;
+      /**
+       * Captured when the seat was claimed; null for a guest with no identity.
+       * Optional fields keep older tickets readable; frames and backgrounds are
+       * validated catalogue ids, never client-supplied styling.
+       */
+      identity: IdentityPresentation | null;
       /** Whether the seat is a verified account, which the lobby marks. */
       verified: boolean;
     }>;
@@ -314,6 +340,8 @@ export interface ResultMessage {
    * the caller owns the match.
    */
   matchId: string | null;
+  /** The same match-start identities used for the live match, for consistency. */
+  identities?: SeatIdentityMessage[];
 }
 
 export interface ErrorMessage {
@@ -424,6 +452,7 @@ export function resultMessageFor(
   projected: ProjectedMatchResult,
   team: number,
   matchId: string | null = null,
+  identities?: SeatIdentityMessage[],
 ): ResultMessage {
   const outcome =
     result.phase !== 'finished'
@@ -440,5 +469,6 @@ export function resultMessageFor(
     outcome,
     result: projected,
     matchId,
+    ...(identities ? { identities } : {}),
   };
 }

@@ -34,9 +34,12 @@
 import { TICK_RATE } from '../sim/constants';
 import { worldToTile } from '../sim/terrain';
 import type {
+  MissionAiGroupDoc,
   MissionCondition,
   MissionDoc,
+  MissionOutcome,
   MissionRegionDoc,
+  MissionReinforcementDoc,
   MissionTriggerDoc,
   MissionValue,
 } from './types';
@@ -74,6 +77,19 @@ export interface MissionTriggerEffects {
   message(text: string): void;
   /** Relay objective transitions so the HUD and log see ordinary events. */
   objectiveChanged(changes: readonly MissionObjectiveChange[]): void;
+  /**
+   * Release an AI group onto the battlefield.
+   *
+   * The runtime has already latched the activation when this is called, so the
+   * simulation only has to apply the group's authored task once. Optional so a
+   * caller that evaluates a mission without a world (the validator, a test of
+   * the cascade) can still record the latch.
+   */
+  groupActivated?(group: MissionAiGroupDoc): void;
+  /** Bring one reinforcement wave onto the map, once. */
+  waveSpawned?(wave: MissionReinforcementDoc): void;
+  /** Finish the battle with an authored verdict; the ordinary result path runs. */
+  missionEnded?(outcome: MissionOutcome): void;
 }
 
 function toTicks(seconds: number | undefined): number {
@@ -285,11 +301,30 @@ function applyAction(
     case 'message':
       effects.message(action.text);
       return;
-    default:
-      // `activateAiGroup`, `spawnReinforcement` and `endMission` are declared in
-      // the document schema but are not executed in this build. Validation
-      // reports them as deferred; ignoring them here keeps a mission authored
-      // ahead of the runtime from crashing or half-applying.
+    case 'activateAiGroup': {
+      const group = runtime.doc.aiGroups.find((entry) => entry.id === action.group);
+      // Validation guarantees the reference; an unknown id in a hand-edited
+      // document simply does nothing rather than throwing mid-cascade.
+      if (!group) return;
+      // The latch decides: a second activation is a no-op, so a repeating
+      // trigger cannot re-task a group that is already fighting.
+      if (!runtime.activateGroup(group.id)) return;
+      effects.groupActivated?.(group);
+      return;
+    }
+    case 'spawnReinforcement': {
+      const wave = runtime.doc.reinforcements.find(
+        (entry) => entry.id === action.reinforcement,
+      );
+      if (!wave) return;
+      // Latched before the world is touched, so a placement failure cannot be
+      // retried on the next tick and double the column.
+      if (!runtime.markWaveSpawned(wave.id)) return;
+      effects.waveSpawned?.(wave);
+      return;
+    }
+    case 'endMission':
+      if (runtime.forceOutcome(action.outcome)) effects.missionEnded?.(action.outcome);
       return;
   }
 }

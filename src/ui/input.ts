@@ -304,6 +304,11 @@ export class InputController {
       if (p) app.commandMove(p.x, p.z, false);
       return;
     }
+    if (app.mode === 'land') {
+      const p = app.worldAt(clientX, clientY);
+      if (p) app.commandLand(p.x, p.z);
+      return;
+    }
     if (
       app.mode === 'attack' ||
       app.mode === 'attackMove' ||

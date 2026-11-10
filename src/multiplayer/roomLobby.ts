@@ -175,6 +175,25 @@ export class RoomLobby {
   }
 
   /**
+   * Replace a seat's verified presentation before start. Nation and colour are
+   * not touched: they are match selections, not personal identity. The caller
+   * has already validated ownership and persistence.
+   */
+  setSeatIdentity(
+    seatId: number,
+    accountId: string | null,
+    identity: RoomSeatDefinition['identity'],
+  ): boolean {
+    const seat = this.seats[seatId];
+    if (!seat) return false;
+    if (seat.accountId && accountId && seat.accountId !== accountId) return false;
+    if (accountId) seat.accountId = accountId;
+    if (identity) seat.identity = identity;
+    this.broadcast();
+    return true;
+  }
+
+  /**
    * Change only the calling seat's own nation or colour.
    *
    * The patch is validated against the same catalogue the start uses, and the

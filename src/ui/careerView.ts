@@ -9,12 +9,21 @@ import type { CareerMode, CareerOutcome } from '../accounts/career';
 import type { CareerSnapshot } from '../accounts/careerService';
 import type { CareerStats, StatBlock } from '../accounts/stats';
 import type {
+  AchievementSummary,
   IdentityView,
   MatchHistoryItem,
   MatchReportView,
   MatchResultView,
 } from '../accounts/client';
 import { rankForXp } from '../accounts/ranks';
+import { levelForXp } from '../accounts/levels';
+import {
+  ACHIEVEMENTS,
+  ACHIEVEMENT_CATEGORY_LABEL,
+  type AchievementView,
+} from '../accounts/achievements';
+import { cosmeticById } from '../identity/cosmetics';
+import { awardSvg } from './awards';
 import { rankInsigniaSvg } from './rankInsignia';
 
 const MODE_LABEL: Record<CareerMode, string> = {
@@ -68,20 +77,22 @@ export function careerSummaryMarkup(snapshot: CareerSnapshot | null): string {
   const totals = view.totals;
   const winRate = totals.matches > 0 ? Math.round((totals.victories / totals.matches) * 100) : 0;
   const percent = Math.round(view.progress * 100);
+  const level = view.level ?? levelForXp(totals.xp);
   const nextText = view.next
-    ? `${view.xpInto} / ${view.xpSpan ?? 0} XP to ${escapeCareerHtml(view.next.name)}`
-    : 'Top of the ladder — every rank held';
+    ? `${view.xpInto} / ${view.xpSpan ?? 0} XP to ${escapeCareerHtml(view.next.name)} · level ${level.next?.number ?? level.level.number}`
+    : 'Top of the rank ladder — service level ' + level.level.number + ' of 50';
   const sourceText =
     snapshot.source === 'guest'
       ? 'Guest career on this device. Sign in and import it to keep it across devices.'
       : 'Career stored with your MCA account.';
+  const commendations = (view.achievements ?? []).filter((entry) => entry.complete).length;
   return `
     <div class="career-block" data-career-source="${snapshot.source}">
       <div class="career-rank">
         <span class="career-insignia">${rankInsigniaSvg(view.rank, { label: `${view.rank.name} insignia` })}</span>
         <span class="career-rank-text">
           <b>${escapeCareerHtml(view.rank.name)}</b>
-          <small>${escapeCareerHtml(view.rank.grade)} · ${escapeCareerHtml(view.rank.abbreviation)}</small>
+          <small>LEVEL ${level.level.number} OF 50 · ${escapeCareerHtml(view.rank.grade)} · ${escapeCareerHtml(view.rank.abbreviation)}</small>
         </span>
         <span class="career-xp"><b>${totals.xp.toLocaleString()}</b><small>CAREER XP</small></span>
       </div>
@@ -93,6 +104,7 @@ export function careerSummaryMarkup(snapshot: CareerSnapshot | null): string {
         <div><span>VICTORIES</span><b>${totals.victories}</b></div>
         <div><span>WIN RATE</span><b>${winRate}%</b></div>
         <div><span>SERVICE</span><b>${playtime(totals.playSeconds)}</b></div>
+        <div><span>COMMENDATIONS</span><b>${commendations}</b></div>
       </div>
       <p class="account-note">${sourceText}</p>
       ${snapshot.unavailable ? '<p class="account-notice" role="status" data-level="warning">The account career could not be reached, so the local guest record is shown.</p>' : ''}
@@ -122,7 +134,10 @@ export function historyListMarkup(items: readonly MatchHistoryItem[], selectable
     return '<p class="account-note">No matches recorded yet.</p>';
   }
   const rows = items
-    .map(({ match, report }: MatchHistoryItem) => {
+    .map(({ match, report, achievements }: MatchHistoryItem) => {
+      const awards = achievements?.length
+        ? `<span class="career-match-awards" title="${escapeCareerHtml(achievements.map((award) => award.name).join(', '))}">${achievements.length}★</span>`
+        : '';
       const opponent = report?.opponentCallsign
         ? `<span class="career-match-opponent">vs ${escapeCareerHtml(report.opponentCallsign)}</span>`
         : '';
@@ -139,6 +154,7 @@ export function historyListMarkup(items: readonly MatchHistoryItem[], selectable
           <span class="career-match-outcome">${OUTCOME_LABEL[match.outcome]}</span>
           <span class="career-match-detail">${MODE_LABEL[match.mode]} · ${matchDuration(match.durationSeconds)}${map}</span>
           ${opponent}
+          ${awards}
           <span class="career-match-date">${matchDate(match.recordedAt)}</span>
           <b class="career-match-xp">+${match.xp}</b>
         </${tag}>
@@ -181,20 +197,43 @@ export function matchDetailMarkup(item: MatchHistoryItem): string {
   return `<div class="career-match-detail-card" data-match-ref="${escapeCareerHtml(match.ref)}">
     <p class="section-title">MATCH ${escapeCareerHtml(match.ref)}</p>
     <div class="career-record-totals">${rows.join('')}</div>
+    ${item.achievements && item.achievements.length > 0 ? `<p class="career-match-award-list">COMMENDATIONS: ${item.achievements.map((award) => escapeCareerHtml(award.name)).join(' · ')}</p>` : ''}
     ${status}
   </div>`;
 }
 
 /** The player's name and badge, shown wherever an identity is presented. */
+export interface IdentityBannerOptions {
+  /** Rendered command-flag SVG. Identity, never the national flag. */
+  flagHtml?: string;
+  frame?: string | null;
+  background?: string | null;
+}
+
 export function identityBannerMarkup(
   identity: IdentityView | null,
   rankName: string,
   grade: string,
   xp: number,
+  options: IdentityBannerOptions = {},
 ): string {
   const initial = (identity?.callsign ?? 'Guest').slice(0, 1).toUpperCase();
-  return `<div class="identity-banner">
-    <span class="identity-avatar" aria-hidden="true">${escapeCareerHtml(initial)}</span>
+  // The store and the account document name catalogue ids; CSS classes use
+  // the catalogue's render token. Resolve once here so every profile surface
+  // wears the equipped item instead of a non-existent id class.
+  const frameItem = cosmeticById(options.frame);
+  const backgroundItem = cosmeticById(options.background);
+  const frame =
+    frameItem?.category === 'frame'
+      ? ` identity-frame-${escapeCareerHtml(frameItem.render)}`
+      : '';
+  const background =
+    backgroundItem?.category === 'background'
+      ? ` identity-bg-${escapeCareerHtml(backgroundItem.render)}`
+      : '';
+  return `<div class="identity-banner${background}">
+    ${options.flagHtml ? `<span class="identity-flag">${options.flagHtml}</span>` : ''}
+    <span class="identity-avatar${frame}" aria-hidden="true">${escapeCareerHtml(initial)}</span>
     <span class="identity-text">
       <b>${escapeCareerHtml(identity?.callsign ?? 'Guest commander')}</b>
       <small>${escapeCareerHtml(rankName)}${grade ? ` · ${escapeCareerHtml(grade)}` : ''} · ${xp.toLocaleString()} XP</small>
@@ -294,14 +333,35 @@ export function serviceRecordMarkup(
         <div><span>DRAWS</span><b>${totals.draws}</b></div>
       </div>
       ${careerStatsMarkup(options.stats ?? null)}
+      ${careerAchievementsMarkup(snapshot.view.achievements ?? [])}
       <p class="account-note">Career XP is one ladder across every mode. Online matches pay a completion award plus duration, sites captured and units destroyed, scaled by the result, capped at 12 rewarded matches a day. A defeat still pays, so finishing a losing match is always better than leaving it. Kills and losses are recorded but earn nothing on their own.</p>
     </div>`;
 }
 
+/**
+ * One unlocked award on an end card. The medal, ribbon or commendation is the
+ * notification's subject, so it is drawn rather than reduced to a tier dot;
+ * the tier dot remains the fallback for an award the server has not described.
+ */
+function newAwardMarkup(award: AchievementSummary): string {
+  const art = award.award
+    ? awardSvg(award.award, { size: award.award.type === 'ribbon' ? 46 : 34 })
+    : `<span class="career-medal" data-tier="${award.tier}" aria-hidden="true"></span>`;
+  return `<li>${art}<b>${escapeCareerHtml(award.name)}</b><small>${escapeCareerHtml(award.commendation)}</small></li>`;
+}
+
+/** The route from an unlock notice to the full record. */
+const LEGACY_LINK = '<button type="button" class="career-legacy-link" data-career-legacy>Commander Legacy →</button>';
+
 export type EndCareerState =
   | { status: 'none' }
   | { status: 'pending' }
-  | { status: 'recorded'; xp: number; snapshot: CareerSnapshot }
+  | {
+      status: 'recorded';
+      xp: number;
+      snapshot: CareerSnapshot;
+      rewards?: import('../accounts/client').CareerRewards | null;
+    }
   | { status: 'failed'; message: string };
 
 /**
@@ -323,13 +383,27 @@ export function endCareerMarkup(state: EndCareerState): string {
     </div>`;
   }
   const view = state.snapshot.view;
+  const level = view.level ?? levelForXp(view.totals.xp);
+  const promotion = state.rewards?.promoted && state.rewards.rankAfter
+    ? `<p class="career-promotion">PROMOTED TO ${escapeCareerHtml(state.rewards.rankAfter.name.toUpperCase())}</p>`
+    : state.rewards?.levelUp
+      ? `<p class="career-promotion">SERVICE LEVEL ${state.rewards.levelAfter}</p>`
+      : '';
+  const awards = state.rewards?.achievements ?? [];
+  const awardMarkup = awards.length > 0
+    ? `<ul class="career-new-awards" aria-label="New awards">${awards
+        .map(newAwardMarkup)
+        .join('')}</ul>${LEGACY_LINK}`
+    : '';
   return `<div class="end-career" data-state="recorded">
     <span class="career-insignia">${rankInsigniaSvg(view.rank, { label: `${view.rank.name} insignia` })}</span>
     <span class="end-career-text">
       <b>+${state.xp} CAREER XP</b>
-      <small>${escapeCareerHtml(view.rank.name)} · ${view.totals.xp.toLocaleString()} XP</small>
+      <small>${escapeCareerHtml(view.rank.name)} · LEVEL ${level.level.number} · ${view.totals.xp.toLocaleString()} XP</small>
     </span>
     <span class="end-career-source">${state.snapshot.source === 'guest' ? 'GUEST RECORD' : 'ACCOUNT'}</span>
+    ${promotion}
+    ${awardMarkup}
   </div>`;
 }
 
@@ -378,7 +452,36 @@ export function mpCareerSummaryMarkup(result: MatchResultView | null): string {
     <div class="career-progress" role="progressbar" aria-label="Progress to next rank"
       aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><i style="width:${percent}%"></i></div>
     <p class="career-next">${nextText}</p>
+    ${result.achievements && result.achievements.length > 0 ? `<ul class="career-new-awards" aria-label="New awards">${result.achievements.map(newAwardMarkup).join('')}</ul>${LEGACY_LINK}` : ''}
     ${reason}
     ${breakdown}
   </div>`;
+}
+
+/** Earned records and in-progress commendations for the service record. */
+export function careerAchievementsMarkup(entries: readonly AchievementView[]): string {
+  if (entries.length === 0) {
+    return '<p class="account-note">Commendations are recorded with an MCA account. Complete an operation to open the collection.</p>';
+  }
+  const earned = entries.filter((entry) => entry.complete);
+  const visible = entries.filter((entry) => !entry.hidden || entry.complete);
+  const cards = visible
+    .map((entry) => {
+      const percent = Math.round((entry.progress / Math.max(1, entry.target)) * 100);
+      return `<li class="career-commendation" data-category="${entry.category}" data-tier="${entry.tier}" data-state="${entry.complete ? 'earned' : 'progress'}">
+        <span class="career-medal" data-tier="${entry.tier}" aria-hidden="true"></span>
+        <span class="career-commendation-text">
+          <b>${escapeCareerHtml(entry.name)}</b>
+          <small>${ACHIEVEMENT_CATEGORY_LABEL[entry.category].toUpperCase()} · ${escapeCareerHtml(entry.commendation)}</small>
+          <span>${escapeCareerHtml(entry.description)}</span>
+        </span>
+        <span class="career-commendation-state">${entry.complete ? 'EARNED' : `${entry.progress} / ${entry.target}`}</span>
+        ${entry.complete ? '' : `<span class="career-commendation-bar" aria-hidden="true"><i style="width:${percent}%"></i></span>`}
+      </li>`;
+    })
+    .join('');
+  return `<section class="career-commendations" aria-label="Commendations">
+    <p class="section-title">COMMENDATIONS <span>${earned.length} / ${ACHIEVEMENTS.length}</span></p>
+    <ul class="career-commendation-list">${cards}</ul>
+  </section>`;
 }

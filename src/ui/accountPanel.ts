@@ -29,14 +29,21 @@ import {
 } from './careerView';
 import { AVATARS, CALLSIGN_CHANGES_PER_DAY } from '../accounts/identity';
 import type { MatchHistoryItem } from '../accounts/client';
+import { commanderLegacyMarkup } from './commanderLegacy';
 import { rankInsigniaSvg } from './rankInsignia';
-import { RANKS, rankForXp } from '../accounts/ranks';
+import { levelForXp } from '../accounts/levels';
 import {
   guestMigrationRequest,
   markGuestMigrated,
   type GuestProfile,
   type GuestStorage,
 } from '../accounts/guest';
+import { FlagStore } from '../identity/flagStore';
+import { EMPTY_PROGRESS, type CosmeticCategory, type CosmeticProgress } from '../identity/cosmetics';
+import { cosmeticsInventoryMarkup } from './cosmeticsInventory';
+import { commandFlagSvg } from './commandFlag';
+import { openFlagEditor } from './flagEditor';
+import { pushFlags as pushAccountFlags, syncFlags as hydrateAccountFlags } from '../identity/sync';
 
 export interface AccountPanelOptions {
   api: HttpAccountApi;
@@ -50,12 +57,14 @@ export interface AccountPanelOptions {
    * deck navigation, so the panel never sets a menu view itself.
    */
   navigate?: (view: 'account' | null) => void;
+  /** Open Commander Legacy from an award notification. */
+  openLegacy?: () => void;
 }
 
 type Notice = { level: 'info' | 'warning' | 'critical' | 'success'; text: string };
 
 /** The sections of the account screen, in rail order. */
-type AccountTab = 'account' | 'record';
+type AccountTab = 'account' | 'record' | 'legacy' | 'cosmetics';
 
 const PROVIDER_LABEL: Record<ProviderId, string> = { google: 'Google', discord: 'Discord' };
 
@@ -126,12 +135,40 @@ export class AccountPanel {
   private pendingAction: 'revoke-all' | 'migrate' | null = null;
   /** Which section the screen is showing. */
   private view: AccountTab = 'account';
+  /** Cosmetics category currently being browsed. */
+  private cosmeticFilter: CosmeticCategory | 'all' = 'all';
   private disposed = false;
   /** Paged service record, newest first. Empty until the record is opened. */
   private history: { items: MatchHistoryItem[]; hasMore: boolean } = { items: [], hasMore: false };
   private historyLoading = false;
   /** Draft identity while the player edits it. */
   private identityDraft: { callsign: string; avatar: string } | null = null;
+  /** Open the showcase from a notification, wherever the player is. */
+  private openLegacyOption(): void {
+    this.showLegacy();
+    this.options.navigate?.('account');
+  }
+
+  /** The equipped cosmetics that belong to this identity, never another's. */
+  private equippedCosmetics(): { frame: string | null; background: string | null; camo: string | null } {
+    const store = this.flagStore();
+    if (!store) return { frame: null, background: null, camo: null };
+    const owner = this.account?.id ?? null;
+    if (store.state.accountId !== owner) return { frame: null, background: null, camo: null };
+    return store.state.equipped;
+  }
+
+  /** Local command flags and equipped cosmetics. Created on first use. */
+  private flags: FlagStore | null = null;
+  /** Account whose flags have already been merged this session. */
+  private flagsSyncedFor: string | null = null;
+  /** Revision last acknowledged by the account service. */
+  private flagRevision = 0;
+  /** A local mutation has not been accepted by the account yet. */
+  private flagDirty = false;
+  private flagSyncing = false;
+  private flagSyncTimer: number | null = null;
+  private unsubscribeFlags: (() => void) | null = null;
 
   constructor(options: AccountPanelOptions) {
     this.options = options;
@@ -150,18 +187,31 @@ export class AccountPanel {
     for (const tab of this.tabs) {
       tab.addEventListener('click', () => {
         const target = tab.dataset.accountTab;
-        if (target !== 'account' && target !== 'record') return;
+        if (target !== 'account' && target !== 'record' && target !== 'legacy' && target !== 'cosmetics') return;
         this.view = target;
         this.render();
       });
     }
     this.body.addEventListener('click', (event) => void this.onBodyClick(event));
+    // An award notification can appear anywhere, including a result card, so
+    // its route to the showcase is delegated from the document rather than
+    // requiring every caller to know about this panel.
+    document.addEventListener('click', this.onLegacyLink);
+    window.addEventListener('online', this.onOnline);
     this.render();
     void this.refresh();
   }
 
   destroy(): void {
     this.disposed = true;
+    this.unsubscribeFlags?.();
+    this.unsubscribeFlags = null;
+    window.removeEventListener('online', this.onOnline);
+    document.removeEventListener('click', this.onLegacyLink);
+    if (this.flagSyncTimer !== null) {
+      window.clearTimeout(this.flagSyncTimer);
+      this.flagSyncTimer = null;
+    }
   }
 
   /** Called by the shell when the account screen becomes visible. */
@@ -169,6 +219,28 @@ export class AccountPanel {
     this.render();
     void this.refresh();
   }
+
+  /** Open the account screen on the Commander Legacy tab. */
+  showLegacy(): void {
+    this.view = 'legacy';
+    this.render();
+    void this.refresh();
+  }
+
+  /** Open the account screen on the cosmetics inventory. */
+  showCosmetics(): void {
+    this.view = 'cosmetics';
+    this.render();
+    void this.refresh();
+  }
+
+  private onLegacyLink = (event: MouseEvent): void => {
+    const target = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-career-legacy]');
+    if (!target) return;
+    event.preventDefault();
+    if (this.options.openLegacy) this.options.openLegacy();
+    else this.openLegacyOption();
+  };
 
   /** Called on returning to the menu, so a session ended elsewhere is noticed. */
   async refresh(): Promise<void> {
@@ -183,6 +255,7 @@ export class AccountPanel {
     if (this.options.career) {
       this.careerSnapshot = await this.options.career.load();
     }
+    await this.syncFlags();
     if (!this.disposed) this.render();
   }
 
@@ -274,12 +347,12 @@ export class AccountPanel {
       return;
     }
     const rank = snapshot.view.rank;
-    const level = rankForXp(snapshot.view.totals.xp).index + 1;
+    const level = snapshot.view.level ?? levelForXp(snapshot.view.totals.xp);
     wrap.hidden = false;
     insignia.innerHTML = rankInsigniaSvg(rank, { label: `${rank.name} insignia` });
     rankEl.textContent = rank.abbreviation;
-    levelEl.textContent = `LV ${level}`;
-    levelEl.title = `Level ${level} of ${RANKS.length} — ${rank.name} (${rank.grade})`;
+    levelEl.textContent = `LV ${level.level.number}`;
+    levelEl.title = `Service level ${level.level.number} of 50 — ${rank.name} (${rank.grade})`;
   }
 
   /**
@@ -296,12 +369,12 @@ export class AccountPanel {
     const standing = snapshot
       ? (() => {
           const rank = snapshot.view.rank;
-          const level = rankForXp(snapshot.view.totals.xp).index + 1;
+          const level = snapshot.view.level ?? levelForXp(snapshot.view.totals.xp);
           return `<div class="account-head-standing">
             <span class="account-head-insignia">${rankInsigniaSvg(rank, { label: `${rank.name} insignia` })}</span>
             <div class="account-head-standing-text">
               <b>${escapeHtml(rank.name)}</b>
-              <small>LEVEL ${level} OF ${RANKS.length} · ${snapshot.view.totals.xp.toLocaleString()} XP</small>
+              <small>LEVEL ${level.level.number} OF 50 · ${snapshot.view.totals.xp.toLocaleString()} XP</small>
             </div>
           </div>`;
         })()
@@ -324,6 +397,58 @@ export class AccountPanel {
   }
 
   private renderBody(): string {
+    if (this.view === 'legacy') {
+      const store = this.flagStore();
+      const equipped = this.equippedCosmetics();
+      const identity = this.account
+        ? (this.state?.identity ?? null)
+        : { callsign: this.options.guest?.callsign ?? 'Guest', avatar: 'insignia' };
+      return `<div class="account-legacy-view">
+        ${this.renderNotice()}
+        ${commanderLegacyMarkup({
+          snapshot: this.careerSnapshot,
+          identity,
+          flagHtml: store
+            ? commandFlagSvg(store.activeComposition(), { size: 148, title: 'Command flag' })
+            : undefined,
+          frame: equipped.frame,
+          background: equipped.background,
+        })}
+        <div class="legacy-actions">
+          <button type="button" class="account-secondary" data-account-action="record">Open service record</button>
+          <button type="button" class="account-secondary" data-account-action="account">Account settings</button>
+        </div>
+      </div>`;
+    }
+    if (this.view === 'cosmetics') {
+      const store = this.flagStore();
+      const identity = this.account
+        ? (this.state?.identity ?? null)
+        : { callsign: this.options.guest?.callsign ?? 'Guest', avatar: 'insignia' };
+      const snapshot = this.careerSnapshot;
+      const achievementNames: Record<string, string> = {};
+      for (const award of snapshot?.view.achievements ?? []) achievementNames[award.id] = award.name;
+      return `<div class="account-cosmetics-view">
+        ${this.renderNotice()}
+        ${cosmeticsInventoryMarkup({
+          progress: this.cosmeticProgress(),
+          equipped: this.equippedCosmetics(),
+          identity,
+          filter: this.cosmeticFilter,
+          signedIn: this.account !== null,
+          flagHtml: store
+            ? commandFlagSvg(store.activeComposition(), { size: 132, title: 'Command flag' })
+            : undefined,
+          rankName: snapshot?.view.rank.name ?? null,
+          grade: snapshot?.view.rank.grade ?? null,
+          achievementNames,
+        })}
+        <div class="legacy-actions">
+          <button type="button" class="account-secondary" data-account-action="record">Open service record</button>
+          <button type="button" class="account-secondary" data-account-action="legacy">Commander Legacy</button>
+        </div>
+      </div>`;
+    }
     if (this.view === 'record') {
       return `<div class="account-record-view">
         ${this.renderNotice()}
@@ -363,13 +488,33 @@ export class AccountPanel {
         })
         .join('');
       parts.push(`<div class="account-providers">${providerButtons}</div>`);
+      const guestStore = this.flagStore();
+      const guestEquipped = guestStore?.state.equipped ?? { frame: null, background: null };
+      const guestRank = this.careerSnapshot?.view.rank;
       parts.push(
         `<div class="account-guest">
+          ${identityBannerMarkup(
+            { callsign: guest?.callsign ?? 'Guest', avatar: 'insignia' },
+            guestRank?.name ?? 'Guest',
+            guestRank?.grade ?? 'Local profile',
+            this.careerSnapshot?.view.totals.xp ?? 0,
+            {
+              flagHtml: guestStore
+                ? commandFlagSvg(guestStore.activeComposition(), {
+                    size: 148,
+                    title: 'Local command flag',
+                  })
+                : undefined,
+              frame: guestEquipped.frame,
+              background: guestEquipped.background,
+            },
+          )}
           <p class="account-guest-name">${escapeHtml(guest?.callsign ?? 'Guest')}</p>
           <p class="account-note">Your identity on this device. Saves, settings and campaign progress stay here.</p>
           <button type="button" class="account-secondary" data-account-action="leave">Continue as guest</button>
         </div>`,
       );
+      parts.push(this.renderCommandFlag());
       parts.push(this.renderCareer());
       return parts.join('');
     }
@@ -452,21 +597,275 @@ export class AccountPanel {
           <span aria-hidden="true">${avatar.glyph}</span><small>${avatar.label}</small>
         </button>`,
     ).join('');
+    const flagStore = this.flagStore();
+    // Display only cosmetics that belong to this account. While hydration is
+    // in flight, or after an account switch, an old local document must not
+    // make another account appear to own its frame or background.
+    const equipped =
+      flagStore && flagStore.state.accountId === this.account?.id
+        ? flagStore.state.equipped
+        : { frame: null, background: null };
     return `<section class="account-identity-editor" aria-label="Player identity">
       ${identityBannerMarkup(
         this.state?.identity ?? null,
         this.careerSnapshot?.view.rank.name ?? 'Unranked',
         this.careerSnapshot?.view.rank.grade ?? '',
         this.careerSnapshot?.view.totals.xp ?? 0,
+        {
+          flagHtml: flagStore
+            ? commandFlagSvg(flagStore.activeComposition(), {
+                size: 148,
+                title: 'Personal command flag',
+              })
+            : undefined,
+          frame: equipped.frame,
+          background: equipped.background,
+        },
       )}
       <label class="account-field"><span>CALLSIGN</span>
         <input id="account-callsign" type="text" maxlength="20" minlength="3"
           autocomplete="off" spellcheck="false" value="${escapeHtml(current.callsign)}" />
       </label>
       <div class="account-avatars" role="group" aria-label="Avatar">${avatars}</div>
+      ${this.renderCommandFlag()}
       <button type="button" class="account-primary" data-account-action="save-identity">Save identity</button>
       <p class="account-note">Your callsign is how opponents see you in a lobby: 3–20 letters, digits, spaces, hyphens or underscores, up to ${CALLSIGN_CHANGES_PER_DAY} changes a day.</p>
     </section>`;
+  }
+
+  /**
+   * The command-flag row, shown to guests and accounts alike.
+   *
+   * A guest design lives in this browser; signing in later merges it into the
+   * account, so the editor must never be gated behind an account.
+   */
+  private renderCommandFlag(): string {
+    const store = this.flagStore();
+    return `<div class="account-flag-row">
+      <div class="account-flag-preview">${store ? commandFlagSvg(store.activeComposition(), { size: 148, title: 'Active command flag' }) : ''}</div>
+      <div class="account-flag-copy">
+        <span class="account-field-label">PERSONAL COMMAND FLAG</span>
+        <p class="account-note">Your own identity, separate from the national flag your force flies in a match. ${store ? 'Saved designs and profile cosmetics are chosen here.' : 'This browser has blocked the local storage flags need.'}</p>
+        <button type="button" class="account-secondary" data-account-action="flags">Edit command flag</button>
+      </div>
+    </div>`;
+  }
+
+  /**
+   * The local command-flag store, created on first use.
+   *
+   * A browser with blocked storage still plays: the store reports the failure
+   * on save and the panel says so rather than pretending the design was kept.
+   */
+  private flagStore(): FlagStore | null {
+    if (this.flags) return this.flags;
+    try {
+      if (typeof localStorage === 'undefined') return null;
+      this.flags = new FlagStore(localStorage);
+      this.unsubscribeFlags = this.flags.subscribe(() => this.onFlagMutation());
+      return this.flags;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Career progress that decides cosmetic unlocks.
+   *
+   * The same numbers the service record shows: XP, recorded matches and wins.
+   * A guest has local totals; an account has server totals. Locked items stay
+   * visible with the step that opens them, so the ladder is legible.
+   */
+  private cosmeticProgress(): CosmeticProgress {
+    const view = this.careerSnapshot?.view;
+    if (!view) return EMPTY_PROGRESS;
+    return {
+      xp: view.totals.xp,
+      matches: view.totals.matches,
+      wins: view.totals.victories,
+      achievements: (view.achievements ?? []).filter((entry) => entry.complete).map((entry) => entry.id),
+    };
+  }
+
+  private openFlags(): void {
+    const store = this.flagStore();
+    if (!store) {
+      this.notice = {
+        level: 'warning',
+        text: 'Command flags need local storage, which this browser has blocked. Guest play still works.',
+      };
+      this.render();
+      return;
+    }
+    openFlagEditor({
+      store,
+      progress: () => this.cosmeticProgress(),
+      onChange: () => this.render(),
+    });
+  }
+
+  /**
+   * Reconcile this browser's flags with the account once per signed-in session.
+   *
+   * A guest profile is merged additively. A document owned by this same account
+   * that still has pending edits is pushed as updates, so an edit made after the
+   * session expired keeps its design id instead of arriving as a duplicate. A
+   * clean cache adopts the account document. A failed read leaves local designs
+   * untouched and says nothing, because guest play must stay silent and useful
+   * without an account.
+   */
+  private async syncFlags(): Promise<void> {
+    const account = this.account;
+    const store = this.flagStore();
+    if (!account || !store) {
+      // Signing out ends the account session. The local document keeps its
+      // owner, so signing back into the same account can still import guest
+      // edits, while a different account adopts its own document instead.
+      if (this.flagsSyncedFor !== null) {
+        this.flagsSyncedFor = null;
+        this.flagRevision = 0;
+        this.flagDirty = false;
+        if (this.flagSyncTimer !== null) {
+          window.clearTimeout(this.flagSyncTimer);
+          this.flagSyncTimer = null;
+        }
+      }
+      return;
+    }
+    if (this.flagsSyncedFor === account.id) {
+      if (this.flagDirty) await this.flushFlagChanges();
+      return;
+    }
+    this.flagsSyncedFor = account.id;
+    this.flagRevision = 0;
+    this.flagDirty = false;
+    const mutations = store.mutationCount;
+    const result = await hydrateAccountFlags(store, this.options.api, Date.now(), account.id);
+    if (this.account?.id !== account.id) {
+      // The session changed while the read was in flight. Re-hydrate for the
+      // account that is signed in now rather than keeping the old document.
+      this.flagsSyncedFor = null;
+      void this.syncFlags();
+      return;
+    }
+    if (result.status === 'offline') {
+      // A failed hydration is not a completed one: retry on the next refresh.
+      this.flagsSyncedFor = null;
+      this.flagDirty = store.state.pending === true || store.mutationCount !== mutations;
+      return;
+    }
+    this.flagRevision = result.revision;
+    this.flagDirty = store.state.pending === true || store.mutationCount !== mutations;
+    if (this.flagDirty) this.scheduleFlagPush();
+    if (result.status === 'merged' || result.status === 'pushed') {
+      this.notice = {
+        level: 'success',
+        text:
+          result.imported > 0
+            ? `${result.imported} local flag design${result.imported === 1 ? '' : 's'} added to your account.`
+            : 'Command flags synchronised.',
+      };
+    }
+  }
+
+  private onFlagMutation = (): void => {
+    if (!this.account) return;
+    this.flagDirty = true;
+    this.scheduleFlagPush();
+  };
+
+  private onOnline = (): void => {
+    if (this.flagDirty) this.scheduleFlagPush();
+  };
+
+  /** Coalesce a burst of editor changes into one account write. */
+  private scheduleFlagPush(): void {
+    if (typeof window === 'undefined' || !this.flagDirty) return;
+    if (this.flagSyncTimer !== null) window.clearTimeout(this.flagSyncTimer);
+    this.flagSyncTimer = window.setTimeout(() => {
+      this.flagSyncTimer = null;
+      void this.flushFlagChanges();
+    }, 400);
+  }
+
+  /**
+   * Send the current local document to the signed-in account.
+   *
+   * A failed write keeps the document dirty, so the next edit, refresh or
+   * reconnect retries it. A write that finishes while the player has made a
+   * newer local edit is followed immediately by another, so the latest state
+   * wins instead of being replaced by the acknowledged older one.
+   */
+  private async flushFlagChanges(): Promise<void> {
+    const account = this.account;
+    const store = this.flagStore();
+    if (!account || !store || this.flagSyncing || !this.flagDirty) return;
+    if (store.state.accountId !== null && store.state.accountId !== account.id) return;
+    this.flagSyncing = true;
+    const mutations = store.mutationCount;
+    let succeeded = false;
+    try {
+      const result = await pushAccountFlags(
+        store,
+        this.options.api,
+        Date.now(),
+        account.id,
+        store.state.revision ?? this.flagRevision,
+      );
+      if (this.account?.id !== account.id) {
+        this.flagsSyncedFor = null;
+        void this.syncFlags();
+        return;
+      }
+      if (result.status === 'offline') {
+        this.flagDirty = true;
+        this.notice = {
+          level: 'warning',
+          text: result.error
+            ? `Command flags are saved on this device, but your account did not accept the change: ${result.error}`
+            : 'Command flags are saved on this device but could not reach your account yet. They will retry.',
+        };
+      } else {
+        succeeded = true;
+        this.flagRevision = result.revision;
+        this.flagDirty = store.state.pending === true || store.mutationCount !== mutations;
+      }
+    } finally {
+      this.flagSyncing = false;
+    }
+    if (succeeded && this.flagDirty) this.scheduleFlagPush();
+    if (!this.disposed) this.render();
+  }
+
+  /**
+   * Wear or remove one cosmetic.
+   *
+   * The local store applies the same ownership rule the account service
+   * enforces, so a locked item is refused here with the reason rather than
+   * being sent and refused later. A signed-in player's change is pushed by the
+   * store subscription, exactly like a flag edit.
+   */
+  private equipCosmetic(category: CosmeticCategory, id: string | null): void {
+    const store = this.flagStore();
+    if (!store) {
+      this.notice = {
+        level: 'warning',
+        text: 'Cosmetics need local storage, which this browser has blocked.',
+      };
+      this.render();
+      return;
+    }
+    const result = store.equip(category, id, this.cosmeticProgress());
+    if (!result.ok) {
+      this.notice = { level: 'warning', text: result.error ?? 'That cosmetic cannot be equipped.' };
+      this.render();
+      return;
+    }
+    this.notice = {
+      level: 'success',
+      text: id === null ? 'Cosmetic removed.' : 'Cosmetic equipped.',
+    };
+    this.render();
   }
 
   private async loadHistory(reset: boolean): Promise<void> {
@@ -502,6 +901,8 @@ export class AccountPanel {
     return `<section class="account-career" aria-label="Service record">
       ${careerSummaryMarkup(this.careerSnapshot)}
       ${careerHistoryMarkup(this.careerSnapshot, 4)}
+      <button type="button" class="account-secondary" data-account-action="legacy">Commander Legacy</button>
+      <button type="button" class="account-secondary" data-account-action="cosmetics">Cosmetics inventory</button>
       <button type="button" class="account-secondary" data-account-action="record">Open service record</button>
     </section>`;
   }
@@ -530,11 +931,45 @@ export class AccountPanel {
   }
 
   private async onBodyClick(event: MouseEvent): Promise<void> {
-    const target = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-account-action]');
+    const clicked = (event.target as HTMLElement | null) ?? null;
+    const filter = clicked?.closest<HTMLElement>('[data-account-filter]');
+    if (filter) {
+      const value = filter.dataset.accountFilter ?? 'all';
+      this.cosmeticFilter =
+        value === 'frame' || value === 'background' || value === 'camo' || value === 'emblem'
+          ? value
+          : 'all';
+      this.render();
+      return;
+    }
+    const equip = clicked?.closest<HTMLElement>('[data-cosmetic-equip]');
+    if (equip) {
+      const [category, ...rest] = (equip.dataset.cosmeticEquip ?? '').split(':');
+      if (category === 'frame' || category === 'background' || category === 'camo') {
+        this.equipCosmetic(category, rest.join(':') || null);
+      }
+      return;
+    }
+    const target = clicked?.closest<HTMLElement>('[data-account-action]');
     if (!target) return;
     const action = target.dataset.accountAction ?? '';
     if (action === 'leave') {
       this.options.navigate?.(null);
+      return;
+    }
+    if (action === 'account') {
+      this.view = 'account';
+      this.render();
+      return;
+    }
+    if (action === 'legacy') {
+      this.view = 'legacy';
+      this.render();
+      return;
+    }
+    if (action === 'cosmetics') {
+      this.view = 'cosmetics';
+      this.render();
       return;
     }
     if (action === 'record') {
@@ -558,6 +993,10 @@ export class AccountPanel {
         '';
       this.identityDraft = { callsign, avatar: target.dataset.avatar ?? 'insignia' };
       this.render();
+      return;
+    }
+    if (action === 'flags') {
+      this.openFlags();
       return;
     }
     if (action === 'save-identity') {

@@ -13,6 +13,7 @@ import {
   LOBBY_COLORS,
   DEFAULT_MATCH_DURATION_MS,
   MAX_MATCH_DURATION_MS,
+  MIN_MATCH_DURATION_MS,
   type LobbyConfigV1,
 } from '../src/multiplayer/lobbyConfig';
 import { DEFAULT_RESERVATION_POLICY } from '../src/multiplayer/reservationPolicy';
@@ -226,6 +227,22 @@ async function createRoom(
         method: 'POST',
         headers: adminHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ mode: '1v1', matchDurationMs: durationMs }),
+      }),
+    ),
+  );
+}
+
+async function openPublicRoom(
+  h: Harness,
+  durationMs: number,
+): Promise<{ status: number } & Record<string, unknown>> {
+  const room = await open(h);
+  return readJson(
+    await room.fetch(
+      new Request(url(h, 'open'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roomId: h.roomId, mode: '1v1', matchDurationMs: durationMs }),
       }),
     ),
   );
@@ -486,6 +503,75 @@ describe('Phase 2B.1 lobby authority', () => {
     });
     room.disconnect(0, room.socketFor(0)!);
     expect(room.occupancy()[0]).toEqual({ joined: true, connected: false });
+  });
+});
+
+describe('Phase 2B.1 verified identity refresh', () => {
+  it('updates a seat before start, freezes it at start and refuses later refreshes', async () => {
+    const h = harness('phase4b-live-identity');
+    const room = await open(h);
+    const account = 'phase4b-host-account-00000000';
+    const initial = {
+      callsign: 'Sable',
+      avatar: 'eagle',
+      rank: 'corporal',
+      frame: 'frame-brass',
+      background: 'bg-deep',
+    };
+    const opened = await room.fetch(
+      new Request(url(h, 'open'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-MCA-Verified-Account': account,
+          'X-MCA-Verified-Identity': JSON.stringify(initial),
+        },
+        body: JSON.stringify({ mode: '1v1', matchDurationMs: DURATION_MS }),
+      }),
+    );
+    expect(opened.status).toBe(200);
+    const tokens = seatTokens(h);
+
+    const changed = { ...initial, callsign: 'Sable-2', frame: 'frame-steel' };
+    const refreshed = await room.fetch(
+      new Request(url(h, 'identity'), {
+        method: 'POST',
+        headers: {
+          Authorization: `Room ${tokens[0]}`,
+          'Content-Type': 'application/json',
+          'X-MCA-Verified-Account': account,
+          'X-MCA-Verified-Identity': JSON.stringify(changed),
+        },
+        body: '{}',
+      }),
+    );
+    expect(refreshed.status).toBe(200);
+    expect(lobby(h).state(0).config.seats[0].identity).toMatchObject({
+      callsign: 'Sable-2',
+      frame: 'frame-steel',
+    });
+
+    const joined = joinBoth(h);
+    expect(joined.host.last()).toMatchObject({ type: 'lobby' });
+    const started = await startMatch(h, 0);
+    expect(started.status).toBe(200);
+    const match = matchOf(h.current!) as RoomMatch;
+    expect(match.identityFor(0)).toMatchObject({ callsign: 'Sable-2', frame: 'frame-steel' });
+
+    const later = await room.fetch(
+      new Request(url(h, 'identity'), {
+        method: 'POST',
+        headers: {
+          Authorization: `Room ${tokens[0]}`,
+          'Content-Type': 'application/json',
+          'X-MCA-Verified-Account': account,
+          'X-MCA-Verified-Identity': JSON.stringify({ ...initial, frame: 'frame-brass' }),
+        },
+        body: '{}',
+      }),
+    );
+    expect(later.status).toBe(409);
+    expect(match.identityFor(0)?.frame).toBe('frame-steel');
   });
 });
 
@@ -1117,6 +1203,25 @@ describe('Phase 2B.1 seat socket ownership after the start', () => {
 /* ------------------------------------------------------------------ */
 
 describe('Phase 2B.1 documented defaults', () => {
+  it('refuses durations below the lobby minimum instead of creating an unstartable room', async () => {
+    for (const duration of [12_000, MIN_MATCH_DURATION_MS - 1]) {
+      const h = harness(`phase2b1-short-${duration}`);
+      const created = await openPublicRoom(h, duration);
+      expect(created.status).toBe(400);
+      expect(created.code).toBe('invalid-duration');
+      expect(h.storage.raw(ROOM_STORAGE_KEYS.meta)).toBeUndefined();
+    }
+
+    const h = harness('phase2b1-duration-floor');
+    const created = await openPublicRoom(h, MIN_MATCH_DURATION_MS);
+    expect(created.status).toBe(200);
+    expect(created.matchDurationMs).toBe(MIN_MATCH_DURATION_MS);
+    const meta = h.storage.raw(ROOM_STORAGE_KEYS.meta) as { lobbyConfig: LobbyConfigV1 };
+    expect(meta.lobbyConfig.matchDurationMs).toBe(MIN_MATCH_DURATION_MS);
+    joinBoth(h);
+    expect((await startMatch(h, 0)).status).toBe(200);
+  });
+
   it('uses the default competitive map and the reservation duration until the lobby edits them', async () => {
     const h = harness();
     expect((await createRoom(h, DEFAULT_MATCH_DURATION_MS)).phase).toBe('lobby');

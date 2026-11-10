@@ -11,18 +11,23 @@ import { EMPTY_CAREER, summariseCareer } from './career';
 import type {
   AccountRecord,
   AccountStore,
+  AchievementAwardWrite,
+  CareerAchievementRecord,
+  CareerCampaignRecord,
   CareerEntryWrite,
   GuestMigrationRecord,
   IdentityRecord,
   MatchReportRecord,
   MpResultPlayerRecord,
   NewIdentity,
+  PlayerIdentityDocument,
   PlayerProfileRecord,
   ProviderId,
   SessionRecord,
   WriteOutcome,
 } from './types';
 import type { StatGroupRow } from './stats';
+
 
 export class MemoryAccountStore implements AccountStore {
   private accounts = new Map<string, AccountRecord>();
@@ -35,6 +40,9 @@ export class MemoryAccountStore implements AccountStore {
   private profiles = new Map<string, PlayerProfileRecord>();
   private reports = new Map<string, MatchReportRecord>();
   private audit = new Map<string, MpResultPlayerRecord>();
+  private flagDocuments = new Map<string, PlayerIdentityDocument>();
+  private achievements = new Map<string, CareerAchievementRecord>();
+  private campaigns = new Map<string, CareerCampaignRecord>();
 
   /** Test hook: change an account's status without going through a route. */
   setStatus(accountId: string, status: AccountRecord['status']): void {
@@ -164,6 +172,17 @@ export class MemoryAccountStore implements AccountStore {
     return 'ok';
   }
 
+  async completeGuestMigration(
+    guestId: string,
+    accountId: string,
+    completedAt: number,
+  ): Promise<WriteOutcome> {
+    const record = this.migrations.get(guestId);
+    if (!record || record.accountId !== accountId || record.state !== 'pending') return 'conflict';
+    this.migrations.set(guestId, { ...record, state: 'complete', completedAt });
+    return 'ok';
+  }
+
   async recordCareerMatch(accountId: string, record: CareerMatchRecord): Promise<WriteOutcome> {
     const rows = this.career.get(accountId) ?? [];
     if (rows.some((existing) => existing.ref === record.ref)) return 'conflict';
@@ -235,6 +254,30 @@ export class MemoryAccountStore implements AccountStore {
     return 'ok';
   }
 
+  async playerIdentityDocument(accountId: string): Promise<PlayerIdentityDocument | null> {
+    const document = this.flagDocuments.get(accountId);
+    if (!document) return null;
+    return {
+      ...document,
+      designs: document.designs.map((flag) => ({ ...flag })),
+    };
+  }
+
+  async savePlayerIdentityDocument(
+    accountId: string,
+    document: PlayerIdentityDocument,
+    expectedRevision: number,
+  ): Promise<WriteOutcome> {
+    const current = this.flagDocuments.get(accountId);
+    if ((current?.revision ?? 0) !== expectedRevision) return 'conflict';
+    this.flagDocuments.set(accountId, {
+      ...document,
+      designs: document.designs.map((flag) => ({ ...flag })),
+      revision: expectedRevision + 1,
+    });
+    return 'ok';
+  }
+
   async recordCareerEntry(entry: CareerEntryWrite): Promise<WriteOutcome> {
     const rows = this.career.get(entry.accountId) ?? [];
     if (rows.some((existing) => existing.ref === entry.record.ref)) return 'conflict';
@@ -268,6 +311,50 @@ export class MemoryAccountStore implements AccountStore {
   async matchReport(accountId: string, ref: string): Promise<MatchReportRecord | null> {
     const report = this.reports.get(`${accountId}:${ref}`);
     return report ? { ...report } : null;
+  }
+
+  async awardedAchievements(accountId: string): Promise<CareerAchievementRecord[]> {
+    return [...this.achievements.values()]
+      .filter((record) => record.accountId === accountId)
+      .sort((left, right) => left.awardedAt - right.awardedAt || left.achievementId.localeCompare(right.achievementId))
+      .map((record) => ({ ...record }));
+  }
+
+  async achievementsForMatch(accountId: string, matchRef: string): Promise<CareerAchievementRecord[]> {
+    return [...this.achievements.values()]
+      .filter((record) => record.accountId === accountId && record.matchRef === matchRef)
+      .sort((left, right) => left.awardedAt - right.awardedAt || left.achievementId.localeCompare(right.achievementId))
+      .map((record) => ({ ...record }));
+  }
+
+  async recordAchievements(accountId: string, awards: readonly AchievementAwardWrite[]): Promise<number> {
+    let inserted = 0;
+    for (const award of awards) {
+      const key = `${accountId}:${award.achievementId}`;
+      if (this.achievements.has(key)) continue;
+      this.achievements.set(key, {
+        accountId,
+        achievementId: award.achievementId,
+        awardedAt: award.awardedAt,
+        matchRef: award.matchRef,
+      });
+      inserted += 1;
+    }
+    return inserted;
+  }
+
+  async recordCampaignCompletion(accountId: string, campaignId: string, completedAt: number): Promise<WriteOutcome> {
+    const key = `${accountId}:${campaignId}`;
+    if (this.campaigns.has(key)) return 'conflict';
+    this.campaigns.set(key, { accountId, campaignId, completedAt });
+    return 'ok';
+  }
+
+  async careerCampaigns(accountId: string): Promise<CareerCampaignRecord[]> {
+    return [...this.campaigns.values()]
+      .filter((record) => record.accountId === accountId)
+      .sort((left, right) => left.completedAt - right.completedAt || left.campaignId.localeCompare(right.campaignId))
+      .map((record) => ({ ...record }));
   }
 
   async careerStatRows(accountId: string): Promise<StatGroupRow[]> {

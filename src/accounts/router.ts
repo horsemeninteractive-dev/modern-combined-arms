@@ -7,12 +7,23 @@
  * to be tested without Wrangler, a network or a real OAuth provider.
  */
 import {
+  careerAccomplishmentXp,
   careerRecord,
   careerViewFrom,
   parseCareerMatch,
   MAX_GUEST_IMPORT_MATCHES,
   type CareerMatchInput,
 } from './career';
+import {
+  achievementById,
+  awardForAchievement,
+  buildAchievementView,
+  pendingAchievementIds,
+  type AchievementContext,
+  type AchievementMatchFacts,
+} from './achievements';
+import { levelForXp } from './levels';
+import { completedCampaignFor } from './campaignLegacy';
 import {
   CALLSIGN_CHANGES_PER_DAY,
   DEFAULT_AVATAR,
@@ -34,7 +45,14 @@ import {
   type MpPlayerResult,
 } from './matchCareer';
 import { buildCareerStats } from './stats';
-import type { CareerEntryWrite, MatchReportRecord, MpResultPlayerRecord, PlayerProfileRecord } from './types';
+import type {
+  AchievementAwardWrite,
+  CareerAchievementRecord,
+  CareerEntryWrite,
+  MatchReportRecord,
+  MpResultPlayerRecord,
+  PlayerProfileRecord,
+} from './types';
 import { rankForXp } from './ranks';
 import { safeEqual } from './crypto';
 import { randomToken } from './crypto';
@@ -61,6 +79,14 @@ import {
   type RateLimitRule,
 } from './types';
 
+import {
+  parseFlagSubmission,
+  usableComposition,
+  type FlagSyncDocument,
+} from '../identity/flagSync';
+import type { FlagDesign } from '../identity/flag';
+import { cosmeticById } from '../identity/cosmetics';
+
 export interface AccountDeps {
   store: AccountStore;
   config: AccountConfig;
@@ -71,7 +97,25 @@ export interface AccountDeps {
 const HISTORY_PAGE_SIZE = 20;
 const MAX_HISTORY_PAGE_SIZE = 50;
 
-const MAX_BODY_BYTES = 8 * 1024;
+// Eight maximal designs plus their presentation exceed 8 KiB legitimately.
+const MAX_BODY_BYTES = 64 * 1024;
+
+function achievementSummary(id: string): Record<string, unknown> {
+  const definition = achievementById(id);
+  if (!definition) return { id };
+  return {
+    id: definition.id,
+    name: definition.name,
+    description: definition.description,
+    category: definition.category,
+    tier: definition.tier,
+    commendation: definition.commendation,
+    reward: definition.reward ?? null,
+    // The award is what the end card draws; without it an account unlock would
+    // show a tier dot while a guest's own unlock shows the medal.
+    award: awardForAchievement(definition.id),
+  };
+}
 
 function baseHeaders(): Record<string, string> {
   return {
@@ -396,6 +440,12 @@ class Router {
       return this.recordMatch(request);
     }
 
+    if (segments[0] === 'flags' && segments.length === 1) {
+      if (request.method === 'GET') return this.flagsRead(request);
+      if (request.method === 'POST') return this.flagsSave(request);
+      throw new AccountError('method-not-allowed', 'Use GET or POST for this endpoint.', 405);
+    }
+
     if (segments[0] === 'multiplayer' && segments[1] === 'ticket' && segments.length === 2) {
       if (request.method !== 'POST') throw new AccountError('method-not-allowed', 'Use POST for this endpoint.', 405);
       const resolved = await this.requireSession(request);
@@ -409,11 +459,23 @@ class Router {
       // that can say what it is: neither the room nor the browser may choose it.
       const profile = await this.identityFor(resolved.account.id);
       const totals = await this.deps.store.careerTotals(resolved.account.id);
+      // The flag and equipped profile cosmetics travel inside the signed
+      // identity, so the lobby can show them without a mid-match call back to
+      // this service. They are read from the account document, never supplied
+      // by the browser; an invalid stored reference simply travels as absent.
+      const flags = await this.flagsView(resolved.account.id);
+      const flag = flags.designs.find((design) => design.id === flags.activeId)?.composition;
       const ticket = await issueTicket(
         this.config.ticketSecret,
         resolved.account.id,
         this.now,
-        { ...this.identityView(profile), rank: rankForXp(totals.xp).rank.id },
+        {
+          ...this.identityView(profile),
+          rank: rankForXp(totals.xp).rank.id,
+          ...(flag ? { flag } : {}),
+          ...(flags.equipped.frame ? { frame: flags.equipped.frame } : {}),
+          ...(flags.equipped.background ? { background: flags.equipped.background } : {}),
+        },
       );
       return jsonResponse({ ok: true, ...ticket });
     }
@@ -627,20 +689,74 @@ class Router {
     limit = HISTORY_PAGE_SIZE,
     offset = 0,
   ): Promise<unknown> {
-    const [totals, matches, rows, profile] = await Promise.all([
+    const [totals, matches, rows, profile, awards, campaigns] = await Promise.all([
       this.deps.store.careerTotals(accountId),
       this.deps.store.careerMatches(accountId, limit, offset),
       this.deps.store.careerStatRows(accountId),
       this.identityFor(accountId),
+      this.deps.store.awardedAchievements(accountId),
+      this.deps.store.careerCampaigns(accountId),
     ]);
+    const stats = buildCareerStats(rows);
+    const context: AchievementContext = {
+      totals,
+      stats,
+      earnedIds: awards.map((award) => award.achievementId),
+      match: null,
+      completedCampaignIds: campaigns.map((campaign) => campaign.campaignId),
+    };
+    const awardedAt = new Map(awards.map((award) => [award.achievementId, award.awardedAt]));
     return {
       ...careerViewFrom(totals, matches),
-      // XP and rank come from the ledger above; every other figure is grouped
-      // from the same ledger, so a profile cannot disagree with its history.
-      stats: buildCareerStats(rows),
+      // XP, rank and level come from the ledger above; every other figure is
+      // grouped from the same ledger, so a profile cannot disagree with history.
+      stats,
+      achievements: buildAchievementView(context, awardedAt),
+      campaigns: campaigns.map((campaign) => ({
+        campaignId: campaign.campaignId,
+        completedAt: campaign.completedAt,
+      })),
       identity: this.identityView(profile),
       page: { limit, offset },
     };
+  }
+
+  /**
+   * Evaluate and persist any newly earned commendations for one match.
+   *
+   * The match has already been validated by the caller. Progress is rebuilt
+   * from the ledger, never from the request, and the store's unique key makes
+   * the write idempotent. Returning only awards attached to this reference keeps
+   * a retry from replaying an old unlock notification.
+   */
+  private async awardAchievements(
+    accountId: string,
+    match: AchievementMatchFacts,
+    matchRef: string,
+  ): Promise<CareerAchievementRecord[]> {
+    const [totals, rows, awarded, campaigns] = await Promise.all([
+      this.deps.store.careerTotals(accountId),
+      this.deps.store.careerStatRows(accountId),
+      this.deps.store.awardedAchievements(accountId),
+      this.deps.store.careerCampaigns(accountId),
+    ]);
+    const context: AchievementContext = {
+      totals,
+      stats: buildCareerStats(rows),
+      earnedIds: awarded.map((award) => award.achievementId),
+      match,
+      completedCampaignIds: campaigns.map((campaign) => campaign.campaignId),
+    };
+    const pending = pendingAchievementIds(context);
+    if (pending.length === 0) return [];
+    const writes: AchievementAwardWrite[] = pending.map((achievementId) => ({
+      achievementId,
+      awardedAt: this.now,
+      matchRef,
+    }));
+    const inserted = await this.deps.store.recordAchievements(accountId, writes);
+    if (inserted === 0) return [];
+    return this.deps.store.achievementsForMatch(accountId, matchRef);
   }
 
   /**
@@ -696,8 +812,10 @@ class Router {
     if (parsed.value.mode === 'multiplayer') {
       throw new AccountError('invalid-request', 'Multiplayer results are recorded by the room service.', 400);
     }
-    const record = careerRecord(parsed.value, { provenance: 'local', now: this.now });
     const stats = parseExtraStats(body.stats);
+    const record = careerRecord(parsed.value, { provenance: 'local', now: this.now });
+    record.xp += careerAccomplishmentXp(stats);
+    const totalsBefore = await this.deps.store.careerTotals(resolved.account.id);
     const report: MatchReportRecord = {
       ref: record.ref,
       mode: record.mode,
@@ -727,10 +845,49 @@ class Router {
       report,
       audit: null,
     });
+    const campaignMatches = await this.deps.store.careerMatches(
+      resolved.account.id,
+      MAX_GUEST_IMPORT_MATCHES,
+    );
+    const completedCampaign = completedCampaignFor(record, campaignMatches);
+    if (completedCampaign) {
+      await this.deps.store.recordCampaignCompletion(
+        resolved.account.id,
+        completedCampaign,
+        this.now,
+      );
+    }
+    const newAwards = await this.awardAchievements(resolved.account.id, {
+      mode: record.mode,
+      outcome: record.outcome,
+      nation: record.nation,
+      durationSeconds: record.durationSeconds,
+      unitsDestroyed: report.unitsDestroyed,
+      unitsLost: report.unitsLost,
+      structuresDestroyed: report.structuresDestroyed,
+      structuresBuilt: report.structuresBuilt,
+      sitesCaptured: report.sitesCaptured,
+      superweaponsUsed: report.superweaponsUsed,
+      objectivesCompleted: report.objectivesCompleted,
+    }, record.ref);
+    const xpAwarded = outcome === 'ok' ? record.xp : 0;
+    const levelBefore = levelForXp(totalsBefore.xp).level.number;
+    const levelAfter = levelForXp(totalsBefore.xp + xpAwarded).level.number;
+    const rankBefore = rankForXp(totalsBefore.xp).rank;
+    const rankAfter = rankForXp(totalsBefore.xp + xpAwarded).rank;
     return jsonResponse({
       ok: true,
       recorded: outcome === 'ok',
-      award: { xp: outcome === 'ok' ? record.xp : 0 },
+      award: { xp: xpAwarded },
+      rewards: {
+        achievements: newAwards.map((award) => achievementSummary(award.achievementId)),
+        levelBefore,
+        levelAfter,
+        levelUp: levelAfter > levelBefore,
+        rankBefore,
+        rankAfter,
+        promoted: rankAfter.id !== rankBefore.id,
+      },
       career: await this.careerView(resolved.account.id),
     });
   }
@@ -746,6 +903,151 @@ class Router {
    * lobby can never show two identical names. The account id is untouched, which
    * is why match history and seat ownership survive the change.
    */
+  /** The signed-in player's saved flags, active design and equipped cosmetics. */
+  private async flagsRead(request: Request): Promise<Response> {
+    const resolved = await this.requireSession(request);
+    return jsonResponse({ ok: true, flags: await this.flagsView(resolved.account.id) });
+  }
+
+  /**
+   * Replace the account's flag document.
+   *
+   * Everything is validated before the first write: compositions against the
+   * same parser the renderer uses, design count and size limits, the active
+   * design against the submitted set, and equipped cosmetics against progress
+   * this service derived from its own ledger. A client cannot grant itself an
+   * emblem, a frame or a background by editing the request.
+   *
+   * `expectedRevision` makes the write optimistic: a stale submission is refused
+   * with the newest document instead of overwriting another device's edit.
+   */
+  private async flagsSave(request: Request): Promise<Response> {
+    const resolved = await this.requireSession(request);
+    await enforceRateLimit(this.deps, 'flags', RATE_LIMITS.mutate, request, resolved.account.id);
+    const body = await readJsonBody(request);
+    const [totals, awards] = await Promise.all([
+      this.deps.store.careerTotals(resolved.account.id),
+      this.deps.store.awardedAchievements(resolved.account.id),
+    ]);
+    const parsed = parseFlagSubmission(
+      body,
+      {
+        xp: totals.xp,
+        matches: totals.matches,
+        wins: totals.victories,
+        achievements: awards.map((award) => award.achievementId),
+      },
+      this.now,
+    );
+    if (!parsed.ok) {
+      throw new AccountError('invalid-request', parsed.issues[0] ?? 'That flag document is not valid.', 400);
+    }
+    const current = await this.deps.store.playerIdentityDocument(resolved.account.id);
+    const revision = current?.revision ?? 0;
+    if (parsed.submission.expectedRevision !== revision) {
+      return jsonResponse(
+        {
+          ok: false,
+          error: {
+            code: 'stale-write',
+            message: 'These flags changed on another device. The newest version is included.',
+          },
+          flags: await this.flagsView(resolved.account.id),
+        },
+        409,
+      );
+    }
+    const written = await this.deps.store.savePlayerIdentityDocument(
+      resolved.account.id,
+      {
+        designs: parsed.submission.designs.map((design) => ({
+          accountId: resolved.account.id,
+          designId: design.id,
+          name: design.name,
+          composition: JSON.stringify(design.composition),
+          schemaVersion: design.schemaVersion,
+          createdAt: design.createdAt,
+          updatedAt: this.now,
+        })),
+        activeDesignId: parsed.submission.activeId,
+        frame: parsed.submission.equipped.frame,
+        background: parsed.submission.equipped.background,
+        camo: parsed.submission.equipped.camo,
+        revision: revision + 1,
+        updatedAt: this.now,
+      },
+      revision,
+    );
+    if (written === 'conflict') {
+      return jsonResponse(
+        {
+          ok: false,
+          error: {
+            code: 'stale-write',
+            message: 'These flags changed on another device. The newest version is included.',
+          },
+          flags: await this.flagsView(resolved.account.id),
+        },
+        409,
+      );
+    }
+    return jsonResponse({ ok: true, flags: await this.flagsView(resolved.account.id) });
+  }
+
+  /**
+   * Read the stored document, dropping any design this build cannot render.
+   *
+   * Stored compositions were validated when written, but a renderer change or a
+   * damaged row must degrade to a missing design, never to a broken profile.
+   */
+  private async flagsView(accountId: string): Promise<FlagSyncDocument> {
+    const document = await this.deps.store.playerIdentityDocument(accountId);
+    if (!document) {
+      return {
+        designs: [],
+        activeId: null,
+        equipped: { frame: null, background: null, camo: null },
+        revision: 0,
+      };
+    }
+    const designs: FlagDesign[] = [];
+    for (const record of document.designs) {
+      let composition: unknown = null;
+      try {
+        composition = JSON.parse(record.composition);
+      } catch {
+        composition = null;
+      }
+      const usable = usableComposition(composition);
+      if (!usable) continue;
+      designs.push({
+        id: record.designId,
+        name: record.name,
+        composition: usable,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+        schemaVersion: usable.version,
+      });
+    }
+    const ids = new Set(designs.map((design) => design.id));
+    const active = document.activeDesignId && ids.has(document.activeDesignId)
+      ? document.activeDesignId
+      : null;
+    const frame = cosmeticById(document.frame);
+    const background = cosmeticById(document.background);
+    const camo = cosmeticById(document.camo);
+    return {
+      designs,
+      activeId: active,
+      equipped: {
+        frame: frame?.category === 'frame' ? frame.id : null,
+        background: background?.category === 'background' ? background.id : null,
+        camo: camo?.category === 'camo' ? camo.id : null,
+      },
+      revision: document.revision,
+    };
+  }
+
   private async updateIdentity(request: Request): Promise<Response> {
     const resolved = await this.requireSession(request);
     await enforceRateLimit(this.deps, 'identity', RATE_LIMITS.mutate, request, resolved.account.id);
@@ -806,9 +1108,10 @@ class Router {
     const key = callsignKey(decodeURIComponent(rawCallsign));
     const profile = await this.deps.store.profileByCallsignKey(key);
     if (!profile) throw new AccountError('not-found', 'No player uses that callsign.', 404);
-    const [totals, rows] = await Promise.all([
+    const [totals, rows, awards] = await Promise.all([
       this.deps.store.careerTotals(profile.accountId),
       this.deps.store.careerStatRows(profile.accountId),
+      this.deps.store.awardedAchievements(profile.accountId),
     ]);
     const stats = buildCareerStats(rows);
     const standing = rankForXp(totals.xp);
@@ -818,6 +1121,7 @@ class Router {
         callsign: profile.callsign,
         avatar: profile.avatar,
         rank: standing.rank,
+        level: levelForXp(totals.xp).level.number,
         xp: totals.xp,
         progress: standing.progress,
         matches: stats.overall.matches,
@@ -825,6 +1129,7 @@ class Router {
         playSeconds: stats.overall.playSeconds,
         multiplayer: stats.modes.multiplayer,
         nations: stats.nations,
+        commendations: awards.length,
       },
     });
   }
@@ -843,6 +1148,9 @@ class Router {
       records.map(async (match) => ({
         match,
         report: await this.deps.store.matchReport(resolved.account.id, match.ref),
+        achievements: (await this.deps.store.achievementsForMatch(resolved.account.id, match.ref)).map(
+          (award) => achievementSummary(award.achievementId),
+        ),
       })),
     );
     return jsonResponse({
@@ -860,6 +1168,9 @@ class Router {
       ok: true,
       match,
       report: await this.deps.store.matchReport(resolved.account.id, ref),
+      achievements: (await this.deps.store.achievementsForMatch(resolved.account.id, ref)).map(
+        (award) => achievementSummary(award.achievementId),
+      ),
     });
   }
 
@@ -882,11 +1193,13 @@ class Router {
     const xpAfter = report?.xpAfter ?? xpBefore + match.xp;
     const before = rankForXp(xpBefore);
     const after = rankForXp(xpAfter);
+    const matchAwards = await this.deps.store.achievementsForMatch(resolved.account.id, ref);
     return jsonResponse({
       ok: true,
       status: 'recorded',
       matchRef: ref,
       match,
+      achievements: matchAwards.map((award) => achievementSummary(award.achievementId)),
       award: {
         xp: match.xp,
         status: report?.rewardStatus ?? 'awarded',
@@ -989,6 +1302,21 @@ class Router {
       };
       const entry: CareerEntryWrite = { accountId, record, report, audit };
       const written = await this.deps.store.recordCareerEntry(entry);
+      // The server result is already validated. Achievement progress is
+      // rebuilt from the account's ledger and this player's reported facts.
+      await this.awardAchievements(accountId, {
+        mode: 'multiplayer',
+        outcome,
+        nation: player.nation,
+        durationSeconds,
+        unitsDestroyed: player.stats.unitsDestroyed,
+        unitsLost: player.stats.unitsLost,
+        structuresDestroyed: player.stats.structuresDestroyed,
+        structuresBuilt: player.stats.structuresBuilt,
+        sitesCaptured: player.stats.sitesCaptured,
+        superweaponsUsed: player.stats.superweaponsUsed,
+        objectivesCompleted: player.stats.objectivesCompleted,
+      }, result.matchId);
       players.push({
         seat: player.team,
         accountId,
@@ -1066,17 +1394,22 @@ class Router {
           409,
         );
       }
-      return jsonResponse({
-        ok: true,
-        status: 'already-migrated',
-        migratedAt: existing.completedAt,
-        importedXp: 0,
-        career: await this.careerView(accountId),
-      });
+      if (existing.state === 'complete') {
+        return jsonResponse({
+          ok: true,
+          status: 'already-migrated',
+          migratedAt: existing.completedAt,
+          importedXp: 0,
+          career: await this.careerView(accountId),
+        });
+      }
+      // A pending reservation is this account's own interrupted import. The
+      // career writes below are idempotent by match reference, so resuming
+      // finishes the job without paying twice.
     }
 
     const other = await this.deps.store.guestMigrationForAccount(accountId);
-    if (other) {
+    if (other && other.guestId !== guestId) {
       throw new AccountError(
         'account-already-migrated',
         'This account has already imported a guest profile.',
@@ -1084,15 +1417,49 @@ class Router {
       );
     }
 
-    const record: GuestMigrationRecord = {
-      guestId,
-      accountId,
-      state: 'complete',
-      migrationKey,
-      profileDigest,
-      createdAt: this.now,
-      completedAt: this.now,
-    };
+    if (!existing) {
+      // Reserve the guest before importing anything. The reservation is the
+      // claim: without it two accounts presenting the same guest profile could
+      // both copy its career into their own ledger, and only the later record
+      // write would notice. A crash after this insert leaves a resumable
+      // `pending` row instead of an import with no migration record.
+      const reservation: GuestMigrationRecord = {
+        guestId,
+        accountId,
+        state: 'pending',
+        migrationKey,
+        profileDigest,
+        createdAt: this.now,
+        completedAt: null,
+      };
+      const reserved = await this.deps.store.recordGuestMigration(reservation);
+      if (reserved === 'conflict') {
+        const winner = await this.deps.store.guestMigration(guestId);
+        if (!winner || winner.accountId !== accountId) {
+          throw new AccountError(
+            'guest-already-migrated',
+            'This guest profile is already linked to a different account.',
+            409,
+          );
+        }
+        if (winner.profileDigest !== profileDigest || winner.migrationKey !== migrationKey) {
+          throw new AccountError(
+            'migration-conflict',
+            'This guest profile has changed since it was first linked.',
+            409,
+          );
+        }
+        if (winner.state === 'complete') {
+          return jsonResponse({
+            ok: true,
+            status: 'already-migrated',
+            migratedAt: winner.completedAt,
+            importedXp: 0,
+            career: await this.careerView(accountId),
+          });
+        }
+      }
+    }
     // Career import is idempotent per match reference, so a retry after a
     // partial failure cannot duplicate a match. XP is recomputed here; a guest
     // ledger cannot assert its own values.
@@ -1103,13 +1470,47 @@ class Router {
       const write = await this.deps.store.recordCareerMatch(accountId, imported);
       if (write === 'ok') importedXp += imported.xp;
     }
+    const migratedMatches = await this.deps.store.careerMatches(accountId, MAX_GUEST_IMPORT_MATCHES);
+    for (const imported of migratedMatches) {
+      const campaignId = completedCampaignFor(imported, migratedMatches);
+      if (campaignId) {
+        await this.deps.store.recordCampaignCompletion(accountId, campaignId, this.now);
+      }
+    }
 
-    const outcome = await this.deps.store.recordGuestMigration(record);
-    if (outcome === 'conflict') {
-      // A concurrent migration won. Report the state that is now true instead
-      // of pretending the write succeeded.
+    // A migrated ledger is an authoritative account ledger after import, so
+    // cumulative commendations are evaluated once it is complete. There is no
+    // match context: one-match conditions are deliberately not inferred.
+    const [migratedTotals, migratedRows, migratedAwards, migratedCampaigns] = await Promise.all([
+      this.deps.store.careerTotals(accountId),
+      this.deps.store.careerStatRows(accountId),
+      this.deps.store.awardedAchievements(accountId),
+      this.deps.store.careerCampaigns(accountId),
+    ]);
+    const migratedPending = pendingAchievementIds({
+      totals: migratedTotals,
+      stats: buildCareerStats(migratedRows),
+      earnedIds: migratedAwards.map((award) => award.achievementId),
+      match: null,
+      completedCampaignIds: migratedCampaigns.map((campaign) => campaign.campaignId),
+    });
+    if (migratedPending.length > 0) {
+      await this.deps.store.recordAchievements(
+        accountId,
+        migratedPending.map((achievementId) => ({
+          achievementId,
+          awardedAt: this.now,
+          matchRef: null,
+        })),
+      );
+    }
+
+    const completed = await this.deps.store.completeGuestMigration(guestId, accountId, this.now);
+    if (completed === 'conflict') {
+      // The reservation is no longer this account's pending claim. Report the
+      // state that is now true instead of claiming a migration it does not own.
       const winner = await this.deps.store.guestMigration(guestId);
-      if (winner && winner.accountId === accountId && winner.profileDigest === profileDigest) {
+      if (winner && winner.accountId === accountId && winner.state === 'complete') {
         return jsonResponse({
           ok: true,
           status: 'already-migrated',
@@ -1123,7 +1524,7 @@ class Router {
     return jsonResponse({
       ok: true,
       status: 'migrated',
-      migratedAt: record.completedAt,
+      migratedAt: this.now,
       importedXp,
       career: await this.careerView(accountId),
     });

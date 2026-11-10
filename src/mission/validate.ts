@@ -541,12 +541,6 @@ export function validateMission(
             `${path}.group`,
           );
         }
-        add(
-          'warning',
-          'action-not-executed',
-          `Action "activateAiGroup" is declared but not executed by this build; the mission will not activate the group.`,
-          path,
-        );
         break;
       case 'spawnReinforcement':
         if (!reinforcements.has(action.reinforcement)) {
@@ -557,20 +551,9 @@ export function validateMission(
             `${path}.reinforcement`,
           );
         }
-        add(
-          'warning',
-          'action-not-executed',
-          `Action "spawnReinforcement" is declared but not executed by this build; no wave will arrive.`,
-          path,
-        );
         break;
       case 'endMission':
-        add(
-          'warning',
-          'action-not-executed',
-          'Action "endMission" is declared but not executed by this build; the objective tree decides the outcome.',
-          path,
-        );
+        // The verdict is one of two literals, so there is nothing to check here.
         break;
       default: {
         const kind = (action as { kind?: unknown }).kind;
@@ -770,9 +753,30 @@ export function validateMission(
   /* AI groups and reinforcements                                      */
   /* ---------------------------------------------------------------- */
 
+  // Which groups and waves a trigger actually requests. A dormant group with no
+  // activation trigger, and a wave with no request and no arrival time, would
+  // simply never appear, so both are reported here rather than discovered in
+  // play.
+  const releasedGroups = new Set<string>();
+  const requestedWaves = new Set<string>();
+  for (const trigger of doc.triggers) {
+    for (const action of trigger.actions) {
+      if (action.kind === 'activateAiGroup') releasedGroups.add(action.group);
+      if (action.kind === 'spawnReinforcement') requestedWaves.add(action.reinforcement);
+    }
+  }
+
   doc.aiGroups.forEach((group, i) => {
     if (!Number.isInteger(group.owner) || group.owner < 0) {
       add('error', 'ai-owner-invalid', `AI group "${group.id}" needs a player id.`, `aiGroups[${i}].owner`);
+    }
+    if (group.initial === 'dormant' && !releasedGroups.has(group.id)) {
+      add(
+        'warning',
+        'ai-group-dormant-unreleased',
+        `AI group "${group.id}" is dormant but no trigger activates it; it will hold its positions for the whole mission.`,
+        `aiGroups[${i}].initial`,
+      );
     }
     if (group.units.length === 0) {
       add('warning', 'ai-group-empty', `AI group "${group.id}" commands no units.`, `aiGroups[${i}].units`);
@@ -825,6 +829,22 @@ export function validateMission(
     }
     if (wave.units.length === 0) {
       add('warning', 'reinforcement-empty', `Reinforcement "${wave.id}" brings no units.`, `reinforcements[${i}].units`);
+    }
+    if (!requestedWaves.has(wave.id) && wave.afterSeconds === undefined) {
+      add(
+        'warning',
+        'reinforcement-unscheduled',
+        `Reinforcement "${wave.id}" has no spawn action and no arrival time, so it never arrives.`,
+        `reinforcements[${i}]`,
+      );
+    }
+    if (wave.triggerId !== undefined && !requestedWaves.has(wave.id)) {
+      add(
+        'warning',
+        'reinforcement-trigger-not-requesting',
+        `Reinforcement "${wave.id}" names trigger "${wave.triggerId}", but that trigger has no spawnReinforcement action; the wave will only arrive on its timer.`,
+        `reinforcements[${i}].triggerId`,
+      );
     }
     wave.units.forEach((unit, u) => {
       if (!UNITS[unit.defId]) {

@@ -112,6 +112,12 @@ export interface UnitDef {
   canCapture?: boolean;
   /** Eligible to occupy a garrisonable building. Infantry only by design. */
   canGarrison?: boolean;
+  /**
+   * Passenger transport contract. Absent on every shipped unit in Phase 5B:
+   * APCs, transport helicopters and landing craft are defined by later phases
+   * and reuse the same occupancy machinery as a garrisonable structure.
+   */
+  transport?: TransportDef;
   /** Radius in tiles within which this unit must remain near its parent structure. */
   homeRadius?: number;
   description: string;
@@ -321,7 +327,42 @@ export interface BuildingDef {
   waterStructure?: boolean;
 }
 
-export interface GarrisonDef {
+/**
+ * Shared passenger-container contract.
+ *
+ * A container holds infantry off the battlefield. A garrisonable structure is
+ * a static container; a future APC, transport helicopter or landing craft is a
+ * mobile one. Occupancy is recorded once, on the passenger's `garrisonId`; a
+ * container never keeps a second mutable passenger list that could disagree
+ * with it. Definitions only describe the rules, never a live seat map.
+ */
+export interface ContainerDef {
+  /** Maximum infantry entities inside at once. */
+  capacity: number;
+  /** Static containers: fraction of incoming damage the cover blocks (0..0.9). */
+  protection?: number;
+  /** Static containers: fraction of a weapon's suppression reaching occupants. */
+  exposure?: number;
+  /** Occupants allowed to fire through the container at once. 0 means none. */
+  firingSlots?: number;
+  /** Mobile containers move with the battlefield and carry their passengers. */
+  mobile?: boolean;
+  /** Mobile containers: boarding range in tiles. */
+  boardingRadius?: number;
+  /** Mobile containers: passengers may use their own weapons from inside. */
+  canFireEmbarked?: boolean;
+  /** Passenger category this container accepts. Defaults to line infantry. */
+  passenger?: 'infantry';
+  /**
+   * What happens to occupants when the container dies. `kill` is the default
+   * and the Phase 5B policy; `eject` uses the normal safe disembark ring and is
+   * reserved for a container that explicitly opts in.
+   */
+  onDestroyed?: 'kill' | 'eject';
+}
+
+/** Garrison shelter on a structure: static, protected, with firing positions. */
+export interface GarrisonDef extends ContainerDef {
   /** Maximum infantry entities inside at once. */
   capacity: number;
   /** Fraction of incoming damage the structure blocks for its occupants (0..0.9). */
@@ -330,6 +371,20 @@ export interface GarrisonDef {
   exposure: number;
   /** Occupants allowed to fire through the building's firing positions at once. */
   firingSlots: number;
+  mobile?: false;
+}
+
+/**
+ * Passenger transport on a unit. Phase 5B defines the contract and simulates
+ * it; no shipped unit carries one yet, and the core architecture never names a
+ * particular transport id.
+ */
+export interface TransportDef extends ContainerDef {
+  capacity: number;
+  mobile: true;
+  /** Range in tiles within which infantry can board a stopped carrier. */
+  boardingRadius: number;
+  onDestroyed: 'kill' | 'eject';
 }
 
 /** A set of registered unit and building definition ids. */
@@ -515,7 +570,29 @@ export interface GroundRoll {
    * What the hull does when the leg runs out: the next leg of the manoeuvre, or
    * release to normal flight.
    */
-  next?: 'takeoffRun' | 'lift' | 'taxiIn' | 'land' | 'airborne';
+  next?: 'takeoffRun' | 'lift' | 'taxiIn' | 'land' | 'fieldLand' | 'airborne';
+}
+
+/**
+ * A battlefield landing request, separate from a facility recovery.
+ *
+ * The permanent berth stays on `homeId`; a field landing only borrows open
+ * ground for a boarding or unloading stop. `purpose` tells the end of the roll
+ * whether passengers should step out immediately or wait to board.
+ */
+export interface FieldLandingState {
+  x: number;
+  z: number;
+  purpose: 'board' | 'unload' | 'idle';
+}
+
+export interface NavalLandingState {
+  /** Water tile the hull is running for, or has beached on. */
+  x: number;
+  z: number;
+  purpose: 'board' | 'unload' | 'idle';
+  /** True once the hull is stationary against a valid landing shore. */
+  beached: boolean;
 }
 
 export interface AircraftState {
@@ -557,6 +634,12 @@ export interface AircraftState {
   climb?: number;
   /** The ground leg in progress, if any. See `GroundRoll`. */
   roll?: GroundRoll;
+  /**
+   * A landing on open ground rather than at the hull's home facility. Kept
+   * while the helicopter is down so a landed transport is not teleported back
+   * to its pad, and cleared by the next ordinary move order.
+   */
+  fieldLanding?: FieldLandingState;
 }
 
 export interface SubmarineState {
@@ -626,6 +709,12 @@ export interface Entity {
   rallyZ: number;
   harvester?: HarvesterState;
   aircraft?: AircraftState;
+  /**
+   * A landing craft's current shore approach. Absent on every other hull.
+   * `beached` is public simulation state because boarding and exiting depend on
+   * it; the approach coordinates are only a deterministic destination.
+   */
+  navalLanding?: NavalLandingState;
   submarine?: SubmarineState;
   /** Set for aircraft after they are ordered to return home. */
   homeId: number;
@@ -668,7 +757,12 @@ export interface Entity {
    * with the entity; older saves load as 0 and the engineer is re-assigned.
    */
   buildTargetId: number;
-  /** Building id this infantryman occupies, or 0 when exposed. */
+  /**
+   * Container id this infantryman occupies, or 0 when exposed. The container is
+   * a garrisonable structure or a mobile transport; the field keeps its
+   * historical name so existing saves and every `garrisonId` exclusion in the
+   * simulation stay valid. It is the single authoritative occupancy reference.
+   */
   garrisonId: number;
   /**
    * Friendly mechanical unit this recovery vehicle is currently repairing, or
@@ -678,6 +772,14 @@ export interface Entity {
   /** AI bookkeeping (serialised so saves remain faithful). */
   aiGroup: number;
   aiRole: string;
+  /**
+   * Held for a campaign mission: this unit belongs to a dormant AI group.
+   *
+   * A held unit is placed on the map but the AI commander ignores it and it
+   * takes no orders until an `activateAiGroup` action releases it. Absent on
+   * everything else, including every multiplayer entity.
+   */
+  missionHold?: boolean;
   /**
    * Research this unit has spent on itself, as unit-upgrade ids. Research makes
    * an upgrade available to every eligible unit; this list records the ones
@@ -840,6 +942,8 @@ export interface SimEvent {
 
 export type Command =
   | { type: 'move'; team: number; ids: number[]; x: number; z: number; attackMove?: boolean }
+  /** Put transport helicopters down on open ground and hold them there. */
+  | { type: 'land'; team: number; ids: number[]; x: number; z: number }
   | { type: 'attack'; team: number; ids: number[]; targetId: number }
   | { type: 'stop'; team: number; ids: number[] }
   | { type: 'hold'; team: number; ids: number[] }
@@ -1004,6 +1108,37 @@ export type AIStrategy = 'armour' | 'infantry' | 'air' | 'economy' | 'pressure';
 /** Selectable opponent strength; never changes resources, vision or rules. */
 export type AIDifficulty = 'recruit' | 'veteran' | 'elite';
 
+/**
+ * One transport operation the commander is running.
+ *
+ * The carrier and its passengers stay the authoritative entities — `garrisonId`
+ * remains the only passenger link — so this records only which hull was
+ * committed to which objective and how far the operation has got. Every field
+ * is a number, a short string or a list of ids, so it serialises with the rest
+ * of the AI state and needs no save schema of its own.
+ */
+export interface TransportOperation {
+  id: number;
+  kind: 'land' | 'air' | 'naval';
+  transportId: number;
+  passengerIds: number[];
+  /**
+   * Staging and boarding, the run to the objective, the landing itself, and —
+   * when an assault is abandoned with troops still aboard — the trip home and
+   * the unload there. Recovery is a stage of the same operation rather than a
+   * second system, because the passengers need exactly one owner.
+   */
+  stage: 'embark' | 'transit' | 'unload' | 'recover' | 'recoverUnload';
+  targetX: number;
+  targetZ: number;
+  stageX: number;
+  stageZ: number;
+  startedTick: number;
+  lastOrderTick: number;
+  /** Refused landing attempts, so a blocked shore is abandoned rather than retried. */
+  refusals: number;
+}
+
 export interface AIControlState {
   nextThinkTick: number;
   phase: 'opening' | 'build' | 'pressure' | 'assault' | 'defend';
@@ -1048,6 +1183,13 @@ export interface AIControlState {
   lastGarrisonTick?: number;
   /** Last strategic-objective capture attempt, to avoid retrying a blocked route. */
   lastObjectiveTick?: number;
+  /**
+   * Transport operations in flight. Absent in saves written before Phase 5F;
+   * a commander with none simply plans its next operation from the world state.
+   */
+  transportOps?: TransportOperation[];
+  /** Tick the commander last committed, finished or lost a transport. */
+  lastTransportTick?: number;
 }
 
 export interface RuntimeMap {

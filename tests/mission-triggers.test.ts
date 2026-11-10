@@ -710,11 +710,11 @@ describe('trigger validation', () => {
     expect(() => parseMission(raw)).toThrow(/only numbers can be ordered/);
   });
 
-  it('warns about actions this build does not execute', () => {
+  it('no longer reports a schema action as deferred', () => {
     const raw = missionRaw({
       triggers: [
         {
-          id: 'deferred',
+          id: 'scripted-end',
           once: true,
           conditions: [{ kind: 'elapsed', seconds: 5 }],
           actions: [{ kind: 'endMission', outcome: 'victory' }],
@@ -722,7 +722,7 @@ describe('trigger validation', () => {
       ],
     });
     const doc = parseMission(raw);
-    expect(validateMission(doc).some((issue) => issue.code === 'action-not-executed')).toBe(true);
+    expect(validateMission(doc).some((issue) => issue.code === 'action-not-executed')).toBe(false);
   });
 
   it('warns about a repeat trigger with nothing to gate it', () => {

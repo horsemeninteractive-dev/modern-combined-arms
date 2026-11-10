@@ -7,6 +7,8 @@ import { issueTicket, TICKET_TTL_MS, verifyTicket } from '../src/accounts/ticket
 import { validatePersistedMeta } from '../src/multiplayer/roomDurableObject';
 import { withVerifiedIdentity } from '../src/multiplayer/roomIdentity';
 import { LobbyClient } from '../src/multiplayer/lobbyClient';
+import { defaultComposition } from '../src/identity/flag';
+import { identitySnapshot } from '../src/accounts/identity';
 
 const SECRET = 'identity-test-secret-0123456789';
 const ACCOUNT = 'account-identifier-0123456789';
@@ -30,6 +32,51 @@ describe('identity tickets', () => {
     expect(await verifyTicket(SECRET, ticket, now - 120_000)).toBeNull();
     expect(await verifyTicket(SECRET, 'garbage', now)).toBeNull();
     expect(await verifyTicket(SECRET, 'v2.x.1.y', now)).toBeNull();
+  });
+  it('carries an equipped command flag and drops a malformed one', async () => {
+    const now = 1_700_000_000_000;
+    const flag = defaultComposition();
+    const { ticket } = await issueTicket(SECRET, ACCOUNT, now, {
+      callsign: 'Sable',
+      avatar: 'eagle',
+      flag,
+    });
+    const verified = await verifyTicket(SECRET, ticket, now);
+    expect(verified?.identity?.callsign).toBe('Sable');
+    expect(verified?.identity?.flag?.version).toBe(flag.version);
+    expect(verified?.identity?.flag?.emblem?.id).toBe(flag.emblem?.id);
+
+    // A ticket is never sealed with a composition this build would refuse; the
+    // identity survives and the flag is simply absent.
+    const bad = await issueTicket(SECRET, ACCOUNT, now, {
+      callsign: 'Sable',
+      avatar: 'eagle',
+      flag: { version: 99 } as never,
+    });
+    const badVerified = await verifyTicket(SECRET, bad.ticket, now);
+    expect(badVerified?.identity?.callsign).toBe('Sable');
+    expect(badVerified?.identity?.flag).toBeUndefined();
+  });
+
+  it('carries equipped frames and backgrounds and drops unknown catalogue ids', async () => {
+    const now = 1_700_000_000_000;
+    const identity = {
+      callsign: 'Sable',
+      avatar: 'eagle' as const,
+      rank: 'corporal',
+      frame: 'frame-brass',
+      background: 'bg-deep',
+    };
+    const { ticket } = await issueTicket(SECRET, ACCOUNT, now, identity);
+    const verified = await verifyTicket(SECRET, ticket, now);
+    expect(verified?.identity?.frame).toBe('frame-brass');
+    expect(verified?.identity?.background).toBe('bg-deep');
+    expect(identitySnapshot({ ...identity, frame: 'frame-not-real', background: 'bg-not-real' }))
+      .toMatchObject({ callsign: 'Sable', avatar: 'eagle', rank: 'corporal' });
+    expect(identitySnapshot({ ...identity, frame: 'frame-not-real', background: 'bg-not-real' })?.frame)
+      .toBeUndefined();
+    expect(identitySnapshot({ ...identity, frame: 'frame-not-real', background: 'bg-not-real' })?.background)
+      .toBeUndefined();
   });
 });
 
@@ -154,13 +201,16 @@ describe('lobby client identity', () => {
     });
   }
 
-  it('presents a ticket when opening a room and never on ordinary actions', async () => {
+  it('presents a ticket when opening or refreshing identity, never on start', async () => {
     const captured: Array<Record<string, string>> = [];
     const lobby = client(async () => 'ticket-value', captured);
     await lobby.createRoom(600_000, 'identity-room');
     await lobby.startMatch();
     expect(captured[0]['x-mca-identity-ticket']).toBe('ticket-value');
-    expect(captured[1]?.['x-mca-identity-ticket']).toBeUndefined();
+    // Start first refreshes the seat's signed identity, then authorises the
+    // start with the seat token alone.
+    expect(captured[1]?.['x-mca-identity-ticket']).toBe('ticket-value');
+    expect(captured[2]?.['x-mca-identity-ticket']).toBeUndefined();
   });
 
   it('opens a guest seat when the account service cannot issue a ticket', async () => {

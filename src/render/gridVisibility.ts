@@ -2,6 +2,7 @@ export type GridScreen = 'menu' | 'battle' | 'editor';
 export type GridMode =
   | 'none'
   | 'move'
+  | 'land'
   | 'attack'
   | 'attackMove'
   | 'capture'
