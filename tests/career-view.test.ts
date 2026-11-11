@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { careerRecord, careerViewFrom, summariseCareer } from '../src/accounts/career';
 import type { CareerSnapshot } from '../src/accounts/careerService';
@@ -7,6 +8,8 @@ import {
   endCareerMarkup,
   serviceRecordMarkup,
 } from '../src/ui/careerView';
+
+const styles = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
 
 const record = careerRecord(
   {
@@ -28,15 +31,15 @@ const snapshot: CareerSnapshot = {
 };
 
 describe('career summary', () => {
-  it('shows the rank, XP, progress and totals', () => {
+  it('shows the totals without restating the standing above them', () => {
     const html = careerSummaryMarkup(snapshot);
-    expect(html).toContain('Private');
-    expect(html).toContain('OR-1');
-    expect(html).toContain('110');
-    expect(html).toContain('CAREER XP');
-    expect(html).toContain('aria-valuenow="28"');
-    expect(html).toContain('110 / 400 XP to Corporal');
+    expect(html).toContain('OPERATIONS');
+    expect(html).toContain('VICTORIES');
+    expect(html).toContain('100%');
     expect(html).toContain('data-career-source="account"');
+    // Rank, level and XP progress belong to the account page head, once.
+    expect(html).not.toContain('CAREER XP');
+    expect(html).not.toContain('aria-valuenow');
   });
 
   it('labels a guest career and its transfer route', () => {
@@ -56,6 +59,29 @@ describe('career summary', () => {
     const empty = careerSummaryMarkup(null);
     expect(empty).toContain('Reading your service record');
     expect(careerHistoryMarkup(null)).toBe('');
+  });
+});
+
+/**
+ * The end card's career block used to squeeze the award rack into the same flex
+ * line as the XP text, where a 46px ribbon overflowed its 22px art column and
+ * printed over its own citation. The rack and its route are whole rows now, and
+ * the art column is wide enough for the widest award.
+ */
+describe('end card career block', () => {
+  it('gives the award rack and its route their own full-width rows', () => {
+    expect(styles).toContain('.end-career .career-new-awards,');
+    expect(styles).toContain('.end-career .career-legacy-link,');
+    expect(styles).toContain('.end-career .career-promotion { flex: 1 1 100%; }');
+  });
+
+  it('sizes the award art column so no artwork runs under the name', () => {
+    expect(styles).toContain(
+      '.career-new-awards li { display: grid; grid-template-columns: 40px minmax(0, 1fr);',
+    );
+    expect(styles).toContain('.career-new-awards li .award-art { max-width: 40px; }');
+    expect(styles).toContain('.career-new-awards b { grid-column: 2; grid-row: 1;');
+    expect(styles).toContain('.career-new-awards small { grid-column: 2; grid-row: 2;');
   });
 });
 

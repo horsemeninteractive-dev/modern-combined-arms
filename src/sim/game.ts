@@ -139,8 +139,8 @@ import {
   canWeaponTarget,
   weaponCanHurt,
   computeDamage,
-  coverFactor,
   entityArmour,
+  coverFactor,
   entityName,
   entityTargetClass,
   entityVision,
@@ -156,6 +156,7 @@ import {
   unitSlotId,
 } from '../data/roster';
 import { tryIdentityDef, NATIONS } from '../data/factions';
+import { pickBestWeapon, weaponScore, type WeaponCandidate } from './weaponChoice';
 import { abilityForUpgrade, isGuidedWeapon, type TimedAbilityDef } from '../data/abilities';
 import {
   SUPERWEAPON_FAMILIES,
@@ -8942,19 +8943,28 @@ export class Game {
       // Re-issuing the same path every tick restarts the step it is taking, and
       // a crew closing a one-tile gap would crawl for the rest of the match.
       const closing = e.path.length > 0 && e.state === 'moving';
-      if (
-        d <= range &&
-        d >= minimum &&
-        spotted &&
-        (def.domain === 'air' || weapon.indirect || hasLineOfSight(this.state.map, e.x, e.z, target.x, target.z))
-      ) {
+      // The planning weapon decides how far the crew closes; what actually
+      // fires is the best weapon that can shoot from here. A corvette that
+      // prefers its deck gun for sustained damage used to close to the gun's
+      // reach, find the gun a fraction short in the current light, and sit
+      // there with a full missile rack: the same gate kept an IFV's missile
+      // in the rack while its autocannon was still out of range. Firing the
+      // ready weapon turns those racks into an opening salvo and leaves the
+      // gun for the sustained fight, which is what the two systems are for.
+      const ready = spotted ? this.chooseWeapon(e, target, weapons, { mustFire: true }) : null;
+      const readySpotted =
+        ready !== null &&
+        (def.domain === 'air' ||
+          ready.indirect ||
+          hasLineOfSight(this.state.map, e.x, e.z, target.x, target.z));
+      if (ready && readySpotted) {
         e.path = [];
         if (def.domain === 'air') {
           // Aircraft orbit their target rather than stopping.
           e.path = [{ x: e.x, z: e.z }];
         }
         e.state = 'attacking';
-        this.tryFire(e, target, weapon, weapons);
+        this.tryFire(e, target, ready, weapons);
       } else if (d < minimum) {
         // A howitzer cannot depress its barrel into its own minimum range.
         // Hold position rather than chasing a target it cannot shoot.
@@ -9110,27 +9120,55 @@ export class Game {
     // Move orders are cleared at arrival by movement; attack-move auto-fires.
   }
 
-  private chooseWeapon(e: Entity, target: Entity, weapons: WeaponDef[]): WeaponDef | null {
-    // A dived boat is an ASW problem before it is a missile target. Without
-    // this preference an escort spends its anti-ship missiles on an empty
-    // patch of sea while its depth charges stay in the rack.
-    if (target.kind === 'unit' && target.submarine?.dived) {
-      for (const w of weapons) {
-        if (!w.asw || !canWeaponTarget(w, target)) continue;
-        if (usesPrimaryAmmo(e, w) && e.ammo <= 0) continue;
-        return w;
+  /**
+   * The weapon this crew would use on this target right now.
+   *
+   * Filtering comes first and is absolute: an incompatible target class, a
+   * dived boat with no depth charge, an exhausted primary rack, or a target
+   * inside a weapon's minimum range all remove a weapon from consideration.
+   * `mustFire` additionally requires the weapon to be inside its effective
+   * reach today (light, weather and the crew's optics), for callers choosing a
+   * weapon to shoot with rather than a range to close to.
+   *
+   * What remains is scored by expected damage per second against the target's
+   * armour class, so a missile is preferred against heavy armour and an
+   * autocannon against infantry, without either unit being named here.
+   */
+  private chooseWeapon(
+    e: Entity,
+    target: Entity,
+    weapons: WeaponDef[],
+    options: { mustFire?: boolean } = {},
+  ): WeaponDef | null {
+    const armour = entityArmour(target);
+    const d = dist(e.x, e.z, target.x, target.z);
+    const crew = rankOf(e);
+    const shooterDef = UNITS[e.defId];
+    const candidates: WeaponCandidate[] = [];
+    for (const weapon of weapons) {
+      if (!canWeaponTarget(weapon, target)) continue;
+      // Depth charges are the only answer to a boat under the surface, and a
+      // surface gun is not an answer to one even when it lists the class.
+      if (target.kind === 'unit' && target.submarine?.dived && !weapon.asw) continue;
+      if (usesPrimaryAmmo(e, weapon) && e.ammo <= 0) continue;
+      if (d < (weapon.minRange ?? 0) * TILE_SIZE) continue;
+      if (options.mustFire) {
+        if (d > this.engagementReach(e, weapon) + 4) continue;
+        if (
+          !weapon.indirect &&
+          e.kind !== 'building' &&
+          shooterDef?.domain !== 'air' &&
+          !hasLineOfSight(this.state.map, e.x, e.z, target.x, target.z)
+        ) {
+          continue;
+        }
       }
+      candidates.push({
+        weapon,
+        score: weaponScore(weapon, armour, d / TILE_SIZE, crew.damage, crew.cooldown),
+      });
     }
-    let fallback: WeaponDef | null = null;
-    for (const w of weapons) {
-      if (!canWeaponTarget(w, target)) continue;
-      if (usesPrimaryAmmo(e, w)) {
-        if (e.ammo <= 0) continue;
-        return w;
-      }
-      if (!fallback) fallback = w;
-    }
-    return fallback;
+    return pickBestWeapon(candidates);
   }
 
   /** Best visible hostile this entity's weapons can currently engage. */
@@ -9187,7 +9225,7 @@ export class Game {
       }
     }
     if (!best) return null;
-    const weapon = this.chooseWeapon(e, best, weapons);
+    const weapon = this.chooseWeapon(e, best, weapons, { mustFire: true });
     return weapon ? { target: best, weapon } : null;
   }
 
@@ -9209,7 +9247,7 @@ export class Game {
       e.aimTargetId = 0;
       return this.acquireAutoTarget(e, weapons);
     }
-    const weapon = this.chooseWeapon(e, target, weapons);
+    const weapon = this.chooseWeapon(e, target, weapons, { mustFire: true });
     if (!weapon) {
       e.order = null;
       e.targetId = 0;

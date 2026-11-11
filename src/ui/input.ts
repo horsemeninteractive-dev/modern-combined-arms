@@ -177,7 +177,9 @@ export class InputController {
         const distance = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
         const dx = cx - this.pinch.cx;
         const dy = cy - this.pinch.cy;
-        if (Math.abs(dx) + Math.abs(dy) > 1) this.app.renderer.camera.panScreen(dx, dy);
+        // Two fingers move the view with them, the way the arrow keys do;
+        // panScreen's horizontal sign is "drag the ground under the pointer".
+        if (Math.abs(dx) + Math.abs(dy) > 1) this.app.renderer.camera.panScreen(-dx, dy);
         if (distance > 12 && this.pinch.distance > 12) {
           this.app.renderer.camera.setZoom(this.app.renderer.camera.zoom * (this.pinch.distance / distance));
         }
@@ -196,7 +198,9 @@ export class InputController {
         }
         this.pan.dragging = true;
       }
-      this.app.renderer.camera.panScreen(event.clientX - this.pan.x, event.clientY - this.pan.y);
+      // Drag the camera in the direction of the drag, so dragging right shows
+      // what is to the right — the same direction ArrowRight and edge pan go.
+      this.app.renderer.camera.panScreen(this.pan.x - event.clientX, event.clientY - this.pan.y);
       this.pan.x = event.clientX;
       this.pan.y = event.clientY;
       return;

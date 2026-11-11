@@ -30,6 +30,17 @@ describe('account chip', () => {
     expect(panel).toContain('referrerpolicy="no-referrer"');
     expect(styles).toContain('.menu-account-avatar img');
   });
+
+  it('wears the equipped frame and background, with CSS to draw them', () => {
+    // The chip is a profile surface: an equip has to reach it, not only the
+    // banner inside the account screen.
+    expect(panel).toContain("applyCosmeticClass(avatar, 'identity-frame-'");
+    expect(panel).toContain("'identity-bg-'");
+    expect(styles).toContain('.menu-account-avatar.identity-frame-brass');
+    expect(styles).toContain('.menu-account-avatar.identity-frame-commendation');
+    expect(styles).toContain('.menu-account-trigger.identity-bg-deep');
+    expect(styles).toContain('.menu-account-trigger.identity-bg-frontline');
+  });
 });
 
 describe('account screen', () => {
@@ -70,10 +81,29 @@ describe('account screen', () => {
     expect(panel).toContain('openFlagEditor(');
   });
 
-  it('shows the full identity and standing on the page head', () => {
+  it('shows the full identity, standing and progress on the page head', () => {
     expect(html).toContain('id="account-view-head"');
     expect(panel).toContain('account-head-avatar');
     expect(panel).toContain('account-head-standing');
+    expect(panel).toContain('account-head-flag');
+    expect(panel).toContain('account-head-progress');
     expect(styles).toContain('.account-head-avatar img');
+    expect(styles).toContain('.account-head-flag');
+    expect(styles).toContain('.account-head-progress');
+  });
+
+  it('does not repeat the service record inside the settings tab', () => {
+    // Rank, XP, totals and history belong to the record tab, and every tab
+    // already has the standing in the page head. The identity tab is settings
+    // only, so the same numbers are not stated twice on one screen.
+    expect(panel).not.toContain('account-career');
+    expect(panel).not.toContain('renderCareer');
+    expect(panel).not.toContain('careerHistoryMarkup(this.careerSnapshot');
+  });
+
+  it('shows the negative case: the identity tab keeps its settings', () => {
+    expect(panel).toContain('renderIdentityEditor');
+    expect(panel).toContain('renderCommandFlag');
+    expect(panel).toContain('renderGuestImport');
   });
 });

@@ -21,8 +21,6 @@ import {
 import type { ProviderId } from '../accounts/types';
 import type { CareerService, CareerSnapshot } from '../accounts/careerService';
 import {
-  careerHistoryMarkup,
-  careerSummaryMarkup,
   identityBannerMarkup,
   matchDetailMarkup,
   serviceRecordMarkup,
@@ -39,7 +37,12 @@ import {
   type GuestStorage,
 } from '../accounts/guest';
 import { FlagStore } from '../identity/flagStore';
-import { EMPTY_PROGRESS, type CosmeticCategory, type CosmeticProgress } from '../identity/cosmetics';
+import {
+  cosmeticById,
+  EMPTY_PROGRESS,
+  type CosmeticCategory,
+  type CosmeticProgress,
+} from '../identity/cosmetics';
 import { cosmeticsInventoryMarkup } from './cosmeticsInventory';
 import { commandFlagSvg } from './commandFlag';
 import { openFlagEditor } from './flagEditor';
@@ -65,6 +68,14 @@ type Notice = { level: 'info' | 'warning' | 'critical' | 'success'; text: string
 
 /** The sections of the account screen, in rail order. */
 type AccountTab = 'account' | 'record' | 'legacy' | 'cosmetics';
+
+/** Swap one equipped cosmetic class, removing any the element already carries. */
+function applyCosmeticClass(element: HTMLElement, prefix: string, token: string | null): void {
+  for (const name of Array.from(element.classList)) {
+    if (name.startsWith(prefix)) element.classList.remove(name);
+  }
+  if (token) element.classList.add(`${prefix}${token}`);
+}
 
 const PROVIDER_LABEL: Record<ProviderId, string> = { google: 'Google', discord: 'Discord' };
 
@@ -303,7 +314,12 @@ export class AccountPanel {
     const account = this.account;
     this.root.dataset.state = account ? 'account' : this.state ? 'guest' : 'offline';
 
-    // The chip: standing, then the provider portrait, then the name.
+    // The chip: standing, then the provider portrait, then the name. It wears
+    // the equipped frame and background like every other profile surface, so
+    // an equip is visible here the moment the store changes.
+    const equipped = this.equippedCosmetics();
+    const frame = cosmeticById(equipped.frame);
+    const background = cosmeticById(equipped.background);
     const avatar = this.root.querySelector<HTMLElement>('#menu-account-avatar');
     if (avatar) {
       const url = safeAvatarUrl(account?.avatarUrl ?? null);
@@ -312,6 +328,14 @@ export class AccountPanel {
       } else {
         avatar.textContent = initialFor(this.name);
       }
+      applyCosmeticClass(avatar, 'identity-frame-', frame?.category === 'frame' ? frame.render : null);
+    }
+    if (this.trigger) {
+      applyCosmeticClass(
+        this.trigger,
+        'identity-bg-',
+        background?.category === 'background' ? background.render : null,
+      );
     }
     const nameEl = this.root.querySelector<HTMLElement>('#menu-account-name');
     if (nameEl) nameEl.textContent = this.name;
@@ -320,6 +344,16 @@ export class AccountPanel {
     this.renderStanding();
 
     this.head.innerHTML = this.renderHead();
+    // The page head is a profile surface like the chip: it wears the equipped
+    // frame and background, so an equip is visible on every tab at once.
+    const headAvatar = this.head.querySelector<HTMLElement>('.account-head-avatar');
+    if (headAvatar) {
+      applyCosmeticClass(headAvatar, 'identity-frame-', frame?.category === 'frame' ? frame.render : null);
+    }
+    const headRow = this.head.querySelector<HTMLElement>('.account-head-row');
+    if (headRow) {
+      applyCosmeticClass(headRow, 'identity-bg-', background?.category === 'background' ? background.render : null);
+    }
     this.body.innerHTML = this.renderBody();
     this.body.setAttribute('aria-labelledby', `account-tab-${this.view}`);
     for (const tab of this.tabs) {
@@ -365,6 +399,7 @@ export class AccountPanel {
     const picture = url
       ? `<img src="${escapeHtml(url)}" alt="" loading="lazy" referrerpolicy="no-referrer" />`
       : escapeHtml(initialFor(this.name));
+    const store = this.flagStore();
     const snapshot = this.careerSnapshot;
     const standing = snapshot
       ? (() => {
@@ -379,16 +414,34 @@ export class AccountPanel {
           </div>`;
         })()
       : '';
+    // Rank progress belongs here too: every tab then states the standing once,
+    // and the record and legacy screens do not repeat it.
+    const progress = snapshot
+      ? (() => {
+          const view = snapshot.view;
+          const percent = Math.round(view.progress * 100);
+          const next = view.next
+            ? `${view.xpInto.toLocaleString()} / ${(view.xpSpan ?? 0).toLocaleString()} XP to ${view.next.name}`
+            : 'Top of the rank ladder — every rank held';
+          return `<div class="account-head-progress">
+            <div class="career-progress" role="progressbar" aria-label="Progress to next rank"
+              aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><i style="width:${percent}%"></i></div>
+            <p class="career-next">${escapeHtml(next)}</p>
+          </div>`;
+        })()
+      : '';
     return `
       <p class="eyebrow">COMMAND IDENTITY</p>
       <div class="account-head-row">
+        <span class="account-head-flag">${store ? commandFlagSvg(store.activeComposition(), { size: 96, title: 'Command flag' }) : ''}</span>
         <span class="account-head-avatar" data-state="${account ? 'account' : this.state ? 'guest' : 'offline'}" aria-hidden="true">${picture}</span>
         <div class="account-head-text">
           <h2>${escapeHtml(this.name)}</h2>
           <p>${escapeHtml(this.detail)}</p>
         </div>
         ${standing}
-      </div>`;
+      </div>
+      ${progress}`;
   }
 
   private renderNotice(): string {
@@ -398,55 +451,25 @@ export class AccountPanel {
 
   private renderBody(): string {
     if (this.view === 'legacy') {
-      const store = this.flagStore();
-      const equipped = this.equippedCosmetics();
-      const identity = this.account
-        ? (this.state?.identity ?? null)
-        : { callsign: this.options.guest?.callsign ?? 'Guest', avatar: 'insignia' };
       return `<div class="account-legacy-view">
         ${this.renderNotice()}
-        ${commanderLegacyMarkup({
-          snapshot: this.careerSnapshot,
-          identity,
-          flagHtml: store
-            ? commandFlagSvg(store.activeComposition(), { size: 148, title: 'Command flag' })
-            : undefined,
-          frame: equipped.frame,
-          background: equipped.background,
-        })}
-        <div class="legacy-actions">
-          <button type="button" class="account-secondary" data-account-action="record">Open service record</button>
-          <button type="button" class="account-secondary" data-account-action="account">Account settings</button>
-        </div>
+        ${commanderLegacyMarkup({ snapshot: this.careerSnapshot })}
       </div>`;
     }
     if (this.view === 'cosmetics') {
-      const store = this.flagStore();
-      const identity = this.account
-        ? (this.state?.identity ?? null)
-        : { callsign: this.options.guest?.callsign ?? 'Guest', avatar: 'insignia' };
-      const snapshot = this.careerSnapshot;
       const achievementNames: Record<string, string> = {};
-      for (const award of snapshot?.view.achievements ?? []) achievementNames[award.id] = award.name;
+      for (const award of this.careerSnapshot?.view.achievements ?? []) {
+        achievementNames[award.id] = award.name;
+      }
       return `<div class="account-cosmetics-view">
         ${this.renderNotice()}
         ${cosmeticsInventoryMarkup({
           progress: this.cosmeticProgress(),
           equipped: this.equippedCosmetics(),
-          identity,
           filter: this.cosmeticFilter,
           signedIn: this.account !== null,
-          flagHtml: store
-            ? commandFlagSvg(store.activeComposition(), { size: 132, title: 'Command flag' })
-            : undefined,
-          rankName: snapshot?.view.rank.name ?? null,
-          grade: snapshot?.view.rank.grade ?? null,
           achievementNames,
         })}
-        <div class="legacy-actions">
-          <button type="button" class="account-secondary" data-account-action="record">Open service record</button>
-          <button type="button" class="account-secondary" data-account-action="legacy">Commander Legacy</button>
-        </div>
       </div>`;
     }
     if (this.view === 'record') {
@@ -509,13 +532,11 @@ export class AccountPanel {
               background: guestEquipped.background,
             },
           )}
-          <p class="account-guest-name">${escapeHtml(guest?.callsign ?? 'Guest')}</p>
           <p class="account-note">Your identity on this device. Saves, settings and campaign progress stay here.</p>
           <button type="button" class="account-secondary" data-account-action="leave">Continue as guest</button>
         </div>`,
       );
       parts.push(this.renderCommandFlag());
-      parts.push(this.renderCareer());
       return parts.join('');
     }
 
@@ -552,7 +573,6 @@ export class AccountPanel {
 
     parts.push(this.renderIdentityEditor());
     parts.push(this.renderGuestImport(account));
-    parts.push(this.renderCareer());
 
     if (this.pendingAction === 'revoke-all') {
       parts.push(
@@ -597,31 +617,9 @@ export class AccountPanel {
           <span aria-hidden="true">${avatar.glyph}</span><small>${avatar.label}</small>
         </button>`,
     ).join('');
-    const flagStore = this.flagStore();
-    // Display only cosmetics that belong to this account. While hydration is
-    // in flight, or after an account switch, an old local document must not
-    // make another account appear to own its frame or background.
-    const equipped =
-      flagStore && flagStore.state.accountId === this.account?.id
-        ? flagStore.state.equipped
-        : { frame: null, background: null };
+    // The page head already shows the callsign, flag, frame and background;
+    // this editor only edits, so it opens on the fields themselves.
     return `<section class="account-identity-editor" aria-label="Player identity">
-      ${identityBannerMarkup(
-        this.state?.identity ?? null,
-        this.careerSnapshot?.view.rank.name ?? 'Unranked',
-        this.careerSnapshot?.view.rank.grade ?? '',
-        this.careerSnapshot?.view.totals.xp ?? 0,
-        {
-          flagHtml: flagStore
-            ? commandFlagSvg(flagStore.activeComposition(), {
-                size: 148,
-                title: 'Personal command flag',
-              })
-            : undefined,
-          frame: equipped.frame,
-          background: equipped.background,
-        },
-      )}
       <label class="account-field"><span>CALLSIGN</span>
         <input id="account-callsign" type="text" maxlength="20" minlength="3"
           autocomplete="off" spellcheck="false" value="${escapeHtml(current.callsign)}" />
@@ -642,10 +640,9 @@ export class AccountPanel {
   private renderCommandFlag(): string {
     const store = this.flagStore();
     return `<div class="account-flag-row">
-      <div class="account-flag-preview">${store ? commandFlagSvg(store.activeComposition(), { size: 148, title: 'Active command flag' }) : ''}</div>
       <div class="account-flag-copy">
         <span class="account-field-label">PERSONAL COMMAND FLAG</span>
-        <p class="account-note">Your own identity, separate from the national flag your force flies in a match. ${store ? 'Saved designs and profile cosmetics are chosen here.' : 'This browser has blocked the local storage flags need.'}</p>
+        <p class="account-note">Your own identity, separate from the national flag your force flies in a match. ${store ? 'The active flag flies on your profile; designs are chosen here.' : 'This browser has blocked the local storage flags need.'}</p>
         <button type="button" class="account-secondary" data-account-action="flags">Edit command flag</button>
       </div>
     </div>`;
@@ -894,17 +891,6 @@ export class AccountPanel {
     if (!box || !item) return;
     box.innerHTML = matchDetailMarkup(item);
     box.scrollIntoView?.({ block: 'nearest' });
-  }
-
-  private renderCareer(): string {
-    if (!this.options.career) return '';
-    return `<section class="account-career" aria-label="Service record">
-      ${careerSummaryMarkup(this.careerSnapshot)}
-      ${careerHistoryMarkup(this.careerSnapshot, 4)}
-      <button type="button" class="account-secondary" data-account-action="legacy">Commander Legacy</button>
-      <button type="button" class="account-secondary" data-account-action="cosmetics">Cosmetics inventory</button>
-      <button type="button" class="account-secondary" data-account-action="record">Open service record</button>
-    </section>`;
   }
 
   private renderGuestImport(account: AccountView): string {

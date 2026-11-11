@@ -12,6 +12,53 @@ rendered in game from **Changelog** in the main-menu footer.
 When the version is bumped, rename it to the new `## [x.y.z STAGE] — date`
 heading: `tools/release.mjs` refuses to ship unless that heading exists.
 
+## [0.7.1 BETA] — 2026-11-11
+
+Phase 6D closes with the AI recovery fix and the competitive seat question
+answered. No income, cost, unit or combat value changed.
+
+### AI economic recovery
+
+- **A commander that loses every hauler no longer spends the replacement
+  hull's bank on something else.** The rescue rule keeps capability structures
+  out of the bank while a replacement is owed, so a funded base with a standing
+  drop-off produces a new hauler in about fifteen seconds instead of never.
+- **The rescue requires a real route.** A drop-off alone is not enough: without
+  a factory there is nothing to build the hull with, so the base keeps raising
+  structures instead of sitting on the bank forever.
+- **A live threat still buys defence.** An enemy inside the base's threat radius
+  can still site a defensive position through the same guard; a base under raid
+  is not asked to wait for an economy.
+- **The affordability boundary is unchanged and documented.** With a bank of
+  zero and a factory standing, the one-per-second lifeline still takes about
+  eight and a half minutes to pay for a hull, and a stripped base still recovers
+  faster on the four-per-second trickle. Those rates were not touched.
+
+### Weapon selection
+
+- **Crews fire the weapon that can hurt the target from where they stand.**
+  Selection is scored by expected damage per second against the target's armour
+  class. A corvette no longer closes to its deck gun with a full missile rack,
+  and an IFV no longer holds its missile while the autocannon is out of range.
+
+### Competitive validation
+
+- **Player index and physical seat are now separable in tests.** A new harness
+  exchanges base ownership in place, so player 0 can man the eastern base with
+  the battlefield byte-identical.
+- **The seat question is answered: the advantage follows the western starting
+  position, not the player index.** Across 32 matches on both competitive maps
+  the western seat won or led 26 to 6, and in all sixteen matched pairs the
+  outcome followed the base rather than the index that controlled it. Faction
+  and map both change nothing.
+- **The 48-match difficulty ladder is unchanged** (Recruit −59,956 at 4–12,
+  Elite/Recruit +108,379 at 15–1, Elite/Veteran +61,967 at 11–5).
+
+### Verification
+
+- Full suite: 213 files, 212 passed and one env-gated benchmark skipped;
+  typecheck, production build and whitespace check are clean.
+
 ## [0.7.0 BETA] — 2026-11-10
 
 Phase 4C–4E and Phase 5C land together: earned commendations, campaign

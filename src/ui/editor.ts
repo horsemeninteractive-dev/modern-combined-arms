@@ -210,6 +210,13 @@ export class Editor {
 
   private root: HTMLElement | null = null;
   private pan: { x: number; y: number } | null = null;
+  /**
+   * Arrow keys held for camera panning. The forge draws every frame but has no
+   * simulation clock of its own, so `panWithKeys` measures the time between
+   * draws instead of stepping once per key repeat.
+   */
+  private panKeys = new Set<string>();
+  private panStamp = 0;
   private painting = false;
   private lastPaint = '';
   /** Set by any prop edit; the next frame restages the scenery. */
@@ -305,6 +312,7 @@ export class Editor {
 
   close(): void {
     this.active = false;
+    this.panKeys.clear();
     this.workbench?.close(true);
     this.workbench = null;
     this.showRegions = false;
@@ -1601,6 +1609,15 @@ export class Editor {
       event.preventDefault();
       return;
     }
+    // Arrows pan the camera here as they do on the battlefield; a selected prop
+    // keeps them for nudging, which the check above has already claimed.
+    if (event.key !== 'Escape' && /^Arrow(Up|Down|Left|Right)$/.test(event.code)) {
+      const target = event.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      this.panKeys.add(event.code);
+      event.preventDefault();
+      return;
+    }
     if (event.key !== 'Escape') return;
     if (this.entityPick) {
       this.cancelEntityPick();
@@ -1618,6 +1635,37 @@ export class Editor {
       event.preventDefault();
     }
   };
+
+  private onKeyUp = (event: KeyboardEvent): void => {
+    this.panKeys.delete(event.code);
+  };
+
+  private clearPanKeys = (): void => {
+    this.panKeys.clear();
+  };
+
+  /**
+   * Pan with the held arrow keys at the battlefield's speed.
+   *
+   * The forge draws every frame but owns no simulation clock, so the step is the
+   * time since the previous draw: two draws inside one frame split that frame's
+   * time between them instead of panning twice as far.
+   */
+  private panWithKeys(): void {
+    const now = performance.now();
+    const dt = this.panStamp ? Math.min(0.05, (now - this.panStamp) / 1000) : 0;
+    this.panStamp = now;
+    if (this.panKeys.size === 0) return;
+    const camera = this.app.renderer.camera;
+    const speed = camera.zoom * 1.9 * dt;
+    let right = 0;
+    let down = 0;
+    if (this.panKeys.has('ArrowLeft')) right -= speed;
+    if (this.panKeys.has('ArrowRight')) right += speed;
+    if (this.panKeys.has('ArrowUp')) down -= speed;
+    if (this.panKeys.has('ArrowDown')) down += speed;
+    if (right !== 0 || down !== 0) camera.panView(right, down);
+  }
 
   /**
    * Arrow keys nudge the selected props inside their tiles and `[`/`]` turn them
@@ -2051,7 +2099,9 @@ export class Editor {
     if (!this.active) return;
     this.updateHover(event.clientX, event.clientY);
     if (this.pan) {
-      this.app.renderer.camera.panScreen(event.clientX - this.pan.x, event.clientY - this.pan.y);
+      // Pan in the direction of the drag: dragging right shows what is right,
+      // the same way ArrowRight and the map's own pan tool move the view.
+      this.app.renderer.camera.panScreen(this.pan.x - event.clientX, event.clientY - this.pan.y);
       this.pan = { x: event.clientX, y: event.clientY };
       return;
     }
@@ -2134,6 +2184,8 @@ export class Editor {
     this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
     this.canvas.addEventListener('contextmenu', this.onContext);
     window.addEventListener('keydown', this.onKeyDown);
+    window.addEventListener('keyup', this.onKeyUp);
+    window.addEventListener('blur', this.clearPanKeys);
   }
 
   private detachCanvas(): void {
@@ -2144,6 +2196,8 @@ export class Editor {
     this.canvas.removeEventListener('wheel', this.onWheel);
     this.canvas.removeEventListener('contextmenu', this.onContext);
     window.removeEventListener('keydown', this.onKeyDown);
+    window.removeEventListener('keyup', this.onKeyUp);
+    window.removeEventListener('blur', this.clearPanKeys);
   }
 
   private updateHover(clientX: number, clientY: number): void {
@@ -2890,6 +2944,7 @@ export class Editor {
 
   draw(): void {
     if (!this.active) return;
+    this.panWithKeys();
     this.overlayWidth = this.app.overlay.width;
     this.overlayHeight = this.app.overlay.height;
     const now = performance.now();

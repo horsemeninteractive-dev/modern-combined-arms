@@ -71,16 +71,19 @@ function matchDate(recordedAt: number): string {
   }
 }
 
+/**
+ * The totals a service record is built from.
+ *
+ * Rank, level, XP and progress to the next rank belong to the account page
+ * head, which every tab shares. Repeating them here made the same standing
+ * appear twice on one screen, so this block is only the counters and where the
+ * record is stored.
+ */
 export function careerSummaryMarkup(snapshot: CareerSnapshot | null): string {
   if (!snapshot) return '<p class="account-note">Reading your service record…</p>';
   const view = snapshot.view;
   const totals = view.totals;
   const winRate = totals.matches > 0 ? Math.round((totals.victories / totals.matches) * 100) : 0;
-  const percent = Math.round(view.progress * 100);
-  const level = view.level ?? levelForXp(totals.xp);
-  const nextText = view.next
-    ? `${view.xpInto} / ${view.xpSpan ?? 0} XP to ${escapeCareerHtml(view.next.name)} · level ${level.next?.number ?? level.level.number}`
-    : 'Top of the rank ladder — service level ' + level.level.number + ' of 50';
   const sourceText =
     snapshot.source === 'guest'
       ? 'Guest career on this device. Sign in and import it to keep it across devices.'
@@ -88,17 +91,6 @@ export function careerSummaryMarkup(snapshot: CareerSnapshot | null): string {
   const commendations = (view.achievements ?? []).filter((entry) => entry.complete).length;
   return `
     <div class="career-block" data-career-source="${snapshot.source}">
-      <div class="career-rank">
-        <span class="career-insignia">${rankInsigniaSvg(view.rank, { label: `${view.rank.name} insignia` })}</span>
-        <span class="career-rank-text">
-          <b>${escapeCareerHtml(view.rank.name)}</b>
-          <small>LEVEL ${level.level.number} OF 50 · ${escapeCareerHtml(view.rank.grade)} · ${escapeCareerHtml(view.rank.abbreviation)}</small>
-        </span>
-        <span class="career-xp"><b>${totals.xp.toLocaleString()}</b><small>CAREER XP</small></span>
-      </div>
-      <div class="career-progress" role="progressbar" aria-label="Progress to next rank"
-        aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><i style="width:${percent}%"></i></div>
-      <p class="career-next">${nextText}</p>
       <div class="career-stats">
         <div><span>OPERATIONS</span><b>${totals.matches}</b></div>
         <div><span>VICTORIES</span><b>${totals.victories}</b></div>
@@ -320,9 +312,9 @@ export function serviceRecordMarkup(
     : careerHistoryMarkup(snapshot, 20);
   const totals = snapshot.view.totals;
   return `
+    <p class="section-title">SERVICE RECORD</p>
     ${careerSummaryMarkup(snapshot)}
     <div class="career-record">
-      <p class="section-title">SERVICE RECORD</p>
       <p class="section-title">RECENT OPERATIONS</p>
       ${historyMarkup}
       <div id="account-match-detail" class="account-match-detail"></div>

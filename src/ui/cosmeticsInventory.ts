@@ -9,9 +9,12 @@
  *
  * The page is presentation, not a store: there is no price, no currency and no
  * claim button. A locked item shows the step that opens it and current progress.
+ * Identity, rank and the equipped frame already live in the page head, so this
+ * page only names what is worn and offers the swap.
  */
 import {
   COSMETIC_SECTIONS,
+  cosmeticById,
   cosmeticsByCategory,
   isCosmeticUnlocked,
   unlockProgressText,
@@ -24,14 +27,10 @@ import {
 export interface CosmeticsInventoryOptions {
   progress: CosmeticProgress;
   equipped: { frame: string | null; background: string | null; camo: string | null };
-  identity: { callsign: string; avatar: string } | null;
   /** Which section is being browsed. */
   filter?: CosmeticCategory | 'all';
   /** Whether the player has an account, which decides where equipment is saved. */
   signedIn?: boolean;
-  flagHtml?: string;
-  rankName?: string | null;
-  grade?: string | null;
   /** Achievement names, so a commendation unlock can name its award. */
   achievementNames?: Record<string, string>;
 }
@@ -77,6 +76,7 @@ function equippedId(
   return null;
 }
 
+/** One state per item: worn, wearable, or locked. */
 function itemAction(
   item: CosmeticItem,
   unlocked: boolean,
@@ -89,13 +89,6 @@ function itemAction(
   )}">EQUIP</button>`;
 }
 
-function resetAction(category: CosmeticCategory, current: string | null): string {
-  if (current === null) return '';
-  return `<button type="button" class="ci-equip ci-equip-clear" data-cosmetic-equip="${escapeHtml(
-    `${category}:`,
-  )}">REMOVE</button>`;
-}
-
 function itemCard(
   item: CosmeticItem,
   options: CosmeticsInventoryOptions,
@@ -104,15 +97,22 @@ function itemCard(
 ): string {
   const unlocked = isCosmeticUnlocked(item, options.progress);
   const equipped = current === item.id;
-  const progress = unlocked ? 'Unlocked' : unlockProgressText(item.unlock, options.progress);
   return `<article class="ci-item${equipped ? ' is-equipped' : ''}${unlocked ? '' : ' is-locked'}">
     <span class="${cosmeticArtClass(item)}" aria-hidden="true"></span>
     <div class="ci-item-body">
-      <p class="ci-item-name"><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.tier)}</small></p>
+      <p class="ci-item-name">
+        <b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.tier)}</small>
+        ${itemAction(item, unlocked, equipped)}
+      </p>
       <p class="ci-item-desc">${escapeHtml(item.description)}</p>
-      <p class="ci-item-req"><span>${escapeHtml(requirementText(item, names))}</span><em>${escapeHtml(progress)}</em></p>
+      ${
+        unlocked
+          ? ''
+          : `<p class="ci-item-req"><span>${escapeHtml(requirementText(item, names))}</span><em>${escapeHtml(
+              unlockProgressText(item.unlock, options.progress),
+            )}</em></p>`
+      }
     </div>
-    <div class="ci-item-action">${itemAction(item, unlocked, equipped)}</div>
   </article>`;
 }
 
@@ -146,33 +146,33 @@ function filterRow(
   </div>`;
 }
 
-function preview(options: CosmeticsInventoryOptions): string {
-  const identity = options.identity;
-  const initial = (identity?.callsign ?? 'Guest').trim().charAt(0).toUpperCase() || '?';
-  const frame = options.equipped.frame ? ` identity-frame-${frameToken(options.equipped.frame)}` : '';
-  const background = options.equipped.background
-    ? ` identity-bg-${frameToken(options.equipped.background)}`
-    : '';
-  const camo = options.equipped.camo ? ` ci-camo-${camoToken(options.equipped.camo)}` : '';
-  const rankLine = [options.rankName, options.grade].filter(Boolean).join(' · ');
-  return `<section class="ci-preview${background}" aria-label="Player card preview">
-    <span class="ci-preview-camo${camo}" aria-hidden="true"></span>
-    <span class="ci-preview-avatar${frame}" aria-hidden="true">${escapeHtml(initial)}</span>
-    <div class="ci-preview-text">
-      <b>${escapeHtml(identity?.callsign ?? 'Guest commander')}</b>
-      <small>${escapeHtml(rankLine || 'NO RANK RECORDED')}</small>
-    </div>
-    ${options.flagHtml ? `<span class="ci-preview-flag">${options.flagHtml}</span>` : ''}
-  </section>`;
-}
-
-/** Catalogue ids are already validated; this only extracts the render token. */
-function frameToken(id: string): string {
-  return id.split('-').slice(1).join('-');
-}
-
-function camoToken(id: string): string {
-  return id.split('-').slice(1).join('-');
+/**
+ * What is worn right now, in one place.
+ *
+ * The category rows below already say which item is on, but that is only true
+ * within the visible section; this strip answers "what am I wearing" without
+ * scrolling and clears a slot without hunting for its card.
+ */
+function worn(options: CosmeticsInventoryOptions): string {
+  const slots: Array<{ category: CosmeticCategory; label: string; id: string | null }> = [
+    { category: 'frame', label: 'Avatar frame', id: options.equipped.frame },
+    { category: 'background', label: 'Card background', id: options.equipped.background },
+    { category: 'camo', label: 'Unit camo', id: options.equipped.camo },
+  ];
+  const rows = slots.map((slot) => {
+    if (slot.id === null) return '';
+    const item = cosmeticById(slot.id);
+    return `<li data-slot="${slot.category}">
+      <span>${escapeHtml(slot.label)}</span>
+      <b>${escapeHtml(item?.name ?? slot.id)}</b>
+      <button type="button" class="ci-equip ci-equip-clear" data-cosmetic-equip="${slot.category}:">REMOVE</button>
+    </li>`;
+  });
+  const filled = rows.filter(Boolean);
+  if (filled.length === 0) {
+    return '<p class="ci-worn ci-worn-empty">Nothing is equipped yet. Everything you own can be worn from the list below.</p>';
+  }
+  return `<ul class="ci-worn" aria-label="Equipped cosmetics">${filled.join('')}</ul>`;
 }
 
 export function cosmeticsInventoryMarkup(options: CosmeticsInventoryOptions): string {
@@ -189,13 +189,11 @@ export function cosmeticsInventoryMarkup(options: CosmeticsInventoryOptions): st
   const sections = COSMETIC_SECTIONS.filter((section) => active === 'all' || active === section.id)
     .map((section) => {
       const items = cosmeticsByCategory(section.id);
-      const count = counts.get(section.id) ?? { owned: 0, total: items.length };
       const current = equippedId(section.id, options.equipped);
       if (section.id === 'emblem') {
         return `<section class="ci-section" aria-label="${escapeHtml(section.title)}">
           <header class="ci-section-head">
             <div><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.blurb)}</p></div>
-            <span class="ci-count">${count.owned}/${count.total}</span>
           </header>
           <div class="ci-grid">
             ${items
@@ -204,11 +202,19 @@ export function cosmeticsInventoryMarkup(options: CosmeticsInventoryOptions): st
                 return `<article class="ci-item${unlocked ? '' : ' is-locked'}">
                   <span class="${cosmeticArtClass(item)}" aria-hidden="true"></span>
                   <div class="ci-item-body">
-                    <p class="ci-item-name"><b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.tier)}</small></p>
+                    <p class="ci-item-name">
+                      <b>${escapeHtml(item.name)}</b><small>${escapeHtml(item.tier)}</small>
+                      <span class="ci-state${unlocked ? '' : ' is-locked'}">${unlocked ? 'UNLOCKED' : 'LOCKED'}</span>
+                    </p>
                     <p class="ci-item-desc">${escapeHtml(item.description)}</p>
-                    <p class="ci-item-req"><span>${escapeHtml(requirementText(item, names))}</span><em>${escapeHtml(unlockProgressText(item.unlock, options.progress))}</em></p>
+                    ${
+                      unlocked
+                        ? ''
+                        : `<p class="ci-item-req"><span>${escapeHtml(requirementText(item, names))}</span><em>${escapeHtml(
+                            unlockProgressText(item.unlock, options.progress),
+                          )}</em></p>`
+                    }
                   </div>
-                  <div class="ci-item-action"><span class="ci-state${unlocked ? '' : ' is-locked'}">${unlocked ? 'UNLOCKED' : 'LOCKED'}</span></div>
                 </article>`;
               })
               .join('')}
@@ -221,12 +227,10 @@ export function cosmeticsInventoryMarkup(options: CosmeticsInventoryOptions): st
       return `<section class="ci-section" aria-label="${escapeHtml(section.title)}">
         <header class="ci-section-head">
           <div><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.blurb)}</p></div>
-          <span class="ci-count">${count.owned}/${count.total}</span>
         </header>
         <div class="ci-grid">
           ${items.map((item) => itemCard(item, options, names, current)).join('')}
         </div>
-        ${resetAction(section.id, current)}
       </section>`;
     })
     .join('');
@@ -234,7 +238,7 @@ export function cosmeticsInventoryMarkup(options: CosmeticsInventoryOptions): st
   const total = [...counts.values()].reduce((sum, entry) => sum + entry.total, 0);
   const owned = [...counts.values()].reduce((sum, entry) => sum + entry.owned, 0);
   return `<div class="ci">
-    ${preview(options)}
+    ${worn(options)}
     <div class="ci-summary">
       <p class="ci-summary-text"><b>${owned} of ${total}</b> cosmetics unlocked. Everything here is earned by playing: career XP, matches, victories and commendations. There is no shop and no currency.</p>
       <p class="ci-summary-hint">Equipped items are saved${options.signedIn ? ' to your account' : ' on this device'} and travel with your identity.</p>

@@ -1867,6 +1867,10 @@ export class AIController {
 
   private buildOptions(ctx: AIContext): BuildOption[] {
     const options: BuildOption[] = [];
+    // Facilities that may still be sited while a base is rebuilding its haulers:
+    // the factory that produces the hull, the drop-off that banks its load and
+    // the plant that keeps both running.
+    const rescueFacilities = new Set(['factory', 'refinery', 'powerPlant']);
     const add = (
       slotId: string,
       score: number,
@@ -1887,6 +1891,27 @@ export class AIController {
       // never succeed consumes the whole think.
       if (ctx.game.missingTech(ctx.aiId, defId).length > 0) return;
       if (!ctx.game.buildingSlotUnlocked(ctx.aiId, buildingFamily(defId))) return;
+      // Economic rescue. With no working hauler and a drop-off standing, the next
+      // material belongs to the replacement hull, so a capability structure must
+      // not consume it. The rescue does not freeze the base: the facilities that
+      // produce and bank the hull stay available, and a live threat still buys a
+      // defensive position, because a raid at the gate cannot wait for an economy.
+      // A viable route needs both halves: a drop-off to bank a load and a
+      // factory to produce the hull. With either missing there is nothing to
+      // protect the bank for, so the base must keep building — otherwise a lost
+      // factory would lock it into rescue-only construction for the rest of the
+      // match.
+      const rescuing =
+        (ctx.unitCounts.get('harvester') ?? 0) === 0 &&
+        (ctx.counts.get('refinery') ?? 0) > 0 &&
+        (ctx.counts.get('factory') ?? 0) > 0;
+      if (
+        rescuing &&
+        !rescueFacilities.has(defId) &&
+        !(essential && ctx.threats.length > 0)
+      ) {
+        return;
+      }
       options.push({ defId, score, reason, essential, planned, economy });
     };
     const counts = ctx.counts;

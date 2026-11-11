@@ -1,36 +1,31 @@
 /**
  * Commander Legacy.
  *
- * The formal service record: identity, standing, decorations, national service,
- * campaign legacy and the milestones that produced them. It renders only what
- * the career view already says, so an account and a guest see the same screen
- * with the same rules, and a missing breakdown degrades to a short note instead
- * of a broken page.
+ * The formal service record: standing, decorations, national service, campaign
+ * legacy and the milestones that produced them. It renders only what the career
+ * view already says, so an account and a guest see the same screen with the same
+ * rules, and a missing breakdown degrades to a short note instead of a broken
+ * page.
  *
+ * Identity, rank and level are the account page head's job: this screen opens
+ * on the summary, so the same standing is not stated twice in one view.
  * Awards appear here as earned records. Nothing on this screen is equipable and
  * no field can imply a rank the career has not reached.
  */
 import { CAMPAIGNS } from '../data/campaign';
 import { NATIONS, PLAYABLE_NATION_IDS } from '../data/factions';
 import type { CareerSnapshot } from '../accounts/careerService';
-import type { IdentityView } from '../accounts/client';
 import {
   ACHIEVEMENT_CATEGORY_LABEL,
   type AchievementView,
   type AwardDefinition,
   type AwardType,
 } from '../accounts/achievements';
-import { levelForXp } from '../accounts/levels';
 import { awardSvg, awardTypeLabel } from './awards';
-import { escapeCareerHtml, identityBannerMarkup } from './careerView';
+import { escapeCareerHtml } from './careerView';
 
 export interface CommanderLegacyInput {
   snapshot: CareerSnapshot | null;
-  identity: IdentityView | null;
-  /** Rendered command flag, already escaped by the flag renderer. */
-  flagHtml?: string;
-  frame?: string | null;
-  background?: string | null;
 }
 
 const DECORATION_ORDER: AwardType[] = ['medal', 'ribbon', 'commendation'];
@@ -187,47 +182,24 @@ export function commanderLegacyMarkup(input: CommanderLegacyInput): string {
   }
   const view = snapshot.view;
   const totals = view.totals;
-  const level = view.level ?? levelForXp(totals.xp);
-  const percent = Math.round(view.progress * 100);
   const entries = view.achievements ?? [];
   const earned = entries.filter((entry) => entry.complete);
   const nationsServed = (view.stats?.nations ?? []).length;
   const campaignsCompleted = (view.campaigns ?? []).length;
   const winRate = totals.matches > 0 ? Math.round((totals.victories / totals.matches) * 100) : 0;
-  const nextText = view.next
-    ? `${view.xpInto} / ${view.xpSpan ?? 0} XP to ${escapeCareerHtml(view.next.name)}`
-    : 'Highest rank held';
   return `<div class="legacy" data-source="${snapshot.source}" data-state="${earned.length > 0 ? 'decorated' : 'opening'}">
-    <section class="legacy-identity" aria-label="Commander identity">
-      ${identityBannerMarkup(input.identity, view.rank.name, view.rank.grade, totals.xp, {
-        flagHtml: input.flagHtml,
-        frame: input.frame ?? null,
-        background: input.background ?? null,
-      })}
-      <div class="legacy-standing">
-        <span class="legacy-standing-rank">
-          <b>${escapeCareerHtml(view.rank.name)}</b>
-          <small>${escapeCareerHtml(view.rank.grade)} · ${escapeCareerHtml(view.rank.abbreviation)} · SERVICE LEVEL ${level.level.number} OF 50</small>
-        </span>
-        <span class="legacy-standing-xp"><b>${totals.xp.toLocaleString()}</b><small>CAREER XP</small></span>
-      </div>
-      <div class="career-progress" role="progressbar" aria-label="Progress to next rank"
-        aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><i style="width:${percent}%"></i></div>
-      <p class="career-next">${nextText}</p>
-    </section>
-
     <section class="legacy-summary" aria-label="Career summary">
       <p class="section-title">SERVICE SUMMARY</p>
       <div class="legacy-summary-grid">
         <div><span>OPERATIONS</span><b>${totals.matches}</b></div>
         <div><span>VICTORIES</span><b>${totals.victories}</b></div>
-        <div><span>DEFEATS</span><b>${totals.defeats}</b></div>
-        <div><span>DRAWS</span><b>${totals.draws}</b></div>
         <div><span>WIN RATE</span><b>${winRate}%</b></div>
         <div><span>SERVICE TIME</span><b>${playtime(totals.playSeconds)}</b></div>
         <div><span>CAMPAIGNS</span><b>${campaignsCompleted}</b></div>
         <div><span>NATIONS SERVED</span><b>${nationsServed}</b></div>
         <div><span>DECORATIONS</span><b>${earned.length}</b></div>
+        <div><span>DEFEATS</span><b>${totals.defeats}</b></div>
+        <div><span>DRAWS</span><b>${totals.draws}</b></div>
       </div>
       ${snapshot.unavailable ? '<p class="account-notice" role="status" data-level="warning">The account service could not be reached, so this is the local guest record.</p>' : ''}
     </section>

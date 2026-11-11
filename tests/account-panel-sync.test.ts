@@ -258,4 +258,35 @@ describe('AccountPanel flag sync', () => {
     expect(api.saves).toHaveLength(0);
     expect(store.state.designs).toHaveLength(1);
   });
+
+  it('wears an equipped frame and background on the menu chip', () => {
+    const target = activePanel();
+    target.showCosmetics();
+    const chip = document.getElementById('menu-account-avatar')!;
+    const trigger = document.getElementById('menu-account-trigger')!;
+    expect(chip.classList.contains('identity-frame-steel')).toBe(false);
+
+    const equipFrame = document.querySelector<HTMLButtonElement>(
+      '#menu-account-body [data-cosmetic-equip="frame:frame-steel"]',
+    );
+    expect(equipFrame).not.toBeNull();
+    equipFrame!.click();
+    expect(chip.classList.contains('identity-frame-steel')).toBe(true);
+
+    const equipBackground = document.querySelector<HTMLButtonElement>(
+      '#menu-account-body [data-cosmetic-equip="background:bg-deep"]',
+    );
+    expect(equipBackground).not.toBeNull();
+    equipBackground!.click();
+    expect(trigger.classList.contains('identity-bg-deep')).toBe(true);
+
+    // Removing swaps the class off rather than leaving the old frame behind.
+    const removeFrame = document.querySelector<HTMLButtonElement>(
+      '#menu-account-body [data-cosmetic-equip="frame:"]',
+    );
+    expect(removeFrame).not.toBeNull();
+    removeFrame!.click();
+    expect(chip.classList.contains('identity-frame-steel')).toBe(false);
+    expect(trigger.classList.contains('identity-bg-deep')).toBe(true);
+  });
 });

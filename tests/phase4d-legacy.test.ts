@@ -470,17 +470,15 @@ describe('Phase 4D presentation', () => {
           identity: null,
         },
       },
-      identity: { callsign: 'Sable', avatar: 'insignia' },
-      flagHtml: '<svg></svg>',
-      frame: null,
-      background: null,
     });
     expect(html).toContain('SERVICE SUMMARY');
     expect(html).toContain('DECORATIONS');
     expect(html).toContain('NATIONAL SERVICE');
     expect(html).toContain('CAMPAIGN LEGACY');
     expect(html).toContain('MILESTONES');
-    expect(html).toContain('Sable');
+    // Identity and standing are the account page head's job, so the showcase
+    // does not restate the callsign it was not given.
+    expect(html).not.toContain('Sable');
     expect(html).toContain(CAMPAIGNS[0].name);
     expect(html).toContain('Lithuania');
     expect(html).toContain('data-state="earned"');
@@ -502,7 +500,6 @@ describe('Phase 4D presentation', () => {
           matches: [],
         },
       },
-      identity: null,
     });
     expect(html).toContain('No decorations yet');
     expect(html).toContain('Your milestones appear here');

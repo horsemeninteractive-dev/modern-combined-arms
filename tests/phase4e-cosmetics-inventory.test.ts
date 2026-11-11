@@ -166,15 +166,18 @@ describe('cosmetics inventory markup', () => {
     const markup = cosmeticsInventoryMarkup({
       progress: PROGRESS,
       equipped: { frame: 'frame-brass', background: 'bg-deep', camo: 'camo-woodland' },
-      identity: { callsign: 'Test Commander', avatar: 'star' },
       achievementNames: { 'campaign-complete': 'Campaign Service' },
     });
     expect(markup).toContain('Avatar frames');
     expect(markup).toContain('Player card backgrounds');
     expect(markup).toContain('Unit camos');
     expect(markup).toContain('Flag emblems');
-    expect(markup).toContain('Test Commander');
+    // The worn strip names what is on, including items outside the visible
+    // section; the portrait itself belongs to the page head.
+    expect(markup).toContain('Brass frame');
+    expect(markup).toContain('Deep water');
     expect(markup).toContain('EQUIPPED');
+    expect(markup).not.toContain('Player card preview');
     expect(markup).toContain('Woodland mottle');
     expect(markup).toContain('Everything here is earned by playing');
     expect(markup).not.toContain('price');
@@ -183,9 +186,8 @@ describe('cosmetics inventory markup', () => {
 
   it('offers an equip action for an owned item and a lock for an unearned one', () => {
     const markup = cosmeticsInventoryMarkup({
-      progress: PROGRESS,
+      progress: { ...PROGRESS, achievements: [] },
       equipped: { frame: null, background: null, camo: null },
-      identity: null,
       achievementNames: { 'campaign-complete': 'Campaign Service' },
     });
     expect(markup).toContain('data-cosmetic-equip="background:bg-deep"');
@@ -199,7 +201,6 @@ describe('cosmetics inventory markup', () => {
     const markup = cosmeticsInventoryMarkup({
       progress: PROGRESS,
       equipped: { frame: null, background: null, camo: null },
-      identity: null,
       filter: 'camo',
     });
     expect(markup).toContain('Unit camos');
@@ -209,11 +210,11 @@ describe('cosmetics inventory markup', () => {
     expect(markup).toContain('cosmetics unlocked');
   });
 
-  it('escapes a hostile callsign', () => {
+  it('escapes a hostile award name in a lock requirement', () => {
     const markup = cosmeticsInventoryMarkup({
-      progress: PROGRESS,
+      progress: { ...PROGRESS, achievements: [] },
       equipped: { frame: null, background: null, camo: null },
-      identity: { callsign: '<img src=x onerror=alert(1)>', avatar: 'star' },
+      achievementNames: { 'campaign-complete': '<img src=x onerror=alert(1)>' },
     });
     expect(markup).not.toContain('<img src=x');
     expect(markup).toContain('&lt;img');
