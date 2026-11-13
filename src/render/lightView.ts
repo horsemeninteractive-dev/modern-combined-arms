@@ -241,91 +241,91 @@ function pushVehicleLights(
     const side = lampCount === 2 ? (i === 0 ? -anchor.lateral : anchor.lateral) : 0;
     const x = pose.x + cos * anchor.forward - sin * side;
     const z = pose.z + sin * anchor.forward + cos * side;
-    const y = groundY(x, z) + 0.08;
     (kind === 'searchlight'
-      ? pushSearchlight(out, x, y, z, pose.facing, anchor.height, gain)
-      : pushHeadlamp(out, x, y, z, pose.facing, anchor.height, gain));
+      ? pushSearchlight(out, x, z, pose.facing, anchor.height, gain, groundY)
+      : pushHeadlamp(out, x, z, pose.facing, anchor.height, gain, groundY));
   }
+}
+
+/**
+ * A lamp's light, projected analytically onto the ground.
+ *
+ * A beam drawn as geometry is a flat decal: on rising ground its far half sinks
+ * into the slope, over a crest it is painted through the hill, and chopping it
+ * into steps merely trades one artefact for banding at the seams. No geometry is
+ * laid down for the beam any more. The lamp is handed to the terrain shader,
+ * which evaluates the cone per fragment against the surface it actually hit, so
+ * the light follows every slope exactly, has no boundary to clip, and cannot
+ * disaggregate from the ground it falls on.
+ */
+function pushProjectedLamp(
+  out: GpuLight[],
+  x: number,
+  z: number,
+  facing: number,
+  lampHeight: number,
+  groundY: LightViewInput['groundY'],
+  length: number,
+  color: [number, number, number],
+  intensity: number,
+  lensRadius: number,
+  lensLift: number,
+  tilt: number,
+): void {
+  const cos = Math.cos(facing);
+  const sin = Math.sin(facing);
+  const y = groundY(x, z) + 0.08 + lampHeight + lensLift;
+  const norm = Math.hypot(1, tilt);
+  out.push({
+    x,
+    y,
+    z,
+    radius: lensRadius,
+    rotation: 0,
+    stretch: 1,
+    glow: 1,
+    cone: 0,
+    color,
+    intensity: intensity * 0.8,
+    spot: {
+      x,
+      y,
+      z,
+      dirX: cos / norm,
+      dirY: -tilt / norm,
+      dirZ: sin / norm,
+      range: length,
+      cosOuter: Math.cos(0.62),
+      color,
+      intensity,
+    },
+  });
 }
 
 function pushHeadlamp(
   out: GpuLight[],
   x: number,
-  y: number,
   z: number,
   facing: number,
   lampHeight: number,
   gain: number,
+  groundY: LightViewInput['groundY'],
 ): void {
-  // Half-width and half-length of the beam quad, in world units. The quad is
-  // stretched along the hull's facing, and its centre sits one half-length
-  // ahead of the lamp, so the near edge starts at the bumper and nothing is
-  // ever painted behind the vehicle.
-  const halfWidth = 2.2;
-  const halfLength = HEADLAMP_LENGTH * 0.5;
-  out.push({
-    x: x + Math.cos(facing) * halfLength,
-    y,
-    z: z + Math.sin(facing) * halfLength,
-    radius: halfWidth,
-    rotation: facing,
-    stretch: halfLength / halfWidth,
-    glow: 0,
-    cone: 1,
-    color: [1.0, 0.93, 0.74],
-    intensity: gain * 0.42,
-  });
-  // The lens itself, at the height the model mounts it: a small warm bloom so
-  // the lamp is visible on the bodywork, not only as a pool on the ground.
-  out.push({
-    x,
-    y: y + lampHeight,
-    z,
-    radius: 0.18,
-    rotation: 0,
-    stretch: 1,
-    glow: 1,
-    cone: 0,
-    color: [1.0, 0.95, 0.82],
-    intensity: gain * 0.8,
-  });
+  // Warm lane light, narrow at the bumper and reaching about three tiles. The
+  // 0.22 tilt is what brings a lamp mounted at hull height down onto the road.
+  pushProjectedLamp(out, x, z, facing, lampHeight, groundY, HEADLAMP_LENGTH, [1.0, 0.93, 0.74], gain * 1.1, 0.18, 0, 0.22);
 }
 
 function pushSearchlight(
   out: GpuLight[],
   x: number,
-  y: number,
   z: number,
   facing: number,
   lampHeight: number,
   gain: number,
+  groundY: LightViewInput['groundY'],
 ): void {
-  const halfWidth = 2.4;
-  const halfLength = SEARCHLIGHT_LENGTH * 0.5;
-  out.push({
-    x: x + Math.cos(facing) * halfLength,
-    y,
-    z: z + Math.sin(facing) * halfLength,
-    radius: halfWidth,
-    rotation: facing,
-    stretch: halfLength / halfWidth,
-    glow: 0,
-    cone: 1,
-    color: [0.93, 0.97, 1.0],
-    intensity: gain * 0.45,
-  });
-  out.push({
-    x,
-    y: y + lampHeight + 0.35,
-    z,
-    radius: 0.22,
-    rotation: 0,
-    stretch: 1,
-    glow: 1,
-    cone: 0,
-    color: [0.96, 0.99, 1.0],
-    intensity: gain * 0.8,
-  });
+  pushProjectedLamp(out, x, z, facing, lampHeight, groundY, SEARCHLIGHT_LENGTH, [0.93, 0.97, 1.0], gain * 1.4, 0.22, 0.35, 0.16);
 }
 
 function pushStructureLights(

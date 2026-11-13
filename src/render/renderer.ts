@@ -110,7 +110,7 @@ import {
 import { DECOR_BATCHES, buildDecorMesh } from './decorMeshes';
 import { ParticleSystem } from './particles';
 import { ParticleGpu, type GpuParticle } from './particleGpu';
-import { LightGpu, type GpuLight } from './lightGpu';
+import { LightGpu, type GroundSpot, type GpuLight } from './lightGpu';
 import { buildLightView, oreGlowLights, structureWindowGlow, windowGlow } from './lightView';
 import { dayNightAt, type DayNightState } from '../sim/dayNight';
 import { weatherFor, type WeatherProfile } from '../sim/weather';
@@ -233,6 +233,16 @@ interface TerrainGpu {
   count: number;
 }
 
+/** Ground lamps the terrain shader can evaluate in one pass. */
+const MAX_GROUND_SPOTS = 12;
+
+/**
+ * Occluder map for the lamp cones. Coarse on purpose: it only has to answer
+ * whether a wall or a ridge sits between a lamp and the ground it lights.
+ */
+const LAMP_SHADOW_SIZE = 256;
+const LAMP_SHADOW_TEXTURE_UNIT = 6;
+
 function uniformMap(gl: WebGL2RenderingContext, program: WebGLProgram, names: string[]): Record<string, WebGLUniformLocation | null> {
   const out: Record<string, WebGLUniformLocation | null> = {};
   for (const n of names) out[n] = gl.getUniformLocation(program, n);
@@ -310,6 +320,10 @@ export class Renderer {
   private shadowGpu!: ShadowGpu;
   private shadowProgram!: MeshProgram;
   private shadowMap!: ShadowMap;
+  /** Top-down depth of the battlefield, for lamp occlusion. */
+  private lampShadow!: ShadowMap;
+  private lampMatrix = identity();
+  private lampOccludersReady = false;
   /** World-to-light-clip matrix for the frame's detailed shadow map. */
   private shadowMatrix: Float32Array = identity();
   /** Fading tracks, tyre marks, scorch and craters; presentation-only and bounded. */
@@ -483,6 +497,16 @@ export class Renderer {
    */
   private lightPools: GpuLight[] = [];
   private lightGlows: GpuLight[] = [];
+  /**
+   * Headlamps and searchlights handed to the terrain shader. They are real
+   * projected cones, not drawn beams: the ground evaluates them against the
+   * surface it actually is, so a lamp follows a slope instead of clipping
+   * through it.
+   */
+  private groundSpots: GroundSpot[] = [];
+  private spotSrc = new Float32Array(MAX_GROUND_SPOTS * 4);
+  private spotAim = new Float32Array(MAX_GROUND_SPOTS * 4);
+  private spotTint = new Float32Array(MAX_GROUND_SPOTS * 4);
   /** Authoritative clock as of the last frame; the sim owns it, we only read. */
   private dayNight: DayNightState = dayNightAt(0, { startHour: 18, dayLengthMinutes: 60 });
   /** Cached preview clock, keyed on the authored hour so edits invalidate it. */
@@ -568,6 +592,8 @@ export class Renderer {
   private initGpuResources(): void {
     const gl = this.gl;
     this.shadowMap?.dispose();
+    this.lampShadow?.dispose();
+    this.lampShadow?.dispose();
     this.unitMeshes.clear();
     this.buildingMeshes.clear();
     this.damageMeshes.clear();
@@ -588,12 +614,16 @@ export class Renderer {
       'uFogTex', 'uFogTexOld', 'uFogBlend', 'uFlagTex', 'uMatLut', 'uUseFog',
       'uWorldSize', 'uTime', 'uSilhouette', 'uDepthPull', 'uHaze', 'uHazeColor', 'uHazeRef',
       'uShadowMap', 'uLightVP', 'uShadowTexel', 'uShadowStrength', 'uShadowBias',
+      'uSpotSrc[0]', 'uSpotAim[0]', 'uSpotTint[0]', 'uSpotCount', 'uSpotGate',
+      'uLampShadow', 'uLampVP', 'uLampTexel', 'uLampOcclusion',
     ]);
     this.terrainProgram.u = uniformMap(gl, this.terrainProgram.program, [
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
       'uSun', 'uAmbient', 'uTone', 'uFogTex', 'uFogTexOld', 'uFogBlend', 'uShoreTex',
       'uUseFog', 'uTime', 'uGrid', 'uWet', 'uSnow', 'uHaze', 'uHazeColor', 'uHazeRef',
       'uShadowMap', 'uLightVP', 'uShadowTexel', 'uShadowStrength', 'uShadowBias',
+      'uSpotSrc[0]', 'uSpotAim[0]', 'uSpotTint[0]', 'uSpotCount', 'uSpotGate',
+      'uLampShadow', 'uLampVP', 'uLampTexel', 'uLampOcclusion',
     ]);
     this.waterProgram.u = uniformMap(gl, this.waterProgram.program, [
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
@@ -615,6 +645,7 @@ export class Renderer {
       'uModel', 'uLightVP', 'uStaticScale',
     ]);
     this.shadowMap = new ShadowMap(gl, SHADOW_MAP_SIZE);
+    this.lampShadow = new ShadowMap(gl, LAMP_SHADOW_SIZE);
     this.shadowMatrix = identity();
 
     this.treesMesh = new InstancedMesh(gl, buildTreeMesh());
@@ -1393,6 +1424,7 @@ export class Renderer {
     const scenario = this.scenario;
     this.lightPools.length = 0;
     this.lightGlows.length = 0;
+    this.groundSpots.length = 0;
     if (!game || !scenario || !this.settings.nightLights) return;
     if (this.dayNight.darkness <= 0) return;
     const width = scenario.width;
@@ -1429,6 +1461,7 @@ export class Renderer {
     });
     for (const light of lights) {
       (light.glow > 0.5 ? this.lightGlows : this.lightPools).push(light);
+      if (light.spot && this.groundSpots.length < MAX_GROUND_SPOTS) this.groundSpots.push(light.spot);
     }
     // Crystal seams light their own ground once the sun is down, but only in
     // ground the player has actually explored.
@@ -2348,25 +2381,30 @@ export class Renderer {
 
     // Detailed shadows are cast before anything reads the map. The pass renders
     // into its own depth target, so the cleared battlefield is untouched.
+    // A frame with the lights off owns no lights at all. The list is rebuilt
+    // only for a night frame, so leaving the previous frame's entries in place
+    // would let a match that opens in daylight keep painting the lamps of
+    // whatever was lit last — the menu's attract battle, a dusk briefing or the
+    // previous match — as stray glows at those older positions. It is resolved
+    // before the terrain pass because the ground needs this frame's lamp cones.
+    const lightsOn = !!this.game && this.settings.nightLights && this.dayNight.darkness > 0;
+    if (lightsOn) {
+      this.buildLightInstances();
+      if (this.groundSpots.length > 0) this.renderLampOccluders();
+      else this.lampOccludersReady = false;
+    } else {
+      this.lightPools.length = 0;
+      this.lightGlows.length = 0;
+      this.groundSpots.length = 0;
+      this.lampOccludersReady = false;
+    }
     this.renderShadowMap();
     this.drawTerrain();
     this.drawWater();
     this.drawGroundDecals();
     this.drawShadows();
     this.drawProps();
-    // A frame with the lights off owns no lights at all. The list is rebuilt
-    // only for a night frame, so leaving the previous frame's entries in place
-    // would let a match that opens in daylight keep painting the lamps of
-    // whatever was lit last — the menu's attract battle, a dusk briefing or the
-    // previous match — as stray glows at those older positions.
-    const lightsOn = !!this.game && this.settings.nightLights && this.dayNight.darkness > 0;
-    if (lightsOn) {
-      this.buildLightInstances();
-      this.lightGpu.draw(this.camera, this.lightPools);
-    } else {
-      this.lightPools.length = 0;
-      this.lightGlows.length = 0;
-    }
+    if (lightsOn) this.lightGpu.draw(this.camera, this.lightPools);
     if (this.game) {
       // Silhouettes go down before the units themselves. The depth buffer then
       // holds only terrain, structures and props, so a friendly hull in front of
@@ -2471,6 +2509,122 @@ export class Renderer {
     this.snowCapsMesh.setInstances(this.snowCapInstances);
   }
 
+  /**
+   * Uploads the frame's lamp cones for the terrain fragment stage.
+   *
+   * Packed as three vec4 arrays to keep every upload one call: origin and reach,
+   * aim and outer edge, colour and strength. Zeroes are never read because the
+   * count gates the loop, so only the live entries are written.
+   */
+  /** Fills the packed lamp arrays from this frame's cones; returns the count. */
+  private packGroundSpots(): number {
+    const count = Math.min(this.groundSpots.length, MAX_GROUND_SPOTS);
+    for (let i = 0; i < count; i++) {
+      const spot = this.groundSpots[i];
+      const o = i * 4;
+      this.spotSrc[o] = spot.x;
+      this.spotSrc[o + 1] = spot.y;
+      this.spotSrc[o + 2] = spot.z;
+      this.spotSrc[o + 3] = spot.range;
+      this.spotAim[o] = spot.dirX;
+      this.spotAim[o + 1] = spot.dirY;
+      this.spotAim[o + 2] = spot.dirZ;
+      this.spotAim[o + 3] = spot.cosOuter;
+      this.spotTint[o] = spot.color[0];
+      this.spotTint[o + 1] = spot.color[1];
+      this.spotTint[o + 2] = spot.color[2];
+      this.spotTint[o + 3] = spot.intensity;
+    }
+    return count;
+  }
+
+  private bindGroundSpots(p: MeshProgram): void {
+    const gl = this.gl;
+    const count = this.packGroundSpots();
+    gl.uniform4fv(p.u['uSpotSrc[0]'] ?? null, this.spotSrc);
+    gl.uniform4fv(p.u['uSpotAim[0]'] ?? null, this.spotAim);
+    gl.uniform4fv(p.u['uSpotTint[0]'] ?? null, this.spotTint);
+    gl.uniform1i(p.u.uSpotCount ?? null, count);
+    gl.uniform1f(p.u.uSpotGate ?? null, 1);
+    const occluded = this.lampOccludersReady && count > 0;
+    // Only bound when the map is fresh; the shader short-circuits to unoccluded
+    // otherwise, so the sampler is never read with a stale binding.
+    if (occluded) {
+      bindTextureUnit(gl, LAMP_SHADOW_TEXTURE_UNIT, this.lampShadow.texture, p.u.uLampShadow ?? null);
+    }
+    gl.uniformMatrix4fv(p.u.uLampVP ?? null, false, this.lampMatrix);
+    gl.uniform2f(
+      p.u.uLampTexel ?? null,
+      1 / this.lampShadow.size,
+      1 / this.lampShadow.size,
+    );
+    gl.uniform1f(p.u.uLampOcclusion ?? null, occluded ? 1 : 0);
+  }
+
+  /**
+   * Renders the lamp occluder map: the battlefield seen from straight above.
+   *
+   * The sun's shadow map cannot answer this question — lamps point sideways, not
+   * along the sun — so a second, cheap depth target is drawn top-down over the
+   * camera footprint. Terrain and every structure, hull and wreck caster go into
+   * it, and the lit shaders march the receiver-to-lamp segment through it. A
+   * pool therefore fades where a wall or a crest stands in the beam instead of
+   * painting the ground on the far side.
+   */
+  private renderLampOccluders(): void {
+    if (!this.scenario) return;
+    const gl = this.gl;
+    const rect = this.camera.viewRect();
+    const cx = (rect.x0 + rect.x1) * 0.5;
+    const cz = (rect.z0 + rect.z1) * 0.5;
+    const footprint = Math.hypot(rect.x1 - rect.x0, rect.z1 - rect.z0) * 0.5;
+    // Straight down, so the stored depth is simply the height of the tallest
+    // thing at each XZ, and a ray probe's depth is its own height.
+    const volume = shadowLightMatrix([0, 1, 0], cx, cz, footprint + 30);
+    this.lampMatrix = volume.matrix;
+    const p = this.shadowProgram;
+    gl.useProgram(p.program);
+    gl.uniformMatrix4fv(p.u.uLightVP, false, volume.matrix);
+    gl.activeTexture(gl.TEXTURE0 + LAMP_SHADOW_TEXTURE_UNIT);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.lampShadow.framebuffer);
+    gl.viewport(0, 0, this.lampShadow.size, this.lampShadow.size);
+    gl.clear(gl.DEPTH_BUFFER_BIT);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(true);
+    gl.enable(gl.POLYGON_OFFSET_FILL);
+    gl.polygonOffset(1.5, 4.0);
+    gl.uniformMatrix4fv(p.u.uModel, false, identity());
+    gl.uniform1f(p.u.uStaticScale, 1);
+    if (this.terrainGpu) {
+      gl.bindVertexArray(this.terrainGpu.vao);
+      gl.drawElements(gl.TRIANGLES, this.terrainGpu.count, gl.UNSIGNED_INT, 0);
+      gl.bindVertexArray(null);
+    }
+    gl.uniform1f(p.u.uStaticScale, 0);
+    // Trees and the large site props stand between a lamp and the road as well:
+    // a beam stops at a hedgerow or a boulder instead of starting again on the
+    // far side. Ground cover (grass tufts, reeds) is left out — it is too short
+    // to read as a shadow and only adds taps.
+    this.treesMesh.draw(this.treeInstances.length);
+    this.bushesMesh.draw(this.bushInstances.length);
+    this.shrubsMesh.draw(this.shrubInstances.length);
+    this.rocksMesh.draw(this.rockInstances.length);
+    this.oreMesh.draw(this.oreInstances.length);
+    this.fencesMesh.draw(this.fenceInstances.length);
+    this.lampsMesh.draw(this.lampInstances.length);
+    this.signsMesh.draw(this.signInstances.length);
+    this.rubbleMesh.draw(this.rubbleInstances.length);
+    for (const [batch, mesh] of this.decorMeshes) {
+      mesh.draw(this.decorInstances[batch]?.length ?? 0);
+    }
+    this.drawShadowCasters(cx, cz, footprint);
+    gl.disable(gl.POLYGON_OFFSET_FILL);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    this.lampOccludersReady = true;
+  }
+
   private drawTerrain(): void {
     if (!this.terrainGpu || !this.scenario) return;
     const gl = this.gl;
@@ -2486,6 +2640,7 @@ export class Renderer {
     // is soaked when the first unit lands and stays soaked.
     gl.uniform1f(p.u.uWet ?? null, this.weather.wet);
     gl.uniform1f(p.u.uSnow ?? null, this.groundSnow());
+    this.bindGroundSpots(p);
     bindTextureUnit(gl, 1, this.shoreTexture, p.u.uShoreTex ?? null);
     // Fog at unit 0, the previous field at unit 2; the shore map keeps unit 1.
     this.bindFogFields(p.u, 0, 2);
@@ -2520,7 +2675,11 @@ export class Renderer {
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
       this.bindFlagTexture();
       this.bindShadowSampling(mp);
+      // The road deck stands above the terrain the cones are measured against,
+      // so it has to receive the same lamp light or the pool disappears under it.
+      this.bindGroundSpots(mp);
       this.roadMesh.draw();
+      gl.uniform1f(mp.u.uSpotGate ?? null, 0);
       gl.disable(gl.BLEND);
     }
   }
@@ -2795,7 +2954,17 @@ export class Renderer {
       if (this.game && !this.pointVisible(this.game, decal.x, decal.z)) continue;
       decals.push(decal);
     }
-    this.decalGpu.draw(this.camera, decals);
+    const count = this.packGroundSpots();
+    const occluded = this.lampOccludersReady && count > 0;
+    this.decalGpu.draw(this.camera, decals, {
+      src: this.spotSrc,
+      aim: this.spotAim,
+      tint: this.spotTint,
+      count,
+      occluder: occluded ? this.lampShadow.texture : null,
+      matrix: this.lampMatrix,
+      texel: 1 / this.lampShadow.size,
+    });
   }
 
   /**
@@ -3693,6 +3862,11 @@ export class Renderer {
     this.bindFlagTexture();
     bindTextureUnit(gl, MESH_MATERIAL_TEXTURE_UNIT, this.materialTexture, mp.u.uMatLut ?? null);
     this.bindShadowSampling(mp);
+    // The mesh program needs this frame's cones too, because a bridge deck is a
+    // mesh standing over the water: without them the pool stops at the bank.
+    this.bindGroundSpots(mp);
+    gl.uniform1f(mp.u.uSpotGate ?? null, 0);
+    let lampGate = 0;
     const team = game.teamOf(game.localPlayerId);
     for (const e of game.state.entities) {
       // A shot-out bridge stays on the map as wreckage, so it is still drawn:
@@ -3781,6 +3955,14 @@ export class Renderer {
       );
       // Moving parts are frozen on a remembered silhouette: the shape that was
       // charted is all the team can know, not what it is doing now.
+      // Only a walkable span is lit by the lamps: every other hull and wall is a
+      // caster for the occluder map, not a receiver of the cone.
+      const walkableDeck = e.kind === 'building' && !!BUILDINGS[e.defId]?.walkable;
+      const nextGate = walkableDeck ? 1 : 0;
+      if (nextGate !== lampGate) {
+        lampGate = nextGate;
+        gl.uniform1f(mp.u.uSpotGate ?? null, nextGate);
+      }
       const rig = e.kind === 'building' ? this.buildingMeshes.get(e.defId) : null;
       const doorOpen = rig?.door && !remembered ? v?.door ?? 0 : 0;
       const rotorAngle = rig?.rotor && !remembered ? this.time * rig.rotorRate + e.id * 0.9 : 0;
@@ -3821,6 +4003,7 @@ export class Renderer {
         e.kind === 'building' && !construction ? e.modules ?? [] : [],
       );
     }
+    gl.uniform1f(mp.u.uSpotGate ?? null, 0);
     gl.uniform3f(mp.u.uTint, 1, 1, 1);
     gl.uniform3f(mp.u.uCamo, 1, 1, 1);
     gl.disable(gl.BLEND);

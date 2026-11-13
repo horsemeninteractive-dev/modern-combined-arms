@@ -485,7 +485,7 @@ const ROSTER: UnitDef[] = [
     hotkey: 'C',
     targetClass: 'naval',
   },
-  /* Defender Coalition platforms for the slots the shared baseline did not have.
+  /* Atlantic Accord platforms for the slots the shared baseline did not have.
      The canonical id doubles as the Defender platform, exactly as it does for
      the original 13 combat slots, so no definition is left unbuildable. */
   {
@@ -1024,8 +1024,8 @@ const NATIONAL_UNITS: UnitDef[] = [
     muzzle: { forward: 0.35, height: 0.95 },
   },
   /*
-   * Expansion nations. Finland and Sweden join the Defender Coalition, Iran and
-   * North Korea the Eastern Coalition. Each carries the same three differences
+   * Expansion nations. Finland and Sweden join the Atlantic Accord, Iran and
+   * North Korea the Eurasian Pact. Each carries the same three differences
    * as the launch nations: one substitution, one exclusive and one structure
    * variant. Replacements declare `variantOf` so the canonical slot keeps its
    * production list, research unlock and AI demand; exclusives declare none.
@@ -1308,7 +1308,7 @@ const NATIONAL_UNITS: UnitDef[] = [
 ];
 
 /**
- * Eastern Coalition platforms. These are the alliance's answers to the same 18
+ * Eurasian Pact platforms. These are the alliance's answers to the same 18
  * combat slots the Defender baseline fills, registered as variants of the
  * canonical slot so production lists, AI demand and saves keep naming the role
  * rather than the platform.

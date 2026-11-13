@@ -54,14 +54,23 @@ describe('command rail', () => {
     expect(styles).toMatch(/\.rail-actions \.rail-objective \{[^}]*grid-column: 1 \/ -1/);
   });
 
-  it('names the coalition at the head and the nation under its flag', () => {
+  it('flies the coloured crest on the nation flag instead of a coalition label', () => {
     const rail = railMarkup();
-    const head = rail.slice(rail.indexOf('rail-theatre'), rail.indexOf('rail-identity'));
-    expect(head).toContain('frontLabel');
+    // The side a command belongs to is read from the crest's colour, not from a
+    // word: neither the coalition name nor an MCA wordmark is printed.
+    expect(rail).not.toContain('rail-theatre');
+    expect(rail).not.toContain('rail-wordmark');
     const identity = rail.slice(rail.indexOf('rail-identity'));
+    expect(identity).toContain('rail-flag');
+    expect(identity).toContain('rail-crest');
+    expect(identity.indexOf('rail-flag')).toBeLessThan(identity.indexOf('rail-crest'));
     expect(identity).toContain('rail-nation');
     expect(identity).toContain('nationLabel');
     expect(styles).toContain('.rail-nation {');
+    // The crest is a mask tinted by the coalition colour, so one asset serves
+    // every faction rather than a blue and a red copy.
+    expect(styles).toMatch(/\.rail-crest i \{[^}]*background: var\(--front/);
+    expect(styles).toMatch(/\.rail-crest i \{[^}]*mask: url\('\/insignia-crest\.svg'\)/);
   });
 });
 

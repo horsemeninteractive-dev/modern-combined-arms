@@ -3,7 +3,7 @@ import { BUILDING_LIST } from './buildings';
 import { UNIT_LIST } from './units';
 
 /**
- * Canonical unit slot → Eastern Coalition platform.
+ * Canonical unit slot → Eurasian Pact platform.
  *
  * A slot absent from this map is a utility role both alliances field the same
  * way (engineer, harvester, recovery, medic). Keeping the selection here means
@@ -38,7 +38,7 @@ const BUILDING_BASELINE: readonly string[] = Object.freeze(
 );
 
 /**
- * The Defender Coalition baseline. Its canonical ids double as its platforms,
+ * The Atlantic Accord baseline. Its canonical ids double as its platforms,
  * so the coalition fields the original lineage plus the five platforms added
  * for the slots the old shared baseline did not have. The arrays are frozen so
  * a caller cannot edit the canonical content.
@@ -49,7 +49,7 @@ const DEFENDER_BASELINE: RosterDef = Object.freeze({
 });
 
 /**
- * The Eastern Coalition baseline: the same canonical slots, fielded as this
+ * The Eurasian Pact baseline: the same canonical slots, fielded as this
  * alliance's own equipment. A nation's differences are still declared as
  * substitutions in NATION_DATA rather than by editing the baseline.
  */
@@ -65,8 +65,8 @@ const EASTERN_BASELINE: RosterDef = Object.freeze({
  */
 const DEFENDER_ALLIANCE: AllianceDef = Object.freeze({
   id: 'defender',
-  name: 'Defender Coalition',
-  shortName: 'DEFENDER',
+  name: 'Atlantic Accord',
+  shortName: 'AA',
   color: '#37b6e0',
   accent: '#a8ecff',
   blurb:
@@ -76,8 +76,8 @@ const DEFENDER_ALLIANCE: AllianceDef = Object.freeze({
 
 const EASTERN_ALLIANCE: AllianceDef = Object.freeze({
   id: 'eastern',
-  name: 'Eastern Coalition',
-  shortName: 'EASTERN',
+  name: 'Eurasian Pact',
+  shortName: 'EP',
   color: '#ef6a4a',
   accent: '#ffc19e',
   blurb:
@@ -233,8 +233,8 @@ const NATION_DATA: readonly NationDef[] = [
     name: 'Hungary',
     shortName: 'HUNGARY',
     allianceId: 'eastern',
-    color: '#c98f5a',
-    accent: '#f2d6b3',
+    color: '#d4724f',
+    accent: '#ffcdb4',
     doctrine: 'Fortified defence',
     superweapon: 'dew',
     blurb:
@@ -250,8 +250,8 @@ const NATION_DATA: readonly NationDef[] = [
     name: 'Iran',
     shortName: 'IRAN',
     allianceId: 'eastern',
-    color: '#4f8c5a',
-    accent: '#e2f2d8',
+    color: '#c0503f',
+    accent: '#ffc9bd',
     doctrine: 'Unmanned strike',
     superweapon: 'drone',
     blurb:

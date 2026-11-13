@@ -373,6 +373,7 @@ export class HUD {
     this.powerReadoutOpen = false;
     this.lastPowerReadoutKey = '';
     this.bind();
+    this.applyFrontColours();
     // A layout refresh rebuilds the shell; keep the player's capture state.
     this.applyHudVisibility();
     this.syncPanelState();
@@ -393,6 +394,30 @@ export class HUD {
   }
 
   /**
+   * Coalition flavour for the chrome.
+   *
+   * The rail and the mobile strip fly the colours of the side the local player
+   * actually commands — defender-aligned commands read blue, the eastern
+   * coalition red — with the nation's own shade marking its flag line. The
+   * battlefield keeps the player's chosen team tint, so unit and marker
+   * readability is untouched: this paints the command chrome only.
+   */
+  private applyFrontColours(): void {
+    const root = this.root;
+    const game = this.game;
+    if (!root || !game) return;
+    const player = game.player(game.localPlayerId);
+    const faction = player ? tryIdentityDef(player.factionId) : undefined;
+    const front = faction ? ALLIANCES[faction.allianceId] : undefined;
+    root.style.setProperty('--front', front?.color ?? '#37b6e0');
+    root.style.setProperty('--front-accent', front?.accent ?? '#a8ecff');
+    root.style.setProperty('--front-nation', faction?.color ?? front?.color ?? '#37b6e0');
+    // The skin is more than a tint: the eastern coalition reads as hard-edged
+    // plate work while the defender coalition keeps the cooler instrument look.
+    root.dataset.front = front?.id ?? 'defender';
+  }
+
+  /**
    * Desktop chrome is a full-height rail on the far left: landscape screens have
    * width to spare and almost none to lose. Resources, army size, objective,
    * control-group slots, mission time and the menu actions all live here, so the
@@ -406,7 +431,6 @@ export class HUD {
     // country actually flying it. The title carries all three, so neither short
     // label has to.
     const front = faction ? ALLIANCES[faction.allianceId] : undefined;
-    const frontLabel = front?.shortName || front?.name || 'TASK FORCE';
     const nationLabel = faction?.shortName || faction?.name || 'TASK FORCE';
     const railTitle = faction
       ? `${front?.name ?? faction.allianceId} · ${faction.name}${
@@ -421,18 +445,24 @@ export class HUD {
         <!-- The rail scrolls as one column; the power gauge is bolted to its
              outer edge and does not scroll with it. -->
         <div class="rail-body">
-          <div class="rail-brand">
-            <img class="brand-mark" src="/insignia.svg" alt="" aria-hidden="true" width="30" height="30" />
-            <span class="rail-theatre" title="${escapeHtml(railTitle)}">${escapeHtml(frontLabel)}</span>
-          </div>
-          ${nation ? `<div class="rail-identity" title="${escapeHtml(railTitle)}">
-            <img class="rail-flag" src="${flagTextureUrl(nation)}" alt="${escapeHtml(nationLabel)} flag" />
-            <span class="rail-nation">${front ? `<i style="background:${front.color}"></i>` : ''}${escapeHtml(nationLabel)}</span>
-          </div>` : ''}
+          <header class="rail-command" title="${escapeHtml(railTitle)}">
+            <div class="rail-identity">
+              <span class="rail-flag-wrap">
+                ${nation ? `<img class="rail-flag" src="${flagTextureUrl(nation)}" alt="${escapeHtml(nationLabel)} flag" />` : ''}
+                <!-- The crest flies on the flag and takes the coalition's colour,
+                     so the side a command belongs to reads without a word. -->
+                <span class="rail-crest" aria-hidden="true"><i></i></span>
+              </span>
+              <span class="rail-nation">${front ? '<i></i>' : ''}${escapeHtml(nationLabel)}</span>
+            </div>
+          </header>
           <div class="rail-stats">
             <div class="rail-stat"><span class="rail-label"><i class="resource-swatch"></i>MATS</span><b id="res-mats">0</b><span class="rail-rate" id="res-mats-rate">+0/m</span></div>
             <div class="rail-stat req"><span class="rail-label"><i class="resource-swatch blue"></i>REQ</span><b id="res-req">0</b><span class="rail-rate" id="res-req-rate">+0.0/s</span></div>
           </div>
+          <!-- The accord's crest, sitting in the open band between the
+               requisition counter and the army counter. -->
+          <div class="rail-insignia" aria-hidden="true"><i></i></div>
           <div class="rail-bottom">
             <div class="rail-tail">
               <div class="rail-stat rail-stat-army"><span class="rail-label">ARMY</span><b id="res-force">0</b><span class="rail-rate" id="res-force-sub">0 STRUCTURES</span></div>
@@ -490,30 +520,40 @@ export class HUD {
 
   /** Mobile keeps a thin top strip: touch screens need the vertical pixels. */
   private mobileTopbarMarkup(game: Game): string {
+    const p = game.player(game.localPlayerId);
+    const nation = p ? flagNationForFaction(p.factionId) : undefined;
+    const nationLabel = this.identityShort(game);
     return `
       <header class="mobile-topbar">
-        <img class="brand-mark" src="/insignia.svg" alt="" aria-hidden="true" width="26" height="26" />
-        <span class="mobile-nation" title="${escapeHtml(this.identityTitle(game))}">${escapeHtml(this.identityShort(game))}</span>
+        <!-- The flag and the MCA crest, exactly as the desktop rail flies them:
+             the crest takes the coalition's colour over the national flag. -->
+        <span class="mobile-flag-wrap">
+          ${nation ? `<img class="mobile-flag" src="${flagTextureUrl(nation)}" alt="${escapeHtml(nationLabel)} flag" />` : ''}
+          <span class="mobile-crest" aria-hidden="true"><i></i></span>
+        </span>
+        <span class="mobile-nation" title="${escapeHtml(this.identityTitle(game))}">${escapeHtml(nationLabel)}</span>
         <div class="mobile-stats">
           <div class="mobile-stat"><span>MATS</span><b id="res-mats">0</b></div>
           <div class="mobile-stat req"><span>REQ</span><b id="res-req">0</b></div>
-          <div class="mobile-stat"><span>ARMY</span><b id="res-force">0</b></div>
         </div>
-        <div class="mobile-grid" id="mobile-power" data-power-meter role="meter" aria-label="Power grid load" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" title="Grid power">
-          <span>POWER</span>
-          <div class="power-bar"><i data-power-fill></i></div>
-        </div>
-        <button class="mobile-objective" data-act="objective" title="Primary objective — open the briefing" aria-haspopup="dialog">
-          <span class="label">OBJECTIVE</span>
-          <b>BRIEFING</b>
-        </button>
+        <!-- Army strength and the objective sit with the battle actions at the
+             far right, so the resource counters own the middle of the strip. -->
         <div class="mobile-actions">
+          <div class="mobile-stat army"><span>ARMY</span><b id="res-force">0</b></div>
+          <button class="mobile-objective-icon" data-act="objective" title="Primary objective — open the briefing" aria-label="Primary objective — open the briefing" aria-haspopup="dialog">${icon('target')}</button>
           <button class="mobile-action" data-act="save" title="Save battle" aria-label="Save battle">${icon('save')}</button>
           <button class="mobile-action" data-act="pause" id="btn-pause-top" title="Pause (P)" aria-label="Pause battle">${icon('pause')}</button>
           <button class="mobile-action" data-act="settings" title="Settings" aria-label="Settings">${icon('settings')}</button>
           <button class="mobile-action" data-act="menu" title="Menu" aria-label="Menu">${icon('menu')}</button>
         </div>
-      </header>`;
+      </header>
+      <!-- The desktop gauge laid on its side: a full-width draw bar under the
+           command strip, so the grid reads at a glance in landscape too. -->
+      <div class="mobile-power-strip" id="mobile-power" data-power-meter role="meter" aria-label="Power grid load" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" title="Grid power">
+        <span>POWER</span>
+        <div class="power-bar"><i data-power-fill></i></div>
+        <b data-power-read>0/0</b>
+      </div>`;
   }
 
   /**
@@ -539,8 +579,8 @@ export class HUD {
         <button class="cmd-btn" data-cmd="land" data-act="land" title="Land transport helicopters on open ground (then tap/click)">${icon('transportHelo')}<span class="lbl">LAND</span></button>
         <button class="cmd-btn" data-cmd="dive" data-act="dive" title="Dive or surface selected submarines (D)">${icon('submarine')}<span class="lbl">DIVE</span><kbd class="cmd-key" aria-hidden="true">D</kbd></button>
         <div class="cmd-sep" data-cmd="supportSep"></div>
-        <button class="cmd-btn accent" data-cmd="build" data-act="build" title="Construction (B)">${icon('build')}<span class="lbl">BUILD</span><kbd class="cmd-key" aria-hidden="true">B</kbd></button>
-        <button class="cmd-btn" data-cmd="research" data-act="research" title="Research tree — unlock units and structures">${icon('research')}<span class="lbl">RESEARCH</span></button>
+        ${mobile ? '' : `<button class="cmd-btn accent" data-cmd="build" data-act="build" title="Construction (B)">${icon('build')}<span class="lbl">BUILD</span><kbd class="cmd-key" aria-hidden="true">B</kbd></button>
+        <button class="cmd-btn" data-cmd="research" data-act="research" title="Research tree — unlock units and structures">${icon('research')}<span class="lbl">RESEARCH</span></button>`}
         <button class="cmd-btn" data-cmd="box" data-act="box" title="Box selection">${icon('box')}<span class="lbl">BOX</span></button>
         ${mobile ? `<button class="cmd-btn" data-cmd="groups" data-act="groups" title="Control groups">${icon('squad')}<span class="lbl">GROUPS</span></button>
         <button class="cmd-btn" data-cmd="map" data-act="map" title="Tactical map">${icon('scope')}<span class="lbl">MAP</span></button>` : ''}
@@ -709,7 +749,7 @@ export class HUD {
         <div class="objective-sheet-body"><h3 data-objective-primary></h3><p data-objective-sub></p><ul class="objective-sheet-list" data-objective-list hidden></ul><p class="sheet-note" data-objective-note>Capture signals relays for requisition, forward supply depots for supplementary materials and radar stations for reconnaissance. Destroy the enemy command post to win the battle.</p></div>
       </section>
       <section class="mobile-sheet selection-sheet" role="dialog" aria-label="Selection">
-        <div class="sheet-head"><span>SELECTION</span><span class="mono" id="sel-count">NONE</span><button class="sheet-close" data-act="close-sheets" aria-label="Close selection">×</button></div>
+        <div class="sheet-head"><span>SELECTION</span><span class="mono" id="sel-count">NONE</span><button class="sheet-clear" data-act="clear-selection" title="Clear the selection" hidden>CLEAR</button><button class="sheet-close" data-act="close-sheets" aria-label="Close selection">×</button></div>
         <div class="selection-body" id="selection-body"></div>
       </section>
       <section class="mobile-sheet groups-sheet" role="dialog" aria-label="Control groups">
@@ -720,6 +760,7 @@ export class HUD {
       <section class="mobile-console hud-bottom">
         <div class="mobile-roster-row">
           <div class="mobile-roster" id="mobile-roster" data-roster aria-label="Selection"></div>
+          <button class="roster-clear" data-act="clear-selection" title="Clear the selection" hidden>CLEAR</button>
           <button class="add-toggle" data-act="add-select" aria-pressed="false" title="Add tapped units to the selection">ADD</button>
         </div>
         <div class="mobile-command-row">${this.commandButtons(true)}</div>
@@ -1096,6 +1137,10 @@ export class HUD {
         break;
       case 'map':
         this.setPanel('map');
+        break;
+      case 'clear-selection':
+        this.app.setSelection([]);
+        this.setPanel('none');
         break;
       case 'close-sheets':
         this.setResearchOpen(false);
@@ -1915,6 +1960,14 @@ export class HUD {
     const countText = entities.length === 0 ? 'NONE' : `${entities.length} SELECTED`;
     this.root.querySelectorAll<HTMLElement>('#sel-count').forEach((count) => {
       count.textContent = countText;
+    });
+    this.root.querySelectorAll<HTMLElement>('.sheet-clear').forEach((clear) => {
+      clear.hidden = entities.length === 0;
+    });
+    // The strip's clear control only has work to do once a group is selected:
+    // one unit is deselected by tapping it again.
+    this.root.querySelectorAll<HTMLElement>('.roster-clear').forEach((clear) => {
+      clear.hidden = entities.length <= 1;
     });
     this.root.querySelector('.mobile-console')?.classList.toggle('has-selection', entities.length > 0);
     this.root.querySelector('.selection-panel')?.classList.toggle('empty-selection', entities.length === 0);

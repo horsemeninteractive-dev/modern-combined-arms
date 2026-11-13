@@ -17,6 +17,7 @@ import {
   TUTORIAL_BRIEF,
   TUTORIAL_SCENARIO_ID,
 } from './data/tutorial';
+import { commandersForNation } from './data/commanders';
 import {
   PLAYABLE_NATION_IDS,
   playableNations,
@@ -284,6 +285,11 @@ export interface AppSettings {
    * alliance. Any playable nation is a legal pick, mirror matches included.
    */
   opponentNationId: string;
+  /**
+   * Authored AI commander for the opposing seat, '' for the legacy seeded
+   * profile. Always one of the opponent nation's own commanders.
+   */
+  opponentCommanderId: string;
   /** Team tint the local commander fields in a new skirmish (`#rrggbb`). */
   teamColor: string;
   /** Team tint of the opposing commander in a new skirmish. */
@@ -626,6 +632,7 @@ export class App {
       mapId: defaultScenarioId('skirmish'),
       nationId: PLAYABLE_NATION_IDS[0],
       opponentNationId: '',
+      opponentCommanderId: '',
       teamColor: TEAM_COLORS[0].hex,
       opponentColor: TEAM_COLORS[1].hex,
       uiScale: 1,
@@ -667,6 +674,15 @@ export class App {
         resolveOpponentNation(nationId, parsed.opponentNationId).id === parsed.opponentNationId
           ? parsed.opponentNationId
           : '';
+      // A commander is a choice inside the opponent's nation, so a saved id
+      // survives only while that nation still fields it; anything else falls
+      // back to the seeded profile rather than to a foreign leader.
+      const opponentNation = resolveOpponentNation(nationId, opponentNationId).id;
+      const opponentCommanderId =
+        typeof parsed.opponentCommanderId === 'string' &&
+        commandersForNation(opponentNation).some((c) => c.id === parsed.opponentCommanderId)
+          ? parsed.opponentCommanderId
+          : '';
       const hexColor = (value: unknown, fallback: string): string =>
         typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback;
       return {
@@ -679,6 +695,7 @@ export class App {
         mapId,
         nationId,
         opponentNationId,
+        opponentCommanderId,
         teamColor: hexColor(parsed.teamColor, defaults.teamColor),
         opponentColor: hexColor(parsed.opponentColor, defaults.opponentColor),
         // Older saved settings have none of these fields; each falls back to
@@ -858,6 +875,7 @@ export class App {
     this.buildMapSelector();
     this.buildNationSelector();
     this.buildOpponentSelector();
+    this.buildCommanderSelector();
     this.buildTeamColors();
     this.buildWeatherSelector();
     this.buildCampaignScreen();
@@ -1623,6 +1641,13 @@ export class App {
       scenario.players[1].factionId = theirs.id;
       scenario.players[1].name = `${theirs.name} Task Force`;
       scenario.players[1].color = this.settings.opponentColor;
+      // The opponent's doctrine is a chosen identity, not a per-battle dice
+      // roll: with a commander the seed only varies the opening, exactly as an
+      // authored scenario with a commander does.
+      const commander = commandersForNation(theirs.id).find(
+        (c) => c.id === this.settings.opponentCommanderId,
+      );
+      scenario.players[1].commanderId = commander?.id;
     }
     // A skirmish starts at the time the player chose; the authored phase label
     // stays as the map's own default for campaign missions and multiplayer.
@@ -1671,6 +1696,50 @@ export class App {
       this.applyNationUi();
     });
     this.applyNationUi();
+  }
+
+  /**
+   * The opponent's commander is picked from that nation's own generals, so the
+   * list follows the opposing banner rather than the player's. The empty value
+   * is the seeded profile every earlier build used, kept as a visible choice
+   * instead of an implicit one.
+   */
+  private buildCommanderSelector(): void {
+    const select = document.getElementById('opponent-commander') as HTMLSelectElement | null;
+    if (!select) return;
+    select.addEventListener('change', () => {
+      this.audio.init();
+      this.audio.play('ui');
+      this.settings.opponentCommanderId = select.value;
+      this.saveSettings();
+      this.applyCommanderUi();
+    });
+    this.applyCommanderUi();
+  }
+
+  private applyCommanderUi(): void {
+    const select = document.getElementById('opponent-commander') as HTMLSelectElement | null;
+    if (!select) return;
+    const opponent = resolveOpponentNation(this.settings.nationId, this.settings.opponentNationId);
+    const list = commandersForNation(opponent.id);
+    const chosen = list.find((c) => c.id === this.settings.opponentCommanderId);
+    // A nation change can retire the previous pick; the selection is corrected
+    // in settings as well as in the control, so deployment cannot carry a
+    // commander the opposing nation does not field.
+    if (!chosen && this.settings.opponentCommanderId) {
+      this.settings.opponentCommanderId = '';
+      this.saveSettings();
+    }
+    select.innerHTML = [
+      '<option value="">Seeded (no commander)</option>',
+      ...list.map(
+        (c) => `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)} · ${escapeHtml(c.callsign)}</option>`,
+      ),
+    ].join('');
+    select.value = chosen?.id ?? '';
+    select.title = chosen
+      ? `${chosen.name} (${chosen.callsign}) — ${chosen.primaryDoctrine}, ${chosen.secondaryDoctrine}`
+      : 'A fresh seeded opponent each battle: the pre-commander behaviour';
   }
 
   /**
@@ -1757,6 +1826,7 @@ export class App {
     text('brief-alliance', alliance.name);
     text('brief-label-friend', identity.shortName || identity.name);
     text('brief-label-enemy', opponent.shortName || opponent.name);
+    this.applyCommanderUi();
   }
 
   private buildMapSelector(): void {

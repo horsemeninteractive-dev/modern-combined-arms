@@ -21,6 +21,11 @@ const precache = [
   '/index.html',
   '/manifest.webmanifest',
   '/insignia.svg',
+  // The HUD flies this crest as a mask tinted per coalition, so it is chrome
+  // the shell needs offline just like the full-colour mark.
+  '/insignia-crest.svg',
+  '/insignia-aa.png',
+  '/insignia-ep.png',
   '/irontide-mark.svg',
   '/studio-logo.mp4',
   '/audio/music/menu-theme.mp3',

@@ -21,6 +21,20 @@ const ATTRIBUTES = [
 ];
 
 /**
+ * Lamp data a decal pass needs: the same packed cones the terrain and roads
+ * evaluate, plus the occluder map that fades them behind walls.
+ */
+export interface DecalLamps {
+  src: Float32Array;
+  aim: Float32Array;
+  tint: Float32Array;
+  count: number;
+  occluder: WebGLTexture | null;
+  matrix: Float32Array;
+  texel: number;
+}
+
+/**
  * One instanced quad per ground decal. The batch is drawn flat on the terrain,
  * before shadows and props, with depth writes disabled so it behaves as a
  * surface mark rather than geometry.
@@ -72,12 +86,16 @@ export class DecalGpu {
     }
     gl.bindVertexArray(null);
 
-    for (const name of ['uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar']) {
+    for (const name of [
+      'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
+      'uSpotSrc[0]', 'uSpotAim[0]', 'uSpotTint[0]', 'uSpotCount', 'uSpotGate',
+      'uLampShadow', 'uLampVP', 'uLampTexel', 'uLampOcclusion',
+    ]) {
       this.u[name] = gl.getUniformLocation(this.program, name);
     }
   }
 
-  draw(camera: Camera, decals: readonly GroundDecal[]): void {
+  draw(camera: Camera, decals: readonly GroundDecal[], lamps?: DecalLamps): void {
     if (decals.length === 0) return;
     const gl = this.gl;
     if (this.capacity < decals.length) {
@@ -118,6 +136,24 @@ export class DecalGpu {
     gl.uniform2f(this.u.uHalf, camera.halfW, camera.halfH);
     gl.uniform1f(this.u.uNear, 1);
     gl.uniform1f(this.u.uFar, 3000);
+    if (lamps) {
+      gl.uniform4fv(this.u['uSpotSrc[0]'] ?? null, lamps.src);
+      gl.uniform4fv(this.u['uSpotAim[0]'] ?? null, lamps.aim);
+      gl.uniform4fv(this.u['uSpotTint[0]'] ?? null, lamps.tint);
+      gl.uniform1i(this.u.uSpotCount ?? null, lamps.count);
+      gl.uniform1f(this.u.uSpotGate ?? null, 1);
+      gl.uniformMatrix4fv(this.u.uLampVP ?? null, false, lamps.matrix);
+      gl.uniform2f(this.u.uLampTexel ?? null, lamps.texel, lamps.texel);
+      gl.uniform1f(this.u.uLampOcclusion ?? null, lamps.occluder ? 1 : 0);
+      gl.uniform1i(this.u.uLampShadow ?? null, 6);
+      if (lamps.occluder) {
+        gl.activeTexture(gl.TEXTURE0 + 6);
+        gl.bindTexture(gl.TEXTURE_2D, lamps.occluder);
+        gl.activeTexture(gl.TEXTURE0);
+      }
+    } else {
+      gl.uniform1f(this.u.uSpotGate ?? null, 0);
+    }
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);

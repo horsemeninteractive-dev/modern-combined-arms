@@ -385,7 +385,9 @@ describe('road fog', () => {
 
   it('feeds the road pass the fog texture and leaves entity passes unfogged', () => {
     const renderer = readFileSync(new URL('../src/render/renderer.ts', import.meta.url), 'utf8');
-    const road = renderer.slice(renderer.indexOf('this.roadMesh.draw()') - 900, renderer.indexOf('this.roadMesh.draw()'));
+    // The window covers the whole road setup block: fog, material, blend state
+    // and the lamp cones the deck now receives.
+    const road = renderer.slice(renderer.indexOf('this.roadMesh.draw()') - 1200, renderer.indexOf('this.roadMesh.draw()'));
     expect(road).toContain('uUseFog');
     expect(road).toContain('MESH_FOG_TEXTURE_UNIT');
     expect(road).toContain('this.bindFogFields(');

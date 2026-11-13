@@ -96,7 +96,7 @@ export const CAMPAIGNS: readonly CampaignDef[] = [
     id: 'baltic-line',
     version: CAMPAIGN_DEFINITION_VERSION,
     name: 'The Baltic Line',
-    coalition: 'Defender Coalition',
+    coalition: 'Atlantic Accord',
     allianceId: 'defender',
     accent: '#37b6e0',
     lede:
@@ -113,7 +113,7 @@ export const CAMPAIGNS: readonly CampaignDef[] = [
     id: 'eastern-corridor',
     version: CAMPAIGN_DEFINITION_VERSION,
     name: 'The Eastern Corridor',
-    coalition: 'Eastern Coalition',
+    coalition: 'Eurasian Pact',
     allianceId: 'eastern',
     accent: '#ef6a4a',
     lede:

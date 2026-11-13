@@ -146,11 +146,26 @@ export class Camera {
     ];
   }
 
+  /**
+   * Pan limits.
+   *
+   * The camera may reach the map edge and a fraction of a view beyond it, so a
+   * structure built on the boundary can be centred even at the closest zoom.
+   * A fixed eight-tile margin used to stop the view short of the edge, which
+   * left edge buildings permanently cropped: at close zoom the visible half is
+   * narrower than that margin, so the camera could not put them on screen. The
+   * overscan scales with what is actually visible, so it is small when zoomed
+   * in and never lets the map drift far off screen when zoomed out.
+   */
   private clampToMap(): void {
-    const marginX = Math.min(this.mapW * 0.5, 8 * TILE_SIZE);
-    const marginZ = Math.min(this.mapH * 0.5, 8 * TILE_SIZE);
-    this.cx = clamp(this.cx, marginX, this.mapW - marginX);
-    this.cz = clamp(this.cz, marginZ, this.mapH - marginZ);
+    // Derived from the zoom rather than the cached half extents, which are only
+    // refreshed by update() and would lag a zoom change made in the same call.
+    const halfW = this.zoom * this.aspect;
+    const halfH = this.zoom;
+    const overX = Math.min(this.mapW * 0.5, halfW * 0.5);
+    const overZ = Math.min(this.mapH * 0.5, halfH * 0.5 / Math.max(0.2, Math.sin(this.pitch)));
+    this.cx = clamp(this.cx, -overX, this.mapW + overX);
+    this.cz = clamp(this.cz, -overZ, this.mapH + overZ);
   }
 
   panScreen(dx: number, dy: number): void {

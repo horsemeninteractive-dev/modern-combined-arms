@@ -113,13 +113,31 @@ describe('isometric camera', () => {
     expect(after.y).toBeCloseTo(before.y, 0);
   });
 
-  it('clamps its focus inside the map', () => {
+  it('clamps its focus to the map and a fraction of a view beyond it', () => {
     const cam = camera();
     cam.centerOn(-500, -500);
-    expect(cam.cx).toBeGreaterThanOrEqual(0);
-    expect(cam.cz).toBeGreaterThanOrEqual(0);
+    // The overscan is half a view at most — measured on screen, so depth is
+    // stretched by the isometric pitch — never an unbounded pan.
+    const overX = Math.min(96 * 4 * 0.5, cam.halfW * 0.5);
+    const overZ = Math.min(72 * 4 * 0.5, (cam.halfH * 0.5) / Math.max(0.2, Math.sin(cam.pitch)));
+    expect(cam.cx).toBeGreaterThanOrEqual(-overX - 1e-6);
+    expect(cam.cz).toBeGreaterThanOrEqual(-overZ - 1e-6);
     cam.centerOn(99999, 99999);
-    expect(cam.cx).toBeLessThanOrEqual(96 * 4);
-    expect(cam.cz).toBeLessThanOrEqual(72 * 4);
+    expect(cam.cx).toBeLessThanOrEqual(96 * 4 + overX + 1e-6);
+    expect(cam.cz).toBeLessThanOrEqual(72 * 4 + overZ + 1e-6);
+  });
+
+  it('reaches the map edge when zoomed in, so edge structures can be framed', () => {
+    const cam = camera();
+    cam.setZoom(CLOSE_ZOOM);
+    // A structure one tile inside the boundary must be centreable; the old
+    // eight-tile margin stopped the camera short of it at this zoom.
+    cam.centerOn(4, 4);
+    expect(cam.cx).toBeLessThanOrEqual(4);
+    expect(cam.cz).toBeLessThanOrEqual(4);
+    // And the map's far corner is reachable from the other side.
+    cam.centerOn(96 * 4 - 4, 72 * 4 - 4);
+    expect(cam.cx).toBeGreaterThanOrEqual(96 * 4 - 4);
+    expect(cam.cz).toBeGreaterThanOrEqual(72 * 4 - 4);
   });
 });

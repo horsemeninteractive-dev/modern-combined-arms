@@ -127,7 +127,7 @@ function nationalService(entries: readonly AchievementView[]): string {
       ${award ? awardSvg(award, { size: 54, className: earned ? '' : 'award-art-locked' }) : ''}
       <span class="legacy-nation-text">
         <b>${escapeCareerHtml(nation.name)}</b>
-        <small>${escapeCareerHtml(nation.allianceId === 'defender' ? 'Defender Coalition' : 'Eastern Coalition')} · ${earned ? 'AWARDED' : `${entry?.progress ?? 0} / ${entry?.target ?? 1} victories`}</small>
+        <small>${escapeCareerHtml(nation.allianceId === 'defender' ? 'Atlantic Accord' : 'Eurasian Pact')} · ${earned ? 'AWARDED' : `${entry?.progress ?? 0} / ${entry?.target ?? 1} victories`}</small>
       </span>
       <span class="legacy-nation-bar" aria-hidden="true"><i style="width:${percent}%"></i></span>
     </li>`;

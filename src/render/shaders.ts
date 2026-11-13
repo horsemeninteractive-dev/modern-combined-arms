@@ -128,6 +128,94 @@ float shadowAt(vec3 world, vec3 normal) {
 }
 `;
 
+/**
+ * Ground-projected lamps, shared by the terrain and mesh fragment stages.
+ *
+ * A headlamp beam used to be a quad laid on the ground: a flat decal that buried
+ * half of itself in a slope, drew through hills and banded where its pieces met.
+ * Here the lamp is a cone in world space and the surface is the receiver, so the
+ * light lands exactly on the fragments it reaches. A road deck is a mesh drawn
+ * above the terrain, which is why the mesh stage evaluates the same field: a pool
+ * painted only on the terrain would vanish underneath the road.
+ *
+ * Arrays are packed as (xyz, w): origin/reach, aim/cos(outer edge),
+ * colour/strength. `uSpotGate` lets a pass opt out — every mesh except the road
+ * leaves it at 0 — so the loop costs nothing where there is no road to light.
+ */
+const GROUND_SPOTS_GLSL = /* glsl */ `
+#define GROUND_SPOT_MAX 12
+uniform vec4 uSpotSrc[GROUND_SPOT_MAX];
+uniform vec4 uSpotAim[GROUND_SPOT_MAX];
+uniform vec4 uSpotTint[GROUND_SPOT_MAX];
+uniform int uSpotCount;
+uniform float uSpotGate;
+/*
+ * Occluders between a lamp and the surface it is lighting.
+ *
+ * A depth map is rendered straight down over the camera's ground footprint, so
+ * every stored value is the top of whatever stands at that XZ — terrain, a
+ * building, a hull. Marching the receiver-to-lamp segment through it answers
+ * "is my lamp behind something from here?", which is what fades a pool at the
+ * foot of a wall or beyond a crest instead of letting it leak through.
+ */
+uniform sampler2D uLampShadow;
+uniform mat4 uLampVP;
+uniform vec2 uLampTexel;
+uniform float uLampOcclusion;
+
+/**
+ * Lamp cones landing on this fragment.
+ *
+ * The aim test is a cosine falloff with a soft outer edge, the reach is a smooth
+ * cutoff short of the lamp's range, and the surface term keeps a slope facing
+ * away from the lamp darker than one facing it. No screen derivatives and no beam
+ * geometry: this is light on the surface the fragment actually is.
+ */
+/**
+ * How much of a lamp's light survives the ground-to-lamp march.
+ *
+ * Four probes with a soft depth comparison: the map's resolution limits how
+ * sharp the edge can be, so the compare fades rather than snaps, and a pool
+ * dissolves against a wall instead of showing the tap pattern.
+ */
+float lampVisibility(vec3 p, vec3 n, vec3 lamp) {
+  if (uLampOcclusion < 0.001) return 1.0;
+  vec3 start = p + n * 0.12;
+  float vis = 1.0;
+  for (int i = 1; i <= 4; i++) {
+    vec3 probe = mix(start, lamp, float(i) / 5.0);
+    vec4 clip = uLampVP * vec4(probe, 1.0);
+    vec3 coord = clip.xyz / clip.w * 0.5 + 0.5;
+    if (coord.x <= 0.0 || coord.x >= 1.0 || coord.y <= 0.0 || coord.y >= 1.0) continue;
+    float depth = texture(uLampShadow, coord.xy).r;
+    float blocked = smoothstep(0.0, 0.002, coord.z - depth - 0.0008);
+    vis *= 1.0 - blocked;
+  }
+  return vis;
+}
+
+vec3 groundSpots(vec3 p, vec3 n) {
+  vec3 sum = vec3(0.0);
+  int count = uSpotGate > 0.5 ? uSpotCount : 0;
+  for (int i = 0; i < GROUND_SPOT_MAX; i++) {
+    if (i >= count) break;
+    vec4 src = uSpotSrc[i];
+    vec3 delta = p - src.xyz;
+    float dist = length(delta);
+    if (dist > src.w || dist < 0.0001) continue;
+    vec3 dir = delta / dist;
+    float aim = dot(dir, uSpotAim[i].xyz);
+    float inner = mix(uSpotAim[i].w, 1.0, 0.24);
+    float cone = smoothstep(uSpotAim[i].w, inner, aim);
+    float reach = 1.0 - smoothstep(src.w * 0.62, src.w, dist);
+    float facing = max(dot(n, -dir), 0.0);
+    float visible = lampVisibility(p, n, src.xyz);
+    sum += uSpotTint[i].rgb * (uSpotTint[i].w * cone * reach * visible * (0.2 + 0.8 * facing));
+  }
+  return sum;
+}
+`;
+
 export const MESH_VS = /* glsl */ `#version 300 es
 precision highp float;
 layout(location=0) in vec3 aPos;
@@ -216,6 +304,7 @@ uniform sampler2D uMatLut;
 uniform float uUseFog;
 /** 1 while drawing the occluded-unit silhouette pass. */
 uniform float uSilhouette;
+${GROUND_SPOTS_GLSL}
 ${FOG_FIELD}
 ${HAZE_GLSL}
 ${SHADOW_SAMPLE_GLSL}
@@ -488,6 +577,9 @@ void main() {
   // Keep both flags readable without letting them glow like emissive panels.
   shade = mix(shade, max(shade, 0.78), step(0.001, vWind));
   vec3 lit = base * shade;
+  // Lamp light reaches every surface standing over the ground; in practice that
+  // is the road deck, which otherwise covers the pool the terrain already carries.
+  lit += base * groundSpots(vWorld, vNormal);
 
   if (!isFlag) {
     vec3 viewDir = normalize(uEye - vWorld);
@@ -635,6 +727,7 @@ in vec3 vWorld;
 in float vAlpha;
 in vec3 vColor;
 in float vKind;
+${GROUND_SPOTS_GLSL}
 out vec4 outColor;
 
 float hash21(vec2 p) {
@@ -724,6 +817,9 @@ void main() {
   } else if (vKind >= 0.5) {
     color *= 0.9 + 0.2 * noise2(vWorld.xz * 2.1);
   }
+  // A track or a crater lies on the same ground the lamps reach, so it takes the
+  // same light: albedo times the cone, with the decal's own facet normal (flat).
+  color += color * groundSpots(vWorld, vec3(0.0, 1.0, 0.0));
   outColor = vec4(color, a);
 }
 `;
@@ -768,6 +864,7 @@ uniform float uTime;
 uniform float uGrid;
 uniform float uWet;
 uniform float uSnow;
+${GROUND_SPOTS_GLSL}
 ${FOG_FIELD}
 ${HAZE_GLSL}
 ${SHADOW_SAMPLE_GLSL}
@@ -951,6 +1048,9 @@ void main() {
     // A wet surface is a darker diffuse body even where the sun does not glint.
     lit *= 1.0 - 0.1 * uWet * (1.0 - grazing);
   }
+  // Lamp light is added as reflectance of the ground's own albedo, so a warm
+  // headlamp pool looks like light on grass rather than a painted glow.
+  lit += base * groundSpots(vWorld, n);
   lit *= uTone;
   float fog = uUseFog > 0.5 ? fogField(vUv) : 1.0;
   lit = applyHaze(lit, vWorld);

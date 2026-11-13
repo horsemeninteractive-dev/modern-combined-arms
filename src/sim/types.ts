@@ -1162,6 +1162,14 @@ export interface AIControlState {
   strategy: AIStrategy;
   /** Selected opponent strength, fixed for the match and saved with it. */
   difficulty: AIDifficulty;
+  /**
+   * Authored commander identity, when one was chosen explicitly. Absent on every
+   * match and save that predates the commander catalogue, in which case the
+   * seeded profile is used exactly as before.
+   */
+  commanderId?: string;
+  /** Profile schema version that authored `commanderId`, for future migrations. */
+  commanderProfileVersion?: number;
   /** Tick of the most recent contact, used to expire stale target data. */
   lastContactTick: number;
   /** Tick of the last reconnaissance order, to avoid thrashing scouts. */
@@ -1190,6 +1198,41 @@ export interface AIControlState {
   transportOps?: TransportOperation[];
   /** Tick the commander last committed, finished or lost a transport. */
   lastTransportTick?: number;
+  /**
+   * Decaying reading of what the opponent is investing in, inferred only from
+   * identified contacts. Absent in saves written before Phase 6 and on the
+   * seeded path, where it is simply rebuilt from the first contact.
+   */
+  opponentRead?: {
+    tendency: string | null;
+    confidence: number;
+    mass: number;
+    scores: Record<string, number>;
+    tick: number;
+    observed: number;
+    /** Classes with meaningful evidence, strongest first. Absent in older saves. */
+    tendencies?: { tendency: string; share: number }[];
+  };
+  /**
+   * Assessment of the most recent committed wave, from the simulation's own
+   * counters and the positions of the units it sent. Absent on the seeded path
+   * and in saves written before Phase 8.
+   */
+  battle?: {
+    wave: number;
+    startTick: number;
+    startKills: number;
+    startLosses: number;
+    startCount: number;
+    x: number;
+    z: number;
+    ids: number[];
+    /** Consecutive failed waves, and when the commander stops doubting itself. */
+    setbacks?: number;
+    setbackUntil?: number;
+    lastOutcome?: 'success' | 'failure' | 'inconclusive';
+    lastOutcomeTick?: number;
+  };
 }
 
 export interface RuntimeMap {

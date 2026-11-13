@@ -1777,12 +1777,32 @@ html.custom-cursors select { cursor: default !important; }
   /* Room for the interface toggle, which is the rail's last strip. */
   padding-bottom: 23px; scrollbar-width: thin;
 }
-.rail-brand { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 10px 3px 8px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+/* One command header, not two bands: the brand, the coalition and the nation
+   under its flag share a single tinted block with one rule beneath it. */
+.rail-command { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 10px 4px 8px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+/* The crest flies on the flag itself: the MCA mark in the coalition's colour,
+   plated so it stays legible over any national flag. */
+/* The wrapper is exactly the flag's box: inline flow would add the image's
+   descender, which pushed a centred crest one pixel low. */
+.rail-flag-wrap { position: relative; display: block; line-height: 0; font-size: 0; }
+.rail-flag-wrap .rail-flag { display: block; }
+.rail-crest {
+  position: absolute; inset: 0; margin: auto;
+  display: grid; place-items: center; width: 32px; height: 32px;
+  background: rgba(9, 14, 16, 0.82);
+  border: 1px solid var(--front, #37b6e0);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 3px 8px rgba(0, 0, 0, 0.65);
+}
+.rail-crest i {
+  display: block; width: 23px; height: 23px;
+  background: var(--front, #37b6e0);
+  -webkit-mask: url('/insignia-crest.svg') center / contain no-repeat;
+  mask: url('/insignia-crest.svg') center / contain no-repeat;
+}
 .hud-rail .brand-mark { width: 28px; height: 28px; }
-.rail-theatre { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.06em; color: var(--ink-dim); }
 /* The player's nation, under the brand and above the resources. The rail is
    only 96px wide, so the flag is width-bound and the alliance sits beneath. */
-.rail-identity { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 7px 4px 6px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+.rail-identity { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 0; flex: 0 0 auto; }
 .rail-flag { height: 40px; max-width: 100%; width: auto; object-fit: contain; background: rgba(255,255,255,0.03); border: 1px solid rgba(167,190,184,0.24); box-shadow: 0 1px 4px rgba(0,0,0,0.55); }
 .rail-nation { display: inline-flex; align-items: center; gap: 3px; max-width: 100%; font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.06em; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rail-nation i { width: 5px; height: 5px; flex: 0 0 auto; }
@@ -2050,6 +2070,7 @@ html.custom-cursors select { cursor: default !important; }
 /* Battle layout shell: desktop sidebar + bottom console */
 .production-sidebar {
   position: absolute; top: var(--top-h); right: 0; bottom: 0; width: var(--sidebar-w);
+  overflow: hidden;
   display: grid; grid-template-columns: minmax(0, 1fr) var(--tab-w);
   grid-template-rows: minmax(0, 1fr) var(--selection-top-offset);
   background: rgba(8, 13, 15, 0.94); border-left: 1px solid var(--line);
@@ -2650,7 +2671,7 @@ html.custom-cursors select { cursor: default !important; }
 .control-group.has .group-state { background: var(--amber); }
 
 /* Mobile landscape composition */
-.layout-mobile { --top-h: 42px; --bottom-h: 90px; --sidebar-w: 60px; --rail-w: 60px; --console-h: 90px; /* Touch chrome is measured in fixed pixels, so cap type scaling at 115% or
+.layout-mobile { --top-h: 58px; --bottom-h: 90px; --sidebar-w: 60px; --rail-w: 60px; --console-h: 90px; /* Touch chrome is measured in fixed pixels, so cap type scaling at 115% or
      the 42px top strip and 90px console start clipping their own labels. */
   --fs-xs: calc(11px * min(var(--ui-scale), 1.15)); --fs-sm: calc(12px * min(var(--ui-scale), 1.15)); --fs-md: calc(13px * min(var(--ui-scale), 1.15)); --fs-lg: calc(15px * min(var(--ui-scale), 1.15)); --fs-xl: calc(18px * min(var(--ui-scale), 1.15)); }
 .layout-mobile .mobile-topbar {
@@ -2660,7 +2681,7 @@ html.custom-cursors select { cursor: default !important; }
 }
 .layout-mobile .mobile-stat { padding: 0 8px; }
 .layout-mobile .production-sidebar {
-  top: calc(42px + env(safe-area-inset-top, 0px));
+  top: calc(var(--top-h) + env(safe-area-inset-top, 0px));
   bottom: calc(90px + env(safe-area-inset-bottom, 0px));
   right: env(safe-area-inset-right, 0px); width: 60px;
   display: block; background: transparent; border: 0; box-shadow: none; z-index: 30; overflow: visible;
@@ -2786,7 +2807,7 @@ html.custom-cursors select { cursor: default !important; }
 .layout-mobile .cmd-btn .lbl { display: block; line-height: 1; }
 .layout-mobile .cmd-sep { display: none; }
 .layout-mobile .mode-banner { bottom: calc(98px + env(safe-area-inset-bottom, 0px)); max-width: calc(100vw - 20px); font-size: var(--fs-xs); white-space: nowrap; }
-.layout-mobile .debug-panel { top: calc(50px + env(safe-area-inset-top, 0px)); right: calc(70px + env(safe-area-inset-right, 0px)); width: min(280px, calc(100vw - 90px)); }
+.layout-mobile .debug-panel { top: calc(var(--top-h) + 8px + env(safe-area-inset-top, 0px)); right: calc(70px + env(safe-area-inset-right, 0px)); width: min(280px, calc(100vw - 90px)); }
 @media (max-width: 760px) {
   .layout-mobile .mobile-topbar .brand-mark { display: none; }
   .layout-mobile .mobile-stat { padding: 0 6px; }
@@ -2816,10 +2837,10 @@ html.custom-cursors select { cursor: default !important; }
 .hud-toggle:hover,
 .hud-toggle:focus-visible { opacity: 1; color: var(--amber-soft); border-color: var(--line-strong); outline: none; }
 .hud-toggle.is-off { opacity: 0.9; color: var(--amber-soft); border-color: rgba(224, 163, 74, 0.5); }
-.layout-mobile .hud-toggle { top: calc(48px + env(safe-area-inset-top, 0px)); left: 8px; bottom: auto; width: auto; padding: 0 7px; border: 1px solid var(--line); }
+.layout-mobile .hud-toggle { top: calc(var(--top-h) + 6px + env(safe-area-inset-top, 0px)); left: 8px; bottom: auto; width: auto; padding: 0 7px; border: 1px solid var(--line); }
 /* Everything except the toggle leaves the frame; the battlefield takes it back. */
 .hud.hud-hidden > :not(.hud-toggle) { display: none !important; }
-.layout-mobile .perf-readout { top: calc(48px + env(safe-area-inset-top, 0px)); left: 8px; right: auto; bottom: auto; }
+.layout-mobile .perf-readout { top: calc(var(--top-h) + 6px + env(safe-area-inset-top, 0px)); left: auto; right: calc(60px + 8px + env(safe-area-inset-right, 0px)); bottom: auto; }
 .debug-panel { position: absolute; right: calc(var(--sidebar-w) + 14px); top: 14px; width: 268px; background: rgba(6,10,12,0.93); border: 1px solid var(--line); padding: 10px 12px; z-index: 20; font-family: var(--mono); font-size: var(--fs-xs); color: var(--ink-dim); line-height: 1.7; }
 .debug-panel b { color: var(--ink); font-weight: 500; }
 .debug-panel .section { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
@@ -3213,8 +3234,9 @@ html.custom-cursors select { cursor: default !important; }
 }
 @media (max-width: 820px), (max-height: 560px) {
   .toast-root {
-    /* Under the 42px touch top bar; no rail on the left of the touch layout. */
-    top: calc(50px + env(safe-area-inset-top, 0px));
+    /* Clear of the whole touch header stack: top bar, power gauge and the
+       interface-toggle / FPS row that hangs below it. */
+    top: calc(92px + env(safe-area-inset-top, 0px));
     left: calc(8px + env(safe-area-inset-left, 0px));
     max-width: min(72vw, 300px); gap: 7px;
   }
@@ -3987,11 +4009,38 @@ html.custom-cursors select { cursor: default !important; }
   background-position: right top;
   background-repeat: repeat-y;
 }
-.rail-brand {
+.rail-command {
   border-bottom: 1px solid rgba(224, 163, 74, 0.3);
-  background-image: linear-gradient(180deg, rgba(224, 163, 74, 0.14), transparent);
+  background-image: linear-gradient(180deg, rgba(224, 163, 74, 0.12), transparent 80%);
 }
-.rail-identity { border-bottom-color: rgba(224, 163, 74, 0.22); }
+/*
+ * Coalition flavour. `--front`, `--front-accent` and `--front-nation` are set
+ * by the HUD from the local player's nation: defender-aligned commands read
+ * blue, the eastern coalition red, and each nation's own shade marks its flag.
+ * Chrome only — units, markers and the minimap keep the player's team tint.
+ */
+.rail-command {
+  border-bottom-color: color-mix(in srgb, var(--front, #37b6e0) 38%, transparent);
+  background-image: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--front, #37b6e0) 15%, transparent),
+    transparent 82%
+  );
+}
+.rail-crest {
+  border-color: color-mix(in srgb, var(--front, #37b6e0) 80%, transparent);
+}
+.rail-crest i {
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--front, #37b6e0) 55%, transparent));
+}
+.rail-nation i {
+  background: var(--front-nation, var(--front, var(--ink-dim)));
+  box-shadow: 0 0 6px color-mix(in srgb, var(--front, #37b6e0) 70%, transparent);
+}
+.mobile-nation {
+  box-shadow: inset 2px 0 0 var(--front, transparent);
+  color: var(--front-accent, var(--ink-dim));
+}
 .rail-stat { border-bottom: 1px solid rgba(167, 190, 184, 0.09); }
 .rail-stat:nth-of-type(2n) { background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.016), transparent); }
 .rail-stat b { text-shadow: 0 0 14px rgba(216, 226, 221, 0.18); }
@@ -5267,4 +5316,939 @@ body.cinematic-active #hud-root > * { pointer-events: none; }
   .ci-grid { grid-template-columns: 1fr; }
   .ci-item { grid-template-columns: 40px minmax(0,1fr); }
   .ci-art { width: 40px; height: 40px; }
+}
+
+/* ========================================================================== */
+/* Coalition skins                                                            */
+/*                                                                            */
+/* Same layout, two design bureaus. The defender console is a cool instrument  */
+/* panel: thin hairlines, softened corners, glassy fills, light tracking. The  */
+/* eastern console is stamped plate work: square, thick rules, matte fills,    */
+/* stencilled labels, hazard striping and warm readouts. Nothing here moves a  */
+/* box — only its edges, fill, type and ornament change.                       */
+/* ========================================================================== */
+
+[data-front="eastern"] {
+  --line: rgba(190, 76, 54, 0.34);
+  --panel: rgba(20, 12, 11, 0.96);
+  --ink: #f2e4dc;
+  --ink-dim: #b28d81;
+  --amber-soft: #ffb08a;
+  --hatch: repeating-linear-gradient(135deg, rgba(214, 92, 62, 0.10) 0 1px, transparent 1px 6px);
+  --eb: #a3372a;
+  --eb-dim: #5c241c;
+  --surface: #17100e;
+  --surface-hi: #211513;
+  --stencil: 0.16em;
+}
+
+[data-front="eastern"] .hud-rail {
+  /* Dot matrix: stamped perforations rather than lines, so the readouts sit on
+     a quiet field instead of a ruled one. */
+  background-image:
+    radial-gradient(rgba(214, 92, 62, 0.16) 1px, transparent 1.5px),
+    linear-gradient(180deg, #17100e, #0d0908);
+  background-size: 6px 6px, auto;
+  background-position: 0 0, 0 0;
+  background-repeat: repeat, no-repeat;
+  box-shadow: inset -3px 0 0 var(--eb), inset -1px 0 0 #000;
+}
+[data-front="eastern"] .rail-brand,
+[data-front="eastern"] .rail-identity { border: 0; }
+[data-front="eastern"] .rail-command { border-bottom: 0; gap: 6px; padding-bottom: 0; }
+[data-front="eastern"] .rail-command::after {
+  content: "";
+  display: block;
+  width: calc(100% + 8px);
+  height: 5px;
+  margin: 6px -4px 0;
+  background: repeating-linear-gradient(135deg, var(--eb) 0 5px, #120c0b 5px 10px);
+}
+[data-front="eastern"] .rail-stat {
+  border-bottom: 2px solid var(--eb-dim);
+}
+/* The edge ruler is another line field behind the numbers; the eastern plate
+   reads cleaner without it. */
+[data-front="eastern"] .rail-body { background-image: none; }
+[data-front="eastern"] .rail-stat b,
+[data-front="eastern"] .rail-clock b {
+  color: #ffd9c9;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+[data-front="eastern"] .rail-label,
+[data-front="eastern"] .rail-clock span,
+[data-front="eastern"] .clock-phase {
+  color: #d59b83;
+  font-weight: 700;
+  letter-spacing: var(--stencil);
+}
+[data-front="eastern"] .rail-nation { color: #ffe7db; letter-spacing: 0.12em; }
+[data-front="eastern"] .rail-crest { border-width: 2px; background: #0a0605; }
+[data-front="eastern"] .group-chip,
+[data-front="eastern"] .control-group {
+  border: 1px solid var(--eb-dim);
+  border-radius: 0;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px #000;
+}
+[data-front="eastern"] .group-chip:hover,
+[data-front="eastern"] .control-group:hover { background: var(--surface-hi); }
+[data-front="eastern"] .rail-btn {
+  border: 1px solid var(--eb-dim);
+  border-radius: 0;
+  background: var(--surface);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 -2px 0 rgba(0, 0, 0, 0.5);
+  color: #ffd9c9;
+}
+[data-front="eastern"] .rail-btn:hover { background: var(--surface-hi); border-color: var(--eb); }
+[data-front="eastern"] .rail-actions .rail-objective {
+  border-color: var(--eb);
+  background: linear-gradient(180deg, #2a1713, #1a0f0c);
+}
+[data-front="eastern"] .rail-power {
+  border-left: 3px solid var(--eb);
+  background-image: var(--hatch), linear-gradient(180deg, #17100e, #0a0605);
+}
+[data-front="eastern"] .rail-power-track i {
+  background-image: repeating-linear-gradient(0deg, #c8452f 0 6px, #14100f 6px 9px);
+}
+[data-front="eastern"] .rail-power-state,
+[data-front="eastern"] .rail-power-caption,
+[data-front="eastern"] .rail-power-read {
+  color: #e0a48c;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+}
+[data-front="eastern"] .production-sidebar {
+  background: #100b0a;
+  border-left: 3px solid var(--eb-dim);
+  box-shadow: inset 1px 0 0 #000;
+}
+[data-front="eastern"] .prod-tab {
+  border: 0;
+  border-bottom: 2px solid var(--eb-dim);
+  border-left: 3px solid transparent;
+  border-radius: 0;
+  background: var(--surface);
+  color: #d59b83;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+[data-front="eastern"] .prod-tab:hover { background: var(--surface-hi); }
+[data-front="eastern"] .prod-tab.active,
+[data-front="eastern"] .prod-tab[aria-selected="true"] {
+  border-left-color: var(--eb);
+  background: linear-gradient(90deg, rgba(176, 56, 38, 0.34), transparent 92%);
+  color: #ffe7db;
+}
+[data-front="eastern"] .panel-head,
+[data-front="eastern"] .sidebar-head,
+[data-front="eastern"] .selection-panel > .panel-head,
+[data-front="eastern"] .facility-head {
+  background-image: linear-gradient(90deg, rgba(176, 56, 38, 0.62), rgba(118, 34, 24, 0.22) 58%, transparent 88%);
+  color: #ffd9c9;
+  font-weight: 700;
+  letter-spacing: var(--stencil);
+  border-bottom: 2px solid var(--eb);
+  border-radius: 0;
+}
+[data-front="eastern"] .facility,
+[data-front="eastern"] .build-card,
+[data-front="eastern"] .unit-card,
+[data-front="eastern"] .selection-panel,
+[data-front="eastern"] .map-dock {
+  border: 2px solid var(--eb-dim);
+  border-radius: 0;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px #000;
+}
+[data-front="eastern"] .build-card:hover,
+[data-front="eastern"] .unit-card:hover {
+  border-color: var(--eb);
+  background: var(--surface-hi);
+}
+[data-front="eastern"] .b-name,
+[data-front="eastern"] .facility-name {
+  color: #f6e7df;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+[data-front="eastern"] .cost-chip,
+[data-front="eastern"] .b-cost {
+  border-radius: 0;
+  font-weight: 700;
+}
+[data-front="eastern"] .battle-console {
+  background: #0c0807;
+  border-top: 3px solid var(--eb);
+  box-shadow: inset 0 1px 0 #000, 0 -12px 30px rgba(0, 0, 0, 0.4);
+}
+[data-front="eastern"] .battle-console::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -7px;
+  height: 4px;
+  background: repeating-linear-gradient(135deg, var(--eb) 0 5px, #0b0706 5px 10px);
+}
+[data-front="eastern"] .command-bar { gap: 2px; }
+[data-front="eastern"] .cmd-btn {
+  border: 1px solid var(--eb-dim);
+  border-radius: 0;
+  background: var(--surface);
+  color: #e8c9bb;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.45);
+}
+[data-front="eastern"] .cmd-btn:hover {
+  background: var(--surface-hi);
+  border-color: var(--eb);
+  color: #fff0e8;
+}
+[data-front="eastern"] .cmd-btn.accent {
+  border-color: var(--eb);
+  background: linear-gradient(180deg, #2a1713, #1a0f0c);
+}
+[data-front="eastern"] .cmd-key {
+  border: 1px solid var(--eb-dim);
+  border-radius: 0;
+  background: #1d1311;
+  color: #ffd9c9;
+}
+[data-front="eastern"] .selection-panel { border: 2px solid var(--eb-dim); }
+[data-front="eastern"] .selection-body {
+  background-image: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.016) 0 1px, transparent 1px 5px);
+}
+[data-front="eastern"] .hud-toggle,
+[data-front="eastern"] .mini-btn {
+  border: 1px solid var(--eb-dim);
+  border-radius: 0;
+  background: var(--surface);
+  color: #e8c9bb;
+}
+[data-front="eastern"] .grid-alert {
+  border-bottom: 2px solid var(--eb);
+  background: rgba(176, 56, 38, 0.18);
+  color: #ffd9c9;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+[data-front="defender"] {
+  --db: rgba(55, 182, 224, 0.34);
+  --db-dim: rgba(122, 160, 168, 0.22);
+  --surface: rgba(255, 255, 255, 0.022);
+  --surface-hi: rgba(55, 182, 224, 0.09);
+}
+/* The defender rail carries the same diagonal hatch as the production tab
+   strip — texture without ruling a line across every readout. */
+[data-front="defender"] .hud-rail {
+  background-image: var(--hatch), linear-gradient(180deg, rgba(9, 14, 16, 0.96), rgba(7, 11, 13, 0.94));
+  box-shadow: inset -1px 0 0 rgba(55, 182, 224, 0.22);
+}
+[data-front="defender"] .rail-body { background-image: none; }
+[data-front="defender"] .rail-command {
+  border-bottom: 1px solid color-mix(in srgb, var(--front) 38%, transparent);
+}
+[data-front="defender"] .rail-command::after {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 1px;
+  margin-top: 6px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--front) 55%, transparent), transparent);
+}
+[data-front="defender"] .rail-stat { border-bottom: 1px solid rgba(167, 190, 184, 0.14); }
+[data-front="defender"] .rail-stat b,
+[data-front="defender"] .rail-clock b { font-weight: 500; letter-spacing: -0.02em; }
+[data-front="defender"] .rail-label,
+[data-front="defender"] .rail-clock span { letter-spacing: 0.04em; font-weight: 500; }
+[data-front="defender"] .rail-crest { border-width: 1px; }
+[data-front="defender"] .group-chip,
+[data-front="defender"] .control-group {
+  border: 1px solid rgba(167, 190, 184, 0.16);
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.02);
+}
+[data-front="defender"] .rail-btn,
+[data-front="defender"] .mini-btn,
+[data-front="defender"] .hud-toggle {
+  border: 1px solid rgba(167, 190, 184, 0.18);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.024);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+[data-front="defender"] .rail-btn:hover,
+[data-front="defender"] .mini-btn:hover,
+[data-front="defender"] .hud-toggle:hover {
+  background: var(--surface-hi);
+  border-color: color-mix(in srgb, var(--front) 45%, transparent);
+}
+[data-front="defender"] .rail-power { border-left: 1px solid rgba(82, 197, 230, 0.42); }
+[data-front="defender"] .rail-power-track i {
+  background-image: linear-gradient(180deg, #37b6e0, #1f7fb0);
+}
+[data-front="defender"] .production-sidebar {
+  background: rgba(8, 13, 15, 0.94);
+  border-left: 1px solid var(--line);
+}
+[data-front="defender"] .prod-tab {
+  border: 0;
+  border-bottom: 1px solid rgba(167, 190, 184, 0.12);
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink-dim);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+[data-front="defender"] .prod-tab.active,
+[data-front="defender"] .prod-tab[aria-selected="true"] {
+  border-left-color: color-mix(in srgb, var(--front) 70%, transparent);
+  background: linear-gradient(90deg, rgba(55, 182, 224, 0.12), transparent 90%);
+  color: var(--ink);
+}
+[data-front="defender"] .facility,
+[data-front="defender"] .build-card,
+[data-front="defender"] .unit-card {
+  border: 1px solid rgba(167, 190, 184, 0.14);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.018);
+}
+[data-front="defender"] .build-card:hover,
+[data-front="defender"] .unit-card:hover {
+  border-color: color-mix(in srgb, var(--front) 50%, transparent);
+  background: rgba(55, 182, 224, 0.07);
+}
+[data-front="defender"] .battle-console {
+  background: rgba(6, 10, 12, 0.96);
+  border-top: 1px solid color-mix(in srgb, var(--front) 30%, transparent);
+}
+[data-front="defender"] .battle-console::before { content: none; }
+[data-front="defender"] .cmd-btn {
+  border: 1px solid rgba(167, 190, 184, 0.12);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--ink-dim);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+[data-front="defender"] .cmd-btn:hover {
+  border-color: color-mix(in srgb, var(--front) 45%, transparent);
+  background: rgba(55, 182, 224, 0.1);
+  color: var(--ink);
+}
+[data-front="defender"] .cmd-key {
+  border: 1px solid rgba(167, 190, 184, 0.22);
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink-dim);
+}
+[data-front="defender"] .selection-panel { border: 1px solid var(--line); }
+[data-front="defender"] .selection-body {
+  background-image: linear-gradient(180deg, rgba(55, 182, 224, 0.035), transparent 70%);
+}
+/* ========================================================================== */
+/* Coalition skins — second pass                                              */
+/*                                                                            */
+/* The first pass moved colour and edges. This pass moves the design language: */
+/* different type, different plate shapes, different header treatment, and     */
+/* opposite accents for costs and status. Geometry is untouched.               */
+/* ========================================================================== */
+
+/* --- Eastern: stamped plate work ----------------------------------------- */
+[data-front="eastern"] {
+  --font-hud: 'Bahnschrift SemiCondensed', 'Bahnschrift', 'DIN Condensed',
+    'Arial Narrow', 'Roboto Condensed', sans-serif;
+  --amber-soft: #ffc09a;
+}
+
+/* Stencilled type wherever a label or a value is printed. */
+[data-front="eastern"] .rail-label,
+[data-front="eastern"] .rail-clock span,
+[data-front="eastern"] .clock-phase,
+[data-front="eastern"] .rail-rate,
+[data-front="eastern"] .cmd-btn,
+[data-front="eastern"] .cmd-key,
+[data-front="eastern"] .prod-tab,
+[data-front="eastern"] .panel-head,
+[data-front="eastern"] .sidebar-head,
+[data-front="eastern"] .facility-name,
+[data-front="eastern"] .b-name,
+[data-front="eastern"] .rail-btn,
+[data-front="eastern"] .rail-nation,
+[data-front="eastern"] .group-chip,
+[data-front="eastern"] .cost-chip,
+[data-front="eastern"] .rail-power-caption,
+[data-front="eastern"] .rail-power-state,
+[data-front="eastern"] .rail-power-read,
+[data-front="eastern"] .mini-btn,
+[data-front="eastern"] .hud-toggle {
+  font-family: var(--font-hud);
+  text-transform: uppercase;
+}
+
+/* Cut-corner plates: the eastern signature. */
+[data-front="eastern"] .rail-btn,
+[data-front="eastern"] .cmd-btn,
+[data-front="eastern"] .build-card,
+[data-front="eastern"] .unit-card,
+[data-front="eastern"] .facility,
+[data-front="eastern"] .selection-panel,
+[data-front="eastern"] .hud-toggle,
+[data-front="eastern"] .mini-btn {
+  clip-path: polygon(
+    0 0,
+    calc(100% - 8px) 0,
+    100% 8px,
+    100% 100%,
+    8px 100%,
+    0 calc(100% - 8px)
+  );
+}
+
+/* Headers invert: a solid painted band with dark stamped lettering. */
+[data-front="eastern"] .panel-head,
+[data-front="eastern"] .sidebar-head,
+[data-front="eastern"] .selection-panel > .panel-head,
+[data-front="eastern"] .facility-head {
+  background-image: linear-gradient(90deg, #c04a32, #7f2a1d 70%, #5a1c13);
+  color: #150b08;
+  border-bottom: 0;
+  box-shadow: inset 0 -2px 0 #000, inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  letter-spacing: 0.14em;
+}
+
+/* Values print on their own dark plates, like a counter window. */
+[data-front="eastern"] .rail-stat b,
+[data-front="eastern"] .rail-clock b {
+  display: inline-block;
+  padding: 0 7px;
+  background: #0a0605;
+  box-shadow: inset 0 0 0 1px var(--eb-dim), inset 0 0 10px rgba(200, 69, 47, 0.22);
+  color: #ffd9c9;
+  font-family: var(--font-hud);
+  letter-spacing: 0.04em;
+}
+
+/* Tabs become full plates with a painted leading edge. */
+[data-front="eastern"] .prod-tab {
+  background: #120c0a;
+  border-bottom: 2px solid var(--eb-dim);
+  border-left: 4px solid transparent;
+}
+[data-front="eastern"] .prod-tab.active,
+[data-front="eastern"] .prod-tab[aria-selected="true"] {
+  border-left-color: #c04a32;
+  background: linear-gradient(90deg, rgba(192, 74, 50, 0.42), #120c0a 92%);
+  color: #ffd9c9;
+}
+
+/* --- Defender: cool instrument glass ------------------------------------- */
+[data-front="defender"] {
+  --amber-soft: #a9dcef;
+  --surface-hi: rgba(55, 182, 224, 0.12);
+}
+
+[data-front="defender"] .panel-head,
+[data-front="defender"] .sidebar-head,
+[data-front="defender"] .selection-panel > .panel-head,
+[data-front="defender"] .facility-head {
+  background-image: linear-gradient(90deg, rgba(55, 182, 224, 0.16), transparent 72%);
+  color: #cfe9f2;
+  border-bottom: 1px solid rgba(55, 182, 224, 0.34);
+  box-shadow: inset 0 -1px 0 rgba(55, 182, 224, 0.18);
+  font-weight: 500;
+  letter-spacing: 0.10em;
+}
+
+[data-front="defender"] .facility,
+[data-front="defender"] .build-card,
+[data-front="defender"] .unit-card {
+  border-radius: 5px;
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.008));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+[data-front="defender"] .build-card:hover,
+[data-front="defender"] .unit-card:hover {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 0 0 1px rgba(55, 182, 224, 0.4),
+    0 0 14px rgba(55, 182, 224, 0.16);
+}
+[data-front="defender"] .rail-btn,
+[data-front="defender"] .cmd-btn,
+[data-front="defender"] .mini-btn,
+[data-front="defender"] .hud-toggle { border-radius: 4px; }
+
+[data-front="defender"] .rail-stat b,
+[data-front="defender"] .rail-clock b {
+  color: #e9f6fb;
+  text-shadow: 0 0 12px rgba(55, 182, 224, 0.28);
+}
+[data-front="defender"] .rail-stat.req b { color: #a9dcef; }
+[data-front="defender"] .cost-chip { color: #cfe9f2; border-radius: 3px; }
+
+[data-front="defender"] .prod-tab.active,
+[data-front="defender"] .prod-tab[aria-selected="true"] {
+  border-left: 2px solid rgba(55, 182, 224, 0.7);
+  background: linear-gradient(90deg, rgba(55, 182, 224, 0.16), transparent 92%);
+  color: #e9f6fb;
+}
+
+[data-front="defender"] .selection-body {
+  background-image: linear-gradient(180deg, rgba(55, 182, 224, 0.06), transparent 62%);
+}
+[data-front="defender"] .grid-alert {
+  border-bottom: 1px solid rgba(255, 178, 155, 0.55);
+  background: rgba(239, 108, 77, 0.12);
+  color: #ffc9b6;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+/* ========================================================================== */
+/* Coalition skins — production cards, costs and scrollbars                   */
+/* ========================================================================== */
+
+/* Card art plates: the same thumbnail, two mounting boards. */
+[data-front="eastern"] .thumb-frame {
+  background:
+    radial-gradient(ellipse at 50% 72%, rgba(192, 74, 50, 0.30), rgba(9, 5, 4, 0) 64%),
+    linear-gradient(160deg, #241311 0%, #100908 72%);
+  border: 2px solid var(--eb-dim);
+  box-shadow: inset 0 0 0 1px #000;
+}
+[data-front="eastern"] .thumb-frame::after {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0) 46%, rgba(10, 5, 4, 0.55) 100%);
+}
+/* The renders keep their own studio light; warm and settle it so the plate
+   reads as one piece rather than a bright tile on a dark card. */
+[data-front="eastern"] .thumb-art {
+  filter: sepia(0.3) saturate(0.86) contrast(1.03) brightness(0.86)
+    drop-shadow(0 4px 3px rgba(0, 0, 0, 0.55));
+}
+[data-front="eastern"] .build-card,
+[data-front="eastern"] .unit-card {
+  background-image: linear-gradient(180deg, #1d1311, #120c0a);
+}
+
+[data-front="defender"] .thumb-frame {
+  background:
+    radial-gradient(ellipse at 50% 72%, rgba(55, 182, 224, 0.24), rgba(9, 14, 16, 0) 64%),
+    linear-gradient(160deg, #16262c 0%, #0a1418 72%);
+  border: 1px solid rgba(55, 182, 224, 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+[data-front="defender"] .build-card,
+[data-front="defender"] .unit-card {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.006));
+}
+
+/* --- Costs: one colour language per resource, on both consoles ----------- */
+/* M = material (warm), R = requisition (cool), s = build time (neutral),     */
+/* PWR = grid draw (neutral, green when the grid supplies it).                */
+[data-front] .cost-chip b { color: inherit; }
+[data-front] .cost-chip.mat {
+  border-color: rgba(224, 163, 74, 0.55);
+  background: rgba(224, 163, 74, 0.14);
+  color: #ffcf8a;
+}
+[data-front] .cost-chip.req {
+  border-color: rgba(74, 163, 224, 0.55);
+  background: rgba(74, 163, 224, 0.14);
+  color: #9fd4f5;
+}
+[data-front] .cost-chip.time {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.05);
+  color: #d9cdc6;
+}
+[data-front] .cost-chip.power {
+  border-color: rgba(167, 190, 184, 0.30);
+  color: #cfc3bb;
+}
+[data-front] .cost-chip.power.supply {
+  border-color: rgba(134, 199, 145, 0.45);
+  background: rgba(134, 199, 145, 0.14);
+  color: #a8e3b4;
+}
+[data-front="defender"] .cost-chip.mat { color: #ffd79b; }
+[data-front="defender"] .cost-chip.req { color: #b6e2f7; }
+[data-front="defender"] .cost-chip.time { color: #cfe9f2; }
+
+/* --- Scrollbars: the rail the console is built on ------------------------ */
+[data-front="eastern"] {
+  --scroll-thumb: rgba(192, 74, 50, 0.55);
+  --scroll-thumb-hover: rgba(214, 92, 62, 0.76);
+  --scroll-thumb-active: rgba(226, 110, 78, 0.9);
+  --scroll-track: rgba(16, 9, 8, 0.95);
+  --scroll-edge: rgba(92, 36, 28, 0.6);
+}
+[data-front="defender"] {
+  --scroll-thumb: rgba(55, 182, 224, 0.42);
+  --scroll-thumb-hover: rgba(90, 200, 235, 0.62);
+  --scroll-thumb-active: rgba(120, 214, 245, 0.8);
+  --scroll-track: rgba(8, 13, 15, 0.92);
+  --scroll-edge: rgba(55, 182, 224, 0.28);
+}
+
+/* ========================================================================== */
+/* Coalition insignia                                                        */
+/* ========================================================================== */
+/* Two full-height watermarks, one per sidebar, sit behind everything the
+   panels carry; a small crest at full strength marks the open band in the
+   command rail. Atlantic Accord is struck in silver, Eurasian Pact in gold. */
+.hud-rail::before,
+.production-sidebar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.07;
+  background-repeat: no-repeat;
+  background-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: auto 100%;
+  mask-size: auto 100%;
+}
+/* The panels' own rows paint above the watermark. */
+.hud-rail > .rail-body,
+.hud-rail > .rail-power,
+.production-sidebar > * {
+  position: relative;
+  z-index: 1;
+}
+
+.rail-insignia {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px 0;
+}
+/* The crest holds the open band open, so the lower stack does not also claim
+   the free space with its auto margin. */
+.rail-insignia + .rail-bottom { margin-top: 0; }
+.rail-insignia i {
+  display: block;
+  width: 68px;
+  height: 68px;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+/* Atlantic Accord — silver */
+[data-front="defender"] .hud-rail::before,
+[data-front="defender"] .production-sidebar::before,
+[data-front="defender"] .rail-insignia i {
+  background-image: linear-gradient(152deg, #f6fafc 0%, #d5dee3 28%, #8b979e 62%, #f0f6f9 100%);
+  -webkit-mask-image: url('/insignia-aa.png');
+  mask-image: url('/insignia-aa.png');
+}
+
+/* Eurasian Pact — gold */
+[data-front="eastern"] .hud-rail::before,
+[data-front="eastern"] .production-sidebar::before,
+[data-front="eastern"] .rail-insignia i {
+  background-image: linear-gradient(152deg, #fae8ba 0%, #ddb968 30%, #9d7527 64%, #f2d9a2 100%);
+  -webkit-mask-image: url('/insignia-ep.png');
+  mask-image: url('/insignia-ep.png');
+}
+/* ========================================================================== */
+/* Atlantic Accord — blue-forward chrome                                      */
+/* ========================================================================== */
+/* The accord reads as a naval instrument panel: slate blues instead of the
+   neutral graphites, with the cyan lines carrying the hierarchy. */
+[data-front="defender"] {
+  --hatch: repeating-linear-gradient(135deg, rgba(96, 176, 216, 0.09) 0 1px, transparent 1px 7px);
+  --line: rgba(118, 176, 206, 0.26);
+  --line-strong: rgba(118, 176, 206, 0.44);
+  --panel: rgba(10, 22, 31, 0.94);
+  --panel-2: rgba(13, 29, 40, 0.95);
+  --ink: #dbe9f2;
+  --ink-dim: #93b2c4;
+  --ink-faint: #7e97a7;
+  --surface: rgba(96, 176, 216, 0.03);
+  --db-dim: rgba(96, 176, 216, 0.26);
+  --scroll-thumb: rgba(55, 182, 224, 0.46);
+  --scroll-thumb-hover: rgba(90, 200, 235, 0.64);
+  --scroll-thumb-active: rgba(120, 214, 245, 0.82);
+  --scroll-edge: rgba(55, 182, 224, 0.34);
+}
+[data-front="defender"] .hud-rail {
+  background-image: var(--hatch), linear-gradient(180deg, rgba(10, 24, 34, 0.97), rgba(7, 16, 23, 0.95));
+  box-shadow: inset -1px 0 0 rgba(55, 182, 224, 0.30), inset 0 0 70px rgba(28, 116, 168, 0.14);
+}
+[data-front="defender"] .production-sidebar {
+  background: rgba(9, 22, 31, 0.95);
+  border-left: 1px solid rgba(55, 182, 224, 0.24);
+}
+[data-front="defender"] .rail-stat,
+[data-front="defender"] .rail-command { border-color: rgba(118, 176, 206, 0.22); }
+[data-front="defender"] .group-chip,
+[data-front="defender"] .control-group,
+[data-front="defender"] .rail-btn,
+[data-front="defender"] .mini-btn,
+[data-front="defender"] .hud-toggle { border-color: rgba(118, 176, 206, 0.24); }
+[data-front="defender"] .selection-panel { border-color: rgba(118, 176, 206, 0.28); }
+[data-front="defender"] .prod-tab { border-bottom-color: rgba(118, 176, 206, 0.16); }
+
+/* The accord's crest keeps its silver, cooled toward steel-blue. */
+[data-front="defender"] .hud-rail::before,
+[data-front="defender"] .production-sidebar::before,
+[data-front="defender"] .rail-insignia i {
+  background-image: linear-gradient(152deg, #f0f9fe 0%, #c4dae6 28%, #6f8da0 62%, #e9f5fb 100%);
+}
+/* ========================================================================== */
+/* Mobile chrome — the coalitions' own skin                                    */
+/* ========================================================================== */
+.mobile-flag-wrap {
+  position: relative; display: block; line-height: 0; font-size: 0;
+  margin: auto 5px; flex: 0 0 auto;
+}
+.mobile-flag {
+  display: block; width: 34px; height: 22px; object-fit: cover;
+  border: 1px solid rgba(0, 0, 0, 0.55);
+}
+/* The MCA crest, plated on the national flag exactly as the rail flies it. */
+.mobile-crest {
+  position: absolute; inset: 0; margin: auto;
+  display: grid; place-items: center; width: 20px; height: 20px;
+  background: rgba(9, 14, 16, 0.82);
+  border: 1px solid var(--front, #37b6e0);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+.mobile-crest i {
+  display: block; width: 13px; height: 13px;
+  background: var(--front, #37b6e0);
+  -webkit-mask: url('/insignia-crest.svg') center / contain no-repeat;
+  mask: url('/insignia-crest.svg') center / contain no-repeat;
+}
+
+/* The desktop gauge laid on its side, tucked under the command strip. */
+.mobile-power-strip {
+  position: absolute; top: calc(42px + env(safe-area-inset-top, 0px));
+  left: 0; right: 0; height: 16px; z-index: 39;
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 calc(8px + env(safe-area-inset-left, 0px)) 0 calc(8px + env(safe-area-inset-right, 0px));
+  background: rgba(8, 13, 15, 0.96);
+  border-bottom: 1px solid var(--line);
+}
+.mobile-power-strip > span {
+  font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.16em;
+  color: var(--blue); flex: 0 0 auto;
+}
+.mobile-power-strip .power-bar { flex: 1 1 auto; height: 5px; }
+.mobile-power-strip > b {
+  font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.08em;
+  color: var(--ink-faint); flex: 0 0 auto;
+}
+.mobile-power-strip.strained .power-bar i { background-image: none; background: var(--amber); }
+.mobile-power-strip.brownout .power-bar i { background-image: none; background: var(--red); }
+
+/* Atlantic Accord */
+[data-front="defender"] .mobile-topbar {
+  background-image: var(--hatch), linear-gradient(180deg, rgba(10, 24, 34, 0.97), rgba(7, 16, 23, 0.94));
+  border-bottom-color: rgba(55, 182, 224, 0.34);
+}
+[data-front="defender"] .mobile-topbar .mobile-stat { border-right-color: rgba(118, 176, 206, 0.20); }
+[data-front="defender"] .mobile-nation { border-right-color: rgba(118, 176, 206, 0.24); color: #a9c6d6; }
+[data-front="defender"] .mobile-power-strip {
+  background: rgba(10, 24, 34, 0.96);
+  border-bottom-color: rgba(55, 182, 224, 0.28);
+}
+[data-front="defender"] .mobile-power-strip > span { color: #7fd0e8; }
+[data-front="defender"] .mobile-power-strip .power-bar i {
+  background-image: linear-gradient(90deg, #37b6e0, #1f7fb0);
+}
+[data-front="defender"] .mobile-console {
+  background: rgba(9, 22, 31, 0.97);
+  border-top-color: rgba(55, 182, 224, 0.30);
+}
+
+/* Eurasian Pact */
+[data-front="eastern"] .mobile-topbar {
+  background-image:
+    radial-gradient(rgba(214, 92, 62, 0.16) 1px, transparent 1.5px),
+    linear-gradient(180deg, #17100e, #0d0908);
+  background-size: 6px 6px, auto;
+  border-bottom: 2px solid var(--eb-dim);
+}
+[data-front="eastern"] .mobile-topbar .mobile-stat { border-right-color: rgba(120, 48, 38, 0.5); }
+[data-front="eastern"] .mobile-nation { border-right-color: var(--eb-dim); color: #e8c9bb; }
+[data-front="eastern"] .mobile-power-strip {
+  background: #100b0a;
+  border-bottom: 2px solid var(--eb-dim);
+}
+[data-front="eastern"] .mobile-power-strip > span { color: #e0a48c; letter-spacing: 0.18em; }
+[data-front="eastern"] .mobile-power-strip .power-bar i {
+  background-image: linear-gradient(90deg, #e26e4e, #b03826);
+}
+[data-front="eastern"] .mobile-console {
+  background: #100b0a;
+  border-top: 2px solid var(--eb-dim);
+}
+
+/* The accord's crest behind the touch console, as on the desktop panels. */
+.layout-mobile .mobile-console { overflow: hidden; }
+.layout-mobile .mobile-console::before {
+  content: '';
+  position: absolute; inset: 0; z-index: 0;
+  opacity: 0.07; pointer-events: none;
+  background-repeat: no-repeat; background-position: center;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: center; mask-position: center;
+  -webkit-mask-size: auto 100%; mask-size: auto 100%;
+}
+.layout-mobile .mobile-console > * { position: relative; z-index: 1; }
+[data-front="defender"] .mobile-console::before {
+  background-image: linear-gradient(152deg, #f0f9fe 0%, #c4dae6 28%, #6f8da0 62%, #e9f5fb 100%);
+  -webkit-mask-image: url('/insignia-aa.png'); mask-image: url('/insignia-aa.png');
+}
+[data-front="eastern"] .mobile-console::before {
+  background-image: linear-gradient(152deg, #fae8ba 0%, #ddb968 30%, #9d7527 64%, #f2d9a2 100%);
+  -webkit-mask-image: url('/insignia-ep.png'); mask-image: url('/insignia-ep.png');
+}
+/* ========================================================================== */
+/* Mobile sheets and map dock — the coalitions' skin                          */
+/* ========================================================================== */
+/* The slide-outs are the touch equivalents of the desktop panels, so they carry
+   the same pattern and the same crest behind their rows. */
+.layout-mobile .mobile-sheet,
+.layout-mobile .map-dock { overflow: hidden; }
+
+.layout-mobile .mobile-sheet::before,
+.layout-mobile .map-dock::before {
+  content: '';
+  position: absolute; inset: 0; z-index: 0;
+  opacity: 0.06; pointer-events: none;
+  background-repeat: no-repeat; background-position: center;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+  -webkit-mask-position: center; mask-position: center;
+  -webkit-mask-size: auto 100%; mask-size: auto 100%;
+}
+.layout-mobile .mobile-sheet > *,
+.layout-mobile .map-dock > * { position: relative; z-index: 1; }
+
+[data-front="defender"] .layout-mobile .mobile-sheet,
+[data-front="defender"] .layout-mobile .map-dock {
+  background-color: rgba(9, 22, 31, 0.99);
+  background-image: var(--hatch), linear-gradient(180deg, rgba(10, 24, 34, 0.99), rgba(8, 18, 26, 0.99));
+  background-size: 7px 7px, auto;
+  border-color: rgba(55, 182, 224, 0.34);
+  box-shadow: var(--shadow), inset 0 0 40px rgba(28, 116, 168, 0.12);
+}
+[data-front="defender"] .layout-mobile .mobile-sheet::before,
+[data-front="defender"] .layout-mobile .map-dock::before {
+  background-image: linear-gradient(152deg, #f0f9fe 0%, #c4dae6 28%, #6f8da0 62%, #e9f5fb 100%);
+  -webkit-mask-image: url('/insignia-aa.png'); mask-image: url('/insignia-aa.png');
+}
+
+[data-front="eastern"] .layout-mobile .mobile-sheet,
+[data-front="eastern"] .layout-mobile .map-dock {
+  background-color: #100b0a;
+  background-image:
+    radial-gradient(rgba(214, 92, 62, 0.16) 1px, transparent 1.5px),
+    linear-gradient(180deg, #17100e, #0d0908);
+  background-size: 6px 6px, auto;
+  border: 2px solid var(--eb-dim);
+}
+[data-front="eastern"] .layout-mobile .mobile-sheet::before,
+[data-front="eastern"] .layout-mobile .map-dock::before {
+  background-image: linear-gradient(152deg, #fae8ba 0%, #ddb968 30%, #9d7527 64%, #f2d9a2 100%);
+  -webkit-mask-image: url('/insignia-ep.png'); mask-image: url('/insignia-ep.png');
+}
+
+/* Both sit below the taller command stack rather than the old 42 px strip. */
+.layout-mobile .map-dock {
+  top: calc(var(--top-h) + 5px + env(safe-area-inset-top, 0px));
+}
+.layout-mobile.panel-objective .objective-sheet {
+  top: calc(var(--top-h) + 6px + env(safe-area-inset-top, 0px));
+}
+
+/* ========================================================================== */
+/* Touch selection — an explicit way to let go of a selection                */
+/* ========================================================================== */
+.layout-mobile .sheet-clear {
+  flex: 0 0 auto;
+  min-height: 30px;
+  margin-right: 4px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink-dim);
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.layout-mobile .sheet-clear:hover { color: var(--ink); border-color: var(--front, #37b6e0); }
+[data-front="eastern"] .layout-mobile .sheet-clear {
+  border: 1px solid var(--eb-dim);
+  border-radius: 0;
+  color: #e8c9bb;
+}
+
+/* ========================================================================== */
+/* Touch command strip — army and objective at the far right                   */
+/* ========================================================================== */
+.mobile-actions { margin-left: auto; }
+.mobile-actions .mobile-stat {
+  border-right: 0;
+  border-left: 1px solid var(--line);
+  padding: 0 7px;
+}
+.mobile-objective-icon {
+  flex: 0 0 auto;
+  width: 38px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--ink-dim);
+  display: grid;
+  place-items: center;
+}
+.mobile-objective-icon .icon { width: 16px; height: 16px; }
+.mobile-objective-icon:hover { color: var(--amber-soft); background: rgba(255, 255, 255, 0.06); }
+[data-front="defender"] .mobile-objective-icon { border-left-color: rgba(118, 176, 206, 0.24); }
+[data-front="eastern"] .mobile-objective-icon { border-left-color: var(--eb-dim); color: #e8c9bb; }
+
+/* Narrow screens: the resource counters keep the middle, the right cluster
+   tightens, and the nation label steps aside rather than clipping a button. */
+@media (max-width: 620px) {
+  .mobile-nation { display: none; }
+  .mobile-action { width: 34px; }
+  .mobile-objective-icon { width: 32px; }
+  .mobile-actions .mobile-stat { padding: 0 5px; }
+}
+
+/* The group-clear control in the touch selection strip, beside ADD. */
+.layout-mobile .roster-clear {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 46px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ink-dim);
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.04em;
+}
+.layout-mobile .roster-clear:hover { color: var(--ink); background: rgba(255, 255, 255, 0.07); }
+[data-front="defender"] .layout-mobile .roster-clear { border-left-color: rgba(118, 176, 206, 0.24); }
+[data-front="eastern"] .layout-mobile .roster-clear {
+  border-left: 0;
+  border-right: 1px solid var(--eb-dim);
+  color: #e8c9bb;
 }

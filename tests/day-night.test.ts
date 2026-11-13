@@ -34,7 +34,7 @@ import {
   windowGlow,
 } from '../src/render/lightView';
 import { headlampAnchor } from '../src/render/lightAnchors';
-import { MESH_FS, PROP_FS } from '../src/render/shaders';
+import { DECAL_FS, MESH_FS, PROP_FS, TERRAIN_FS } from '../src/render/shaders';
 import { readFileSync } from 'node:fs';
 import { unitVisualScale } from '../src/render/unitMeshes';
 import type { Entity } from '../src/sim/types';
@@ -421,32 +421,40 @@ describe('presentation lights', () => {
     expect(windowGlow(dayNightAt(0, NIGHT), false)).toBeLessThan(night);
   });
 
-  it('gives a moving tank two headlamp cones and no light while it is parked', () => {
+  it('gives a moving tank two projected headlamps and none while it is parked', () => {
     const game = scene(22);
     const tank = tankOf(game);
-    expect(view(game).filter((l) => l.cone === 1)).toHaveLength(0);
+    expect(view(game).filter((l) => l.spot)).toHaveLength(0);
 
     tank.state = 'moving';
     tank.facing = 0;
-    const beams = view(game).filter((l) => l.cone === 1);
-    expect(beams).toHaveLength(2);
-    // Both cones point forward (+x here), offset to the hull's two sides.
-    expect(beams[0].x).toBeGreaterThan(tank.x + 5);
-    expect(Math.sign(beams[0].z - tank.z)).not.toBe(Math.sign(beams[1].z - tank.z));
-    expect(beams[0].rotation).toBeCloseTo(0, 6);
+    const lamps = view(game).filter((l) => l.spot);
+    // Two lamps, and no beam geometry at all: the ground shader does the work.
+    expect(lamps).toHaveLength(2);
+    expect(lamps.every((l) => l.cone === 0)).toBe(true);
 
-    // Scale: the beam starts at the bumper and reaches about three tiles, and it
-    // is a lane of light rather than a pool several hulls wide.
-    const halfLength = beams[0].radius * beams[0].stretch;
-    const backEdge = beams[0].x - halfLength;
-    expect(backEdge).toBeGreaterThan(tank.x);
-    expect(backEdge).toBeLessThan(tank.x + 4);
-    expect(halfLength * 2).toBeLessThanOrEqual(14);
-    expect(beams[0].radius * 2).toBeLessThanOrEqual(6);
+    const anchor = headlampAnchor('tank')!;
+    for (const lamp of lamps) {
+      const spot = lamp.spot!;
+      // Aimed along the hull's facing and tilted down so the cone meets the road.
+      expect(spot.dirX).toBeGreaterThan(0.95);
+      expect(Math.abs(spot.dirZ)).toBeLessThan(0.05);
+      expect(spot.dirY).toBeLessThan(-0.1);
+      expect(Math.hypot(spot.dirX, spot.dirY, spot.dirZ)).toBeCloseTo(1, 6);
+      // About three tiles of reach from a lamp mounted on the hull.
+      expect(spot.range).toBeGreaterThan(10);
+      expect(spot.range).toBeLessThanOrEqual(14);
+      expect(lamp.y).toBeCloseTo(spot.y, 6);
+      expect(Math.hypot(spot.x - tank.x, spot.z - tank.z)).toBeLessThan(
+        anchor.forward + anchor.lateral + 1,
+      );
+    }
+    // One lamp each side of the hull centre line.
+    expect(Math.sign(lamps[0].z - tank.z)).toBe(-Math.sign(lamps[1].z - tank.z));
 
     tank.state = 'idle';
     tank.order = null;
-    expect(view(game).filter((l) => l.cone === 1)).toHaveLength(0);
+    expect(view(game).filter((l) => l.spot)).toHaveLength(0);
   });
 
   it('mounts the lamps on the vehicle model rather than at a fixed offset', () => {
@@ -474,7 +482,7 @@ describe('presentation lights', () => {
     // A pose that lags the simulation, as the renderer's easing does while a
     // vehicle accelerates: the lights must sit on the drawn hull.
     const drawn = { x: tank.x - 6, z: tank.z + 4, facing: Math.PI / 2 };
-    const lights = buildLightView({
+    const lamps = buildLightView({
       entities: game.state.entities,
       dayNight: game.dayNight,
       bloom: 1,
@@ -483,12 +491,18 @@ describe('presentation lights', () => {
       eye: [0, 60, 0],
       groundY: () => 0,
       pose: (e) => (e.id === tank.id ? drawn : null),
-    }).filter((l) => l.cone === 1);
-    expect(lights).toHaveLength(2);
-    // Centred on the drawn position, one half-beam ahead of the model's lamps.
-    expect(Math.abs(lights[0].x - drawn.x)).toBeLessThan(2);
-    expect(lights[0].z).toBeGreaterThan(drawn.z + anchor.forward + 3);
-    expect(lights[0].rotation).toBeCloseTo(Math.PI / 2, 6);
+    }).filter((l) => l.spot);
+    expect(lamps).toHaveLength(2);
+    for (const lamp of lamps) {
+      const spot = lamp.spot!;
+      // Mounted on the drawn hull, one lamp either side of its nose...
+      expect(Math.abs(spot.x - drawn.x)).toBeCloseTo(anchor.lateral, 6);
+      expect(spot.z).toBeCloseTo(drawn.z + anchor.forward, 6);
+      // ...and aimed down the drawn heading, so the light leads the hull rather
+      // than trailing the simulation position.
+      expect(Math.abs(spot.dirX)).toBeLessThan(0.01);
+      expect(spot.dirZ).toBeGreaterThan(0.9);
+    }
   });
 
   it('follows the hull every frame instead of the vision cadence', () => {
@@ -496,9 +510,8 @@ describe('presentation lights', () => {
     const tank = tankOf(game);
     tank.state = 'moving';
     tank.facing = 0;
-    const first = view(game).filter((l) => l.cone === 1);
+    const first = view(game).filter((l) => l.spot);
     const startX = tank.x;
-    const startZ = tank.z;
 
     // Half a second of travel plus a turn, as the simulation would deliver it.
     tank.x += 3 * TILE_SIZE;
@@ -513,17 +526,17 @@ describe('presentation lights', () => {
       eye: [0, 60, 0],
       groundY: () => 0,
       pose: (e) => (e.id === tank.id ? { x: tank.x, z: tank.z, facing: tank.facing } : null),
-    }).filter((l) => l.cone === 1);
+    }).filter((l) => l.spot);
 
-    // Rebuilt from live state, so the beams are already on the hull's new
-    // heading instead of trailing the half-second vision refresh.
-    expect(second[0].rotation).toBeCloseTo(Math.PI / 2, 6);
-    expect(second[0].z).toBeGreaterThan(tank.z + 5);
-    expect(Math.abs(second[0].x - tank.x)).toBeLessThan(4);
-    // The first beam still pointed down +x from the starting tile, so the pair
-    // really did move rather than being the same values twice.
-    expect(first[0].z).toBeLessThan(startZ + 3);
-    expect(first[0].x).toBeGreaterThan(startX + 5);
+    // Rebuilt from live state, so the cones already point down the new heading
+    // instead of trailing the half-second vision refresh.
+    for (const lamp of second) {
+      expect(Math.abs(lamp.spot!.dirX)).toBeLessThan(0.01);
+      expect(lamp.spot!.dirZ).toBeGreaterThan(0.9);
+    }
+    // And they moved with the hull rather than reporting the old placement.
+    expect(Math.abs(second[0].spot!.x - first[0].spot!.x)).toBeGreaterThan(8);
+    expect(Math.abs(first[0].spot!.x - startX)).toBeLessThan(2);
   });
 
   it('turns a browned-out compound dark', () => {
@@ -538,7 +551,7 @@ describe('presentation lights', () => {
       groundY: () => 0,
     });
     // Only the unit lights survive: no power, no structure lighting.
-    expect(lights.filter((l) => l.cone === 1)).toHaveLength(0);
+    expect(lights.filter((l) => l.spot)).toHaveLength(0);
     const barracks = game.state.entities.find((e) => e.defId === 'barracks')!;
     expect(lights.some((l) => Math.hypot(l.x - barracks.x, l.z - barracks.z) < 10)).toBe(false);
   });
@@ -566,8 +579,8 @@ describe('presentation lights', () => {
     expect(filter(() => false)).toHaveLength(0);
     // A single visible unit lights only itself.
     const onlyTank = filter((e) => e.id === tank.id);
-    // Its two beams and their lens glows, and nothing from the compounds.
-    expect(onlyTank.filter((l) => l.cone === 1)).toHaveLength(2);
+    // Its two projected lamps and their lens glows, nothing from the compounds.
+    expect(onlyTank.filter((l) => l.spot)).toHaveLength(2);
     expect(onlyTank.every((l) => Math.hypot(l.x - tank.x, l.z - tank.z) < 20)).toBe(true);
 
     // The renderer feeds the local team's vision into that filter.
@@ -598,6 +611,94 @@ describe('presentation lights', () => {
     // The deposit is the one prop the shader lights from inside after dark.
     expect(PROP_FS).toContain('uGlow');
     expect(rendererSource).toContain('gl.uniform3f(p.u.uGlow, 0.16 * crystal, 0.8 * crystal, 1.0 * crystal)');
+  });
+
+  it('lays lamp light on the surface itself instead of drawing a beam', () => {
+    // The beam is gone: the terrain fragment stage evaluates each lamp cone
+    // against the ground it hits, so a slope cannot clip it or band it.
+    expect(TERRAIN_FS).toContain('vec3 groundSpots(vec3 p, vec3 n)');
+    expect(TERRAIN_FS).toContain('lit += base * groundSpots(vWorld, n);');
+    expect(TERRAIN_FS).toContain('uniform vec4 uSpotSrc[GROUND_SPOT_MAX]');
+    expect(rendererSource).toContain('this.bindGroundSpots(p)');
+    expect(rendererSource).toContain("'uSpotSrc[0]'");
+    expect(rendererSource).toContain('this.groundSpots.length < MAX_GROUND_SPOTS');
+
+    const game = scene(22);
+    const tank = tankOf(game);
+    tank.state = 'moving';
+    tank.facing = 0;
+    // A ramp under the lane: the lamp stays on the hull, and the cone's reach is
+    // a property of the light rather than a quad laid at bumper height.
+    const ramp = (x: number) => Math.max(0, (x - tank.x) * 0.5);
+    const lamps = buildLightView({
+      entities: game.state.entities,
+      dayNight: game.dayNight,
+      bloom: 1,
+      effects: true,
+      powered: () => true,
+      eye: [0, 60, 0],
+      groundY: ramp,
+    }).filter((l) => l.spot);
+    expect(lamps).toHaveLength(2);
+    for (const lamp of lamps) {
+      const spot = lamp.spot!;
+      expect(spot.y - ramp(spot.x)).toBeGreaterThan(0.2);
+      expect(spot.range).toBeGreaterThan(10);
+      // Nothing is laid on the ground for the beam to intersect.
+      expect(lamp.glow).toBe(1);
+      expect(lamp.cone).toBe(0);
+    }
+  });
+
+  it('fades lamp pools behind walls and crests with an occluder map', () => {
+    // The pool is not allowed to paint through a building or over a ridge: the
+    // ground-to-lamp segment is marched through a top-down depth map.
+    expect(TERRAIN_FS).toContain('float lampVisibility(vec3 p, vec3 n, vec3 lamp)');
+    expect(TERRAIN_FS).toContain('texture(uLampShadow, coord.xy).r');
+    expect(TERRAIN_FS).toContain('visible * (0.2 + 0.8 * facing)');
+
+    expect(rendererSource).toContain('private renderLampOccluders()');
+    // Straight down over the camera footprint: stored depth is the height of
+    // whatever stands at that XZ.
+    expect(rendererSource).toContain('shadowLightMatrix([0, 1, 0], cx, cz, footprint + 30)');
+    expect(rendererSource).toContain('this.drawShadowCasters(cx, cz, footprint);');
+    // Hedgerows and large site props block a beam too; short ground cover stays
+    // out of the map.
+    const occluders = rendererSource.slice(
+      rendererSource.indexOf('private renderLampOccluders'),
+      rendererSource.indexOf('private drawTerrain'),
+    );
+    for (const prop of [
+      'this.treesMesh.draw',
+      'this.bushesMesh.draw',
+      'this.shrubsMesh.draw',
+      'this.rocksMesh.draw',
+      'this.fencesMesh.draw',
+      'this.rubbleMesh.draw',
+    ]) {
+      expect(occluders).toContain(prop);
+    }
+    expect(occluders).not.toContain('this.tuftsMesh.draw');
+    expect(occluders).not.toContain('this.reedsMesh.draw');
+    // Structures and terrain go into the same map, so a wall and a crest both
+    // block a lamp.
+    expect(rendererSource).toContain('this.terrainGpu.count');
+    // Occluders must exist before the terrain pass samples the lamps.
+    expect(rendererSource.indexOf('this.renderLampOccluders()')).toBeLessThan(
+      rendererSource.indexOf('this.drawTerrain();'),
+    );
+    expect(rendererSource).toContain(
+      "'uLampShadow', 'uLampVP', 'uLampTexel', 'uLampOcclusion'",
+    );
+    // Decals are surface marks on the same ground: a track crossing a pool is
+    // lit by it instead of staying a dark band through the light.
+    expect(DECAL_FS).toContain('groundSpots(vWorld, vec3(0.0, 1.0, 0.0))');
+    expect(rendererSource).toContain('this.decalGpu.draw(this.camera, decals, {');
+    // A bridge deck is a mesh over water, so the mesh pass opens the lamp gate
+    // for walkable spans only.
+    expect(rendererSource).toContain("const walkableDeck = e.kind === 'building'");
+    expect(rendererSource).toContain('const nextGate = walkableDeck ? 1 : 0;');
+    expect(rendererSource).toContain('gl.uniform1f(mp.u.uSpotGate ?? null, nextGate);');
   });
 
   it('respects the instance ceiling', () => {

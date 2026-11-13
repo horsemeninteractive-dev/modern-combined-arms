@@ -2,6 +2,16 @@ import type { Game } from './game';
 import { BUILDINGS, buildingFamily, isIndestructibleStructure } from '../data/buildings';
 import { UNITS, unitFamily } from '../data/units';
 import {
+  COMMANDER_PROFILE_VERSION,
+  COMMANDER_TARGET_CATEGORIES,
+  NEUTRAL_TACTICAL,
+  commanderById,
+  resolveCommander,
+  tacticalProfileFor,
+  type CommanderTargetCategory,
+  type TacticalProfile,
+} from '../data/commanders';
+import {
   RESEARCH_BRANCHES,
   buildingModuleDef,
   exclusiveUnitTech,
@@ -64,6 +74,57 @@ export interface ScoutedForceMix {
   armour: number;
   /** Armed foot units. */
   infantry: number;
+}
+
+/**
+ * What an opponent appears to be investing in, inferred only from contacts the
+ * commander has identified. Every class is something the existing planner can
+ * already answer; none of them require information the AI does not legitimately
+ * hold.
+ */
+export type OpponentTendency =
+  | 'armour'
+  | 'infantry'
+  | 'antiArmour'
+  | 'artillery'
+  | 'air'
+  | 'naval'
+  | 'fortified'
+  | 'economy';
+
+export const OPPONENT_TENDENCIES: readonly OpponentTendency[] = Object.freeze([
+  'armour',
+  'infantry',
+  'antiArmour',
+  'artillery',
+  'air',
+  'naval',
+  'fortified',
+  'economy',
+]);
+
+/**
+ * A bounded, decaying reading of the opponent.
+ *
+ * `mass` is the strength of the evidence: a decaying sum of identified contacts,
+ * so a column seen once fades instead of colouring the rest of the match. `scores`
+ * are the same decay applied per class. Confidence is evidence strength times how
+ * far ahead the leading class is, so one unusual unit can never dominate.
+ */
+export interface OpponentRead {
+  tendency: OpponentTendency | null;
+  confidence: number;
+  mass: number;
+  scores: Record<OpponentTendency, number>;
+  tick: number;
+  /** Identified contacts counted this think, before decay. */
+  observed: number;
+  /**
+   * Everything with meaningful evidence, strongest first, as a share of the
+   * classified score. A supported armoured force with supporting artillery is
+   * two answers, not one winner and a discarded runner-up.
+   */
+  tendencies: { tendency: OpponentTendency; share: number }[];
 }
 
 export type DefenceKind = 'atTurret' | 'mgNest';
@@ -224,6 +285,40 @@ const STRATEGY_ARMY: Record<AIStrategy, ArmyWeights> = {
 
 const clamp01 = (value: number): number => Math.max(0.05, Math.min(0.95, value));
 
+/**
+ * How strongly a commander's authored doctrine bends one decision.
+ *
+ * Bounded on purpose. A preference is a thumb on the scale, never a veto: the
+ * planner still decides what is legal, affordable and necessary, so a commander
+ * that loves artillery still answers a brownout and still builds the economy its
+ * plan needs. With no commander the weight is exactly 1, which is what keeps the
+ * legacy path byte-identical rather than merely similar.
+ */
+function commanderWeight(
+  commanderId: string | undefined,
+  kind: 'production' | 'build',
+  slotId: string,
+): number {
+  if (!commanderId) return 1;
+  const entry = commanderById(commanderId);
+  if (!entry) return 1;
+  const table =
+    kind === 'production' ? entry.productionWeights : (entry.buildWeights ?? {});
+  const raw = table[slotId];
+  if (raw === undefined) return 1;
+  return Math.max(0.7, Math.min(1.7, raw));
+}
+
+/** A listed research priority lifts that node; the first choice lifts it most. */
+function commanderResearchBoost(commanderId: string | undefined, techId: string): number {
+  if (!commanderId) return 1;
+  const entry = commanderById(commanderId);
+  if (!entry) return 1;
+  const index = entry.research.indexOf(techId);
+  if (index < 0) return 1;
+  return index === 0 ? 1.4 : index === 1 ? 1.25 : 1.15;
+}
+
 function mix32(value: number): number {
   let h = value >>> 0;
   h ^= h >>> 16;
@@ -248,6 +343,230 @@ function unitHash(...values: number[]): number {
 const RECALL_RING = 18;
 /** A wave further out than this cannot return in time and keeps pressing. */
 const RECALL_RANGE = 45;
+/**
+ * How much better a new contact has to score before a commanded AI abandons the
+ * one it is already marching on. Enough to stop two comparable targets from
+ * swapping places every think, small enough that a genuinely better target is
+ * still taken.
+ */
+const TARGET_SWITCH_MARGIN = 1.08;
+
+/**
+ * Execution quality: what a level adds to a decided doctrine.
+ *
+ * This is judgement, not power. A recruit mis-reads the value of a contact by a
+ * deterministic fraction and answers the nearest raid rather than the most
+ * dangerous one; an elite reads contacts accurately, weighs which threat would
+ * actually hurt, and refuses a wave that is outmatched. Nothing here touches
+ * vision, income, prices or combat stats, and none of it is random: the error is
+ * a hash of the entity id, so a fixed scenario replays exactly.
+ */
+interface ExecutionProfile {
+  /** Deterministic error applied to a contact's value. 0 is perfect reading. */
+  targetNoise: number;
+  /** Evidence mass needed before an opponent tendency is accepted. */
+  recognitionMass: number;
+  /** How far the leading class must lead the runner-up, as a ratio. */
+  recognitionLead: number;
+  /** Half-life, in seconds, of what the commander remembers. */
+  memoryHalfLife: number;
+  /** How long a committed wave is given before its outcome is judged. */
+  assaultReviewTicks: number;
+  /** Consecutive failed waves needed before the commander changes its approach. */
+  setbackTolerance: number;
+  /** Whether a raid is ranked by the damage it can do instead of pure distance. */
+  dangerFocus: boolean;
+  /** Whether the launch gate accounts for the force actually scouted. */
+  readsReadiness: boolean;
+}
+
+const EXECUTION: Record<AIDifficulty, ExecutionProfile> = {
+  recruit: {
+    targetNoise: 0.22,
+    dangerFocus: false,
+    readsReadiness: false,
+    recognitionMass: 14,
+    recognitionLead: 1.6,
+    memoryHalfLife: 30,
+    assaultReviewTicks: 20 * 45,
+    setbackTolerance: 99,
+  },
+  // Veteran is the reference reading: it evaluates a contact correctly. Its
+  // weaker judgement, relative to elite, is in which threat it answers and in
+  // how it weighs a wave against the scouted force, not in misvaluing targets.
+  veteran: {
+    targetNoise: 0,
+    dangerFocus: false,
+    readsReadiness: false,
+    recognitionMass: 7,
+    recognitionLead: 1.35,
+    memoryHalfLife: 15,
+    assaultReviewTicks: 20 * 30,
+    setbackTolerance: 2,
+  },
+  elite: {
+    targetNoise: 0,
+    dangerFocus: true,
+    readsReadiness: true,
+    recognitionMass: 4,
+    recognitionLead: 1.25,
+    memoryHalfLife: 10,
+    assaultReviewTicks: 20 * 22,
+    setbackTolerance: 1,
+  },
+};
+
+const NEUTRAL_EXECUTION: ExecutionProfile = Object.freeze({
+  targetNoise: 0,
+  dangerFocus: false,
+  readsReadiness: false,
+  recognitionMass: Number.POSITIVE_INFINITY,
+  recognitionLead: Number.POSITIVE_INFINITY,
+  memoryHalfLife: 15,
+  assaultReviewTicks: 20 * 30,
+  setbackTolerance: Number.POSITIVE_INFINITY,
+});
+
+/** What answering each recognised tendency does to the existing production plan. */
+const ADAPT_PRODUCTION: Partial<
+  Record<OpponentTendency, Readonly<Record<string, number>>>
+> = Object.freeze({
+  armour: { atgm: 1.25, td: 1.15 },
+  infantry: { rifle: 1.2, apc: 1.1 },
+  antiArmour: { rifle: 1.1, tank: 1.1 },
+  artillery: { recon: 1.2, td: 1.1 },
+  air: { aa: 1.3, fighter: 1.15 },
+  naval: { submarine: 1.2, frigate: 1.15 },
+  fortified: { spg: 1.25, rocketArtillery: 1.2 },
+  economy: { recon: 1.15 },
+});
+
+/** What answering each recognised tendency does to target preference. */
+const ADAPT_TARGETS: Partial<
+  Record<OpponentTendency, Partial<Record<CommanderTargetCategory, number>>>
+> = Object.freeze({
+  armour: { combat: 1.1 },
+  infantry: { combat: 1.05 },
+  antiArmour: { support: 1.1 },
+  artillery: { fireSupport: 1.15 },
+  air: { air: 1.1 },
+  naval: { naval: 1.1 },
+  fortified: { defence: 1.2 },
+  economy: { economy: 1.2 },
+});
+
+/**
+ * The classes that may move a decision, strongest first.
+ *
+ * A read carries every class with real evidence, so an armoured push covered by
+ * artillery is answered as two problems rather than one. Saves written before
+ * this field existed fall back to their single primary tendency.
+ */
+function supportedTendencies(read: OpponentRead): { tendency: OpponentTendency; share: number }[] {
+  if (read.tendencies?.length) return read.tendencies;
+  return read.tendency ? [{ tendency: read.tendency, share: 1 }] : [];
+}
+
+/**
+ * Bounded adaptation on top of the commander's own weights.
+ *
+ * Each supported class contributes in proportion to its share of the evidence,
+ * so a close split produces a mild answer instead of a coin-flip winner. The
+ * whole term is clamped, which is what keeps a recognised opponent from
+ * outweighing the commander who is doing the recognising.
+ */
+export function adaptProduction(read: OpponentRead | undefined, slotId: string): number {
+  if (!read) return 1;
+  let total = 1;
+  for (const { tendency, share } of supportedTendencies(read)) {
+    const weight = ADAPT_PRODUCTION[tendency]?.[slotId];
+    if (weight === undefined) continue;
+    total += (weight - 1) * share * read.confidence;
+  }
+  return Math.max(0.85, Math.min(1.3, total));
+}
+
+function adaptTarget(
+  read: OpponentRead | undefined,
+  category: CommanderTargetCategory,
+): number {
+  if (!read) return 1;
+  let total = 1;
+  for (const { tendency, share } of supportedTendencies(read)) {
+    const weight = ADAPT_TARGETS[tendency]?.[category];
+    if (weight === undefined) continue;
+    // Half strength on purpose. Target classes sit much closer together than
+    // production slots (100 against 95 against 70), so the same nudge that is
+    // proportionate on a build priority would decide the campaign for the
+    // commander. Recognition sharpens the reading; it does not choose it.
+    total += (weight - 1) * share * read.confidence * 0.5;
+  }
+  return Math.max(0.9, Math.min(1.2, total));
+}
+
+/** Which class of investment an identified contact represents, if any. */
+function opponentTendencyOf(enemy: KnownEnemy): OpponentTendency | null {
+  if (enemy.kind === 'building') {
+    const def = BUILDINGS[enemy.defId];
+    if (!def) return null;
+    if (def.refinery) return 'economy';
+    if (!def.produces && !def.commandPost) return 'fortified';
+    return null;
+  }
+  const def = UNITS[enemy.defId];
+  if (!def) return null;
+  if (def.domain === 'air') return 'air';
+  if (def.domain === 'naval') return 'naval';
+  const family = unitFamily(enemy.defId);
+  if (family === 'harvester') return 'economy';
+  if (family === 'atgm' || family === 'td') return 'antiArmour';
+  if (family === 'spg' || family === 'rocketArtillery' || family === 'mlrs') return 'artillery';
+  if (def.armour === 'infantry') return 'infantry';
+  if (def.weapons.length > 0) return 'armour';
+  return null;
+}
+
+/**
+ * Which preference class a known contact belongs to.
+ *
+ * Reads the same definitions the scorer already reads, so the categories cannot
+ * drift from what the simulation considers a production building or an
+ * anti-armour vehicle. Unknown definitions fall back to `combat`, which is the
+ * neutral class for anything armed.
+ */
+function contactCategory(enemy: KnownEnemy): CommanderTargetCategory {
+  if (enemy.kind === 'building') {
+    const def = BUILDINGS[enemy.defId];
+    if (def?.commandPost) return 'command';
+    if (def?.produces) return 'production';
+    if (def?.refinery) return 'economy';
+    return 'defence';
+  }
+  const def = UNITS[enemy.defId];
+  if (!def) return 'combat';
+  if (def.domain === 'air') return 'air';
+  if (def.domain === 'naval') return 'naval';
+  const family = unitFamily(enemy.defId);
+  if (family === 'harvester') return 'economy';
+  if (family === 'recon' || family === 'uav' || family === 'pathfinder') return 'recon';
+  if (family === 'aa') return 'airDefence';
+  if (family === 'spg' || family === 'rocketArtillery' || family === 'mlrs') return 'fireSupport';
+  if (family === 'engineer' || family === 'medic' || family === 'recovery') return 'support';
+  return 'combat';
+}
+
+/**
+ * How much a raider actually threatens the base.
+ *
+ * Armament dominates, damage it has already taken counts for less, and distance
+ * is a tiebreak rather than the whole answer. Used only when a level ranks
+ * threats by consequence; the default reading stays nearest-first.
+ */
+function threatDanger(entity: Entity, baseX: number, baseZ: number): number {
+  const armed = entityWeapons(entity).length > 0 ? 40 : 0;
+  const hurt = entity.maxHp > 0 ? 1 - entity.hp / entity.maxHp : 0;
+  return armed + hurt * 25 - dist(entity.x, entity.z, baseX, baseZ) / TILE_SIZE * 1.5;
+}
 
 const DIFFICULTY_BIAS: Record<
   AIDifficulty,
@@ -331,12 +650,48 @@ const DIFFICULTY_BIAS: Record<
   },
 };
 
-/** Seeded personality: a different match seed fields a different commander. */
-export function aiProfile(seed: number, difficulty: AIDifficulty = 'veteran'): AIProfile {
+/**
+ * Seeded personality: a different match seed fields a different commander.
+ *
+ * An explicitly chosen commander replaces the seed-selected temperament with its
+ * authored scalars, and the difficulty level is then applied on top exactly as
+ * it is for the seeded path: the level still owns cadence, scouting response,
+ * commit share, recall and abilities, so one commander is recognisable at every
+ * level while the level remains the measure of execution quality.
+ *
+ * No `commanderId` means the legacy path, unchanged and seed-deterministic.
+ */
+export function aiProfile(
+  seed: number,
+  difficulty: AIDifficulty = 'veteran',
+  commanderId?: string,
+): AIProfile {
+  const level = DIFFICULTY_BIAS[difficulty] ?? DIFFICULTY_BIAS.veteran;
+  const authored = commanderId ? resolveCommander(undefined, commanderId) : undefined;
+  if (authored) {
+    const clamp25 = (value: number): number => Math.max(0.5, Math.min(1.25, value));
+    return {
+      difficulty,
+      strategy: authored.strategy,
+      aggression: clamp01(authored.aggression + level.aggression),
+      economy: clamp01(authored.economy + level.economy),
+      tech: clamp01(authored.tech + level.tech),
+      defence: clamp01(authored.defence + level.defence),
+      armyScale: clamp25(authored.armyScale * level.armyScale),
+      reactionTicks: Math.max(4, Math.round(level.reactionTicks * authored.tempoFactor)),
+      responseWeight: clamp01(level.responseWeight * authored.responseFactor),
+      commitShare: clamp01(level.commitShare * authored.commitFactor),
+      reserve: Math.min(6, authored.reserve + level.reserve),
+      // The level still has the last word: a recruit commander does not recall its
+      // wave or protect its haulers even when its personality normally would.
+      recall: level.recall && authored.recall,
+      protectEconomy: level.protectEconomy && authored.protectEconomy,
+      abilities: level.abilities && authored.abilities,
+    };
+  }
   const h = mix32(seed ^ 0x51ed270b);
   const strategy = AI_STRATEGIES[mix32(seed ^ 0x2b7e1516) % AI_STRATEGIES.length];
   const bias = STRATEGY_BIAS[strategy];
-  const level = DIFFICULTY_BIAS[difficulty] ?? DIFFICULTY_BIAS.veteran;
   return {
     difficulty,
     strategy,
@@ -830,6 +1185,7 @@ export function researchOptionScore(
 export function initialAIState(
   aiSeed: number,
   difficulty: AIDifficulty = 'veteran',
+  commanderId?: string,
 ): AIControlState {
   return {
     nextThinkTick: 10,
@@ -846,8 +1202,11 @@ export function initialAIState(
     scouted: false,
     aiSeed,
     aiRng: aiSeed,
-    strategy: aiProfile(aiSeed, difficulty).strategy,
+    strategy: aiProfile(aiSeed, difficulty, commanderId).strategy,
     difficulty,
+    ...(commanderId
+      ? { commanderId, commanderProfileVersion: COMMANDER_PROFILE_VERSION }
+      : {}),
     lastContactTick: 0,
     lastScoutTick: 0,
     activeSiteId: 0,
@@ -923,6 +1282,15 @@ interface AIContext {
   visible: Entity[];
   known: KnownEnemy[];
   threats: Entity[];
+  /**
+   * The commander's tactical reading, or the neutral profile when it has no
+   * authored identity. Resolved once per think, never inside a target loop.
+   */
+  tactical: TacticalProfile;
+  /** Difficulty's contribution to judgement. Neutral on the seeded path. */
+  execution: ExecutionProfile;
+  /** Decaying read of the opponent, when a commander is observing one. */
+  read?: OpponentRead;
   mix: ScoutedForceMix;
   profile: AIProfile;
   strategy: AIStrategy;
@@ -988,7 +1356,8 @@ export class AIController {
       ? st.difficulty
       : 'veteran';
     st.difficulty = difficulty;
-    const profile = aiProfile(st.aiSeed, difficulty);
+    // Authored commander when one was chosen, seeded temperament otherwise.
+    const profile = aiProfile(st.aiSeed, difficulty, st.commanderId);
     // Reaction time is the controller's, not the caller's: the battle loop and
     // the matchup harness both hand it every tick and it decides when to think.
     // A recruit therefore recognises a raid or an empty factory queue later.
@@ -1025,7 +1394,13 @@ export class AIController {
       .visibleEnemies(ai.id)
       .filter((e) => e.defId !== 'relay' && !(e.kind === 'unit' && e.garrisonId));
     const known = this.knownEnemies(game, ai.id, visible);
-    const threats = visible.filter((e) => dist(e.x, e.z, baseX, baseZ) < 34 * TILE_SIZE);
+    // How much of the map a commander treats as "my base is under threat". The
+    // list is still only what its own units can see; the radius is judgement,
+    // not vision, so a wider horizon never reveals a hidden unit.
+    const tactical = tacticalProfileFor(st.commanderId) ?? NEUTRAL_TACTICAL;
+    const threats = visible.filter(
+      (e) => dist(e.x, e.z, baseX, baseZ) < 34 * tactical.threatRadius * TILE_SIZE,
+    );
     const engineer = own.find((e) => e.kind === 'unit' && e.defId === 'engineer');
     if (this.waterCache === null) {
       this.waterCache = game.state.scenario.tiles.some(
@@ -1091,6 +1466,10 @@ export class AIController {
       visible,
       known,
       threats,
+      tactical,
+      // A commanded match gets the level's judgement; the seeded path keeps the
+      // behaviour the historical ladder measures.
+      execution: st.commanderId ? EXECUTION[difficulty] : NEUTRAL_EXECUTION,
       mix: scoutedForceMix(game, ai.id),
       profile,
       strategy,
@@ -1101,6 +1480,13 @@ export class AIController {
       enemyNaval: known.filter((e) => UNITS[e.defId]?.domain === 'naval').length,
       haulingIdle,
     };
+    // Opponent recognition is a commanded behaviour: the seeded path keeps the
+    // decisions the historical ladder measures, and never applies adaptation.
+    if (st.commanderId) {
+      this.updateOpponentRead(ctx);
+      ctx.read = st.opponentRead as OpponentRead | undefined;
+      this.reviewAssault(ctx);
+    }
 
     this.updateTarget(ctx);
     // A squad staging for a beach has already been committed to that job, so
@@ -1411,7 +1797,181 @@ export class AIController {
     return next / 4294967296;
   }
 
-  private contactValue(enemy: KnownEnemy, baseX: number, baseZ: number): number {
+  /**
+   * Update the commander's decaying reading of what the opponent is building.
+   *
+   * Only identified contacts are counted, each entity once, so a remembered
+   * sighting cannot be mistaken for a second sighting. The mass and the class
+   * scores both decay with a fifteen-second half-life: a column that has been
+   * destroyed or has left stops colouring the reading instead of inflating it
+   * for the rest of the match.
+   */
+  private updateOpponentRead(ctx: AIContext): void {
+    const st = ctx.st;
+    const prior = st.opponentRead as OpponentRead | undefined;
+    const tick = ctx.game.state.tick;
+    const seen = new Set<number>();
+    const observedScores = {} as Record<OpponentTendency, number>;
+    for (const tendency of OPPONENT_TENDENCIES) observedScores[tendency] = 0;
+    let observed = 0;
+    const halfLife = ctx.execution.memoryHalfLife;
+    for (const enemy of ctx.known) {
+      if (seen.has(enemy.id)) continue;
+      seen.add(enemy.id);
+      const tendency = opponentTendencyOf(enemy);
+      if (!tendency) continue;
+      // Freshness, not mere presence. A contact still under the commander's own
+      // eyes is worth a full observation; a remembered one is worth what is left
+      // of its memory. Without this, a stale contact in the list would re-add
+      // full evidence on every think and never fade.
+      const age = Math.max(0, tick - enemy.tick);
+      const freshness = enemy.visible ? 1 : Math.pow(0.5, age / (20 * halfLife));
+      if (freshness <= 0.02) continue;
+      observedScores[tendency] += freshness;
+      observed += freshness;
+    }
+    const decay = Math.pow(0.5, Math.max(0, tick - (prior?.tick ?? tick)) / (20 * halfLife));
+    const scores = {} as Record<OpponentTendency, number>;
+    for (const tendency of OPPONENT_TENDENCIES) {
+      scores[tendency] = (prior?.scores?.[tendency] ?? 0) * decay + observedScores[tendency];
+    }
+    const mass = (prior?.mass ?? 0) * decay + observed;
+    const ranked = [...OPPONENT_TENDENCIES].sort(
+      (a, b) => scores[b] - scores[a] || a.localeCompare(b),
+    );
+    const leader = ranked[0]!;
+    const leadScore = scores[leader];
+    const previous = (prior?.tendency as OpponentTendency | null | undefined) ?? null;
+    const runnerUp = Math.max(
+      scores[ranked[1]!] ?? 0,
+      previous ? (scores[previous] ?? 0) : 0,
+    );
+    const { recognitionMass, recognitionLead } = ctx.execution;
+    let tendency: OpponentTendency | null = previous;
+    let confidence = 0;
+    if (leadScore <= 0) {
+      // Nothing identified: the reading empties rather than freezing on a guess.
+      tendency = null;
+    } else if (mass >= recognitionMass) {
+      const lead = leadScore / Math.max(1e-6, runnerUp);
+      if (lead >= recognitionLead || leader === previous) tendency = leader;
+      confidence =
+        Math.min(1, mass / recognitionMass) * Math.min(1, lead / recognitionLead);
+    } else {
+      // The evidence has aged out below the level's own bar: the commander stops
+      // claiming to know what the opponent is doing rather than acting on a
+      // memory it can no longer support.
+      tendency = null;
+    }
+    const totalScore = OPPONENT_TENDENCIES.reduce((sum, t) => sum + scores[t], 0);
+    const tendencies = OPPONENT_TENDENCIES.filter(
+      (t) => totalScore > 0 && scores[t] / totalScore >= 0.15,
+    )
+      .map((t) => ({ tendency: t, share: scores[t] / Math.max(1e-6, totalScore) }))
+      .sort((a, b) => b.share - a.share || a.tendency.localeCompare(b.tendency));
+    st.opponentRead = {
+      tendency: mass >= recognitionMass ? tendency : null,
+      confidence: mass >= recognitionMass ? confidence : 0,
+      mass,
+      scores,
+      tick,
+      observed,
+      tendencies: mass >= recognitionMass ? tendencies : [],
+    };
+  }
+
+  /**
+   * Judge the wave that was sent, from the simulation's own counters and the
+   * positions of the units it committed.
+   *
+   * There is no per-battle event log to read, so the assessment is deliberately
+   * coarse: kills and losses are real counters, the objective is a position the
+   * commander chose, and "reached" means a committed hull is standing on it.
+   * A wave is reviewed once, after the level's own observation window.
+   */
+  private reviewAssault(ctx: AIContext): void {
+    // Tactical judgement belongs to the commander layer; the classic AI keeps
+    // its exact Phase 5 behaviour.
+    if (!ctx.st.commanderId) return;
+    const battle = ctx.st.battle;
+    if (!battle) return;
+    if (battle.lastOutcomeTick !== undefined && battle.lastOutcomeTick >= battle.startTick) return;
+    const tick = ctx.game.state.tick;
+    if (tick - battle.startTick < ctx.execution.assaultReviewTicks) return;
+    const kills = ctx.player.stats.kills - battle.startKills;
+    const losses = ctx.player.stats.unitsLost - battle.startLosses;
+    const alive = new Set(ctx.own.filter((e) => e.kind === 'unit').map((e) => e.id));
+    const survivors = battle.ids.filter((id) => alive.has(id)).length;
+    const destroyed = Math.max(0, battle.startCount - survivors);
+    const reached = ctx.own.some(
+      (e) =>
+        e.kind === 'unit' &&
+        battle.ids.includes(e.id) &&
+        dist(e.x, e.z, battle.x, battle.z) < 8 * TILE_SIZE,
+    );
+    // "Reached" only counts as progress if the point the wave was sent to lies
+    // toward the target. A staging point beside the base is not an objective,
+    // and a wave that never left must not be scored as a success.
+    const forward = dist(battle.x, battle.z, ctx.st.targetBaseX, ctx.st.targetBaseZ) < 20 * TILE_SIZE;
+    // Standing on the objective is not enough if the enemy is still holding it:
+    // the ground only counts when nothing the commander can see remains there.
+    const cleared = !ctx.known.some(
+      (e) => e.visible && dist(e.x, e.z, battle.x, battle.z) < 15 * TILE_SIZE,
+    );
+    let outcome: 'success' | 'failure' | 'inconclusive' = 'inconclusive';
+    if ((reached && forward && cleared) || kills >= losses + 2) outcome = 'success';
+    else if (
+      (destroyed >= Math.max(2, Math.ceil(battle.startCount * 0.6)) && kills <= losses) ||
+      losses >= kills + 3
+    ) {
+      outcome = 'failure';
+    }
+    // A wave still walking to its objective has not failed yet. Keep watching
+    // it until something decisive happens, or until the same generous window
+    // runs out and it is recorded as inconclusive rather than judged blind.
+    if (outcome === 'inconclusive' && tick - battle.startTick < 20 * 60) return;
+    const setbacks = outcome === 'failure' ? (battle.setbacks ?? 0) + 1 : outcome === 'success' ? 0 : (battle.setbacks ?? 0);
+    ctx.st.battle = {
+      ...battle,
+      lastOutcome: outcome,
+      lastOutcomeTick: tick,
+      setbacks,
+      setbackUntil: outcome === 'failure' ? tick + 20 * 45 : battle.setbackUntil,
+    };
+    ctx.st.lastDecision =
+      `wave ${battle.wave} ${outcome} — ${kills} kills, ${destroyed} of ${battle.startCount} lost`;
+  }
+
+  /**
+   * How much a run of failed waves slows the next one down.
+   *
+   * The level sets how many failures it takes to doubt the approach, and the
+   * commander's own aggression bends that: a pressing commander keeps attacking
+   * the same way for longer, a careful one changes its approach sooner. The
+   * multiplier is small and expires; nothing here makes a commander passive.
+   */
+  private assaultCaution(ctx: AIContext): { gate: number; cooldown: number } {
+    const battle = ctx.st.battle;
+    const setbacks = battle?.setbacks ?? 0;
+    if (setbacks <= 0 || ctx.game.state.tick > (battle?.setbackUntil ?? 0)) {
+      return { gate: 1, cooldown: 1 };
+    }
+    const tolerance = Math.max(
+      1,
+      Math.round(ctx.execution.setbackTolerance + (ctx.profile.aggression - 0.5) * 2),
+    );
+    if (setbacks < tolerance) return { gate: 1, cooldown: 1 };
+    const strength = Math.min(2, setbacks);
+    return { gate: 1 + 0.12 * strength, cooldown: 1 + 0.5 * strength };
+  }
+
+  private contactValue(
+    enemy: KnownEnemy,
+    baseX: number,
+    baseZ: number,
+    bias: Readonly<Record<CommanderTargetCategory, number>> = NEUTRAL_TACTICAL.targetBias,
+    noise = 0,
+  ): number {
     let value = 30;
     if (enemy.kind === 'building') {
       const def = BUILDINGS[enemy.defId];
@@ -1427,6 +1987,15 @@ export class AIController {
       if (enemy.defId === 'engineer') value = 34;
       if (def?.domain === 'air') value = 64;
       if (def?.domain === 'naval') value = 54;
+    }
+    // A commander's preference reweights the same value the planner already
+    // computed; distance decay stays untouched so a preference can never make a
+    // distant target look closer than a nearer one of the same class.
+    value *= bias[contactCategory(enemy)];
+    if (noise > 0) {
+      // A level's mis-reading of a contact, keyed to the contact itself so the
+      // same commander values the same target the same way on every think.
+      value *= 1 + (unitHash(enemy.id, 0x5f356495) * 2 - 1) * noise;
     }
     return value - dist(enemy.x, enemy.z, baseX, baseZ) / TILE_SIZE * 0.35;
   }
@@ -1446,12 +2015,39 @@ export class AIController {
       return;
     }
     st.lastContactTick = ctx.game.state.tick;
-    const best = [...ctx.known].sort(
+    const baseBias = ctx.tactical.targetBias;
+    const bias = ctx.read?.tendency
+      ? (Object.fromEntries(
+          COMMANDER_TARGET_CATEGORIES.map((category) => [
+            category,
+            // Same rule as production: the combined value stays inside the
+            // commander's own bias band, so a recognised economic opponent
+            // cannot turn an assault commander into an economy raider.
+            Math.max(0.75, Math.min(1.4, baseBias[category] * adaptTarget(ctx.read, category))),
+          ]),
+        ) as Record<CommanderTargetCategory, number>)
+      : baseBias;
+    const noise = ctx.execution.targetNoise;
+    let best = [...ctx.known].sort(
       (a, b) =>
-        this.contactValue(b, ctx.baseX, ctx.baseZ) - this.contactValue(a, ctx.baseX, ctx.baseZ) ||
-        a.id - b.id,
+        this.contactValue(b, ctx.baseX, ctx.baseZ, bias, noise) -
+          this.contactValue(a, ctx.baseX, ctx.baseZ, bias, noise) || a.id - b.id,
     )[0];
     if (!best) return;
+    // Re-targeting every think makes a commander with two comparable contacts
+    // walk its army back and forth. A commanded AI only switches when the new
+    // contact is meaningfully better; the seeded path keeps its original rule so
+    // the historical ladder still measures the same AI.
+    if (ctx.st.commanderId && st.targetKnown) {
+      const current = ctx.known.find(
+        (e) => e.x === st.targetBaseX && e.z === st.targetBaseZ,
+      );
+      if (current && current.id !== best.id) {
+        const currentScore = this.contactValue(current, ctx.baseX, ctx.baseZ, bias, noise);
+        const nextScore = this.contactValue(best, ctx.baseX, ctx.baseZ, bias, noise);
+        if (nextScore < currentScore * TARGET_SWITCH_MARGIN) best = current;
+      }
+    }
     st.targetKnown = true;
     st.scouted = true;
     st.targetBaseX = best.x;
@@ -1480,9 +2076,20 @@ export class AIController {
 
   private defend(ctx: AIContext): void {
     if (ctx.threats.length === 0) return;
-    const target = ctx.threats.reduce((best, e) =>
-      dist(e.x, e.z, ctx.baseX, ctx.baseZ) < dist(best.x, best.z, ctx.baseX, ctx.baseZ) ? e : best,
-    );
+    // Nearest first is the baseline reading. A level that reads the situation
+    // properly answers the raider that can actually hurt the base: a tank is a
+    // worse problem than a scout that happens to stand a tile closer.
+    const target = ctx.execution.dangerFocus
+      ? ctx.threats.reduce((best, e) =>
+          threatDanger(e, ctx.baseX, ctx.baseZ) > threatDanger(best, ctx.baseX, ctx.baseZ)
+            ? e
+            : best,
+        )
+      : ctx.threats.reduce((best, e) =>
+          dist(e.x, e.z, ctx.baseX, ctx.baseZ) < dist(best.x, best.z, ctx.baseX, ctx.baseZ)
+            ? e
+            : best,
+        );
     ctx.st.phase = 'defend';
     // A wave already on its way out is not `free`, so without this nothing can
     // be called back: the whole army walks on while a strike force dismantles
@@ -1498,7 +2105,9 @@ export class AIController {
     // commander that answered all of it. A raid becomes an emergency once there
     // are enough raiders to hurt the base, or once one has actually hit it.
     const raiders = ctx.threats.filter(
-      (e) => dist(e.x, e.z, ctx.baseX, ctx.baseZ) < RECALL_RING * TILE_SIZE,
+      (e) =>
+        dist(e.x, e.z, ctx.baseX, ctx.baseZ) <
+        RECALL_RING * ctx.tactical.recallMargin * TILE_SIZE,
     );
     const baseHit = ctx.game.state.entities.some(
       (e) =>
@@ -1912,6 +2521,11 @@ export class AIController {
       ) {
         return;
       }
+      // Doctrine bends the construction plan, it never replaces it: legal,
+      // affordable and prerequisite checks have all run above, and the weight is
+      // clamped, so a commander that loves bunkers still raises an economy and a
+      // production maximalist still answers a brownout.
+      score *= commanderWeight(ctx.st.commanderId, 'build', slotId);
       options.push({ defId, score, reason, essential, planned, economy });
     };
     const counts = ctx.counts;
@@ -2788,9 +3402,21 @@ export class AIController {
       if (!defId) return;
       const count = (ctx.unitCounts.get(slotId) ?? 0) + (queued.get(defId) ?? 0);
       if (count < target) {
+        // Doctrine and adaptation are clamped together, not separately: two
+        // individually modest multipliers still combine into a priority the
+        // authored profile never asked for. The clamp is the doctrine's own
+        // band, so recognition can sharpen a commander but never replace it.
+        const doctrine = Math.max(
+          0.7,
+          Math.min(
+            1.7,
+            commanderWeight(ctx.st.commanderId, 'production', slotId) *
+              adaptProduction(ctx.read, slotId),
+          ),
+        );
         entries.push({
           defId,
-          priority,
+          priority: priority * doctrine,
           deficit: (target - count) / Math.max(1, target),
           short: target - count,
           saveFor,
@@ -3028,11 +3654,28 @@ export class AIController {
       ctx.profile.aggression,
       ctx.profile.armyScale,
     );
-    const weights = blendWeights(
+    let weights = blendWeights(
       STRATEGY_ARMY[ctx.strategy],
       armyWeights(ctx.mix),
       ctx.profile.responseWeight,
     );
+    // A commander's doctrine also shapes the three core arms, not only the
+    // support purchases. The scaled shares are renormalised, so the plan still
+    // asks for the same total army: this changes what the army is made of, not
+    // how big it is.
+    if (ctx.st.commanderId) {
+      const armour = commanderWeight(ctx.st.commanderId, 'production', 'tank');
+      const antiArmour = commanderWeight(ctx.st.commanderId, 'production', 'atgm');
+      const infantry = commanderWeight(ctx.st.commanderId, 'production', 'rifle');
+      const total = weights.armour * armour + weights.antiArmour * antiArmour + weights.infantry * infantry;
+      if (total > 0) {
+        weights = {
+          armour: (weights.armour * armour) / total,
+          antiArmour: (weights.antiArmour * antiArmour) / total,
+          infantry: (weights.infantry * infantry) / total,
+        };
+      }
+    }
     // Support is counted in the target: a 6-unit army with two harvesters is
     // not six bayonets. The floor keeps at least one of each arm.
     need('tank', Math.max(1, Math.round(targetArmy * weights.armour)), 104);
@@ -3061,7 +3704,14 @@ export class AIController {
         if (!buildable) continue;
         const count = (ctx.unitCounts.get(defId) ?? 0) + (queued.get(defId) ?? 0);
         if (count >= 1) continue;
-        entries.push({ defId, priority: 94, deficit: 1, saveFor: def.cost.mats });
+        // Doctrine decides how urgently the capability is wanted, inside a band
+        // that keeps it a capability rather than a substitute for the plan:
+        // never above the emergency lines (air defence, recon, replacements)
+        // and never so low that a commander stops considering it at all. With
+        // no commander the weight is 1 and the priority is the historical 94.
+        const weight = commanderWeight(ctx.st.commanderId, 'production', defId);
+        const priority = Math.max(70, Math.min(110, 94 * weight));
+        entries.push({ defId, priority, deficit: 1, saveFor: def.cost.mats });
       }
     }
     return entries.sort(
@@ -3162,6 +3812,9 @@ export class AIController {
     for (const tech of ctx.game.research.techs) {
       if (!ctx.game.techEligibility(ctx.aiId, tech.id).ok) continue;
       const option = researchOptionScore(tech, signals);
+      // Authored priority, not a new branch: a listed node is simply worth more
+      // to this commander than the generic score says.
+      option.score *= commanderResearchBoost(ctx.st.commanderId, tech.id);
       if (option.score <= 0) continue;
       options.push(option);
     }
@@ -4291,15 +4944,26 @@ export class AIController {
     // a recruit leaves with a fraction of it, an elite insists on more than the
     // nominal army. A wave also has a real cooldown so an unreachable order
     // cannot re-fire every second.
-    const gate = Math.max(
-      3,
-      Math.round(
-        ctx.st.desiredArmy *
-          ctx.profile.commitShare *
-          (0.55 + (1 - ctx.profile.aggression) * 0.35),
-      ),
+    const planned = Math.round(
+      ctx.st.desiredArmy *
+        ctx.profile.commitShare *
+        (0.55 + (1 - ctx.profile.aggression) * 0.35),
     );
-    const cooldown = 20 * Math.round(10 + (1 - ctx.profile.aggression) * 8);
+    // Readiness judgement: a level that reads the scouted force holds a wave
+    // back when it is outnumbered and releases it sooner when it clearly is not.
+    // Bounded either way, so the commander's own risk tolerance still decides
+    // what "ready" means; this only sharpens the estimate.
+    const readiness = ctx.execution.readsReadiness
+      ? Math.max(
+          0.9,
+          Math.min(1.2, 1 + (enemyMilitary / Math.max(1, ctx.combat.length) - 1) * 0.08),
+        )
+      : 1;
+    const caution = ctx.st.commanderId
+      ? this.assaultCaution(ctx)
+      : { gate: 1, cooldown: 1 };
+    const gate = Math.max(3, Math.round(planned * readiness * caution.gate));
+    const cooldown = 20 * Math.round((10 + (1 - ctx.profile.aggression) * 8) * caution.cooldown);
     // If production cannot lift the army to the gate — a stalled economy, a
     // lost factory, a scouted force larger than expected — commit the trained
     // force rather than parking it at the base for the rest of the match.
@@ -4327,6 +4991,22 @@ export class AIController {
       });
       ctx.st.attackWave++;
       ctx.st.lastWaveTick = tick;
+      // Snapshot what the wave is and what it is costing, so the next review can
+      // judge it against the counters as they were when it left.
+      ctx.st.battle = {
+        wave: ctx.st.attackWave,
+        startTick: tick,
+        startKills: ctx.player.stats.kills,
+        startLosses: ctx.player.stats.unitsLost,
+        startCount: ids.length,
+        // The point the wave was actually sent to, not the target beyond it:
+        // that is the ground the commander can reasonably expect to hold.
+        x: point.x,
+        z: point.z,
+        ids,
+        setbacks: ctx.st.battle?.setbacks ?? 0,
+        setbackUntil: ctx.st.battle?.setbackUntil,
+      };
       ctx.st.phase = 'assault';
       ctx.st.lastDecision = `assault wave ${ctx.st.attackWave} with ${ids.length} units`;
       return;

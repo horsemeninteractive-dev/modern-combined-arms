@@ -29,9 +29,40 @@ export interface GpuLight {
   cone: number;
   color: [number, number, number];
   intensity: number;
+  /**
+   * For a cone: where this quad sits along the beam, 0 at the bumper and 1 at
+   * the far end. A beam over rising ground is split into several quads, one per
+   * terrain step, and each carries its slice so the fades stay continuous.
+   * Absent means the whole beam in one quad.
+   */
+  beam?: readonly [number, number];
+  /**
+   * A real lamp for the terrain shader: origin, aim, cone and reach. The beam is
+   * not drawn as geometry at all, so no quad can sink into a slope or band at a
+   * seam; the ground evaluates the cone per fragment against the surface it
+   * actually hit.
+   */
+  spot?: GroundSpot;
 }
 
-const FLOATS_PER_LIGHT = 12;
+export interface GroundSpot {
+  /** Lamp position in world space. */
+  x: number;
+  y: number;
+  z: number;
+  /** Unit aim vector; lamps look slightly down so the cone meets the ground. */
+  dirX: number;
+  dirY: number;
+  dirZ: number;
+  /** Distance at which the cone has decayed to nothing. */
+  range: number;
+  /** Cosine of the cone's soft outer edge. */
+  cosOuter: number;
+  color: [number, number, number];
+  intensity: number;
+}
+
+const FLOATS_PER_LIGHT = 14;
 
 export class LightGpu {
   private program: WebGLProgram;
@@ -81,6 +112,10 @@ export class LightGpu {
     gl.enableVertexAttribArray(4);
     gl.vertexAttribPointer(4, 1, gl.FLOAT, false, stride, 11 * 4);
     gl.vertexAttribDivisor(4, 1);
+    // Beam slice: 0 at the bumper, 1 at the far end.
+    gl.enableVertexAttribArray(5);
+    gl.vertexAttribPointer(5, 2, gl.FLOAT, false, stride, 12 * 4);
+    gl.vertexAttribDivisor(5, 1);
     gl.bindVertexArray(null);
 
     for (const name of [
@@ -121,6 +156,8 @@ export class LightGpu {
       d[o + 9] = l.stretch;
       d[o + 10] = l.glow;
       d[o + 11] = l.cone;
+      d[o + 12] = l.beam ? l.beam[0] : 0;
+      d[o + 13] = l.beam ? l.beam[1] : 1;
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
     gl.bufferData(gl.ARRAY_BUFFER, d.subarray(0, lights.length * FLOATS_PER_LIGHT), gl.DYNAMIC_DRAW);

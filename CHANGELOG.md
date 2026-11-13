@@ -12,6 +12,64 @@ rendered in game from **Changelog** in the main-menu footer.
 When the version is bumped, rename it to the new `## [x.y.z STAGE] — date`
 heading: `tools/release.mjs` refuses to ship unless that heading exists.
 
+## [0.8.0 BETA] — 2026-11-13
+
+The two alliances get their own face, the touch HUD becomes a complete command
+surface, and vehicle lamps stop being painted decals. Commander doctrine from
+the phase 6–8 design lands behind the existing AI seed, so a match without an
+authored commander behaves as before.
+
+### Coalition identity
+
+- **Atlantic Accord and Eurasian Pact are visually distinct.** The alliances are
+  named in data, the campaign, the workbench and the legacy panel; AA reads
+  silver, EP gold, and the defender's HUD chrome is blue rather than grey.
+- **The supplied insignia artwork is the watermark.** `insignia-aa.png` and
+  `insignia-ep.png` are masked and filled with metal gradients behind content at
+  low opacity: desktop rail and production sidebar, mobile top bar, power strip,
+  console, slide-out sheets and map dock.
+- Production cards, cost chips and scrollbars follow the same per-coalition
+  palette; flags keep the MCA crest tinted by the faction.
+
+### Touch command HUD
+
+- The power gauge is a full-width strip under the header; ARMY and the objective
+  (icon-only) sit with the battle actions at the far right.
+- Overlay rows no longer collide: interface toggle left, FPS counter left of the
+  tab rail, field reports below the whole header stack, and the sheets and map
+  dock offset for the taller bar.
+- BUILD and RESEARCH leave the touch strip (their tabs still reach both), and the
+  selection gains CLEAR beside ADD once a group is selected.
+
+### Night lighting
+
+- **Headlamps are real cones.** The beam quads are gone. A shared
+  `GROUND_SPOTS_GLSL` field evaluates each lamp per fragment on terrain, roads,
+  ground decals and bridge decks, and a top-down occluder map makes walls,
+  crests, trees and large props fade the pool instead of letting it pass through.
+- Reach, tilt, colour and occluder bias are documented in
+  `docs/DAY_NIGHT_WARFARE.md`.
+
+### Camera
+
+- Pan clamping derives from the visible ground footprint with overscan, so a long
+  diagonal pan stops at the map edge instead of at an unrelated box.
+
+### Commander doctrine
+
+- Authored commander catalogue (`src/data/commanders.ts`) with per-nation
+  rosters, scalar profiles and validation, plus an optional `commanderId` on AI
+  state so older saves keep the seeded profile.
+- Opponent read from identified contacts, adaptive production and target
+  weights, and post-wave battle assessment with setback handling.
+- Design notes in `docs/ADAPTIVE_COMMANDER_AI_PHASE_1_NATIONAL_DOCTRINE.md`.
+
+### Tests
+
+- New suites for the commander catalogue, doctrine, tactics, opponent adaptation
+  and difficulty quality; the camera, HUD, presentation and night-light suites
+  are extended to cover this release.
+
 ## [0.7.1 BETA] — 2026-11-11
 
 Phase 6D closes with the AI recovery fix and the competitive seat question

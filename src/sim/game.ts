@@ -156,6 +156,7 @@ import {
   unitSlotId,
 } from '../data/roster';
 import { tryIdentityDef, NATIONS } from '../data/factions';
+import { resolveCommander } from '../data/commanders';
 import { pickBestWeapon, weaponScore, type WeaponCandidate } from './weaponChoice';
 import { abilityForUpgrade, isGuidedWeapon, type TimedAbilityDef } from '../data/abilities';
 import {
@@ -228,6 +229,13 @@ export interface GameOptions {
   aiSeed?: number;
   /** Selected opponent strength for a new battle; saves keep their own. */
   aiDifficulty?: AIDifficulty;
+  /**
+   * Authored opponent commander for a new battle. Absent means the seeded
+   * temperament, so every existing match and save behaves exactly as before. A
+   * commander that does not belong to the AI player's nation is ignored rather
+   * than silently reassigned.
+   */
+  aiCommanderId?: string;
   /**
    * Experiment-only switch for the Phase 9 replication: disables the rule that
    * suspends engineer repair while a structure is under fire. Production code
@@ -416,6 +424,10 @@ export class Game {
       ai: this.createAIState(
         (opts.aiSeed ?? scenario.settings.seed) >>> 0,
         opts.aiDifficulty ?? 'veteran',
+        resolveCommander(
+          scenario.players.find((p) => p.isAI)?.factionId,
+          opts.aiCommanderId ?? scenario.players.find((p) => p.isAI)?.commanderId,
+        )?.id,
       ),
       contacts: [],
       charted: [],
@@ -442,8 +454,9 @@ export class Game {
   private createAIState(
     aiSeed: number,
     difficulty: AIDifficulty = 'veteran',
+    commanderId?: string,
   ): AIControlState {
-    return initialAIState(aiSeed, difficulty);
+    return initialAIState(aiSeed, difficulty, commanderId);
   }
 
   /**
@@ -11524,6 +11537,17 @@ export class Game {
     for (const p of state.players) {
       if (!p || typeof p.factionId !== 'string' || !tryIdentityDef(p.factionId)) {
         throw new SaveFormatError('Save file references an unknown faction or nation.');
+      }
+    }
+    // An authored commander is optional metadata. A file written before the
+    // catalogue has none, and one naming an unknown commander, or a commander of
+    // another nation, is dropped rather than adopted: the match then runs the
+    // seeded profile, which is exactly what that file would have done before.
+    if (state.ai?.commanderId) {
+      const aiPlayer = savedScenario.players.find((p) => p?.isAI);
+      if (!resolveCommander(aiPlayer?.factionId, state.ai.commanderId)) {
+        delete state.ai.commanderId;
+        delete state.ai.commanderProfileVersion;
       }
     }
     const game = new Game(savedScenario, { ...opts, skipInit: true });

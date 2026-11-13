@@ -77,6 +77,14 @@ export interface ScenarioPlayer {
   factionId: string;
   team: number;
   isAI: boolean;
+  /**
+   * Authored AI commander for this player, when one is chosen. Optional and
+   * absent everywhere it is not used, so existing scenarios and saves keep their
+   * exact file shape and their seeded AI behaviour. The identity must belong to
+   * this player's nation; the simulation resolves it through the catalogue and
+   * falls back to the seeded profile when it cannot.
+   */
+  commanderId?: string;
   /** Player start tile (used for deployment validation and editor markers). */
   startX: number;
   startZ: number;

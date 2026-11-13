@@ -119,10 +119,40 @@ graphics setting can conjure a light the simulation does not have.
   structure's mesh for its walls and wall height (an 82nd-percentile height, so a
   flag mast does not lift the wall lamps into the air). Headlamps mount at the front
   corners of the hull; wall lamps hang at the corners of the structure.
-- **Headlight beams** are two cones, one per lamp, stretched along the hull and
-  soft-edged at every boundary: the near edge fades in, the lateral edge is a wide
-  smoothstep rather than a cut, and the far end dissolves. They are drawn from the
-  *rendered* pose, so they move with the eased hull instead of the 20 Hz tick.
+- **Headlight beams are projected, not painted.** Each lamp is a cone in world
+  space — position at the hull's lamp anchor, aim along its facing with a 0.22
+  downward tilt, an outer edge at `cos(0.62)`, a reach of three tiles — carried on
+  the light as `spot` (`src/render/lightGpu.ts`). No beam geometry is drawn at
+  all. `TERRAIN_FS` evaluates the cones per fragment in `groundSpots()`, using the
+  scene's own world position and normal, and adds them as reflectance of the
+  ground's albedo (`lit += base * groundSpots(vWorld, n)`). The consequence is
+  what a lamp should do: the light lands on whatever surface is actually under it,
+  follows a slope without a seam, cannot clip through a crest, and has no
+  piecewise banding because there are no pieces. The renderer resolves the lamps
+  before the terrain pass and uploads up to `MAX_GROUND_SPOTS` of them as three
+  packed `vec4` arrays (origin/reach, aim/edge, colour/strength). They come from
+  the *rendered* pose, so they move with the eased hull rather than the 20 Hz tick.
+  The lamp's own lens still uses the additive light batch as a small glow.
+  The road deck is a mesh drawn above the terrain, so it evaluates the same
+  `groundSpots()` field in `MESH_FS`; otherwise the pool would be painted only on
+  the ground hidden under the road. `uSpotGate` keeps that loop off every other
+  mesh pass, so units and buildings pay nothing for it. Bridge spans are the one
+  entity exception: the mesh gate opens for a walkable deck, so a pool follows a
+  crossing over water instead of ending at the bank. Ground decals (tracks, tyre
+  marks, scorch, craters) sample the same field in `DECAL_FS` with their flat
+  normal, so a track through a lamp pool is lit rather than left as a dark band.
+- **A lamp does not shine through a wall.** The sun's shadow map cannot answer a
+  lamp's question, because a lamp points sideways, so `renderLampOccluders()`
+  renders a second 256² depth map straight down over the camera footprint:
+  terrain, trees, bushes, shrubs, rocks, ore, fences, lamps, signs, rubble, decor,
+  structures, hulls and wrecks, all at their drawn poses. Grass tufts and reeds
+  are deliberately excluded — too short to read as a shadow, they would only add
+  taps. Each shader
+  probe marches the receiver-to-lamp segment through that map (`lampVisibility`),
+  so a pool fades where a crest or a building stands in the beam instead of
+  lighting the ground on the far side. Four probes with a soft depth compare keep
+  the edge a fade rather than a staircase, and the map is rebuilt only on a night
+  frame that actually has lamps.
 - `src/render/lightGpu.ts` draws one instanced additive batch, split into two passes:
   ground pools under the models, so a hull occludes the pool it stands in, and wall
   lamps, lens glows and beacons over them, so a building cannot cover the light it

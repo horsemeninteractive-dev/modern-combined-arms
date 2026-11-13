@@ -532,7 +532,7 @@ export class MissionWorkbench {
             <p class="wb-note">Standalone missions leave these blank. Campaign metadata is how a mission document identifies its operation; the library keeps that association and protects the copy.</p>
             ${field('Campaign ID', `<input data-scope="campaign" data-field="campaignId" value="${escapeHtml(doc.campaign?.campaignId ?? '')}" placeholder="standalone" spellcheck="false">`)}
             ${field('Order', `<input type="number" min="1" step="1" data-scope="campaign" data-field="order" value="${doc.campaign?.order ?? 1}">`)}
-            ${field('Side', `<select data-scope="campaign" data-field="side">${option('', 'Unspecified', doc.campaign?.side ?? '')}${option('defender', 'Defender', doc.campaign?.side ?? '')}${option('eastern', 'Eastern', doc.campaign?.side ?? '')}</select>`)}
+            ${field('Side', `<select data-scope="campaign" data-field="side">${option('', 'Unspecified', doc.campaign?.side ?? '')}${option('defender', 'Atlantic Accord', doc.campaign?.side ?? '')}${option('eastern', 'Eurasian Pact', doc.campaign?.side ?? '')}</select>`)}
             <p class="wb-note">${doc.campaign ? `Bound to campaign <b>${escapeHtml(doc.campaign.campaignId)}</b> at order ${doc.campaign.order}.` : 'Standalone document.'}</p>
           </div>
         </div>
