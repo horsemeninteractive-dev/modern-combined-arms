@@ -2691,9 +2691,16 @@ html.custom-cursors select { cursor: default !important; }
   background: rgba(8,13,15,0.93); border: 1px solid var(--line); border-right: 0;
   padding: 3px 0; gap: 3px; z-index: 31; overflow-y: auto;
 }
-.layout-mobile .prod-tab { flex: 1 1 0; width: 100%; min-height: 44px; padding: 3px 2px; border-right: 0; border-bottom: 1px solid rgba(167,190,184,0.12); }
+.layout-mobile .prod-tab { flex: 1 1 0; width: 100%; min-height: 44px; padding: 3px 1px; border-right: 0; border-bottom: 1px solid rgba(167,190,184,0.12); overflow: hidden; }
 .layout-mobile .prod-tab .tab-icon { width: 16px; height: 16px; }
-.layout-mobile .prod-tab .rail-label { font-size: var(--fs-xs); }
+/* The touch rail is 60px wide, and RESEARCH/STRATEGY are the longest labels:
+   the generated type scale and the eastern stencil spacing would push them
+   past the edge. Cap the label, tighten the tracking, and let the tab clip
+   rather than spilling the last glyph out under the screen edge. */
+.layout-mobile .prod-tab .rail-label {
+  display: block; font-size: min(var(--fs-xs), 11px); letter-spacing: 0.01em;
+  line-height: 1.15; text-overflow: ellipsis;
+}
 .layout-mobile .prod-tab.active::after { left: auto; right: 0; top: 2px; bottom: 2px; }
 .layout-mobile .sidebar-content {
   position: absolute; top: 0; right: 60px; bottom: 0; width: min(340px, calc(100vw - 120px));
@@ -2837,7 +2844,7 @@ html.custom-cursors select { cursor: default !important; }
 .hud-toggle:hover,
 .hud-toggle:focus-visible { opacity: 1; color: var(--amber-soft); border-color: var(--line-strong); outline: none; }
 .hud-toggle.is-off { opacity: 0.9; color: var(--amber-soft); border-color: rgba(224, 163, 74, 0.5); }
-.layout-mobile .hud-toggle { top: calc(var(--top-h) + 6px + env(safe-area-inset-top, 0px)); left: 8px; bottom: auto; width: auto; padding: 0 7px; border: 1px solid var(--line); }
+.layout-mobile .hud-toggle { top: calc(var(--top-h) + 6px + env(safe-area-inset-top, 0px)); left: calc(8px + env(safe-area-inset-left, 0px)); bottom: auto; width: auto; padding: 0 7px; border: 1px solid var(--line); }
 /* Everything except the toggle leaves the frame; the battlefield takes it back. */
 .hud.hud-hidden > :not(.hud-toggle) { display: none !important; }
 .layout-mobile .perf-readout { top: calc(var(--top-h) + 6px + env(safe-area-inset-top, 0px)); left: auto; right: calc(60px + 8px + env(safe-area-inset-right, 0px)); bottom: auto; }
@@ -6039,7 +6046,9 @@ body.cinematic-active #hud-root > * { pointer-events: none; }
   position: absolute; top: calc(42px + env(safe-area-inset-top, 0px));
   left: 0; right: 0; height: 16px; z-index: 39;
   display: flex; align-items: center; gap: 8px;
-  padding: 0 calc(8px + env(safe-area-inset-left, 0px)) 0 calc(8px + env(safe-area-inset-right, 0px));
+  /* Left inset pads the left edge, right the right: swapped, the label tucks
+     under a landscape notch on one side and floats off the bezel on the other. */
+  padding: 0 calc(8px + env(safe-area-inset-right, 0px)) 0 calc(8px + env(safe-area-inset-left, 0px));
   background: rgba(8, 13, 15, 0.96);
   border-bottom: 1px solid var(--line);
 }

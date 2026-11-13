@@ -161,7 +161,7 @@ import { MultiplayerPanel } from './ui/multiplayerPanel';
 import type { LobbyClient, LobbyView } from './multiplayer/lobbyClient';
 import { buildLobbyScenario, validateLobbyConfig } from './multiplayer/lobbyConfig';
 import { NetworkBattle } from './multiplayer/networkBattle';
-import { enterFullscreen, isFullscreen, toggleFullscreen } from './ui/fullscreen';
+import { enterFullscreen, isFullscreen, toggleFullscreen, wantsAutomaticFullscreen } from './ui/fullscreen';
 import { MenuAttractMatch } from './ui/menuAttract';
 import { readFlagState } from './identity/flagStore';
 import { camoTintFor } from './identity/cosmetics';
@@ -990,10 +990,10 @@ export class App {
     gate.addEventListener(
       'click',
       () => {
-        // Audio and fullscreen both need the gesture: start them before any await.
+        // Audio needs the gesture: start it before any await.
         this.audio.init();
         this.audio.play('ui');
-        void enterFullscreen().then(() => this.syncFullscreenControls());
+        this.enterIntroFullscreen();
         intro.classList.add('started');
         window.setTimeout(() => this.beginIntroPlayback(), 300);
       },
@@ -5531,6 +5531,18 @@ export class App {
    * Every Fullscreen switch — the menu Settings view and the in-battle modal —
    * follows the live document state, including leaving with Esc.
    */
+  /** The one automatic fullscreen request, refused on touch and immersive windows. */
+  private enterIntroFullscreen(): void {
+    const query = (value: string): boolean =>
+      typeof window.matchMedia === 'function' && window.matchMedia(value).matches;
+    const wanted = wantsAutomaticFullscreen({
+      coarsePointer: query('(pointer: coarse)'),
+      alreadyImmersive: isFullscreen() || query('(display-mode: fullscreen)'),
+    });
+    if (!wanted) return;
+    void enterFullscreen().then(() => this.syncFullscreenControls());
+  }
+
   private syncFullscreenControls(): void {
     const on = isFullscreen();
     document.querySelectorAll<HTMLButtonElement>('[data-toggle="fullscreen"]').forEach((btn) => {

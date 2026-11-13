@@ -4,6 +4,7 @@ import {
   exitFullscreen,
   isFullscreen,
   toggleFullscreen,
+  wantsAutomaticFullscreen,
   type FullscreenDocument,
 } from '../src/ui/fullscreen';
 
@@ -62,6 +63,16 @@ describe('fullscreen helpers', () => {
     const refused = fakeDoc({ refuse: true });
     await expect(enterFullscreen(refused.doc)).resolves.toBe(false);
     expect(isFullscreen(refused.doc)).toBe(false);
+  });
+
+  it('leaves touch devices and immersive windows to the system', () => {
+    // Android answers every request with its "swipe down to exit" notice, and
+    // that notice parks itself over the battlefield even when the app is
+    // already running in fullscreen display mode.
+    expect(wantsAutomaticFullscreen({ coarsePointer: true, alreadyImmersive: false })).toBe(false);
+    expect(wantsAutomaticFullscreen({ coarsePointer: false, alreadyImmersive: true })).toBe(false);
+    expect(wantsAutomaticFullscreen({ coarsePointer: true, alreadyImmersive: true })).toBe(false);
+    expect(wantsAutomaticFullscreen({ coarsePointer: false, alreadyImmersive: false })).toBe(true);
   });
 
   it('does not ask to leave when already windowed', async () => {

@@ -40,6 +40,24 @@ export async function exitFullscreen(doc: FullscreenDocument = document): Promis
   return false;
 }
 
+/**
+ * Whether the start gate should ask the Fullscreen API for the whole screen.
+ * Touch devices and windows already in `fullscreen` display mode are left
+ * alone: Android answers every request with its "swipe down to exit" notice,
+ * and that notice parks itself over the battlefield even when the app was
+ * already immersive. The Settings switch still asks explicitly.
+ */
+export interface AutomaticFullscreenContext {
+  /** A finger/stylus pointer: the window fills the screen on its own terms. */
+  coarsePointer: boolean;
+  /** Already in `fullscreen` display mode, or the document is fullscreen. */
+  alreadyImmersive: boolean;
+}
+
+export function wantsAutomaticFullscreen(context: AutomaticFullscreenContext): boolean {
+  return !context.coarsePointer && !context.alreadyImmersive;
+}
+
 /** Toggle and report the resulting state, so a switch can follow the truth. */
 export async function toggleFullscreen(doc: FullscreenDocument = document): Promise<boolean> {
   return doc.fullscreenElement ? exitFullscreen(doc) : enterFullscreen(doc);

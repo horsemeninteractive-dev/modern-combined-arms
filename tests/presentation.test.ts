@@ -310,8 +310,15 @@ describe('start gate and fullscreen', () => {
     const intro = app.slice(app.indexOf('private installIntro'), app.indexOf('private beginIntroPlayback'));
     // The gesture initialises audio and requests fullscreen before the sting runs.
     expect(intro).toContain("document.getElementById('btn-start')");
-    expect(intro.indexOf('this.audio.init()')).toBeLessThan(intro.indexOf('enterFullscreen()'));
+    expect(intro.indexOf('this.audio.init()')).toBeLessThan(intro.indexOf('this.enterIntroFullscreen()'));
     expect(intro).toContain('started');
+    // Touch windows and apps already in fullscreen display mode skip the API
+    // request: Android's "swipe down to exit" notice would otherwise park over
+    // the battlefield for the whole match.
+    const gated = app.slice(app.indexOf('private enterIntroFullscreen'), app.indexOf('private syncFullscreenControls'));
+    expect(gated).toContain('wantsAutomaticFullscreen');
+    expect(gated).toContain("(pointer: coarse)");
+    expect(gated).toContain('enterFullscreen()');
     // Autoplay only happens after the gate: the playback body is separate.
     expect(intro).not.toContain('video.play()');
     // The gate covers the skip button until it has been answered.

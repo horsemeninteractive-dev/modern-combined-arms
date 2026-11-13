@@ -74,6 +74,25 @@ describe('command rail', () => {
   });
 });
 
+describe('touch safe areas', () => {
+  it('pads the power strip with the inset on the edge it belongs to', () => {
+    // The strip is full-bleed, so the safe-area padding is the only thing that
+    // keeps the label out from under a landscape notch.
+    expect(styles).toMatch(
+      /\.mobile-power-strip \{[^}]*padding: 0 calc\(8px \+ env\(safe-area-inset-right, 0px\)\) 0 calc\(8px \+ env\(safe-area-inset-left, 0px\)\)/,
+    );
+    expect(styles).toMatch(/\.layout-mobile \.hud-toggle \{[^}]*left: calc\(8px \+ env\(safe-area-inset-left, 0px\)\)/);
+  });
+
+  it('fits the longest production label inside the narrow touch rail', () => {
+    // RESEARCH and STRATEGY are eight characters in a 60px tab; the generated
+    // type scale and the eastern stencil tracking used to run them off-screen.
+    expect(styles).toMatch(
+      /\.layout-mobile \.prod-tab \.rail-label \{[^}]*font-size: min\(var\(--fs-xs\), 11px\)[^}]*letter-spacing: 0\.01em/,
+    );
+  });
+});
+
 describe('hud entry', () => {
   it('stages the shells in from their own edges', () => {
     expect(styles).toMatch(/@keyframes hud-panel-left \{ from \{[^}]*translateX\(-101%\)/);

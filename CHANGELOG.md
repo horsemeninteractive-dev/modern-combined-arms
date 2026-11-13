@@ -12,6 +12,36 @@ rendered in game from **Changelog** in the main-menu footer.
 When the version is bumped, rename it to the new `## [x.y.z STAGE] — date`
 heading: `tools/release.mjs` refuses to ship unless that heading exists.
 
+## [0.8.1 BETA] — 2026-11-13
+
+A touch-chrome pass: the mobile HUD now respects the hardware safe area on both
+edges, the production rail can spell its own tab names, and the start gate stops
+asking Android for a fullscreen it already has.
+
+### Touch HUD
+
+- The power strip's safe-area padding was fed by the opposite edge, so on a
+  notched phone in landscape the POWER label sat under the cutout while the clear
+  side carried the padding. Each inset now pads its own side.
+- The HUD toggle joins the rest of the touch chrome at
+  `calc(8px + env(safe-area-inset-left))` instead of a flat 8px.
+- RESEARCH and STRATEGY no longer run out past the screen edge in the eastern
+  rail: the mobile label caps its size, tightens the stencil tracking, and the
+  60px tab clips with an ellipsis rather than spilling the last glyph.
+
+### Start gate
+
+- The automatic fullscreen request is skipped on coarse pointers and whenever
+  the window is already fullscreen. Android answers that call with its "swipe
+  down to exit" notice, which could sit over the battlefield even though the
+  installed app was immersive already. Desktop still enters fullscreen on the
+  start click, and the Settings switch still asks explicitly everywhere.
+
+### Tests
+
+- Fullscreen helpers cover the touch/immersive gate, and the HUD shell suite
+  pins the safe-area edges and the rail-label fit.
+
 ## [0.8.0 BETA] — 2026-11-13
 
 The two alliances get their own face, the touch HUD becomes a complete command
