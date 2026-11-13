@@ -12,6 +12,43 @@ rendered in game from **Changelog** in the main-menu footer.
 When the version is bumped, rename it to the new `## [x.y.z STAGE] — date`
 heading: `tools/release.mjs` refuses to ship unless that heading exists.
 
+## [0.8.2 BETA] — 2026-11-13
+
+A mobile command pass: the production sheet stays where the player put it, the
+map opens in the middle of the screen, and the loading brief flies the alliance
+crest of the side being fought.
+
+### Touch production
+
+- Choosing another production tab no longer closes the sheet: tabs swap the
+  contents in place, and only tapping the active tab dismisses it. The panel
+  state was being re-requested through the toggling `setPanel`, which read the
+  second request as "close".
+- Buying a unit leaves the sheet open and refreshes the queue, so five tanks is
+  five taps instead of five reopenings. Siting a building still closes it,
+  because placement needs the map.
+- RESEARCH and STRATEGY fit whole in the 60px touch rail at 10px with no
+  tracking, instead of truncating behind an ellipsis.
+
+### Map
+
+- The touch map dock is centred by its own insets and auto margins. Its previous
+  `translateX(-50%)` centre was overwritten by the HUD entrance animation, and
+  the sidebar's slide-in transform made the 60px rail the containing block for
+  the fixed dock, pushing it off the right edge. The mobile rail and dock now
+  skip those transform animations and open in place.
+
+### Loading brief
+
+- The dispatch column carries the commanding alliance's crest as a watermark:
+  silver for the Atlantic Accord, gold for the Eurasian Pact, stamped from the
+  faction actually being played rather than the menu's last selection.
+
+### Menu
+
+- The mobile main-menu back button is centred on its tab row instead of being
+  pinned to the top of the strip.
+
 ## [0.8.1 BETA] — 2026-11-13
 
 A touch-chrome pass: the mobile HUD now respects the hardware safe area on both
