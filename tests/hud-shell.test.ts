@@ -85,11 +85,31 @@ describe('touch safe areas', () => {
   });
 
   it('fits the longest production label inside the narrow touch rail', () => {
-    // RESEARCH and STRATEGY are eight characters in a 60px tab; the generated
-    // type scale and the eastern stencil tracking used to run them off-screen.
+    // RESEARCH and STRATEGY are eight characters in a 60px tab, so the touch
+    // label shrinks below the desktop scale rather than truncating the word.
     expect(styles).toMatch(
-      /\.layout-mobile \.prod-tab \.rail-label \{[^}]*font-size: min\(var\(--fs-xs\), 11px\)[^}]*letter-spacing: 0\.01em/,
+      /\.layout-mobile \.prod-tab \.rail-label \{[^}]*font-size: 10px[^}]*letter-spacing: 0;/,
     );
+    expect(styles).toMatch(/\.layout-mobile \.prod-tab \{[^}]*padding: 3px 0;/);
+  });
+
+  it('centres the map dock with its own insets, not a transform', () => {
+    // The shared entrance animation owns `transform`; a translate-based centre
+    // was replaced mid-animation and left the dock hanging off the right edge.
+    expect(styles).toMatch(/\.layout-mobile \.map-dock \{[^}]*margin: 0 auto; transform: none/);
+    expect(styles).toMatch(/\.hud\.layout-mobile \.map-dock \{ animation: none; \}/);
+  });
+
+  it('keeps the production sheet open for tab changes and repeat purchases', () => {
+    expect(hud).toContain('private showPanel(');
+    const tabs = hud.slice(hud.indexOf("const tabEl = target?.closest"), hud.indexOf('private bindMinimap'));
+    expect(tabs).toContain("this.showPanel('production')");
+    const produce = hud.slice(
+      hud.indexOf("querySelectorAll<HTMLButtonElement>('[data-produce]')"),
+      hud.indexOf('.unit-card.reorderable'),
+    );
+    expect(produce).toContain('this.renderProduction(true)');
+    expect(produce).not.toContain("setPanel('none')");
   });
 });
 

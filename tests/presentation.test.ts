@@ -325,6 +325,20 @@ describe('start gate and fullscreen', () => {
     expect(styleCss).toMatch(/\.intro-screen:not\(\.started\) \.intro-skip \{ visibility: hidden; \}/);
   });
 
+  it('stamps the fighting alliance crest on the loading brief', () => {
+    const page = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+    const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+    const app = readFileSync(new URL('../src/app.ts', import.meta.url), 'utf8');
+    expect(page).toContain('class="loading-insignia"');
+    expect(css).toMatch(/\.loading-insignia \{[^}]*mask: url\('\/insignia-aa\.png'\)/);
+    expect(css).toMatch(
+      /\.loading-screen\[data-front='eastern'\] \.loading-insignia \{[^}]*mask-image: url\('\/insignia-ep\.png'\)/,
+    );
+    // The brief names the side the viewer fights as, so the crest has to follow
+    // that alliance rather than the menu's last selection.
+    expect(app).toContain('loadingScreen.dataset.front');
+  });
+
   it('offers the same fullscreen switch in the menu and in battle', () => {
     const app = readFileSync(new URL('../src/app.ts', import.meta.url), 'utf8');
     // One markup source feeds both the Settings view and the in-battle modal.

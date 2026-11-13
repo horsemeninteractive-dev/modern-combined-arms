@@ -1689,6 +1689,18 @@ html.custom-cursors select { cursor: default !important; }
   border-left: 1px solid rgba(255, 255, 255, 0.22);
   box-shadow: -26px 0 70px rgba(3, 6, 8, 0.85);
 }
+.loading-insignia {
+  /* The coalition crest sits behind the dispatch column as a watermark, in the
+     player's own alliance metal: silver for the Accord, gold for the Pact. */
+  position: absolute; inset: 0 auto 0 0; width: 50%; z-index: 2; pointer-events: none;
+  opacity: 0.1; background: #cfd6d9;
+  -webkit-mask: url('/insignia-aa.png') center / contain no-repeat;
+  mask: url('/insignia-aa.png') center / contain no-repeat;
+}
+.loading-screen[data-front='eastern'] .loading-insignia {
+  background: #e0a48c;
+  -webkit-mask-image: url('/insignia-ep.png'); mask-image: url('/insignia-ep.png');
+}
 .loading-flag::after {
   content: ''; position: absolute; inset: 0; pointer-events: none;
   background:
@@ -1733,6 +1745,7 @@ html.custom-cursors select { cursor: default !important; }
    widens and the render window narrows, but the flag keeps its full-height band. */
 @media (max-width: 900px) {
   .loading-screen::before { width: 58%; }
+  .loading-insignia { width: 58%; }
   .loading-shell { width: 58%; padding: 14px 14px 14px 18px; }
   .loading-scrim { left: 58%; width: 22%; }
   .loading-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; }
@@ -2691,14 +2704,14 @@ html.custom-cursors select { cursor: default !important; }
   background: rgba(8,13,15,0.93); border: 1px solid var(--line); border-right: 0;
   padding: 3px 0; gap: 3px; z-index: 31; overflow-y: auto;
 }
-.layout-mobile .prod-tab { flex: 1 1 0; width: 100%; min-height: 44px; padding: 3px 1px; border-right: 0; border-bottom: 1px solid rgba(167,190,184,0.12); overflow: hidden; }
+.layout-mobile .prod-tab { flex: 1 1 0; width: 100%; min-height: 44px; padding: 3px 0; border-right: 0; border-bottom: 1px solid rgba(167,190,184,0.12); overflow: hidden; }
 .layout-mobile .prod-tab .tab-icon { width: 16px; height: 16px; }
 /* The touch rail is 60px wide, and RESEARCH/STRATEGY are the longest labels:
-   the generated type scale and the eastern stencil spacing would push them
-   past the edge. Cap the label, tighten the tracking, and let the tab clip
-   rather than spilling the last glyph out under the screen edge. */
+   at the twelve-pixel generated scale they ran wider than the tab. The touch
+   label drops to 10px with no tracking so the whole word fits; the ellipsis is
+   only a safety net for a longer translation. */
 .layout-mobile .prod-tab .rail-label {
-  display: block; font-size: min(var(--fs-xs), 11px); letter-spacing: 0.01em;
+  display: block; font-size: 10px; letter-spacing: 0;
   line-height: 1.15; text-overflow: ellipsis;
 }
 .layout-mobile .prod-tab.active::after { left: auto; right: 0; top: 2px; bottom: 2px; }
@@ -2714,8 +2727,14 @@ html.custom-cursors select { cursor: default !important; }
 .layout-mobile .map-close { position: absolute; top: 4px; right: 4px; z-index: 3; width: 44px; height: 44px; background: rgba(6,10,12,0.72); }
 .layout-mobile .map-dock {
   position: fixed; top: calc(53px + env(safe-area-inset-top, 0px));
-  bottom: calc(98px + env(safe-area-inset-bottom, 0px)); left: 50%; right: auto;
-  transform: translateX(-50%); width: min(340px, calc(100vw - 28px)); height: auto;
+  bottom: calc(98px + env(safe-area-inset-bottom, 0px));
+  /* Centred by its own insets and auto margins, not a translate: the shared
+     entrance animation owns `transform`, which used to knock the dock off the
+     right edge. */
+  left: calc(14px + env(safe-area-inset-left, 0px));
+  right: calc(14px + env(safe-area-inset-right, 0px));
+  margin: 0 auto; transform: none;
+  width: min(340px, calc(100vw - 28px)); height: auto;
   display: none; grid-column: auto; grid-row: auto; border: 1px solid var(--line-strong);
   background: rgba(8,13,15,0.99); box-shadow: var(--shadow); z-index: 34;
 }
@@ -4256,6 +4275,12 @@ html.custom-cursors select { cursor: default !important; }
   .menu-nav-level.menu-nav-options:not([hidden]) {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px 16px; width: 100%; padding: 4px 6px 6px;
+  }
+  /* The singleplayer level is `display: contents`, so its crumb is a direct
+     flex item of the horizontal rail and the base `align-self: flex-start`
+     pinned it to the top of the 48px tab row. Centre it on the tab labels. */
+  .menu-nav > .menu-nav-level[data-menu-level='singleplayer'] > .menu-crumb {
+    align-self: center; margin: 0 2px 0 6px;
   }
   .menu-nav-options .menu-crumb { grid-column: 1 / -1; margin: 0 0 2px 12px; }
   .menu-nav-options .menu-actions { grid-column: 1 / -1; }
@@ -6133,6 +6158,13 @@ body.cinematic-active #hud-root > * { pointer-events: none; }
 /* The slide-outs are the touch equivalents of the desktop panels, so they carry
    the same pattern and the same crest behind their rows. */
 .layout-mobile .mobile-sheet,
+/* The touch dock is placed by insets and margins; the shared entrance
+   animation replaces `transform` and could leave it parked off-screen and
+   transparent. It opens instantly instead. The rail itself also skips its
+   slide: an animated `transform` on the sidebar makes it the containing block
+   for the fixed dock, which would then be laid out inside the 60px rail. */
+.hud.layout-mobile .production-sidebar { animation: none; }
+.hud.layout-mobile .map-dock { animation: none; }
 .layout-mobile .map-dock { overflow: hidden; }
 
 .layout-mobile .mobile-sheet::before,

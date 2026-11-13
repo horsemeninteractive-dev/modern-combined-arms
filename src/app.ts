@@ -2701,6 +2701,12 @@ export class App {
     text('loading-domains', entry.domains);
     // A human opponent is not a difficulty setting, but the brief has one slot
     // for naming who is on the other side.
+    // The briefing's watermark is the alliance crest of the side being fought:
+    // the same silver/gold identity the battle chrome carries.
+    const loadingScreen = document.getElementById('loading-screen');
+    if (loadingScreen) {
+      loadingScreen.dataset.front = command ? identityAlliance(command.id).id : 'defender';
+    }
     text(
       'loading-difficulty',
       options.network

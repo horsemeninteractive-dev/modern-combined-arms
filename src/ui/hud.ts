@@ -900,7 +900,12 @@ export class HUD {
       root.querySelectorAll('.prod-tab').forEach((b) => b.classList.toggle('active', b === tabEl));
       this.renderProduction(true);
       this.updateResearchRail();
-      if (this.layout === 'mobile') this.setPanel(close ? 'none' : 'production');
+      if (this.layout === 'mobile') {
+        // `setPanel` toggles, so re-requesting the open panel would close it:
+        // tapping another tab must leave the sheet up and swap its contents.
+        if (close) this.setPanel('none');
+        else this.showPanel('production');
+      }
     }
   }
 
@@ -1542,6 +1547,13 @@ export class HUD {
     if (requested !== 'production') this.researchOpen = false;
     if (requested === 'none') this.panel = 'none';
     else this.panel = toggleHudPanel(this.panel, requested as Exclude<HudPanel, 'none'>);
+    this.syncPanelState();
+  }
+
+  /** Open a panel without toggling the one already on screen. */
+  private showPanel(requested: Exclude<HudPanel, 'none'>): void {
+    if (this.layout !== 'mobile') return;
+    this.panel = requested;
     this.syncPanelState();
   }
 
@@ -2790,8 +2802,9 @@ export class HUD {
         if (performance.now() < this.suppressQueueClickUntil) return;
         const [bid, defId] = (btn.dataset.produce ?? '').split(':');
         this.app.produce(Number(bid), defId);
+        // The sheet stays up: a touch player buys five tanks in a row without
+        // reopening the category between each one.
         this.renderProduction(true);
-        if (this.layout === 'mobile') this.setPanel('none');
       });
     });
     body.querySelectorAll<HTMLElement>('.unit-card.reorderable').forEach((card) => {
