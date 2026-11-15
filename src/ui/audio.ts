@@ -437,7 +437,12 @@ export class AudioEngine {
       const lastSpool = startsMoving ? target.lastSpoolUp : target.lastSpoolDown;
       if (target.fresh) {
         target.fresh = false;
-      } else if ((startsMoving || stopsMoving) && spool - lastSpool > 350) {
+      } else if (
+        (startsMoving || stopsMoving) &&
+        // `0` is the never-spooled sentinel, not a real timestamp: the first
+        // catch must not depend on how long the page has been running.
+        (lastSpool === 0 || spool - lastSpool > 350)
+      ) {
         if (startsMoving) target.lastSpoolUp = spool;
         else target.lastSpoolDown = spool;
         if (target.sample) this.spoolSample(target, startsMoving);

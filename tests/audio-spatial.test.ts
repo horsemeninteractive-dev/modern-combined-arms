@@ -183,6 +183,7 @@ describe('engine spool', () => {
     sources.length = 0;
     oscillators.length = 0;
     vi.useRealTimers();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -438,6 +439,9 @@ describe('recorded ambience', () => {
 
   it('gives a recorded hull its catch by ramping the file’s own rate', () => {
     const { audio } = engineWith({ trackedHeavy: { idleRate: 0.9, moveRate: 1.1 } });
+    // A worker can reach this test before the monotonic clock passes the
+    // debounce window; the first catch must still fire.
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(100);
     audio.updateAmbience(hull('trackedHeavy', 0));
     const source = sources.filter((entry) => entry.loop).at(-1)!;
     const ramp = vi.spyOn(source.playbackRate, 'linearRampToValueAtTime');
@@ -445,6 +449,7 @@ describe('recorded ambience', () => {
     // The settled rate is where the catch lands: a swell, not a jump.
     expect(ramp).toHaveBeenCalled();
     expect(ramp.mock.calls[0][0]).toBeCloseTo(0.9 * 1.1, 3);
+    clock.mockRestore();
   });
 
   it('keeps synthesising a family that has no recording', () => {
