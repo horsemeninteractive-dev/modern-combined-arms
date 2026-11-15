@@ -21,7 +21,17 @@ const LINES: {
 } = JSON.parse(readFileSync(new URL('../tools/narrator-voice/lines.json', import.meta.url), 'utf8'));
 
 const MANIFEST: {
-  narrators: Record<string, { lines: Record<string, { status: string; path: string; sampleRate: number; channels: number; seconds: number }> }>;
+  narrators: Record<
+    string,
+    {
+      generation: string;
+      assetVoice: string;
+      lines: Record<
+        string,
+        { status: string; path: string; text: string | null; sampleRate: number; channels: number; seconds: number }
+      >;
+    }
+  >;
 } = JSON.parse(readFileSync(new URL('../public/audio/narrator/manifest.json', import.meta.url), 'utf8'));
 
 class Recording implements VoicePlayback {
@@ -114,11 +124,11 @@ describe('narrator catalogue coverage', () => {
     expect([...NARRATOR_CUE_IDS].sort()).toEqual([...ANNOUNCEMENT_IDS].sort());
   });
 
-  it('authors every cue for the Eastern narrator and none for the recorded Defender set', () => {
+  it('authors every cue for the recorded Eastern narrator and none for the recorded Defender set', () => {
     expect(Object.keys(LINES.narrators).sort()).toEqual(NARRATOR_LIST.map((n) => n.id).sort());
     expect(LINES.narrators.defender.generation).toBe('legacy');
     expect(Object.keys(LINES.narrators.defender.lines)).toEqual([]);
-    expect(LINES.narrators.eastern.generation).toBe('kokoro');
+    expect(LINES.narrators.eastern.generation).toBe('recorded');
     expect(Object.keys(LINES.narrators.eastern.lines).sort()).toEqual([...ANNOUNCEMENT_IDS].sort());
     for (const [id, text] of Object.entries(LINES.narrators.eastern.lines)) {
       expect(text.trim(), id).not.toBe('');
@@ -130,7 +140,7 @@ describe('narrator catalogue coverage', () => {
     }
   });
 
-  it('records the same Kokoro voice and preset the runtime advertises', () => {
+  it('records the same Kokoro fallback voice and preset the runtime advertises', () => {
     for (const def of NARRATOR_LIST) {
       const entry = LINES.narrators[def.id];
       expect(entry.voice.voice).toBe(def.voice.voice);
@@ -139,6 +149,17 @@ describe('narrator catalogue coverage', () => {
       expect(entry.assetRoot).toBe(def.root);
       expect(LINES.presets[def.voice.preset]).toBeTruthy();
     }
+  });
+
+  it('marks both shipped sets as recordings so the Kokoro generator cannot overwrite them', () => {
+    for (const def of NARRATOR_LIST) {
+      // The Python generator synthesises only `generation: kokoro` entries, so
+      // this pairing is what keeps a `--refresh` run away from shipped takes.
+      expect(def.legacyAssets, def.id).toBe(true);
+      expect(LINES.narrators[def.id].generation, def.id).not.toBe('kokoro');
+    }
+    expect(MANIFEST.narrators.eastern.generation).toBe('recorded');
+    expect(MANIFEST.narrators.eastern.assetVoice).toContain('ElevenLabs');
   });
 
   it('gives every cue an exactly-named asset in both narrator folders', () => {
@@ -170,6 +191,7 @@ describe('narrator catalogue coverage', () => {
         expect(line.channels).toBe(1);
         expect(line.seconds).toBeGreaterThan(0.4);
         expect(line.path).toBe(`${def.root}/${id.toLowerCase()}.mp3`);
+        if (def.id === 'eastern') expect(line.text, `${def.id}/${id}`).toBeTruthy();
       }
     }
   });

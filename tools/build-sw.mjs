@@ -33,6 +33,8 @@ const precache = [
   '/icons/icon-192.png',
   '/icons/icon-512.png',
   '/icons/maskable-512.png',
+  '/fonts/reNix-Regular.otf',
+  '/fonts/Seven Segment.ttf',
   ...assets,
 ];
 

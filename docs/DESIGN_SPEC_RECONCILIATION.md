@@ -73,7 +73,7 @@ requirement; the "Reason" column records why the lower-priority source loses.
 | ID | Conflict | Decision | Reason |
 | --- | --- | --- | --- |
 | R-01 | GDD §10.1 and §16.3 recommend two resources with harvesting/controllable income; implementation has harvester, ore fields and refineries; an earlier clarification said the RA2-style harvesting loop was never intended. | **Harvesting, ore fields, harvester units and refinery delivery are retained for the current slice.** The 2026-10-24 product decision keeps the loop as-is and plans an extension later; the removal model is deferred. | The later explicit product decision supersedes the earlier clarification for this slice. It does not approve a new economy or remove the future extension. |
-| R-02 | GDD §13.6 requires a searchable/reviewable event log; product direction removed the field log. | **A separate persistent searchable event log is not required.** Layered alerts, critical toasts, world markers and command acknowledgements remain required. An optional alert history may be reconsidered later, but is not acceptance criteria. | Explicit product correction recorded in `docs/PLAN.md` §§9, 12 and §13.6's own "partial" status. |
+| R-02 | GDD §13.6 requires a searchable/reviewable event log; an earlier product direction removed the field log. | **The old persistent sidebar is not required, but the GDD requirement is now met by a non-modal field-report overlay** opened with `L` / **LOG** (roadmap P1-1). It has text search, severity filters and click-to-jump, and does not reintroduce a permanent side panel. | The 2026-11 roadmap and implementation supersede the earlier removal decision; the overlay preserves the clean battlefield. |
 | R-03 | GDD §13 describes one interface with a persistent bottom panel; implementation has a single responsive bottom deck; user requires distinct desktop and mobile landscape designs. | **Two HUD architectures are required.** They share state, simulation, command semantics and visual language; they do not share one panel layout. | Stage 1 brief is authoritative over both GDD layout prose and implementation. |
 | R-04 | Implementation always draws a tile-scale checker/grid in the terrain shader; user requires a grid hidden in ordinary gameplay. | **Ordinary gameplay has no construction grid.** The grid may appear during building placement, in the editor, or through an explicit debug/grid-inspection mode. | Stage 1 brief; the current always-on checker is a presentation choice, not a requirement. |
 | R-05 | GDD calls for elevation and observation, but the current renderer shows flat tile tops with vertical cliff faces. | **Elevation must be visually legible and mechanically real.** Terraced plateaus with cliffs are acceptable; slopes or slope skirts are preferred where they improve readability. High-ground observation is a provisional rule, not yet confirmed. | Stage 1 brief accepts 2.5D, not a flat map. Elevation must be traced separately through rendering, movement, pathfinding, LOS and vision. |
@@ -237,7 +237,7 @@ than hidden, with a default so work is not blocked.
 | Q-05 | Does high ground grant observation/vision or only block LOS? | No bonus for now; revisit with a designed, visible rule. |
 | Q-06 | Is the target mobile minimum 667×375 CSS px, or a larger safe-area-adjusted minimum? | Use 667×375 as the hard layout floor and test 844×390 as the primary landscape size. |
 | Q-07 | Do the Frontline Zero screenshots require specific visual motifs (sidebar width, card art, top strip density)? | Follow the verbal hierarchy in this document; verify against the reference images when they are made available. |
-| Q-08 | Is a searchable event history needed later for competitive review? | Not in this milestone; layered alerts and command acknowledgement are the requirement. |
+| Q-08 | Is a searchable event history needed later for competitive review? | **Yes, and it is now implemented** as the field-report overlay (P1-1), retaining the last 240 local events with search, severity filters and jump targets. |
 | Q-09 | Should aircraft/naval hardpoints be authored as named attachment transforms rather than numeric offsets? | Yes eventually; the current fix can stay numeric but must use one shared transform convention. |
 
 ---
@@ -697,10 +697,10 @@ Required:
 - Command acknowledgement and failure messages with a reason.
 - A route to the relevant unit/location where practical.
 
-Not required in this milestone:
+Required now:
 
-- A separate searchable event-log panel. This was removed at product direction;
-  do not reintroduce it as a side panel without approval.
+- A searchable, filterable field-report overlay (roadmap P1-1). It opens over the
+  battle and is not a permanent side panel; do not reintroduce the old sidebar.
 
 ### 11.2 Accessibility baseline
 
@@ -781,7 +781,7 @@ the HUD still shows harvesting income or the AI still depends on it.
 | Economy harvesting | `src/data/*`, `src/sim/*`, `src/ui/*`, tests | Retained for the current slice by the 2026-10-24 decision; extension deferred. |
 | Save/determinism | `src/sim/save.ts`, tests | Met; migration needed for economy change. |
 | Editor/validation | `src/ui/editor.ts`, `src/sim/scenario.ts` | Met for slice; ore tools remain while harvesting is retained. |
-| Alerts | `src/ui/hud.ts`, overlay | Layered alerts present; no event log (accepted correction). |
+| Alerts | `src/ui/hud.ts`, overlay | Layered alerts present; field-report overlay with search, filters and jump targets. |
 | Accessibility | settings + HUD | Partial; touch/safe-area failures are blocking. |
 
 ---
@@ -798,7 +798,7 @@ the HUD still shows harvesting income or the AI still depends on it.
 | Two-resource map-control replacement economy | This document | **Provisional — needs approval** |
 | Desktop sidebar width / card art / mobile rail dimensions | This document | **Provisional — validate by measurement** |
 | High-ground observation bonus | This document | **Not approved** |
-| Event log | This document | **Not required** |
+| Event log | This document | **Implemented (P1-1) as a non-modal overlay** |
 
 No implementation should treat a provisional row as confirmed until the user
 approves it. The remediation plan identifies which tasks are blocked on that

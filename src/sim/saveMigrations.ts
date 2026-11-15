@@ -7,7 +7,7 @@
  * battle. New schema changes add one function per step and never edit an older
  * step, so every historical save keeps a path forward.
  */
-import { SAVE_FORMAT_VERSION } from './constants';
+import { MAX_QUEUED_ORDERS, SAVE_FORMAT_VERSION } from './constants';
 
 type Json = Record<string, unknown>;
 
@@ -23,6 +23,20 @@ const nonEmpty = (value: unknown): string | null =>
 const bool = (value: unknown, fallback: boolean): boolean =>
   typeof value === 'boolean' ? value : fallback;
 
+/** Sanitise a shift-queued route: known types, map coordinates, capped length. */
+function normalizeOrderQueue(value: unknown): Json[] {
+  const orders: Json[] = [];
+  for (const entry of asArray(value)) {
+    if (orders.length >= MAX_QUEUED_ORDERS) break;
+    const order = asRecord(entry);
+    if (order.type !== 'move' && order.type !== 'attackMove') continue;
+    if (typeof order.x !== 'number' || !Number.isFinite(order.x)) continue;
+    if (typeof order.z !== 'number' || !Number.isFinite(order.z)) continue;
+    orders.push({ ...order, type: order.type, x: order.x, z: order.z });
+  }
+  return orders;
+}
+
 /** Every entity field the current loader and state hash expect. */
 function normalizeEntity(raw: unknown): Json {
   const e = asRecord(raw);
@@ -31,6 +45,7 @@ function normalizeEntity(raw: unknown): Json {
   const hp = num(e.hp, 1);
   const maxHp = num(e.maxHp, hp);
   const facing = num(e.facing, Math.PI / 2);
+  const orderQueue = normalizeOrderQueue(e.orderQueue);
   return {
     ...e,
     id: num(e.id, 0),
@@ -45,6 +60,7 @@ function normalizeEntity(raw: unknown): Json {
     turretFacing: num(e.turretFacing, facing),
     state: text(e.state, 'idle'),
     order: e.order ?? null,
+    ...(orderQueue.length > 0 ? { orderQueue } : {}),
     path: asArray(e.path),
     pathIndex: num(e.pathIndex, 0),
     cooldown: num(e.cooldown, 0),
@@ -196,9 +212,34 @@ function migrateV2ToV3(raw: Json): Json {
   };
 }
 
+/**
+ * v3 → v4: shift-queued waypoints. Older saves have no queue, which is the
+ * correct empty route; any queue already present is sanitised and capped rather
+ * than trusted just because the file calls itself current.
+ */
+function migrateV3ToV4(raw: Json): Json {
+  const state = asRecord(raw.state);
+  return {
+    ...raw,
+    version: 4,
+    state: {
+      ...state,
+      entities: asArray(state.entities).map((entry) => {
+        const e = asRecord(entry);
+        const orderQueue = normalizeOrderQueue(e.orderQueue);
+        const next: Json = { ...e };
+        if (orderQueue.length > 0) next.orderQueue = orderQueue;
+        else delete next.orderQueue;
+        return next;
+      }),
+    },
+  };
+}
+
 const SAVE_MIGRATIONS: Record<number, (data: Json) => Json> = {
   1: migrateV1ToV2,
   2: migrateV2ToV3,
+  3: migrateV3ToV4,
 };
 
 /**

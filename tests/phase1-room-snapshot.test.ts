@@ -69,6 +69,26 @@ describe('Phase 1 room snapshots', () => {
     expect(restored.stateHash()).toBe(original.stateHash());
   });
 
+  it('validates queued waypoint coordinates and target references', () => {
+    const original = serverGame();
+    const unit = ownUnit(original, 0, 'tank');
+    const snapshot = snapshotFor(original);
+    const raw = JSON.parse(JSON.stringify(snapshot));
+    const entities = raw.simulation.state.entities as Array<Record<string, unknown>>;
+    const entry = entities.find((entity) => entity.id === unit.id)!;
+
+    entry.orderQueue = [{ type: 'move', x: -TILE_SIZE, z: unit.z }];
+    expectSnapshotError(raw, 'invalid-entities');
+
+    const badReference = JSON.parse(JSON.stringify(snapshot));
+    const badEntities = badReference.simulation.state.entities as Array<Record<string, unknown>>;
+    const badEntry = badEntities.find((entity) => entity.id === unit.id)!;
+    badEntry.orderQueue = [
+      { type: 'move', x: unit.x + TILE_SIZE, z: unit.z, targetId: 987654 },
+    ];
+    expectSnapshotError(badReference, 'invalid-references');
+  });
+
   it('rejects an unsupported room snapshot version', () => {
     const raw = JSON.parse(JSON.stringify(snapshotFor()));
     raw.version = 3;

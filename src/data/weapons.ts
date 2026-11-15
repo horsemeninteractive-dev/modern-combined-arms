@@ -423,6 +423,45 @@ export const WEAPONS: Record<string, WeaponDef> = {
     suppression: 0.5,
     antiAir: true,
   },
+  /**
+   * Shared infantry MANPADS. A shorter, cheaper round than the Lithuanian
+   * Kestrel's: it covers the close air threat over a company position, not the
+   * medium-range umbrella an AA vehicle provides. Air only, like every
+   * shoulder-launched missile.
+   */
+  lightManpads: {
+    id: 'lightManpads',
+    name: 'Light shoulder-fired SAM',
+    damage: 38,
+    range: 5.5,
+    cooldown: 5.0,
+    accuracy: 0.8,
+    projectile: 'sam',
+    speed: 19,
+    targets: ['air'],
+    multipliers: { infantry: 0, light: 0, heavy: 0, support: 0, structure: 0, naval: 0, air: 1.8 },
+    suppression: 0.45,
+    antiAir: true,
+  },
+  /**
+   * One-way attack warhead. The munition has to fly into its own effective
+   * range, so the reach is short and the splash is what makes a near miss
+   * worth the airframe. It cannot engage aircraft.
+   */
+  loiterWarhead: {
+    id: 'loiterWarhead',
+    name: 'Loitering warhead',
+    damage: 72,
+    range: 4.2,
+    cooldown: 1,
+    accuracy: 0.92,
+    projectile: 'missile',
+    speed: 22,
+    splash: 1.5,
+    targets: ['ground', 'structure', 'naval'],
+    multipliers: { infantry: 0.55, light: 1.35, heavy: 1.55, support: 1.0, structure: 1.4, naval: 1.2, air: 0 },
+    suppression: 0.65,
+  },
   longRangeSamMissile: {
     id: 'longRangeSamMissile',
     name: 'Long-range SAM',

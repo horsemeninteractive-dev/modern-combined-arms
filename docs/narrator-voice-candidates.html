@@ -62,9 +62,12 @@
       <h1>Eastern narrator voice candidates</h1>
       <p class="lede">
         The same cue, spoken by each plausible male Kokoro-82M voice through the
-        shipping processing chain. Current default: <code id="current">…</code>.
-        Pick a name, put it in <code>tools/narrator-voice/lines.json</code> and
-        <code>src/data/narrators.ts</code>, then run
+        shipping processing chain. These are fallback candidates: the shipped Eastern
+        set is an ElevenLabs v4 recording, not Kokoro. Current fallback:
+        <code id="current">…</code>. Picking a name means changing it in
+        <code>tools/narrator-voice/lines.json</code> and
+        <code>src/data/narrators.ts</code>, switching the Eastern entry to
+        <code>"generation": "kokoro"</code>, then running
         <code>generate.py --refresh --narrator eastern</code>.
       </p>
     </header>

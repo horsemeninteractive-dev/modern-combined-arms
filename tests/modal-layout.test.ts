@@ -35,7 +35,9 @@ describe('modal sizing', () => {
     expect(card).toMatch(/display:\s*flex/);
     expect(card).toMatch(/flex-direction:\s*column/);
     expect(card).toMatch(/max-height:\s*88(?:d)?vh/);
+    expect(card).toMatch(/max-height:\s*min\(88dvh, 100%\)/);
     expect(card).toMatch(/overflow:\s*hidden/);
+    expect(rule('.end-screen')).toMatch(/safe-area-inset-bottom/);
 
     const body = rule('.end-body');
     expect(body).toMatch(/flex:\s*1 1 auto/);
@@ -45,5 +47,11 @@ describe('modal sizing', () => {
     expect(rule('.end-actions')).toMatch(/flex:\s*0 0 auto/);
     expect(hud).toContain('<div class="end-body">');
     expect(hud).toContain('          </div>\n          <div class="end-actions">');
+  });
+
+  it('keeps result actions usable at phone sizes', () => {
+    expect(styles).toMatch(/@media \(max-width: 899px\), \(max-height: 479px\) \{\s*\.end-actions \.btn \{ min-width: 44px; min-height: 44px; \}/);
+    expect(styles).toContain('.layout-mobile .end-actions .btn { min-width: 44px; min-height: 44px; }');
+    expect(styles).toContain('.btn:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }');
   });
 });

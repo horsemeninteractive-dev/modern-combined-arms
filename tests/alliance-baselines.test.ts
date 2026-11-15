@@ -31,6 +31,8 @@ const COMBAT_SLOTS = [
   'ifv',
   'tank',
   'td',
+  'manpadsTeam',
+  'ewVehicle',
   'spg',
   'rocketArtillery',
   'aa',
@@ -38,6 +40,7 @@ const COMBAT_SLOTS = [
   'interceptor',
   'fighter',
   'attackHelo',
+  'loiteringMunition',
   'missileBoat',
   'corvette',
   'frigate',
@@ -86,11 +89,11 @@ function withFacilities(nation: string): Game {
 }
 
 describe('alliance baselines', () => {
-  it('fields distinct equipment in all 18 combat slots, shares the 4 utility roles and all transports', () => {
+  it('fields distinct equipment in all 21 combat slots, shares the 4 utility roles and all transports', () => {
     const defender = ALLIANCES.defender.baseline.units;
     const eastern = ALLIANCES.eastern.baseline.units;
-    expect(defender.length).toBe(25);
-    expect(eastern.length).toBe(25);
+    expect(defender.length).toBe(28);
+    expect(eastern.length).toBe(28);
 
     for (const slot of COMBAT_SLOTS) {
       expect(unitSlotId(ALLIANCES.defender.baseline, slot)).toBeTruthy();

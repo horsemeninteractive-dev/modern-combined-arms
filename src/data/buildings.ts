@@ -68,7 +68,7 @@ const ROSTER: BuildingDef[] = [
     vision: 7,
     power: -8,
     produces: 'land',
-    productionList: ['rifle', 'atgm', 'medic'],
+    productionList: ['rifle', 'atgm', 'medic', 'manpadsTeam'],
     description: 'Trains riflemen, anti-tank teams and field medics.',
     icon: 'barracks',
     hotkey: 'B',
@@ -86,7 +86,7 @@ const ROSTER: BuildingDef[] = [
     vision: 7,
     power: -15,
     produces: 'land',
-    productionList: ['engineer', 'harvester', 'apc', 'recon', 'aa', 'tank', 'spg', 'recovery'],
+    productionList: ['engineer', 'harvester', 'apc', 'recon', 'ewVehicle', 'aa', 'tank', 'spg', 'recovery'],
     description:
       'Builds armoured vehicles, personnel carriers, recovery and artillery support, and harvesters. Each factory runs its own production queue.',
     icon: 'factory',
@@ -144,7 +144,7 @@ const ROSTER: BuildingDef[] = [
     power: -25,
     requires: ['factory'],
     produces: 'air',
-    productionList: ['fighter', 'interceptor', 'uav'],
+    productionList: ['fighter', 'interceptor', 'uav', 'loiteringMunition'],
     airfield: true,
     // Four flight-line positions and one emergency helicopter pad. A helicopter
     // can recover here but cannot base or be produced here, so a real rotary
@@ -841,7 +841,7 @@ const NATIONAL_BUILDINGS: BuildingDef[] = [
     vision: 7,
     power: -15,
     produces: 'land',
-    productionList: ['engineer', 'harvester', 'apc', 'recon', 'aa', 'tank', 'spg', 'recovery'],
+    productionList: ['engineer', 'harvester', 'apc', 'recon', 'ewVehicle', 'aa', 'tank', 'spg', 'recovery'],
     variantOf: 'factory',
     national: true,
     description:
@@ -863,7 +863,7 @@ const NATIONAL_BUILDINGS: BuildingDef[] = [
     power: -25,
     requires: ['factory'],
     produces: 'air',
-    productionList: ['fighter', 'interceptor', 'uav'],
+    productionList: ['fighter', 'interceptor', 'uav', 'loiteringMunition'],
     airfield: true,
     docks: { fixedWing: 4, helo: 1, heloTemporary: true },
     variantOf: 'airfield',
@@ -935,7 +935,7 @@ const NATIONAL_BUILDINGS: BuildingDef[] = [
     vision: 7,
     power: -8,
     produces: 'land',
-    productionList: ['rifle', 'atgm', 'medic'],
+    productionList: ['rifle', 'atgm', 'medic', 'manpadsTeam'],
     variantOf: 'barracks',
     national: true,
     description:

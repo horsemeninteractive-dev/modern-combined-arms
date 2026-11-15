@@ -125,13 +125,13 @@ design document on its own was not accepted as evidence.
 | Area | Reality |
 |---|---|
 | Alliances | `src/data/factions.ts` defines `defender` and `eastern` as `AllianceDef`, each with **its own frozen baseline**. |
-| Baseline roster | `DEFENDER_BASELINE` = the 22 canonical unit ids plus every building id. `EASTERN_BASELINE` = one entry per canonical slot, with 18 slots pointing at the `EASTERN_PLATFORMS` map and the four utility slots unchanged; buildings are shared. Both flow through `mergeRoster`. |
-| Nations | Six `NationDef` records with `doctrine` + `blurb`. Every nation carries `replaceUnits`, `addUnits` and `replaceBuildings`: one replacement, one exclusive and one structure variant each. |
+| Baseline roster | `DEFENDER_BASELINE` = the 28 canonical unit ids plus every building id. `EASTERN_BASELINE` = one entry per canonical slot, with 21 slots pointing at the `EASTERN_PLATFORMS` map and the seven shared utility/transport slots unchanged; buildings are shared. Both flow through `mergeRoster`. |
+| Nations | Ten `NationDef` records with `doctrine` + `blurb`. Every nation carries `replaceUnits`, `addUnits` and `replaceBuildings`: at least one replacement, one exclusive and one structure variant each; the contract permits further additions. |
 | Roster resolution | `src/data/roster.ts`: `mergeRoster` (add/remove/replace, frozen output, validated), `unitSlotId`, `buildingSlotId`, `productionEntries`, `canProduce`, `rosterIncludes`, `resolveRoster` cache, `validateRosterRegistry`, `assertSameVariantSlot`. `src/data/variant.ts` walks the full `variantOf` chain (`resolveVariantChain`, depth-capped and cycle-guarded). Additions and removals are supported but **no nation uses them**. |
 | Structure prerequisites | `BuildingDef.requires` (baseline families) + `Game.missingTech()` — a *structural* gate: factory→{airfield, shipyard, samBattery, coastalBattery}, barracks→radar. Foundations do not satisfy it. |
 | Production gating | `Game.productionStatus()` checks: facility alive and complete, facility `produces`, roster membership, `productionEntries` slot resolution, queue depth (`MAX_QUEUE = 5`), materials, requisition, plus per-case rules (airfield for `fighter`, shipyard for naval, HQ-only engineer fallback). |
 | Resources | Two: materials (`mats`) and requisition (`req`). `STARTING_MATS = 2600`, `STARTING_REQ = 120`. `req` income comes from the Command Post (`reqPerSec: 0.4`) and the Refinery (`0.1`); relays add income when held. |
-| Units | 22 canonical + 18 Eastern platforms + 6 national replacements + 6 national exclusives = 52 `UnitDef`s. |
+| Units | 28 canonical + 21 Eastern platforms + 10 national replacements + 10 national exclusives + 2 national naval hulls = 71 `UnitDef`s. |
 | Buildings | 13 player-buildable shared structures + 6 national variants = 19 buildable, plus 15 `authoredOnly` garrison/prop structures (34 in all). |
 | Naval | `shipyard` (naval production/repair, requires water adjacency), `missileBoat`, `corvette`, `frigate`, `submarine` (battery/dive/reveal/close-detect via `SubmarineDef`), `sonar`, `coastalBattery`. |
 | Aviation | `airfield` (production + recovery), `fighter`, `interceptor`, `uav`, fuel in seconds, `ammo`. |
@@ -143,9 +143,9 @@ design document on its own was not accepted as evidence.
 
 | Area | Gap |
 |---|---|
-| National differentiation | **Implemented (Stage 3), reparented in Stage 4A.** Each nation has one replacement, one exclusive unit and one structure variant. Belarus's `signalsBureau` is now a `researchCentre` variant (§17.3, §18.5). |
+| National differentiation | **Implemented (Stage 3), reparented in Stage 4A.** Each nation has at least one replacement, one exclusive unit and one structure variant; later stages may add further national units. Belarus's `signalsBureau` is now a `researchCentre` variant (§17.3, §18.5). |
 | Hungary's specialisation | **Implemented (Stage 3).** `atgmEC` → `hedgehogTeam` for the unit replacement, `taszar` as the exclusive and `bunker` as the structure variant. |
-| Alliance distinctness | **Implemented (Stage 2).** The baselines differ in all 18 combat slots and share the four utility roles, so D2 is met for equipment. Structures remain common by design (§7). |
+| Alliance distinctness | **Implemented (Stage 2, extended Stage A).** The baselines differ in all 21 combat slots and share the four utility roles, so D2 is met for equipment. Structures remain common by design (§7). |
 | Squads | Numbered control groups exist but are **uncapped** and not modelled as squads. D9's nine-unit ceiling is unenforced. |
 | Requisition | Modelled, earned and spent, but only as a secondary price on high-tier units. Nothing else consumes it. |
 | Naval depth | Four hulls and one coastal structure. No naval fire support, no naval technology, no reason to build a navy on a land map beyond coastal bombardment. |
@@ -740,7 +740,7 @@ its predecessor's tests are green.
   determinism suites stay green with no content change.
 
 ### Stage 2 — distinct alliance baselines — **implemented**
-- The 18 differentiated platform pairs plus the 4 shared utility units are
+- The 21 differentiated platform pairs plus the 4 shared utility units are
   authored in `src/data/units.ts`. Defender platforms are the canonical ids;
   Eastern platforms are `…EC` variants of them.
 - `DEFENDER_ALLIANCE.baseline` and `EASTERN_ALLIANCE.baseline` own separate

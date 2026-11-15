@@ -3042,6 +3042,12 @@ const VISUAL_SCALE: Record<string, number> = {
   // than the fleet hulls they fight beside, so both keep the ship multiplier.
   visby: 0.7,
   ghadir: 0.7,
+  manpadsTeam: 1,
+  manpadsTeamEC: 1,
+  ewVehicle: 1,
+  ewVehicleEC: 1,
+  loiteringMunition: 1,
+  loiteringMunitionEC: 1,
 };
 
 export function unitVisualScale(id: string): number {
@@ -3124,6 +3130,12 @@ const SHADOW_RADIUS: Record<string, [number, number]> = {
   k9Thunder: [2.20, 0.85],
   cv90: [1.95, 0.78],
   koksan: [2.30, 0.88],
+  manpadsTeam: [0.30, 0.22],
+  manpadsTeamEC: [0.30, 0.22],
+  ewVehicle: [1.65, 0.82],
+  ewVehicleEC: [1.85, 0.88],
+  loiteringMunition: [1.30, 1.00],
+  loiteringMunitionEC: [1.30, 1.10],
 };
 
 export function unitShadowRadius(id: string): [number, number] {
@@ -3147,6 +3159,8 @@ const GROUND_MARKER: Record<string, { rx: number; rz: number; alpha: number }> =
   hedgehogTeam: { rx: 0.56, rz: 0.30, alpha: 0.42 },
   taszar: { rx: 0.50, rz: 0.28, alpha: 0.42 },
   spikeTeam: { rx: 0.52, rz: 0.28, alpha: 0.42 },
+  manpadsTeam: { rx: 0.52, rz: 0.28, alpha: 0.42 },
+  manpadsTeamEC: { rx: 0.52, rz: 0.28, alpha: 0.42 },
 };
 
 export function unitGroundMarker(id: string): { rx: number; rz: number; alpha: number } | null {
@@ -3204,6 +3218,12 @@ const BANNER_HEIGHT: Record<string, number> = {
   corvette: 2.75,
   submarine: 2.10,
   frigate: 3.35,
+  manpadsTeam: 1.45,
+  manpadsTeamEC: 1.40,
+  ewVehicle: 2.35,
+  ewVehicleEC: 2.30,
+  loiteringMunition: 1.55,
+  loiteringMunitionEC: 1.55,
 };
 
 export function unitBannerHeight(id: string): number {
@@ -3715,6 +3735,162 @@ function buildEuHelo(): MeshBuffers {
   return b.build();
 }
 
+/**
+ * Shared shoulder-launched air-defence team. Two ready tubes stand on the
+ * assistant's back, and the gunner's launcher sits lower and flatter than the
+ * Kestrel's, so the national team still reads as the longer-reach weapon.
+ */
+function buildManpadsTeam(): MeshBuffers {
+  const b = new MeshBuilder();
+  addInfantryBase(b, INFANTRY_UNIFORM, { antenna: true, pack: true });
+  for (const z of [-0.13, 0.13]) {
+    b.cylinder(-0.24, 1.30, z, 0.055, 0.34, 6, PALETTE.darkMetal);
+    b.box(-0.24, 1.46, z, 0.11, 0.04, 0.11, PALETTE.track);
+  }
+  b.box(-0.24, 1.08, 0, 0.18, 0.26, 0.34, PALETTE.oliveDark);
+  // Launcher on the right shoulder, nearly level: a close-air shot, not the
+  // Kestrel's raised medium-range tube.
+  beam(b, [0.02, 1.00, 0.20], [0.48, 1.16, 0.20], 0.10, 0.10, PALETTE.oliveDark);
+  b.box(0.52, 1.18, 0.20, 0.16, 0.16, 0.16, PALETTE.darkMetal);
+  b.box(0.62, 1.18, 0.20, 0.07, 0.07, 0.07, PALETTE.track);
+  b.box(0.16, 1.10, 0.20, 0.06, 0.12, 0.06, PALETTE.darkMetal);
+  addArm(b, [0, 0.97, 0.14], [0.10, 0.94, 0.20], [0.22, 1.10, 0.20], INFANTRY_UNIFORM);
+  addArm(b, [0, 0.97, -0.14], [0.06, 0.95, -0.02], [0.14, 1.02, 0.12], INFANTRY_UNIFORM);
+  return b.build();
+}
+
+/**
+ * Eastern shoulder team. The tube is carried across the body at a steeper
+ * angle and a reload crate sits at the assistant's feet, separating it from
+ * both the shared team and the Kestrel at battle zoom.
+ */
+function buildIglaTeam(): MeshBuffers {
+  const b = new MeshBuilder();
+  addInfantryBase(b, INFANTRY_UNIFORM, { pack: true });
+  beam(b, [-0.08, 1.02, -0.18], [0.44, 1.30, -0.18], 0.095, 0.095, PALETTE.oliveDark);
+  b.box(0.48, 1.32, -0.18, 0.16, 0.16, 0.16, PALETTE.darkMetal);
+  b.box(0.58, 1.32, -0.18, 0.07, 0.07, 0.07, PALETTE.track);
+  b.box(-0.14, 1.10, -0.18, 0.12, 0.16, 0.16, PALETTE.metal);
+  // Assistant's crate and a single reload tube on the ground.
+  b.box(-0.30, 0.12, 0.20, 0.24, 0.20, 0.34, PALETTE.oliveDark);
+  b.box(-0.30, 0.23, 0.20, 0.26, 0.03, 0.36, PALETTE.canvas);
+  b.cylinderX(-0.52, 0.08, 0.20, 0.06, 0.42, 6, PALETTE.darkMetal);
+  addArm(b, [0, 0.97, 0.14], [0.06, 0.96, -0.08], [0.16, 1.14, -0.18], INFANTRY_UNIFORM);
+  addArm(b, [0, 0.97, -0.14], [0.02, 0.92, -0.22], [0.10, 0.94, -0.18], INFANTRY_UNIFORM);
+  return b.build();
+}
+
+/** Wheeled jamming truck: a cab forward and a large flat array over the rear. */
+function buildEwVehicleBody(): MeshBuffers {
+  const b = new MeshBuilder();
+  for (const x of [-1.32, -0.44, 0.44, 1.32]) {
+    for (const z of [-0.70, 0.70]) {
+      b.cylinderZ(x, 0.40, z, 0.38, 0.28, 12, PALETTE.rubber);
+      b.cylinderZ(x, 0.40, z, 0.16, 0.30, 10, PALETTE.metal);
+      b.box(x, 0.80, z * 1.04, 0.86, 0.06, 0.30, PALETTE.hullDark);
+    }
+  }
+  b.box(0, 0.56, 0, 3.30, 0.34, 1.30, PALETTE.hullDark);
+  b.box(0, 0.80, 0, 3.10, 0.20, 1.40, PALETTE.hull);
+  // Cab-over front, with a wide split windscreen.
+  b.box(1.10, 1.10, 0, 0.95, 0.54, 1.28, PALETTE.hullLight);
+  b.box(1.60, 1.16, 0, 0.04, 0.32, 1.04, PALETTE.glassDark);
+  b.box(1.62, 1.22, 0, 0.03, 0.18, 0.86, PALETTE.glass);
+  b.box(0.62, 0.93, 0, 1.05, 0.05, 1.28, PALETTE.hullDark);
+  // Rear equipment shelter and the flat jamming face.
+  b.box(-0.62, 1.18, 0, 2.05, 0.86, 1.34, PALETTE.oliveDark);
+  b.box(-1.66, 1.22, 0, 0.10, 0.78, 1.18, PALETTE.darkMetal);
+  b.box(-1.72, 1.22, 0, 0.04, 0.68, 1.04, PALETTE.track);
+  for (const z of [-0.42, 0.42]) b.box(-1.74, 1.22, z, 0.03, 0.56, 0.20, PALETTE.glassDark);
+  // Roof mast, dipole and the defensive pintle gun.
+  b.box(-0.28, 1.78, 0, 0.05, 0.46, 0.05, PALETTE.metal);
+  b.sphere(-0.28, 2.02, 0, 0.10, 4, 8, PALETTE.darkMetal);
+  b.box(0.18, 1.58, 0.38, 0.26, 0.18, 0.20, PALETTE.darkMetal);
+  b.box(0.30, 1.66, 0.38, 0.06, 0.30, 0.05, PALETTE.metal);
+  b.box(-0.95, 1.65, 0, 0.84, 0.03, 1.12, PALETTE.hull, 0.85);
+  return b.build();
+}
+
+/** Tracked jammer on a heavier chassis, carrying two large radome drums. */
+function buildEwTrackedBody(): MeshBuffers {
+  const b = new MeshBuilder();
+  addTrackedRunningGear(b, {
+    front: 2.05,
+    rear: -1.85,
+    halfTrack: 0.66,
+    trackWidth: 0.36,
+    wheelCount: 6,
+    wheelStart: -1.20,
+    wheelEnd: 1.52,
+    wheelRadius: 0.23,
+  });
+  b.box(0, 0.55, 0, 3.55, 0.34, 1.34, PALETTE.hullDark);
+  b.box(0, 0.80, 0, 3.30, 0.22, 1.44, PALETTE.hull);
+  b.addQuad(
+    [1.55, 0.89, -0.70],
+    [1.55, 0.89, 0.70],
+    [2.00, 0.64, 0.58],
+    [2.00, 0.64, -0.58],
+    PALETTE.hullLight,
+  );
+  // Driver's hatch and a rear equipment deck.
+  b.box(1.18, 0.92, 0.32, 0.40, 0.06, 0.38, PALETTE.hullDark);
+  b.box(1.38, 0.98, 0.32, 0.06, 0.06, 0.14, PALETTE.glass);
+  b.box(-1.05, 1.05, 0, 1.55, 0.38, 1.30, PALETTE.oliveDark);
+  // Twin radomes, each with a dark emitter face.
+  for (const z of [-0.52, 0.52]) {
+    b.sphere(-0.88, 1.56, z, 0.36, 5, 10, PALETTE.hullLight);
+    b.sphere(-0.88, 1.56, z, 0.26, 4, 9, PALETTE.glassDark);
+    b.box(-0.88, 1.56, z, 0.12, 0.16, 0.40, PALETTE.track);
+  }
+  b.box(-0.20, 1.46, 0, 0.08, 0.54, 0.08, PALETTE.metal);
+  b.box(-0.20, 1.75, 0, 0.42, 0.04, 0.04, PALETTE.darkMetal);
+  b.box(0.38, 1.30, 0.46, 0.28, 0.18, 0.22, PALETTE.darkMetal);
+  b.box(0.38, 1.38, 0.46, 0.06, 0.34, 0.05, PALETTE.metal);
+  b.box(-0.95, 1.25, 0, 0.94, 0.02, 1.16, PALETTE.hull, 0.85);
+  return b.build();
+}
+
+/** Shared one-way munition: a small delta wing with a nose warhead. */
+function buildLoiteringMunition(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.box(0.10, 0.02, 0, 1.75, 0.18, 0.26, PALETTE.hullDark);
+  b.addQuad([0.98, 0.10, -0.14], [0.98, 0.10, 0.14], [1.28, 0.02, 0.06], [1.28, 0.02, -0.06], PALETTE.hullLight);
+  b.box(1.30, 0.02, 0, 0.18, 0.18, 0.18, PALETTE.track);
+  b.box(0.04, 0.13, 0, 0.70, 0.04, 2.55, PALETTE.hull);
+  b.box(-0.18, 0.155, 0, 0.28, 0.02, 2.26, PALETTE.hullLight);
+  for (const z of [-1.18, 1.18]) b.box(-0.08, 0.10, z, 0.30, 0.10, 0.34, PALETTE.oliveDark);
+  b.box(-1.10, 0.04, 0, 0.55, 0.12, 0.22, PALETTE.hullDark);
+  b.cylinderX(-1.46, 0.04, 0, 0.075, 0.22, 6, PALETTE.metal);
+  for (let i = 0; i < 2; i++) {
+    const a = (i / 2) * Math.PI * 2;
+    b.boxRot(-1.60, 0.04 + Math.sin(a) * 0.34, Math.cos(a) * 0.34, 0.03, 0.58, 0.09, a, PALETTE.darkMetal);
+  }
+  b.box(0.30, 0.14, 0, 0.42, 0.02, 0.34, PALETTE.hull, 0.85);
+  return b.build();
+}
+
+/** Eastern one-way drone: twin tail booms, a broad wing and an X tail. */
+function buildLancetDrone(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.box(0.10, 0.02, 0, 2.05, 0.24, 0.28, PALETTE.hullDark);
+  b.addQuad([1.10, 0.14, -0.14], [1.10, 0.14, 0.14], [1.42, 0.02, 0.05], [1.42, 0.02, -0.05], PALETTE.hullLight);
+  b.box(1.46, 0.02, 0, 0.20, 0.20, 0.20, PALETTE.track);
+  b.box(0.02, 0.16, 0, 0.76, 0.05, 3.10, PALETTE.hull);
+  b.box(-0.18, 0.18, 0, 0.26, 0.02, 2.70, PALETTE.oliveDark);
+  for (const z of [-1.55, 1.55]) b.box(-0.06, 0.12, z, 0.32, 0.12, 0.40, PALETTE.oliveDark);
+  for (const z of [-0.62, 0.62]) {
+    b.box(-1.10, 0.10, z, 1.90, 0.10, 0.10, PALETTE.hullDark);
+    for (const side of [-1, 1]) {
+      beam(b, [-2.00, 0.10, z], [-2.36, 0.28, z + side * 0.28], 0.20, 0.03, PALETTE.hull);
+      beam(b, [-2.00, 0.10, z], [-2.36, -0.08, z + side * 0.28], 0.20, 0.03, PALETTE.hull);
+    }
+  }
+  b.cylinderX(-2.10, 0.10, 0, 0.08, 0.24, 6, PALETTE.metal);
+  b.box(0.30, 0.20, 0, 0.48, 0.02, 0.38, PALETTE.hull, 0.85);
+  return b.build();
+}
+
 const STYLES: Record<string, EntityStyle> = {
   rifle: { body: buildRifle(), turretOffset: [0, 0, 0], infantry: infantryRig() },
   atgm: { body: buildAtgm(), turretOffset: [0, 0, 0], infantry: infantryRig() },
@@ -3785,6 +3961,15 @@ const STYLES: Record<string, EntityStyle> = {
     turretOffset: [0, 0.95, 0],
   },
   sprut: { body: buildSprutBody(), turretOffset: [0, 0, 0] },
+  // Shared roles added with the arsenal expansion. The two MANPADS teams and
+  // the two jamming hulls are authored separately so an alliance swap is not a
+  // colour change on the same model.
+  manpadsTeam: { body: buildManpadsTeam(), turretOffset: [0, 0, 0], infantry: infantryRig() },
+  manpadsTeamEC: { body: buildIglaTeam(), turretOffset: [0, 0, 0], infantry: infantryRig() },
+  ewVehicle: { body: buildEwVehicleBody(), turretOffset: [0, 0, 0] },
+  ewVehicleEC: { body: buildEwTrackedBody(), turretOffset: [0, 0, 0] },
+  loiteringMunition: { body: buildLoiteringMunition(), turretOffset: [0, 0, 0] },
+  loiteringMunitionEC: { body: buildLancetDrone(), turretOffset: [0, 0, 0] },
   aa: {
     body: buildAA(),
     turret: buildAATurret(),

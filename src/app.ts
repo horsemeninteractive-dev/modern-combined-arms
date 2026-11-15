@@ -177,6 +177,19 @@ import { CursorLayer, type AppCursor } from './ui/cursors';
 import { addOrderGhost, type OrderGhost, type OrderGhostKind } from './ui/orderGhosts';
 import { TutorialDirector } from './ui/tutorial';
 import {
+  BINDABLE_ACTIONS,
+  DEFAULT_KEY_BINDINGS,
+  actionLabel,
+  assignKeyBinding,
+  keyLabel,
+  normaliseKeyBindings,
+  resetKeyBindings,
+  type BindableActionId,
+  type KeyBindings,
+} from './inputBindings';
+import {
+  GAMEPAD_SENSITIVITY_MAX,
+  GAMEPAD_SENSITIVITY_MIN,
   GRAPHICS_QUALITIES,
   EDGE_PAN_SPEED_MAX,
   EDGE_PAN_SPEED_MIN,
@@ -186,6 +199,7 @@ import {
   normaliseEdgePanSpeed,
   normaliseEdgePanWidth,
   normaliseEscBehavior,
+  normaliseGamepadSensitivity,
   normaliseGraphicsQuality,
   normaliseLightBloom,
   nextIdleIndex,
@@ -201,6 +215,13 @@ import {
   type GraphicsQuality,
   type ShadowDetail,
 } from './settings';
+import {
+  COLOR_VISION_PALETTES,
+  colorVisionCssVars,
+  colorVisionTokens,
+  normaliseColorVision,
+  type ColorVisionPalette,
+} from './colorVision';
 
 import {
   normaliseDayLength,
@@ -227,6 +248,8 @@ export type CommandMode =
   | 'land'
   | 'attack'
   | 'attackMove'
+  | 'patrol'
+  | 'guard'
   | 'capture'
   | 'repair'
   | 'garrison'
@@ -269,6 +292,10 @@ export interface AppSettings {
   edgePanWidth: number;
   /** Multiplier on the authored edge-pan camera speed. */
   edgePanSpeed: number;
+  /** Gamepad camera and cursor speed, 0.4–2.5. */
+  gamepadSensitivity: number;
+  /** Remappable battle hotkeys, stored by action id. */
+  keyBindings: KeyBindings;
   /**
    * Tactical reticles for orders, placement and box selection. Off falls back
    * to the platform's native pointers for players who prefer them.
@@ -296,6 +323,8 @@ export interface AppSettings {
   opponentColor: string;
   /** HUD and menu scale, 0.8–1.5, driving the --ui-scale custom property. */
   uiScale: number;
+  /** Colour-vision preset for ownership, health and alert signals. */
+  colorVision: ColorVisionPalette;
   /** Render preset; controls render scale, particles, shadows and water. */
   graphicsQuality: GraphicsQuality;
   /** Shadow fidelity, independent of the preset after the player picks one. */
@@ -440,6 +469,8 @@ export class App {
   settings: AppSettings;
   /** Last settings section opened; survives leaving and reopening Settings. */
   private settingsTab: SettingsTab = 'display';
+  /** Window key listener while the player is recording a new binding. */
+  private bindingCapture: AbortController | null = null;
   perf = { fps: 0, simMs: 0, frameMs: 0, entities: 0 };
   dragBox: DragBox = { active: false, x0: 0, y0: 0, x1: 0, y1: 0 };
   pointer = { x: 0, y: 0, over: false };
@@ -627,6 +658,8 @@ export class App {
       edgePan: true,
       edgePanWidth: 18,
       edgePanSpeed: 1,
+      gamepadSensitivity: 1,
+      keyBindings: { ...DEFAULT_KEY_BINDINGS },
       customCursors: true,
       difficulty: 'veteran',
       mapId: defaultScenarioId('skirmish'),
@@ -636,6 +669,7 @@ export class App {
       teamColor: TEAM_COLORS[0].hex,
       opponentColor: TEAM_COLORS[1].hex,
       uiScale: 1,
+      colorVision: 'standard',
       graphicsQuality: 'high',
       shadowDetail: 'detailed',
       renderScale: 1,
@@ -701,6 +735,7 @@ export class App {
         // Older saved settings have none of these fields; each falls back to
         // the documented default instead of inheriting an unsafe value.
         uiScale: normaliseUiScale(parsed.uiScale ?? defaults.uiScale),
+        colorVision: normaliseColorVision(parsed.colorVision ?? defaults.colorVision),
         graphicsQuality: normaliseGraphicsQuality(parsed.graphicsQuality),
         // A settings file written before shadow levels existed takes the
         // preset's recommendation: low stays flat, medium keeps basic and high
@@ -717,6 +752,10 @@ export class App {
         ),
         edgePanWidth: normaliseEdgePanWidth(parsed.edgePanWidth ?? defaults.edgePanWidth),
         edgePanSpeed: normaliseEdgePanSpeed(parsed.edgePanSpeed ?? defaults.edgePanSpeed),
+        gamepadSensitivity: normaliseGamepadSensitivity(
+          parsed.gamepadSensitivity ?? defaults.gamepadSensitivity,
+        ),
+        keyBindings: normaliseKeyBindings(parsed.keyBindings),
         // A settings file written before playlists existed gets the authored
         // default. An existing custom selection is preserved, and newly shipped
         // catalogue tracks are appended but not silently enabled.
@@ -758,7 +797,15 @@ export class App {
     this.renderer.settings.silhouettes = this.settings.silhouettes;
     this.renderer.settings.nightLights = this.settings.nightLights;
     this.renderer.settings.lightBloom = normaliseLightBloom(this.settings.lightBloom);
+    this.renderer.settings.colorVision = this.settings.colorVision;
     this.renderer.particles.setCap(preset.maxParticles);
+    // The stylesheet and the canvas read one palette. CSS custom properties
+    // keep DOM health/alert readouts in step with the battlefield overlay.
+    const paletteTokens = colorVisionTokens(this.settings.colorVision);
+    document.documentElement.dataset.palette = this.settings.colorVision;
+    for (const [property, value] of Object.entries(colorVisionCssVars(paletteTokens))) {
+      document.documentElement.style.setProperty(property, value);
+    }
     const scale = normaliseUiScale(this.settings.uiScale);
     document.documentElement.style.setProperty('--ui-scale', String(scale));
     // Density is read inside resize(); a settings change must not wait for the
@@ -3331,10 +3378,18 @@ export class App {
         if (Number.isFinite(ev.x) && Number.isFinite(ev.z) && (ev.x !== 0 || ev.z !== 0)) {
           this.lastAlert = { x: ev.x, z: ev.z, tick: ev.tick };
         }
-        this.hud.log(ev.text, ev.level, ev.tick);
-        this.toast(ev.text, ev.level === 'critical' ? 'critical' : 'warning');
+        this.toast(ev.text, ev.level === 'critical' ? 'critical' : 'warning', {
+          x: ev.x,
+          z: ev.z,
+          entityId: ev.entityId,
+          tick: ev.tick,
+        });
       } else if (isLocal || ev.type === 'buildingLost' || ev.type === 'capture') {
-        this.hud.log(ev.text, ev.level ?? 'info', ev.tick);
+        this.hud.log(ev.text, ev.level ?? 'info', ev.tick, {
+          x: ev.x,
+          z: ev.z,
+          entityId: ev.entityId,
+        });
       }
     }
   }
@@ -4039,6 +4094,21 @@ export class App {
     this.audio.play('ui');
   }
 
+  /** Fly to a report selected from the searchable event log. */
+  jumpToLogEntry(x: number, z: number): void {
+    if (!this.game || this.screen !== 'battle') return;
+    this.renderer.camera.centerOn(x, z);
+    this.audio.play('ui');
+  }
+
+  toggleEventLog(): void {
+    this.hud.toggleEventLog();
+  }
+
+  closeEventLog(): void {
+    this.hud.closeEventLog();
+  }
+
   /** Store the current camera centre in one of four bookmarks. */
   saveBookmark(index: number): void {
     if (this.screen !== 'battle' || !this.game) return;
@@ -4161,6 +4231,7 @@ export class App {
     clientX: number,
     clientY: number,
     attackMove = false,
+    queue = false,
   ): OrderGhostKind | null {
     if (!this.game) return null;
     // A right-click while a footprint is armed is the universal cancel: the
@@ -4172,6 +4243,11 @@ export class App {
     }
     const target = this.pickAt(clientX, clientY);
     const hostile = !!target && this.game.isHostile(target.owner, this.localPlayerId);
+    if (this.mode === 'guard') {
+      if (target) this.commandGuard(target.id);
+      else this.notify('Select a friendly unit to guard.', 'warning');
+      return null;
+    }
     // A mobile transport exposes the same occupancy list as a shelter, but only
     // its owner may see who is inside; the projection already enforces that on
     // the wire, and a right-click on an enemy APC falls through to attack.
@@ -4195,7 +4271,7 @@ export class App {
         return null;
       default: {
         const p = this.worldAt(clientX, clientY);
-        if (p && this.commandMove(p.x, p.z, attackMove)) return 'move';
+        if (p && this.commandMove(p.x, p.z, attackMove, queue)) return 'move';
         return null;
       }
     }
@@ -4206,7 +4282,7 @@ export class App {
     addOrderGhost(this.orderGhosts, { x, y, kind, born: performance.now() });
   }
 
-  commandMove(x: number, z: number, attackMove = false): boolean {
+  commandMove(x: number, z: number, attackMove = false, queue = false): boolean {
     if (!this.game) return false;
     const units = this.ownSelected().filter((e) => e.kind === 'unit');
     const movable = units.filter((e) => !e.garrisonId);
@@ -4219,6 +4295,7 @@ export class App {
     const buildings = this.ownSelected().filter((e) => e.kind === 'building');
     if (movable.length > 0) {
       const cmd: Command = { type: 'move', team: this.localPlayerId, ids: movable.map((e) => e.id), x, z, attackMove };
+      if (queue) cmd.queue = true;
       this.dispatchCommand(cmd);
       this.audio.play('order');
       this.mode = 'none';
@@ -4243,6 +4320,62 @@ export class App {
     this.notify('Select units to issue orders.', 'warning');
     this.audio.play('denied');
     return false;
+  }
+
+  /** Patrol selected mobile units between their current ground and a point. */
+  commandPatrol(x: number, z: number): boolean {
+    if (!this.game) return false;
+    const units = this.ownSelected().filter((e) => e.kind === 'unit' && !e.garrisonId);
+    if (units.length === 0) {
+      this.notify('Select units to patrol.', 'warning');
+      this.audio.play('denied');
+      return false;
+    }
+    this.dispatchCommand({
+      type: 'patrol',
+      team: this.localPlayerId,
+      ids: units.map((e) => e.id),
+      x,
+      z,
+    });
+    this.audio.play('order');
+    this.mode = 'none';
+    return true;
+  }
+
+  /** Follow a friendly unit; the guard detail keeps its weapons free. */
+  commandGuard(targetId: number): boolean {
+    if (!this.game) return false;
+    const target = this.game.getEntity(targetId);
+    if (
+      !target ||
+      target.kind !== 'unit' ||
+      target.hp <= 0 ||
+      target.owner < 0 ||
+      this.game.isHostile(target.owner, this.localPlayerId) ||
+      target.garrisonId
+    ) {
+      this.notify('Select a friendly unit to guard.', 'warning');
+      this.audio.play('denied');
+      return false;
+    }
+    const units = this.ownSelected().filter(
+      (e) => e.kind === 'unit' && !e.garrisonId && e.id !== targetId,
+    );
+    if (units.length === 0) {
+      this.notify('Select another unit to guard that one.', 'warning');
+      this.audio.play('denied');
+      return false;
+    }
+    this.dispatchCommand({
+      type: 'guard',
+      team: this.localPlayerId,
+      ids: units.map((e) => e.id),
+      targetId: target.id,
+    });
+    this.audio.play('order');
+    this.mode = 'none';
+    return true;
   }
 
   commandAttack(targetId: number): boolean {
@@ -4515,6 +4648,16 @@ export class App {
       !this.ownSelected().some((e) => e.kind === 'unit' || e.kind === 'building')
     ) {
       this.notify('Select units or a production structure to move or rally.', 'warning');
+      this.audio.play('denied');
+      return;
+    }
+    if (mode === 'patrol' && !this.ownSelected().some((e) => e.kind === 'unit' && !e.garrisonId)) {
+      this.notify('Select mobile units to patrol.', 'warning');
+      this.audio.play('denied');
+      return;
+    }
+    if (mode === 'guard' && !this.ownSelected().some((e) => e.kind === 'unit' && !e.garrisonId)) {
+      this.notify('Select units to guard a friendly unit.', 'warning');
       this.audio.play('denied');
       return;
     }
@@ -4853,8 +4996,8 @@ export class App {
     this.renderer.camera.centerOn((minX + maxX) / 2, (minZ + maxZ) / 2);
   }
 
-  cycleProductionTab(): void {
-    this.hud.cycleTab();
+  cycleProductionTab(direction = 1): void {
+    this.hud.cycleTab(direction);
   }
 
   saveToSlot(slot: number): void {
@@ -5194,7 +5337,10 @@ export class App {
       title: 'Settings',
       body: `<div class="settings-grid">${this.settingsRowsMarkup()}</div>`,
       actions: [{ label: 'Done', primary: true }],
-      onClose: () => this.resumeAfterModal(resume),
+      onClose: () => {
+        this.cancelKeyCapture();
+        this.resumeAfterModal(resume);
+      },
       onMount: (root) => this.bindSettingsControls(root),
     });
   }
@@ -5259,8 +5405,12 @@ export class App {
     const shadowOptions = SHADOW_DETAILS.map(
       (id) => `<option value="${id}" ${s.shadowDetail === id ? 'selected' : ''}>${SHADOW_DETAIL_LABELS[id]}</option>`,
     ).join('');
+    const paletteOptions = COLOR_VISION_PALETTES.map(
+      (palette) => `<option value="${palette.id}" ${s.colorVision === palette.id ? 'selected' : ''}>${palette.label}</option>`,
+    ).join('');
     const displayRows = `
       <div class="setting-row"><div><label>Interface scale</label><small>HUD type, rail and sidebar sizes</small></div><div class="set-inline"><input type="range" min="${Math.round(UI_SCALE_MIN * 100)}" max="${Math.round(UI_SCALE_MAX * 100)}" step="5" value="${Math.round(s.uiScale * 100)}" data-set="uiScale"><output data-value-for="uiScale">${Math.round(s.uiScale * 100)}%</output></div></div>
+      <div class="setting-row"><div><label>Colour palette</label><small>Recolours ownership, health and alerts; patterns remain</small></div><select data-choice="colorVision" aria-label="Colour-vision palette">${paletteOptions}</select></div>
       <div class="setting-row"><div><label>Graphics quality</label><small>Resolution, particles, shadows and water</small></div><select data-choice="graphicsQuality" aria-label="Graphics quality">${qualityOptions}</select></div>
       <div class="setting-row"><div><label>Shadow detail</label><small>Basic is the flat projected pass; Detailed renders real sun shadows from a depth map</small></div><select data-choice="shadowDetail" aria-label="Shadow detail">${shadowOptions}</select></div>
       <div class="setting-row"><div><label>Render scale</label><small>Share of the device pixel ratio, capped at 2×</small></div><div class="set-inline"><input type="range" min="50" max="100" step="5" value="${Math.round(s.renderScale * 100)}" data-set="renderScale"><output data-value-for="renderScale">${Math.round(s.renderScale * 100)}%</output></div></div>
@@ -5274,12 +5424,20 @@ export class App {
       <div class="setting-row"><div><label>Light glow</label><small>Additive brightness of lamps and beams</small></div><div class="set-inline"><input type="range" min="0" max="150" step="5" value="${Math.round(s.lightBloom * 100)}" data-set="lightBloom"><output data-value-for="lightBloom">${Math.round(s.lightBloom * 100)}%</output></div></div>
       <div class="setting-row"><div><label>Fullscreen</label><small>Fill the screen; Esc leaves it</small></div><button class="switch ${isFullscreen() ? 'on' : ''}" data-toggle="fullscreen"></button></div>
     `;
+    const keyBindingRows = BINDABLE_ACTIONS.map(
+      (action) => `<div class="setting-row keybind-row"><div><label>${action.label}</label><small>Battle hotkey</small></div><button type="button" class="keybind-btn" data-bind="${action.id}" aria-label="Rebind ${action.label}: ${keyLabel(s.keyBindings[action.id])}">${keyLabel(s.keyBindings[action.id])}</button></div>`,
+    ).join('');
     const inputRows = `
       <div class="setting-row"><div><label>Escape key</label><small>Outside an order mode</small></div><select data-choice="escBehavior" aria-label="Escape key behaviour"><option value="pause" ${s.escBehavior === 'pause' ? 'selected' : ''}>Pauses the battle</option><option value="menu" ${s.escBehavior === 'menu' ? 'selected' : ''}>Opens the menu</option></select></div>
       <div class="setting-row"><div><label>Edge panning</label><small>Move camera at screen edges</small></div><button class="switch ${s.edgePan ? 'on' : ''}" data-toggle="edgePan"></button></div>
       <div class="setting-row"><div><label>Edge pan width</label><small>How far in from the battlefield edge the camera starts to move</small></div><div class="set-inline"><input type="range" min="${EDGE_PAN_WIDTH_MIN}" max="${EDGE_PAN_WIDTH_MAX}" step="2" value="${Math.round(s.edgePanWidth)}" data-set="edgePanWidth"><output data-value-for="edgePanWidth">${Math.round(s.edgePanWidth)}px</output></div></div>
       <div class="setting-row"><div><label>Edge pan speed</label><small>Camera travel while the pointer sits in the band</small></div><div class="set-inline"><input type="range" min="${Math.round(EDGE_PAN_SPEED_MIN * 100)}" max="${Math.round(EDGE_PAN_SPEED_MAX * 100)}" step="5" value="${Math.round(s.edgePanSpeed * 100)}" data-set="edgePanSpeed"><output data-value-for="edgePanSpeed">${Math.round(s.edgePanSpeed * 100)}%</output></div></div>
+      <div class="setting-row"><div><label>Gamepad sensitivity</label><small>Camera and cursor speed on the sticks</small></div><div class="set-inline"><input type="range" min="${Math.round(GAMEPAD_SENSITIVITY_MIN * 100)}" max="${Math.round(GAMEPAD_SENSITIVITY_MAX * 100)}" step="5" value="${Math.round(s.gamepadSensitivity * 100)}" data-set="gamepadSensitivity"><output data-value-for="gamepadSensitivity">${Math.round(s.gamepadSensitivity * 100)}%</output></div></div>
       <div class="setting-row"><div><label>Custom cursors</label><small>Animated tactical reticles for orders, placement and box selection</small></div><button class="switch ${s.customCursors ? 'on' : ''}" data-toggle="customCursors"></button></div>
+      <div class="keybind-heading"><b>Battle hotkeys</b><small>Select a keycap, then press the replacement. Reserved keys and conflicts are refused.</small></div>
+      <div class="keybind-list">${keyBindingRows}</div>
+      <div class="setting-row"><div><label>Reset hotkeys</label><small>Restore the default battle layout</small></div><button type="button" class="keybind-reset" data-bind-reset>RESET</button></div>
+      <div class="bind-status" data-bind-status role="status" aria-live="polite"></div>
     `;
     const audioRows = `
       <div class="setting-row"><div><label>Effects volume</label><small>Weapons, impacts and alerts</small></div><input type="range" min="0" max="1" step="0.05" value="${s.sfx}" data-set="sfx"></div>
@@ -5313,6 +5471,7 @@ export class App {
 
   /** Show one settings section and remember it for the next visit. */
   private showSettingsTab(tab: SettingsTab): void {
+    this.cancelKeyCapture();
     this.settingsTab = tab;
     document.querySelectorAll<HTMLElement>('[data-settings-panel]').forEach((panel) => {
       panel.hidden = panel.dataset.settingsPanel !== tab;
@@ -5329,6 +5488,7 @@ export class App {
   private renderMenuSettings(): void {
     const grid = document.getElementById('menu-settings-grid');
     if (!grid) return;
+    this.cancelKeyCapture();
     grid.innerHTML = this.settingsRowsMarkup();
     this.bindSettingsControls(grid);
   }
@@ -5357,6 +5517,8 @@ export class App {
           this.settings.edgePanWidth = normaliseEdgePanWidth(raw);
         } else if (key === 'edgePanSpeed') {
           this.settings.edgePanSpeed = normaliseEdgePanSpeed(raw / 100);
+        } else if (key === 'gamepadSensitivity') {
+          this.settings.gamepadSensitivity = normaliseGamepadSensitivity(raw / 100);
         } else return;
         const out = root.querySelector<HTMLElement>(`[data-value-for="${key}"]`);
         if (out) out.textContent = key === 'edgePanWidth' ? `${Math.round(raw)}px` : `${Math.round(raw)}%`;
@@ -5386,6 +5548,8 @@ export class App {
           if (out) out.textContent = `${Math.round(this.settings.renderScale * 100)}%`;
         } else if (select.dataset.choice === 'shadowDetail') {
           this.settings.shadowDetail = normaliseShadowDetail(select.value);
+        } else if (select.dataset.choice === 'colorVision') {
+          this.settings.colorVision = normaliseColorVision(select.value);
         } else if (select.dataset.choice === 'escBehavior') {
           this.settings.escBehavior = normaliseEscBehavior(select.value);
         } else return;
@@ -5445,7 +5609,105 @@ export class App {
       btn.classList.toggle('on', on);
       btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
+    this.bindKeyBindingControls(root);
     this.bindMusicControls(root);
+  }
+
+  /** Wire the controls tab's keycaps and reset button. */
+  private bindKeyBindingControls(root: HTMLElement): void {
+    root.querySelectorAll<HTMLButtonElement>('[data-bind]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const action = button.dataset.bind as BindableActionId;
+        if (!BINDABLE_ACTIONS.some((entry) => entry.id === action)) return;
+        this.beginKeyCapture(root, button, action);
+      });
+    });
+    root.querySelectorAll<HTMLButtonElement>('[data-bind-reset]').forEach((button) => {
+      button.addEventListener('click', () => {
+        this.cancelKeyCapture();
+        this.settings.keyBindings = resetKeyBindings();
+        this.saveSettings();
+        this.refreshBindingButtons(root);
+        this.hud.refreshKeycaps();
+        const status = root.querySelector<HTMLElement>('[data-bind-status]');
+        if (status) status.textContent = 'Hotkeys reset to their defaults.';
+      });
+    });
+  }
+
+  /** Rewrite every visible keycap from the current action map. */
+  private refreshBindingButtons(root: HTMLElement): void {
+    root.querySelectorAll<HTMLButtonElement>('[data-bind]').forEach((button) => {
+      const action = button.dataset.bind as BindableActionId;
+      if (!BINDABLE_ACTIONS.some((entry) => entry.id === action)) return;
+      const label = keyLabel(this.settings.keyBindings[action]);
+      button.textContent = label;
+      button.classList.remove('listening');
+      button.setAttribute('aria-label', `Rebind ${actionLabel(action)}: ${label}`);
+    });
+  }
+
+  /**
+   * Capture one physical key for an action. A window listener runs before the
+   * battle input controller (the settings page is modal, so that controller is
+   * already inert) and Escape always cancels without closing the page.
+   */
+  private beginKeyCapture(
+    root: HTMLElement,
+    button: HTMLButtonElement,
+    action: BindableActionId,
+  ): void {
+    this.cancelKeyCapture();
+    const status = root.querySelector<HTMLElement>('[data-bind-status]');
+    button.classList.add('listening');
+    button.textContent = 'PRESS A KEY';
+    if (status) status.textContent = 'Press a key, or Escape to cancel.';
+    const controller = new AbortController();
+    this.bindingCapture = controller;
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.repeat) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.code === 'Escape') {
+        this.cancelKeyCapture();
+        if (status) status.textContent = 'Rebind cancelled.';
+        return;
+      }
+      if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
+        if (status) status.textContent = 'Release the modifier keys and press one key.';
+        return;
+      }
+      const result = assignKeyBinding(this.settings.keyBindings, action, event.code);
+      if (!result.ok) {
+        if (status) {
+          status.textContent =
+            result.conflict.kind === 'conflict'
+              ? `${keyLabel(event.code)} is already used by ${actionLabel(result.conflict.action)}.`
+              : 'That key is reserved for camera, groups or system controls.';
+        }
+        return;
+      }
+      this.settings.keyBindings = result.bindings;
+      this.saveSettings();
+      controller.abort();
+      if (this.bindingCapture === controller) this.bindingCapture = null;
+      this.refreshBindingButtons(root);
+      this.hud.refreshKeycaps();
+      if (status) status.textContent = `${actionLabel(action)} is now ${keyLabel(event.code)}.`;
+    };
+    window.addEventListener('keydown', onKey, { capture: true, signal: controller.signal });
+  }
+
+  /** Drop a pending rebind, e.g. when the player leaves the Controls tab. */
+  private cancelKeyCapture(): void {
+    this.bindingCapture?.abort();
+    this.bindingCapture = null;
+    document.querySelectorAll<HTMLButtonElement>('[data-bind].listening').forEach((button) => {
+      const action = button.dataset.bind as BindableActionId;
+      if (!BINDABLE_ACTIONS.some((entry) => entry.id === action)) return;
+      button.textContent = keyLabel(this.settings.keyBindings[action]);
+      button.classList.remove('listening');
+    });
   }
 
   /**
@@ -5687,9 +5949,15 @@ export class App {
   /* UI plumbing                                                         */
   /* ------------------------------------------------------------------ */
 
-  toast(text: string, level: 'info' | 'warning' | 'critical' | 'success' = 'info'): void {
+  toast(
+    text: string,
+    level: 'info' | 'warning' | 'critical' | 'success' = 'info',
+    target?: { x?: number; z?: number; entityId?: number; tick?: number },
+  ): void {
     this.notify(text, level);
-    if (this.screen === 'battle') this.hud.log(text, level, this.game?.state.tick ?? 0);
+    if (this.screen === 'battle') {
+      this.hud.log(text, level, target?.tick ?? this.game?.state.tick ?? 0, target);
+    }
   }
 
   /**

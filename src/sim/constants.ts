@@ -12,7 +12,7 @@ export const SAVE_FORMAT = 'iron-tide-save';
  * Bumped whenever the saved shape changes. Older versions migrate forward in
  * src/sim/saveMigrations.ts; a newer version is refused with a clear message.
  */
-export const SAVE_FORMAT_VERSION = 3;
+export const SAVE_FORMAT_VERSION = 4;
 
 /**
  * A structure hit within this many ticks cannot be repaired: the crew can patch
@@ -41,6 +41,8 @@ export const ENEMY = 1;
 
 export const MAX_TEAMS = 2;
 export const MAX_QUEUE = 5;
+/** Shift-queued movement orders retained after the active order. */
+export const MAX_QUEUED_ORDERS = 8;
 export const MAX_SELECTION = 48;
 
 /** Cache invalidation / refresh cadences, in ticks. */

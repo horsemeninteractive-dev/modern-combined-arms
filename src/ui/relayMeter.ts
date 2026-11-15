@@ -1,6 +1,7 @@
 import type { Game } from '../sim/game';
 import type { Entity } from '../sim/types';
 import { tryIdentityDef } from '../data/factions';
+import { colorVisionTokens, type ColorVisionPalette } from '../colorVision';
 
 export const RELAY_NEUTRAL_COLOR = '#8d9d98';
 
@@ -24,9 +25,24 @@ function factionLabel(game: Game, owner: number): string {
   return (tryIdentityDef(p.factionId)?.shortName || p.name).toUpperCase();
 }
 
-function factionColor(game: Game, owner: number): string {
+interface ObjectiveMeterOptions {
+  palette?: ColorVisionPalette;
+  localPlayerId?: number;
+}
+
+function factionColor(
+  game: Game,
+  owner: number,
+  options: ObjectiveMeterOptions = {},
+): string {
   const p = game.player(owner);
   if (!p) return RELAY_NEUTRAL_COLOR;
+  const palette = options.palette ?? 'standard';
+  if (palette !== 'standard') {
+    const tokens = colorVisionTokens(palette);
+    const local = options.localPlayerId ?? game.localPlayerId;
+    return game.teamOf(owner) === game.teamOf(local) ? tokens.friendly : tokens.hostile;
+  }
   return tryIdentityDef(p.factionId)?.color ?? RELAY_NEUTRAL_COLOR;
 }
 
@@ -36,7 +52,11 @@ function factionColor(game: Game, owner: number): string {
  * structure, so the meter reads the unit currently working on it. An engineer
  * pulled away clears that progress with its order.
  */
-export function objectiveMeterState(game: Game, relay: Entity): RelayMeterState {
+export function objectiveMeterState(
+  game: Game,
+  relay: Entity,
+  options: ObjectiveMeterOptions = {},
+): RelayMeterState {
   let capturer: number | null = null;
   let progress = 0;
   for (const e of game.state.entities) {
@@ -48,8 +68,13 @@ export function objectiveMeterState(game: Game, relay: Entity): RelayMeterState 
     }
   }
   const ownerLabel = relay.owner >= 0 ? factionLabel(game, relay.owner) : 'NEUTRAL';
-  const ownerColor = relay.owner >= 0 ? factionColor(game, relay.owner) : RELAY_NEUTRAL_COLOR;
-  const capturerColor = capturer !== null ? factionColor(game, capturer) : '#52c5e6';
+  const palette = options.palette ?? 'standard';
+  const tokens = colorVisionTokens(palette);
+  const neutral = palette !== 'standard' ? tokens.neutral : RELAY_NEUTRAL_COLOR;
+  const ownerColor = relay.owner >= 0 ? factionColor(game, relay.owner, options) : neutral;
+  const capturerColor = capturer !== null
+    ? factionColor(game, capturer, options)
+    : tokens.info;
   const pct = Math.round(Math.max(0, Math.min(1, progress)) * 100);
   const caption =
     progress > 0

@@ -319,29 +319,16 @@
     },
     "eastern": {
       "label": "Eastern command AI",
-      "generation": "kokoro",
+      "generation": "recorded",
       "assetRoot": "/audio/narrator/eastern",
       "voice": {
         "voice": "am_adam",
         "speed": 0.97,
         "preset": "command-east"
       },
-      "assetVoice": "Kokoro-82M am_adam",
-      "notes": "Male, command-network AI. One short sentence per cue: the Defender AI reports in two clauses, this one states the fact and stops. am_adam was picked by ear from the five candidates in docs/narrator-voice-candidates.html: a composed default voice with no regional colour and no theatrics, which is the register a command network should read in. It is also a unit bark voice, so its narrator clips are mixed as a clean command channel rather than field radio.",
+      "assetVoice": "ElevenLabs v4 recording (one take, split by tools/narrator-voice/split.py)",
+      "notes": "Male, command-network AI. The shipped clips are a single ElevenLabs v4 take, split into cues by tools/narrator-voice/split.py and levelled to the Defender median; they are authoritative and the generator never overwrites them. One short sentence per cue: the Defender AI reports in two clauses, this one states the fact and stops. am_adam is only the Kokoro fallback for a future line, picked by ear from docs/narrator-voice-candidates.html as a composed default with no regional colour or theatrics; it is also a unit bark voice, so narrator clips are mixed as a clean command channel rather than field radio.",
       "lines": {
-        "baseUnderAttack": {
-          "status": "ok",
-          "text": "Command node under attack.",
-          "voice": "am_adam",
-          "speed": 0.97,
-          "preset": "command-east",
-          "path": "/audio/narrator/eastern/baseunderattack.mp3",
-          "sampleRate": 24000,
-          "channels": 1,
-          "seconds": 1.656,
-          "peakDb": -3.53,
-          "rmsDb": -20.41
-        },
         "battlefieldEstablished": {
           "status": "ok",
           "text": "Command uplink established.",
@@ -351,9 +338,22 @@
           "path": "/audio/narrator/eastern/battlefieldestablished.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.728,
-          "peakDb": -3.72,
-          "rmsDb": -19.92
+          "seconds": 2.184,
+          "peakDb": -5.14,
+          "rmsDb": -18.79
+        },
+        "baseUnderAttack": {
+          "status": "ok",
+          "text": "Command node under attack.",
+          "voice": "am_adam",
+          "speed": 0.97,
+          "preset": "command-east",
+          "path": "/audio/narrator/eastern/baseunderattack.mp3",
+          "sampleRate": 24000,
+          "channels": 1,
+          "seconds": 2.28,
+          "peakDb": -5.29,
+          "rmsDb": -18.92
         },
         "buildingSold": {
           "status": "ok",
@@ -364,9 +364,9 @@
           "path": "/audio/narrator/eastern/buildingsold.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.512,
-          "peakDb": -3.63,
-          "rmsDb": -19.69
+          "seconds": 1.968,
+          "peakDb": -5.39,
+          "rmsDb": -21.63
         },
         "buildingUnderConstruction": {
           "status": "ok",
@@ -377,9 +377,9 @@
           "path": "/audio/narrator/eastern/buildingunderconstruction.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.584,
-          "peakDb": -3.56,
-          "rmsDb": -20.49
+          "seconds": 1.992,
+          "peakDb": -5.43,
+          "rmsDb": -18.75
         },
         "constructionComplete": {
           "status": "ok",
@@ -390,9 +390,9 @@
           "path": "/audio/narrator/eastern/constructioncomplete.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.536,
-          "peakDb": -3.37,
-          "rmsDb": -18.95
+          "seconds": 2.04,
+          "peakDb": -5.25,
+          "rmsDb": -22.28
         },
         "enemyDetected": {
           "status": "ok",
@@ -403,9 +403,9 @@
           "path": "/audio/narrator/eastern/enemydetected.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.92,
-          "peakDb": -3.91,
-          "rmsDb": -20.82
+          "seconds": 2.472,
+          "peakDb": -5.21,
+          "rmsDb": -18.97
         },
         "forcesUnderAttack": {
           "status": "ok",
@@ -416,9 +416,9 @@
           "path": "/audio/narrator/eastern/forcesunderattack.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.344,
-          "peakDb": -3.64,
-          "rmsDb": -20.59
+          "seconds": 1.968,
+          "peakDb": -5.19,
+          "rmsDb": -20.99
         },
         "powerRestored": {
           "status": "ok",
@@ -429,9 +429,9 @@
           "path": "/audio/narrator/eastern/powerrestored.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.368,
-          "peakDb": -3.73,
-          "rmsDb": -20.94
+          "seconds": 1.824,
+          "peakDb": -5.17,
+          "rmsDb": -20.23
         },
         "productionCancelled": {
           "status": "ok",
@@ -442,9 +442,9 @@
           "path": "/audio/narrator/eastern/productioncancelled.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.296,
-          "peakDb": -3.71,
-          "rmsDb": -20.7
+          "seconds": 1.608,
+          "peakDb": -5.57,
+          "rmsDb": -21.63
         },
         "productionUnderway": {
           "status": "ok",
@@ -455,9 +455,9 @@
           "path": "/audio/narrator/eastern/productionunderway.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.464,
-          "peakDb": -3.6,
-          "rmsDb": -21.24
+          "seconds": 1.872,
+          "peakDb": -5.28,
+          "rmsDb": -19.68
         },
         "queueFull": {
           "status": "ok",
@@ -468,9 +468,9 @@
           "path": "/audio/narrator/eastern/queuefull.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.368,
-          "peakDb": -3.69,
-          "rmsDb": -20.47
+          "seconds": 1.968,
+          "peakDb": -4.82,
+          "rmsDb": -21.35
         },
         "rallyPointSet": {
           "status": "ok",
@@ -481,9 +481,9 @@
           "path": "/audio/narrator/eastern/rallypointset.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.536,
-          "peakDb": -3.52,
-          "rmsDb": -18.93
+          "seconds": 2.04,
+          "peakDb": -5.26,
+          "rmsDb": -19.57
         },
         "reinforcementsAvailable": {
           "status": "ok",
@@ -494,9 +494,9 @@
           "path": "/audio/narrator/eastern/reinforcementsavailable.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.704,
-          "peakDb": -3.64,
-          "rmsDb": -19.73
+          "seconds": 2.04,
+          "peakDb": -5.17,
+          "rmsDb": -20.02
         },
         "siteContested": {
           "status": "ok",
@@ -507,9 +507,9 @@
           "path": "/audio/narrator/eastern/sitecontested.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.752,
-          "peakDb": -3.41,
-          "rmsDb": -20.54
+          "seconds": 2.256,
+          "peakDb": -5.24,
+          "rmsDb": -20.7
         },
         "siteLost": {
           "status": "ok",
@@ -520,9 +520,9 @@
           "path": "/audio/narrator/eastern/sitelost.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.536,
-          "peakDb": -3.67,
-          "rmsDb": -21.02
+          "seconds": 1.968,
+          "peakDb": -5.22,
+          "rmsDb": -20.75
         },
         "siteSecured": {
           "status": "ok",
@@ -533,9 +533,9 @@
           "path": "/audio/narrator/eastern/sitesecured.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.704,
-          "peakDb": -3.48,
-          "rmsDb": -20.66
+          "seconds": 2.088,
+          "peakDb": -5.37,
+          "rmsDb": -20.59
         },
         "structureLost": {
           "status": "ok",
@@ -546,9 +546,9 @@
           "path": "/audio/narrator/eastern/structurelost.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.104,
-          "peakDb": -3.64,
-          "rmsDb": -19.14
+          "seconds": 1.56,
+          "peakDb": -5.25,
+          "rmsDb": -21.97
         },
         "technologyUnlocked": {
           "status": "ok",
@@ -559,9 +559,9 @@
           "path": "/audio/narrator/eastern/technologyunlocked.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.296,
-          "peakDb": -3.85,
-          "rmsDb": -19.02
+          "seconds": 1.704,
+          "peakDb": -5.21,
+          "rmsDb": -20.04
         },
         "unitLost": {
           "status": "ok",
@@ -572,9 +572,9 @@
           "path": "/audio/narrator/eastern/unitlost.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.392,
-          "peakDb": -3.65,
-          "rmsDb": -19.98
+          "seconds": 1.824,
+          "peakDb": -5.3,
+          "rmsDb": -20.35
         },
         "unitPromoted": {
           "status": "ok",
@@ -585,9 +585,9 @@
           "path": "/audio/narrator/eastern/unitpromoted.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.536,
-          "peakDb": -3.72,
-          "rmsDb": -19.7
+          "seconds": 1.944,
+          "peakDb": -5.16,
+          "rmsDb": -20.62
         },
         "unitReady": {
           "status": "ok",
@@ -598,9 +598,9 @@
           "path": "/audio/narrator/eastern/unitready.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.008,
-          "peakDb": -3.9,
-          "rmsDb": -20.14
+          "seconds": 1.32,
+          "peakDb": -5.21,
+          "rmsDb": -20.89
         },
         "upgradeComplete": {
           "status": "ok",
@@ -611,9 +611,9 @@
           "path": "/audio/narrator/eastern/upgradecomplete.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 1.152,
-          "peakDb": -3.82,
-          "rmsDb": -20.62
+          "seconds": 1.488,
+          "peakDb": -5.22,
+          "rmsDb": -19.5
         },
         "victory": {
           "status": "ok",
@@ -624,9 +624,9 @@
           "path": "/audio/narrator/eastern/victory.mp3",
           "sampleRate": 24000,
           "channels": 1,
-          "seconds": 2.16,
-          "peakDb": -3.7,
-          "rmsDb": -21.15
+          "seconds": 2.376,
+          "peakDb": -5.2,
+          "rmsDb": -20.17
         }
       }
     }

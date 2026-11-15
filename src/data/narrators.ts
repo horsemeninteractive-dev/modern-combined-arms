@@ -18,13 +18,12 @@ export type NarratorId = 'defender' | 'eastern';
 
 export interface NarratorVoice {
   /**
-   * Kokoro voice used to synthesise this narrator's lines.
+   * Kokoro voice used if this narrator ever synthesises a new line.
    *
-   * Recorded even for the Defender narrator, whose shipped clips predate the
-   * narrator catalogue and were not made with Kokoro at all: the value is the
-   * closest Kokoro female voice to those recordings and exists only so a future
-   * Defender line could be generated in a similar register. No generated clip
-   * replaces a shipped one.
+   * Both shipped sets are recordings made outside Kokoro (TTSMaker for the
+   * Defender, ElevenLabs for the Eastern). The value is the fallback voice for a
+   * future line and a description of the register, never a licence to replace a
+   * shipped clip.
    */
   voice: string;
   /** Kokoro speech rate for new lines. */
@@ -48,8 +47,8 @@ export interface NarratorDef {
   readonly character: string;
   readonly voice: NarratorVoice;
   /**
-   * True when the shipped clips are an existing recording rather than generator
-   * output. Legacy assets are never overwritten by the narrator generator.
+   * True when the shipped clips are a recording rather than generator output.
+   * Recorded assets are never overwritten by the narrator generator.
    */
   readonly legacyAssets: boolean;
 }
@@ -74,12 +73,13 @@ const NARRATORS: Readonly<Record<NarratorId, NarratorDef>> = Object.freeze({
     allianceId: 'eastern',
     root: '/audio/narrator/eastern',
     character: 'Male command-network AI. Composed, procedural, operational phrasing.',
-    // One short sentence per cue and a composed, uncoloured male voice: the
-    // Defender reports in two clauses, this narrator states the fact and stops.
-    // am_adam was chosen by ear from the candidate page, so it is the shipped
-    // choice rather than an inference from measurements.
+    // The shipped clips are a single ElevenLabs v4 take, split by
+    // tools/narrator-voice/split.py. One short sentence per cue: the Defender
+    // reports in two clauses, this narrator states the fact and stops. am_adam is
+    // the Kokoro fallback for a future line, chosen by ear from the candidate page
+    // rather than inferred from measurements.
     voice: Object.freeze({ voice: 'am_adam', speed: 0.97, preset: 'command-east' }),
-    legacyAssets: false,
+    legacyAssets: true,
   }),
 });
 

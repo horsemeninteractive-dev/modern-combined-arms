@@ -5,14 +5,14 @@ listening and recognition tests have **not** been performed. The audition page i
 ready for that review.
 
 - Engine: Kokoro-82M ONNX (`kokoro-onnx` 0.4.7), fully local.
-- Coverage: **64 unit definitions**, 4 cues each, **3 takes per cue**, **768 clips**.
-- Cast: 62 recorded casts drawing on the 28 English Kokoro voices.
+- Coverage: **71 unit definitions**, 4 cues each, **3 takes per cue**, **852 clips**.
+- Cast: 66 recorded casts drawing on the 28 English Kokoro voices.
 - Text: every unit's 12 lines are unique, and no line is shared between units.
 - Format: 24 kHz mono MP3, 64 kbps, field-radio processing.
 - Location: `public/audio/unit-voice/`.
 - Contract: `public/audio/unit-voice/manifest.json` (version 3).
 
-The 64 definitions are the 24 canonical slots, the 18 Eastern alliance platforms,
+The 71 definitions are the 28 canonical slots, the 21 Eastern alliance platforms,
 the 10 national replacements, the 10 national exclusives and the 2 national naval
 hulls (`visby`, `ghadir`) — the launch six plus Finland, Sweden, Iran and North
 Korea. The existing strategic announcer in `public/audio/narrator/defender/` is untouched.
@@ -66,6 +66,9 @@ borrowed-crew fallback: a unit without recorded lines would be silent, and
 | Attack Helicopter | `attackHelo` | `bf_lily` | 1.06 |
 | Utility Transport Helicopter | `transportHelo` | `bf_lily` | 1.00 |
 | Fire Support Ship | `navalSupport` | `af_nicole` | 0.96 |
+| MANPADS Team | `manpadsTeam` | `bm_george` | 1.02 |
+| Electronic Warfare Vehicle | `ewVehicle` | `bm_lewis` | 1.00 |
+| Loitering Munition | `loiteringMunition` | `af_nova` | 1.06 |
 
 ### National replacements and exclusives
 
@@ -106,8 +109,11 @@ borrowed-crew fallback: a unit without recorded lines would be silent, and
 | Escort Frigate | `frigateEC` | `af_alloy` | 0.98 |
 | Attack Submarine | `submarineEC` | `af_aoede` | 0.98 |
 | Fire Support Ship | `navalSupportEC` | `af_bella` | 1.00 |
+| Igla Team | `manpadsTeamEC` | `am_michael` | 0.98 |
+| EW Tracked Vehicle | `ewVehicleEC` | `am_onyx` | 0.94 |
+| Lancet Attack Drone | `loiteringMunitionEC` | `am_liam` | 1.08 |
 
-The full script — all 768 sentences — is in `tools/unit-voice/lines.json`, and the
+The full script — all 852 sentences — is in `tools/unit-voice/lines.json`, and the
 generated manifest records the text that was actually synthesized.
 
 ## 3. Uniqueness policy
@@ -239,14 +245,14 @@ manifest.
 
 | Check | Result |
 |---|---|
-| Unit definitions covered | 64 |
-| Clip count | 768 (64 units × 4 cues × 3 takes) |
-| Distinct sentences | 768 |
+| Unit definitions covered | 71 |
+| Clip count | 852 (71 units × 4 cues × 3 takes) |
+| Distinct sentences | 852 |
 | Shared sentences | 0 |
 | Distinct voices used | 28 |
 | Missing/zero-byte files | none |
 | Shortest/longest clip | 0.76 s / 2.90 s |
-| Total size | 9.2 MB |
+| Total size | 13 MB |
 | Manifest engine/version | `kokoro-82m-onnx` / 3 |
 | Automated completeness test | `tests/unit-voice.test.ts` — 18 tests pass |
 
@@ -300,7 +306,7 @@ The clips are wired into gameplay. `src/ui/unitVoice.ts` owns the policy and
 
 - No genuine Lithuanian, Polish, Russian, Belarusian, Hungarian, Finnish,
   Swedish, Persian or Korean accent is available in Kokoro; see section 4.
-- 62 casts share 28 English voices. Different delivery speeds and completely
+- 66 casts share 28 English voices. Different delivery speeds and completely
   different writing keep platforms distinguishable, but two units can share a
   speaker.
 - Some selection lines deliberately use role names rather than model names

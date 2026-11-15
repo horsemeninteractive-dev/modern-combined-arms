@@ -115,7 +115,7 @@ editor ── writes Scenario ──validate──▶ startBattle(Scenario)
 | §11.3 Navigable water | Done | Water move class, shipyard validation, naval reachability preview. |
 | §11.4 Scale | Deviation | 96×72 chosen to prove systems; large-map target deferred pending perf evidence. |
 | §12 Editor | Done (initial) | Paint, raise/lower, ore, erase, starts, structures, units, objectives, validation, reach preview, save/load, deploy. |
-| §13.1 Input parity | Partial | Mouse, touch and gamepad paths exist; gamepad untested on hardware. |
+| §13.1 Input parity | Met in emulation | Mouse, touch and gamepad paths exist. Standard-mapping gamepad passes menu focus, selection/add, groups and production in Chromium; physical hardware untested. |
 | §13.2 Selection/groups | Done | Click, shift-add, drag box, BOX control, control groups, group strip. |
 | §13.4 Unit panel | Done | Persistent selection panel with role, HP, state, ammo/fuel, description, stances. |
 | §13.5 Production UI | Done | Facility queues by domain, central overview, build tab, hotkeys, cancel. |
@@ -299,7 +299,8 @@ Chromium tab and the app's own public API.
   of the earlier north-up view. Screen-space panning follows the rotated axes.
 - **No field log, no duplicated controls.** The event-log sidebar was removed and
   the separate touch button cluster and selection-panel order duplicates were
-  deleted. One command bar serves mouse, touch and gamepad.
+  deleted. One command bar serves mouse, touch and gamepad. (Phase 1, P1-1 later
+  added a searchable field-report overlay; it is not the removed sidebar.)
 - **Single-soldier infantry.** The rifle unit is a Rifleman and the ATGM unit an
   ATGM Gunner, each rendered as one soldier, matching the reference RTS scale.
 
@@ -319,7 +320,7 @@ multiplayer, mod SDK, community library, store packaging.
 
 ## 11. Known limitations and next milestone
 
-- Gamepad mapping is implemented but untested on physical hardware.
+- Gamepad mapping is implemented and emulated in Chromium but untested on physical hardware.
 - Audio is procedural and un-auditioned in automation.
 - Renderer correctness is evidenced by live GL, shader compilation, draw cost and
   DOM state, not screenshot comparison.

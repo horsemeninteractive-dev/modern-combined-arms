@@ -1,0 +1,55 @@
+name: Nightly measurements
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-measurements
+  cancel-in-progress: false
+
+jobs:
+  measurements:
+    name: AI ladder and performance benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: AI matchup ladder
+        run: |
+          set -o pipefail
+          npm run ai:matchups 2>&1 | tee ai-matchups.log
+
+      - name: Performance benchmarks
+        run: |
+          set -o pipefail
+          npm run bench 2>&1 | tee bench.log
+
+      - name: Upload measurement logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-measurements-${{ github.run_id }}
+          path: |
+            ai-matchups.log
+            bench.log
+          if-no-files-found: ignore
+          retention-days: 30

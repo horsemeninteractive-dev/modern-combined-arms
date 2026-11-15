@@ -2,7 +2,7 @@ import { BUILDINGS, isIndestructibleStructure } from '../data/buildings';
 import { UNITS } from '../data/units';
 import { containerAcceptsPassenger, containerSpec } from '../sim/containers';
 import { entityWeapons, usesPrimaryAmmo, weaponCanHurt } from '../sim/combat';
-import { TILE_SIZE } from '../sim/constants';
+import { MAX_QUEUED_ORDERS, TILE_SIZE } from '../sim/constants';
 import type { Game } from '../sim/game';
 import type { Command, Entity, Stance } from '../sim/types';
 
@@ -69,6 +69,7 @@ export type CommandGateRejectionCode =
   | 'not-submarine'
   | 'battery-too-low'
   | 'no-return-capable'
+  | 'queue-full'
   | 'no-controllable-entity';
 
 export interface GateRejection {
@@ -103,7 +104,9 @@ const TRUSTED_FIELDS = new Set(['team', 'playerId', 'owner', 'seat']);
 type CommandType = Command['type'];
 
 const ALLOWED_FIELDS: Record<CommandType, readonly string[]> = {
-  move: ['type', 'ids', 'x', 'z', 'attackMove'],
+  move: ['type', 'ids', 'x', 'z', 'attackMove', 'queue'],
+  patrol: ['type', 'ids', 'x', 'z'],
+  guard: ['type', 'ids', 'targetId'],
   land: ['type', 'ids', 'x', 'z'],
   attack: ['type', 'ids', 'targetId'],
   stop: ['type', 'ids'],
@@ -326,9 +329,60 @@ export class CommandGate {
         if (raw.attackMove !== undefined && typeof raw.attackMove !== 'boolean') {
           return reject('malformed-command', 'attackMove must be a boolean.');
         }
+        if (raw.queue !== undefined && typeof raw.queue !== 'boolean') {
+          return reject('malformed-command', 'queue must be a boolean.');
+        }
+        if (
+          raw.queue === true &&
+          entities.entities.some((entity) => (entity.orderQueue?.length ?? 0) >= MAX_QUEUED_ORDERS)
+        ) {
+          return reject('queue-full', 'The waypoint queue is full.');
+        }
         const command: Command = { type: 'move', team: seat.team, ids, x, z };
         if (raw.attackMove === true) command.attackMove = true;
+        if (raw.queue === true) command.queue = true;
         return { ok: true, command };
+      }
+
+      case 'patrol': {
+        const entities = this.requireOwned(ids, seat, 'unit');
+        if (!entities.ok) return entities;
+        if (entities.entities.some((entity) => entity.garrisonId)) {
+          return reject('entity-garrisoned', 'Garrisoned infantry cannot receive a patrol order.');
+        }
+        const x = readCoordinate(raw.x, this.game.state.map.width * TILE_SIZE);
+        const z = readCoordinate(raw.z, this.game.state.map.height * TILE_SIZE);
+        if (x === null || z === null) return reject('out-of-bounds', 'Patrol point is outside the map.');
+        return { ok: true, command: { type: 'patrol', team: seat.team, ids, x, z } };
+      }
+
+      case 'guard': {
+        const selected = this.requireOwned(ids, seat, 'unit');
+        if (!selected.ok) return selected;
+        if (selected.entities.some((entity) => entity.garrisonId)) {
+          return reject('entity-garrisoned', 'Garrisoned infantry cannot receive a guard order.');
+        }
+        const targetId = this.readTargetId(raw.targetId);
+        if (targetId === null) return reject('invalid-target', 'Target is not valid.');
+        const target = this.game.getEntity(targetId);
+        // Missing and hidden targets share one code, so the gate cannot be used
+        // to enumerate entities the seat is not allowed to see.
+        if (!target || target.hp <= 0 || !this.game.isVisibleTo(seat.team, target.id)) {
+          return reject('target-hidden', 'Target is not visible.');
+        }
+        if (target.kind !== 'unit') {
+          return reject('wrong-entity-type', 'Only a friendly unit can be guarded.');
+        }
+        if (target.garrisonId) {
+          return reject('target-garrisoned', 'That unit is inside a structure.');
+        }
+        if (target.owner < 0 || this.game.teamOf(target.owner) !== seat.team) {
+          return reject('friendly-target', 'That is not a friendly unit.');
+        }
+        if (selected.entities.every((entity) => entity.id === targetId)) {
+          return reject('no-controllable-entity', 'Select another unit to guard that one.');
+        }
+        return { ok: true, command: { type: 'guard', team: seat.team, ids, targetId } };
       }
 
       case 'land': {

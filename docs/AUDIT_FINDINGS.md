@@ -915,17 +915,20 @@ is.
 - **Requirement:** Keyboard/mouse, touch and gamepad paths; safe areas for real
   devices (GDD §13.1; Stage 1).
 - **Actual behaviour:** Runtime checks used a resized Chromium viewport, not a
-  physical touch device. Gamepad code was inspected but not exercised on
-  hardware. Audio was not auditioned. Safe-area insets were absent, so there is
-  nothing to test until implemented. Frame rate was sampled in the preview
-  browser (60 fps at 844×390), but not on a low-end mobile device.
-- **Evidence:** See `VERIFICATION_REPORT.md`; no hardware/gamepad/audio logs.
-- **Evidence type:** Unverified.
-- **Consequence:** Touch target sizes and overflow were measured, but gesture
-  feel, multi-touch, notch clipping and gamepad mappings remain unproven.
+  physical touch device. The gamepad path was exercised in Chromium with a
+  synthetic standard-mapping pad: menu focus, selection, additive selection,
+  group assign/recall and production tabs all passed. It has not been run on a
+  physical controller. Audio was not auditioned. Frame rate was sampled in the
+  preview browser (60 fps at 844×390), but not on a low-end mobile device.
+- **Evidence:** Chromium synthetic-pad run (2026-11-15), `tests/gamepad.test.ts`;
+  no hardware/audio logs.
+- **Evidence type:** Emulated for gamepad; unverified on hardware.
+- **Consequence:** Touch target sizes and overflow were measured, and the
+  standard gamepad mapping now works in software, but gesture feel, multi-touch,
+  notch clipping and physical-controller mappings remain unproven.
 - **Correction:** Add an automated DOM/layout test for target sizes/overflow and
-  a manual device matrix; implement safe areas before device testing. Do not
-  claim touch parity until exercised.
+  a manual device matrix; exercise a physical controller and record its mapping.
+  Do not claim hardware parity until exercised.
 - **Acceptance:** At least one real landscape phone and one gamepad are tested;
   safe-area insets are simulated and real; audio cues have visual equivalents.
 
@@ -967,7 +970,7 @@ misleading is MOVE. The two HOLD labels are a naming conflict, not two systems.
 | Mobile HUD | No | HUD-02–HUD-05. |
 | Input/mouse | Mostly | Selection, box, commands tested; ground pick offset CAM-01; MOVE no-op HUD-06. |
 | Input/touch | Partial | Tap/drag/pinch code exists; targets, additive selection, group access and safe areas fail. |
-| Input/gamepad | Code only | Mapping exists; no hardware test. |
+| Input/gamepad | Emulated pass | Menu focus, selection/add, groups and production verified with a synthetic standard-mapping pad; no hardware test. |
 | Camera | Yes | 2:1 projection tests; focus/pan/clamp tests; pick defect separate. |
 | Terrain rendering | Partial | Elevation terraces/cliffs; permanent grid; no slopes. |
 | Water/naval rendering | Yes for slice | Water shader/port; corvette mesh; turret offset defect. |
@@ -1242,7 +1245,8 @@ actual credit; performance and determinism unchanged.
    HUD checks are not a substitute.
 2. Physical touch, pinch/drag feel, real safe-area insets and low-end frame rate
    were not exercised on hardware.
-3. Gamepad mapping was inspected previously but not exercised on hardware.
+3. The standard gamepad mapping was exercised in Chromium with a synthetic pad,
+   but not on physical hardware.
 4. Audio was not auditioned; no automated audio test.
 5. Reference screenshots remain unavailable; visual similarity is unverified.
 6. AI airfield/fighter production and air sorties are not asserted by a test.
@@ -1347,6 +1351,11 @@ tests or runtime checks.
 
 Two new blockers were confirmed at runtime, and they change the next priority:
 
+> **2026-11-15 update:** HUD-10, HUD-11 and HUD-12 are fixed. The result card
+> fits both phone viewports, and a layout rebuild now restores both the verdict
+> and the pause overlay. The original reproductions below are retained as
+> history.
+
 1. **The AI construction programme deadlocks after its first expansion.** On a
    normal-resource Island Assault run, the AI places a second anti-tank turret
    at world `(312, 92)` around 120–180 s, then its only engineer never reaches
@@ -1356,14 +1365,12 @@ Two new blockers were confirmed at runtime, and they change the next priority:
    19 ground units and no SAM battery, shipyard or airfield**. Extending the
    match to 900 s with a diagnostic invulnerable player HQ did not change the
    site progress or produce air/naval infrastructure.
-2. **The battle-result presentation fails on mobile and across layout changes.**
-   At 844×390 the result card measures **467.5 px** in a 390 px viewport; at
-   667×374 it is **499 px** in a 374 px viewport. The action buttons sit below
-   the viewport, the page does not scroll, and the buttons measure 36.9 px high.
-   Separately, rebuilding the HUD for a desktop↔mobile layout change recreates
-   an empty `#end-root` while `endShown` stays true, so an already displayed
-   result disappears. A layout change while paused similarly leaves the
-   simulation paused with the pause overlay hidden.
+2. **The battle-result presentation failed on mobile and across layout
+   changes.** At audit time the 844×390 result card measured **467.5 px** in a
+   390 px viewport and the 667×374 card measured **499 px** in a 374 px
+   viewport. HUD-11 fixed the fit, and HUD-10/HUD-12 fixed the lifecycle: the
+   rebuilt HUD now restores the verdict and the pause overlay from app state.
+   The historical failure and current evidence are recorded below.
 
 The desktop result screen itself works: at 1280×720 it fits, and **RESTART
 SCENARIO** returned to a fresh battle at tick 14. Save/load determinism, turret
@@ -1373,9 +1380,9 @@ and physical-device verification were still not performed.
 
 **Highest-priority next task: repair AI construction progression.** It has the
 largest gameplay impact because it currently prevents the AI from reaching SAM,
-naval or air infrastructure in a normal match. The mobile result-screen and
-layout-transition defects are the next mandatory corrections; they affect the
-end of the loop but do not alter the simulation.
+naval or air infrastructure in a normal match. The remaining layout-transition
+defects (HUD-10/HUD-12) affect the end of the loop but do not alter the
+simulation; the mobile fit defect (HUD-11) is closed.
 
 ### 9.2 Baseline and method
 
@@ -1416,16 +1423,16 @@ scope decisions are marked separately rather than called defects.
 | --- | --- | --- | --- |
 | HUD-01 | Desktop production was a bottom deck | **Fixed** | Persistent right sidebar; 82 px rail, 218–254 px sidebar, 136 px console. |
 | HUD-02 | Mobile was a compressed desktop HUD | **Fixed for battle composition** | Separate mobile markup/CSS, category rail and production sheet; 844×390 and 667×374 measured. Result presentation is HUD-11. |
-| HUD-03 | Touch targets and safe areas | **Fixed in battle; result actions excluded** | All 13 mobile command buttons measured 44×44; tabs 58.9×44.5; safe-area CSS present. Result buttons measure 36.9 px and are clipped. |
+| HUD-03 | Touch targets and safe areas | **Fixed** | All 13 mobile command buttons measured 44×44; tabs 58.9×44.5; safe-area CSS present. Result actions are 44 px and outside the scrolling report. |
 | HUD-04 | Touch control groups | **Fixed (emulation)** | Nine-slot groups sheet; 44×44 slots in source/tests. No physical tap. |
 | HUD-05 | Primary objective hidden on mobile | **Fixed** | Objective chip 481×41 at 844×390; objective sheet present. |
 | HUD-06 | MOVE was a no-op | **Fixed** | Mode enters MOVE; injected pointer events through the canvas path issued two move orders and cleared the mode. |
 | HUD-07 | Production choices not image-led | **Fixed** | Procedural thumbnail system and cache; thumbnail/framing tests pass. No new pixel review. |
 | HUD-08 | No touch additive selection | **Fixed (source/emulation)** | Sticky ADD toggle and additive selection path; physical tap not injected. |
 | HUD-09 | Desktop clear-area target missed | **Fixed at reference sizes** | 62.10% clear at 1280×720; 72.11% at 1920×1080; no document or rail/console scroll. |
-| HUD-10 | **New:** result overlay destroyed by HUD layout rebuild | **Still reproducible** | Defeat end screen 1203 chars → resize to mobile → `endShown=true`, `victoryShown='defeat'`, `#end-root` empty. See §9.4. |
-| HUD-11 | **New:** mobile result card overflows; actions unreachable | **Still reproducible** | 844×390: card 467.5 px, actions 405.5–442.4; 667×374: card 499 px, actions 392.2–473.9; no page scroll. See §9.4. |
-| HUD-12 | **New:** pause overlay hidden after HUD layout rebuild | **Still reproducible** | Paused at mobile, resized to desktop: `app.paused=true`, overlay `hidden`, display `none`, top button stale. See §9.4. |
+| HUD-10 | **New:** result overlay destroyed by HUD layout rebuild | **Fixed 2026-11-15** | `renderShell()` restores the remembered `endResult`; victory card survived mobile→desktop→mobile with all four actions and mobile RESTART returned to tick 0. See §9.4. |
+| HUD-11 | **New:** mobile result card overflows; actions unreachable | **Fixed 2026-11-15** | 844×390: card bottom ≤376.6 px, actions 44 px; 667×374: card bottom ≤361.5 px, report scrolls, actions 44 px; no document scroll. See §9.4. |
+| HUD-12 | **New:** pause overlay hidden after HUD layout rebuild | **Fixed 2026-11-15** | Paused at 667×374, rebuilt desktop: overlay `display: grid`, `paused=true`, top control reads “Resume battle”. See §9.4. |
 | CAM-01 | Ground picking missed elevated terrain | **Fixed** | `App.worldAt`/`pickTerrain`; 12 tests; live elevated flat tile at elevation 2 returned 0.000 world-unit error. |
 | CAM-02 | Construction grid permanently visible | **Fixed** | Live: `grid=false` in play, `true` during placement, `false` after cancel. |
 | CAM-03 | No slope transitions | **Fixed** | Continuous surface shared by mesh/picking; terrain tests pass. |
@@ -1495,9 +1502,15 @@ ground army, which is why the defect was not caught by the current AI test
 suite. This also means the prior “AI uses air and naval infrastructure” claim is
 only a developed-fixture result, not normal-play evidence.
 
-#### HUD-10 — Result screen disappears when the HUD layout changes (Medium-high)
+#### HUD-10 — Result screen disappears when the HUD layout changes (Medium-high) — fixed 2026-11-15
 
-Reproduction at the desktop reference size:
+**Current state:** `HUD` remembers the verdict in `endResult`; `renderShell()`
+re-renders it after replacing `#end-root`, without replaying the sting. A live
+Chromium check kept the victory card, heading and four actions through
+mobile→desktop→mobile rebuilds; mobile **RESTART SCENARIO** returned to a fresh
+battle at tick 0.
+
+Historical reproduction at the desktop reference size:
 
 1. Start a battle, destroy the player Command Post, wait for the defeat screen.
 2. Confirm `#end-root` contains the result card (1203 characters at the time of
@@ -1507,39 +1520,56 @@ Reproduction at the desktop reference size:
    `victoryShown = 'defeat'`, but `#end-root.innerHTML.length = 0`; no result is
    rendered.
 
-`HUD.refreshLayout()` calls `renderShell()`, which replaces the DOM including
-`#end-root`, but it does not clear `endShown` or re-render the known result.
-`App.checkVictory()` then sees `victoryShown === result` and returns without
-calling `showEnd()` again. The battle remains over, but the restart/save/editor/
-menu actions are gone. The desktop equivalent works; this is a lifecycle bug,
+The old `HUD.refreshLayout()` called `renderShell()`, which replaced the DOM
+including `#end-root`, but did not retain the known result or re-render it.
+`App.checkVictory()` then saw `victoryShown === result` and returned without
+calling `showEnd()` again. The battle remained over, but the restart/save/editor/
+menu actions were gone. The desktop equivalent worked; this was a lifecycle bug,
 not a simulation bug.
 
-#### HUD-11 — Mobile result screen is taller than the viewport (High on mobile)
+#### HUD-11 — Mobile result screen is taller than the viewport (High on mobile) — fixed 2026-11-15
 
-The result card is not height-constrained and the overlay is not scrollable:
+**Current state:** `.end-screen` respects safe-area insets, `.end-card` is
+bounded by `min(88dvh, 100%)`, only `.end-body` scrolls, phone/mobile actions
+are at least 44×44, and the entrance animation no longer pushes the card below
+the viewport or scales its buttons down. A live Chromium sweep measured:
+
+| CSS viewport | Card top–bottom | Actions | Button height | Document scroll |
+| --- | --- | --- | --- | --- |
+| 844×390 | 33.4–376.6 px entrance; 23.4–366.6 settled | 238.6–351.6 entrance; 228.6–341.6 settled | 44 px | none |
+| 667×374 | 32.4–361.5 px entrance; settles inside | 223.5–336.5 px | 44 px | none |
+| 1280×720 | 148.8–623.2 px | 493.2–588.7 px | 35.5 px (desktop) | none |
+| 1920×1080 | 328.8–803.2 px | 673.2–768.7 px | 35.5 px (desktop) | none |
+
+**Historical reproduction (before the fix):** the result card was not
+height-constrained and the overlay was not scrollable:
 
 | CSS viewport | Card height | Action buttons | Viewport | Result |
 | --- | --- | --- | --- | --- |
 | 844×390 | 467.5 px | top 405.5, bottom 442.4 | 390 px | below the viewport |
 | 667×374 | 499 px | top 392.2, bottom 473.9 | 374 px | below the viewport |
 
-The `.end-screen` has `overflow: visible`, the document/body are `overflow:
-hidden`, and there is no scroll container. The action buttons also measure
-36.9 px high, below the 44×44 touch target. A player who loses on a phone cannot
-reach **RESTART SCENARIO**, **SAVE BATTLE**, **SCENARIO EDITOR** or **RETURN TO
-MENU** without reloading the page. This is a hard end-of-loop failure on the
+The `.end-screen` had `overflow: visible`, the document/body were `overflow:
+hidden`, and there was no scroll container. The action buttons also measured
+36.9 px high, below the 44×44 touch target. A player who lost on a phone could
+not reach **RESTART SCENARIO**, **SAVE BATTLE**, **SCENARIO EDITOR** or **RETURN
+TO MENU** without reloading the page. This was a hard end-of-loop failure on the
 mobile target, even though the underlying defeat state and desktop result card
-are correct.
+were correct.
 
-#### HUD-12 — Pause overlay is hidden after a HUD layout change (Medium)
+#### HUD-12 — Pause overlay is hidden after a HUD layout change (Medium) — fixed 2026-11-15
 
-With a battle paused at 667×374, resizing to 1280×720 rebuilt the desktop HUD.
-`app.paused` remained `true`, but `#pause-overlay` was left with the `hidden`
-class and `display: none`, and the top pause button still showed the pause icon.
-The HUD's `pausedCache` is not reset by `renderShell()`, so its update loop sees
-no change to apply. The simulation is paused with no visible indication or
-resume prompt in the newly built layout. This shares the layout-rebuild cause
-with HUD-10 but affects a different transient overlay.
+**Current state:** `renderShell()` calls `syncPauseState(true)` so the rebuilt
+shell immediately mirrors `app.paused`. Paused at 667×374 and rebuilt to
+1280×720, Chromium showed `#pause-overlay` with `display: grid`, `paused=true`
+and the top control labelled “Resume battle”.
+
+Historical reproduction: with a battle paused at 667×374, resizing to 1280×720
+rebuilt the desktop HUD. `app.paused` remained `true`, but `#pause-overlay` was
+left with the `hidden` class and `display: none`, and the top pause button still
+showed the pause icon. The HUD's `pausedCache` was not reset by `renderShell()`,
+so its update loop saw no change to apply. The simulation was paused with no
+visible indication or resume prompt in the newly built layout.
 
 ### 9.5 Complete gameplay-loop assessment
 
@@ -1553,18 +1583,15 @@ with HUD-10 but affects a different transient overlay.
 | 6. Land combat | **Pass** | Combat, armour multipliers, static defences, repair/medic and balance tests pass; tank duels and AT-gun TTK are within the tuned windows. |
 | 7. Air combat | **Player pass / AI fail in normal play** | Player parked/fuel/strike/return/rearm/SAM tests pass. AI airfield/fighter test is a developed-fixture test; normal AI never builds an airfield. |
 | 8. Naval combat | **Player pass / AI fail in normal play** | Player movement, combat, reload and full-ammo repair pass. AI shipyard/corvette test is a developed-fixture test; normal AI never builds a shipyard. |
-| 9. Victory or defeat | **Simulation pass / presentation partial** | Destroy-HQ and HQ-loss freeze tests pass. Desktop result card works; mobile card is unreachable (HUD-11) and a layout change removes it (HUD-10). |
-| 10. Restart and play again | **Pass on desktop / fail on mobile** | Desktop result RESTART returned to a fresh battle at tick 14. Mobile result actions are below the viewport; a rotation between result and restart also loses the overlay. Save/load determinism tests pass. |
+| 9. Victory or defeat | **Pass** | Destroy-HQ and HQ-loss freeze tests pass. The result card fits desktop and phone landscape and survives layout rebuilds (HUD-10/HUD-11 fixed). |
+| 10. Restart and play again | **Pass** | Desktop result RESTART returned to a fresh battle at tick 14; mobile RESTART returned to a fresh battle at tick 0 after a rebuild. Save/load determinism tests pass. |
 
 Softlocks, stalls and failure modes found:
 
 - **AI-03** freezes AI expansion after roughly 2–3 minutes and prevents SAM,
   naval and air infrastructure. This is the dominant failure mode.
-- **HUD-11** traps a mobile player on the result screen; the only recovery is a
-  page reload or a browser/keyboard path outside the intended UI.
-- **HUD-10/HUD-12** lose transient overlays when the responsive composition is
-  rebuilt. Desktop resizing is uncommon during a result, but phone rotation is
-  routine.
+- **HUD-10/HUD-12** lost transient overlays when the responsive composition was
+  rebuilt; both were fixed on 2026-11-15 and are no longer failure modes.
 - The economy has no non-harvester Materials income. If all harvesters and the
   refinery/factory are lost with insufficient funds, recovery can require a
   pre-existing engineer and careful rebuilding. This is retained by product
@@ -1626,34 +1653,29 @@ Ranked in `NEXT_PHASE_PLAN.md` §5. The short version:
 
 1. **AI-03 (P0):** repair AI construction progression; add a normal-resource
    regression proving no site stalls and later construction continues.
-2. **HUD-11 (P1):** make the result card fit mobile landscape, scroll if needed,
-   and give its actions 44×44 targets.
-3. **HUD-10 / HUD-12 (P1):** re-apply the result and pause overlays after a
-   layout rebuild.
-4. **AI air/naval normal-play verification:** after AI-03, prove the AI actually
+2. **AI air/naval normal-play verification:** after AI-03, prove the AI actually
    reaches and uses its air/naval branches rather than only the synthetic
    fixture.
-5. **Full player-driven match and physical evidence:** run and record the loop,
+3. **Full player-driven match and physical evidence:** run and record the loop,
    then close the remaining hardware/reference gaps.
 
-The separate copyable brief for the first task is in
-[NEXT_TASK_PROMPT.md](NEXT_TASK_PROMPT.md).
+HUD-10, HUD-11 and HUD-12 are closed (2026-11-15). The historical copyable brief
+is in [NEXT_TASK_PROMPT.md](NEXT_TASK_PROMPT.md).
 
 ### 9.9 Bottom line
 
 The mechanical baseline is healthy and the previously fixed defects remain
-fixed. The build is not yet a reliable complete loop: the AI's construction
-programme deadlocks in normal play, and the mobile/layout-change result
-presentation can trap or erase the end of the battle. Fix the AI construction
-deadlock first; then fix the result/pause overlay lifecycle and mobile fit
-before treating the skirmish slice as end-to-end verified. The economy remains
+fixed. The build is not yet a reliable complete loop because the AI's
+construction programme deadlocks in normal play. The mobile result fit and the
+layout-rebuild overlay lifecycle are now fixed. Fix the AI construction
+deadlock first, then verify AI air/naval use in normal play. The economy remains
 retained as decided and was not touched.
 
 ## 10. Post-audit AI revision — 2026-10-24
 
 > **Current for AI findings.** This section supersedes the AI defects and the
-> AI portions of §9.1, §9.4, §9.5, §9.7 and §9.8. The HUD-10/HUD-11/HUD-12
-> defects remain current; the economy remains retained by product decision.
+> AI portions of §9.1, §9.4, §9.5, §9.7 and §9.8. HUD-10, HUD-11 and HUD-12 are
+> fixed (2026-11-15). The economy remains retained by product decision.
 
 ### 10.1 What was wrong
 
@@ -1712,8 +1734,8 @@ Full commands and limitations are in `docs/VERIFICATION_REPORT.md` §31 and
 
 ### 10.4 Remaining current work
 
-AI-01, AI-03 and NAV-02 close. The next mandatory items are unchanged from
-§9.4: HUD-11 (mobile result card height/actions), then HUD-10 and HUD-12
-(result and pause overlays after a layout rebuild). A human-played match and
-physical-device touch remain verification gaps; difficulty has been tuned in
-AI-vs-AI matchups but not against human players.
+AI-01, AI-03 and NAV-02 close. HUD-11 (mobile result card height/actions) and
+HUD-10/HUD-12 (result and pause overlays after a layout rebuild) also close. A
+human-played match, physical-device touch and a physical safe-area test remain
+verification gaps; difficulty has been tuned in AI-vs-AI matchups but not
+against human players.

@@ -1793,6 +1793,174 @@
         ]
       }
     },
+    "manpadsTeam": {
+      "name": "MANPADS Team",
+      "role": "Air defence",
+      "voice": "bm_george",
+      "speed": 1.02,
+      "cues": {
+        "select": [
+          "MANPADS team, launcher up.",
+          "Shoulder team on the net, sky watch.",
+          "Air watch ready, tubes loaded."
+        ],
+        "move": [
+          "Air team shifting to the next hedge.",
+          "MANPADS moving, launcher shouldered.",
+          "Sky watch relocating."
+        ],
+        "attack": [
+          "Aircraft in the ring, missile away.",
+          "Shoulder launch, tracking the fast mover.",
+          "Missile off the rail, air target."
+        ],
+        "unableToComply": [
+          "No aircraft inside five tiles.",
+          "Launcher empty, reloading.",
+          "Cannot touch ground troops."
+        ]
+      }
+    },
+    "manpadsTeamEC": {
+      "name": "Igla Team",
+      "role": "Air defence",
+      "voice": "am_michael",
+      "speed": 0.98,
+      "cues": {
+        "select": [
+          "Igla team, grip stock ready.",
+          "Air sentry here, launcher charged.",
+          "Shoulder crew standing by."
+        ],
+        "move": [
+          "Igla team changing position.",
+          "Relocating the air ambush.",
+          "Launcher up, moving."
+        ],
+        "attack": [
+          "Igla away, tail chase.",
+          "Missile out, aircraft locked.",
+          "Air target, launch."
+        ],
+        "unableToComply": [
+          "Nothing in the sky to shoot.",
+          "Tube empty, wait one.",
+          "No ground target for us."
+        ]
+      }
+    },
+    "ewVehicle": {
+      "name": "Electronic Warfare Vehicle",
+      "role": "Electronic warfare",
+      "voice": "bm_lewis",
+      "speed": 1.0,
+      "cues": {
+        "select": [
+          "Jamming vehicle online, spectrum clear.",
+          "Electronic warfare truck, array up.",
+          "Signals vehicle ready, listening."
+        ],
+        "move": [
+          "Jamming truck rolling.",
+          "Array stowed, moving the emitter.",
+          "Electronic vehicle shifting."
+        ],
+        "attack": [
+          "Defensive gun engaging.",
+          "Machine gun up, close contacts.",
+          "Truck gun firing."
+        ],
+        "unableToComply": [
+          "No target for the jammer.",
+          "Gun cannot reach that.",
+          "Array still spinning up."
+        ]
+      }
+    },
+    "ewVehicleEC": {
+      "name": "EW Tracked Vehicle",
+      "role": "Electronic warfare",
+      "voice": "am_onyx",
+      "speed": 0.94,
+      "cues": {
+        "select": [
+          "Tracked jammer on the net.",
+          "Electronic vehicle, domes live.",
+          "Signals track ready."
+        ],
+        "move": [
+          "Jammer track moving.",
+          "Domes stowed, relocating.",
+          "Electronic track rolling."
+        ],
+        "attack": [
+          "Pintle gun engaging.",
+          "Close defence firing.",
+          "Track gun up."
+        ],
+        "unableToComply": [
+          "No hostile network in range.",
+          "Gun out of reach.",
+          "Domes need time to spin."
+        ]
+      }
+    },
+    "loiteringMunition": {
+      "name": "Loitering Munition",
+      "role": "One-way strike",
+      "voice": "af_nova",
+      "speed": 1.06,
+      "cues": {
+        "select": [
+          "Loitering munition on the rail.",
+          "One-way bird ready to launch.",
+          "Attack drone spun up."
+        ],
+        "move": [
+          "Munition tracking to the launch point.",
+          "One-way bird moving.",
+          "Drone sliding to the target box."
+        ],
+        "attack": [
+          "Terminal dive, warhead live.",
+          "One-way bird committed.",
+          "Warhead down, no return."
+        ],
+        "unableToComply": [
+          "No target in the search box.",
+          "Fuel short for that run.",
+          "Cannot abort, already committed."
+        ]
+      }
+    },
+    "loiteringMunitionEC": {
+      "name": "Lancet Attack Drone",
+      "role": "One-way strike",
+      "voice": "am_liam",
+      "speed": 1.08,
+      "cues": {
+        "select": [
+          "Lancet on the rail, battery hot.",
+          "One-way drone, ready for tasking.",
+          "Attack bird waiting."
+        ],
+        "move": [
+          "Lancet moving to the launch box.",
+          "One-way drone shifting.",
+          "Drone tracking to the new grid."
+        ],
+        "attack": [
+          "Lancet in, warhead armed.",
+          "Terminal run, no recovery.",
+          "One-way strike committed."
+        ],
+        "unableToComply": [
+          "No target for the Lancet.",
+          "Not enough fuel for that grid.",
+          "Cannot return, one-way only."
+        ]
+      }
+    },
     "apc": {
       "name": "Armoured Personnel Carrier",
       "role": "Infantry transport",

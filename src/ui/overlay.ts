@@ -10,9 +10,7 @@ import { buildingBannerAnchor, buildingBannerPoints, buildingTopHeight } from '.
 import { buildingWireframe } from '../render/buildingWireframe';
 import { relayMeterState } from './relayMeter';
 import {
-  HEALTH_COLORS,
   HEALTH_SEGMENTS,
-  HEALTH_SOFT_COLORS,
   SERVICE_ROW_HEIGHT,
   ammoPips,
   clampFraction,
@@ -27,6 +25,11 @@ import {
   supplyTone,
 } from './bars';
 import { isServicingAircraft } from '../render/servicing';
+import {
+  colorVisionTokens,
+  withAlpha,
+  type ColorVisionPalette,
+} from '../colorVision';
 import { experienceOf, rankForXp } from '../sim/veterancy';
 import { drawOrderGhostGlyph } from './cursors';
 import {
@@ -43,7 +46,6 @@ import {
 const BLUE = '#52c5e6';
 const RED = '#ef6c4d';
 const AMBER = '#f1c27e';
-const NEUTRAL = '#b9c6c1';
 
 export class Overlay {
   private canvas: HTMLCanvasElement;
@@ -420,7 +422,11 @@ export class Overlay {
         relay.z,
       );
       if (!p.visible) continue;
-      const meter = relayMeterState(game, relay);
+      const palette = colorVisionTokens(app.settings.colorVision);
+      const meter = relayMeterState(game, relay, {
+        palette: app.settings.colorVision,
+        localPlayerId: app.localPlayerId,
+      });
       const caption = remembered ? meter.ownerLabel : meter.caption;
       const progress = remembered ? 0 : meter.progress;
       const x = p.x - width / 2;
@@ -429,8 +435,14 @@ export class Overlay {
       const labelWidth = ctx.measureText(caption).width;
       ctx.fillStyle = 'rgba(7,12,14,0.78)';
       ctx.fillRect(p.x - labelWidth / 2 - 3, y - 12, labelWidth + 6, 10);
+      const ownerFriendly =
+        meter.owner >= 0 && game.teamOf(meter.owner) === game.teamOf(app.localPlayerId);
       ctx.fillStyle =
-        meter.owner === app.localPlayerId ? '#a6e8f8' : meter.owner === -1 ? '#d8e2dd' : '#ffb29b';
+        meter.owner === -1
+          ? palette.neutral
+          : ownerFriendly
+            ? palette.friendlySoft
+            : palette.hostileSoft;
       ctx.fillText(caption, p.x, y - 4);
       ctx.fillStyle = 'rgba(4,8,9,0.82)';
       ctx.fillRect(x - 1, y - 1, width + 2, 7);
@@ -509,7 +521,17 @@ export class Overlay {
     const ctx = this.ctx;
     const def = e.kind === 'unit' ? UNITS[e.defId] : BUILDINGS[e.defId];
     if (!def) return;
-    const color = e.owner === app.localPlayerId ? BLUE : e.owner === -1 ? NEUTRAL : RED;
+    const palette = colorVisionTokens(app.settings.colorVision);
+    const friendly = e.owner >= 0 && game.teamOf(e.owner) === game.teamOf(app.localPlayerId);
+    const color = e.owner === -1
+      ? palette.neutral
+      : friendly
+        ? palette.friendly
+        : palette.hostile;
+    // The ring is dashed for hostile and dotted for neutral. Selection already
+    // shows a ring; the line style keeps ownership readable without colour.
+    ctx.setLineDash(e.owner === -1 ? [1, 3] : friendly ? [] : [4, 2]);
+    ctx.save();
     if (e.kind === 'unit') {
       const altitude =
         UNITS[e.defId]?.domain === 'air' && !e.aircraft?.landed ? AIR_UNIT_ALTITUDE : 0;
@@ -522,7 +544,7 @@ export class Overlay {
       ctx.beginPath();
       ctx.ellipse(p.x, p.y, Math.max(7, r), Math.max(4, r * 0.55), 0, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.fillStyle = 'rgba(82,197,230,0.12)';
+      ctx.fillStyle = withAlpha(color, 0.12);
       ctx.fill();
       if (e.kind === 'unit' && UNITS[e.defId]?.domain === 'air') {
         const ground = camera.worldToScreen(e.x, terrainVisualHeight(game.state.scenario, e.x, e.z), e.z);
@@ -551,9 +573,11 @@ export class Overlay {
       for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
       ctx.closePath();
       ctx.stroke();
-      ctx.fillStyle = 'rgba(82,197,230,0.08)';
+      ctx.fillStyle = withAlpha(color, 0.08);
       ctx.fill();
     }
+    ctx.restore();
+    ctx.setLineDash([]);
     void state;
   }
 
@@ -751,15 +775,14 @@ export class Overlay {
     const height = 5;
     const frac = clampFraction(e.hp / e.maxHp);
     const tone = healthTone(frac);
-    const color = HEALTH_COLORS[tone];
+    const palette = colorVisionTokens(app.settings.colorVision);
+    const color = tone === 'ok' ? palette.ok : tone === 'wounded' ? palette.wounded : palette.critical;
+    const softColor =
+      tone === 'ok' ? palette.okSoft : tone === 'wounded' ? palette.woundedSoft : palette.criticalSoft;
     const x = Math.round(p.x - width / 2);
     const y = Math.round(p.y - 9);
-    const team =
-      e.owner === -1
-        ? NEUTRAL
-        : game.teamOf(e.owner) === game.teamOf(app.localPlayerId)
-          ? BLUE
-          : RED;
+    const friendly = e.owner >= 0 && game.teamOf(e.owner) === game.teamOf(app.localPlayerId);
+    const team = e.owner === -1 ? palette.neutral : friendly ? palette.friendly : palette.hostile;
     const pulse = healthPulse(frac, performance.now(), this.reducedMotion);
 
     // A notched dark plate frames the bar, so health reads as an instrument on
@@ -783,7 +806,7 @@ export class Overlay {
     ctx.lineWidth = 1;
     ctx.strokeStyle =
       tone === 'critical'
-        ? `rgba(239,108,77,${0.45 + 0.35 * pulse})`
+        ? withAlpha(palette.critical, 0.45 + 0.35 * pulse)
         : 'rgba(167,190,184,0.3)';
     ctx.stroke();
 
@@ -797,7 +820,7 @@ export class Overlay {
       ctx.beginPath();
       ctx.rect(x, y, width, height);
       ctx.clip();
-      ctx.strokeStyle = 'rgba(239,108,77,0.32)';
+      ctx.strokeStyle = withAlpha(palette.critical, 0.32);
       ctx.lineWidth = 1;
       for (let hx = -height; hx < width + height; hx += 4) {
         ctx.beginPath();
@@ -818,8 +841,18 @@ export class Overlay {
     for (let i = 1; i < HEALTH_SEGMENTS; i++) {
       ctx.fillRect(x + Math.round((width * i) / HEALTH_SEGMENTS), y, 1, height);
     }
+    // Ownership edge: friendly is a solid rail, hostile is a broken rail, and
+    // neutral is a single short dash. The plate no longer depends on colour.
     ctx.fillStyle = team;
-    ctx.fillRect(plateX, plateY + notch, 2, plateH - notch);
+    if (e.owner >= 0 && !friendly) {
+      for (let sy = plateY + notch; sy < plateY + plateH; sy += 4) {
+        ctx.fillRect(plateX, sy, 2, Math.min(2, plateY + plateH - sy));
+      }
+    } else if (e.owner === -1) {
+      ctx.fillRect(plateX, plateY + notch, 2, Math.max(1, (plateH - notch) * 0.5));
+    } else {
+      ctx.fillRect(plateX, plateY + notch, 2, plateH - notch);
+    }
 
     // Rank chevrons ride above the plate: one for a Veteran crew, two for
     // Elite. They are the only battlefield cue that a hull is worth more than
@@ -848,11 +881,11 @@ export class Overlay {
       ctx.font = '700 9px SFMono-Regular, Consolas, monospace';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'alphabetic';
-      ctx.fillStyle = HEALTH_SOFT_COLORS[tone];
+      ctx.fillStyle = softColor;
       ctx.fillText(`${healthPercent(frac)}%`, plateX + plateW + 4, y + height);
     }
     if (selected && e.kind === 'unit' && hasServiceStrip(UNITS[e.defId]?.domain)) {
-      bottom += this.drawServiceStrip(e, plateX, bottom + 5, plateW) + 4;
+      bottom += this.drawServiceStrip(e, plateX, bottom + 5, plateW, app.settings.colorVision) + 4;
     }
     if (selected && e.suppression > 0.2) {
       ctx.fillStyle = 'rgba(224,163,74,0.8)';
@@ -869,7 +902,13 @@ export class Overlay {
    * a blue rail that turns amber then red as endurance runs out, and one pale
    * pip per remaining round. The selection panel carries the labelled figures.
    */
-  private drawServiceStrip(e: Entity, x: number, y: number, width: number): number {
+  private drawServiceStrip(
+    e: Entity,
+    x: number,
+    y: number,
+    width: number,
+    palette: ColorVisionPalette,
+  ): number {
     const ctx = this.ctx;
     const fuel = e.maxFuel > 0 ? fuelFraction(e.fuel, e.maxFuel) : null;
     const pips = ammoPips(e.ammo, e.maxAmmo);
@@ -890,8 +929,8 @@ export class Overlay {
     let rowY = top;
     if (fuel !== null) {
       const tone = supplyTone(fuel);
-      const colour =
-        tone === 'ok' ? '#52c5e6' : tone === 'low' ? '#e0a34a' : '#ef6c4d';
+      const tokens = colorVisionTokens(palette);
+      const colour = tone === 'ok' ? tokens.info : tone === 'low' ? tokens.wounded : tokens.critical;
       ctx.fillStyle = 'rgba(255,255,255,0.08)';
       ctx.fillRect(x, rowY, width, layout.fuelRow);
       ctx.fillStyle = colour;

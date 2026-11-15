@@ -1,10 +1,12 @@
 # Next Task Prompt — Make the Result Screen Usable on Mobile
 
-**Status: pending (2026-10-24).** The previous AI-03 brief is complete; its
-record is in [AUDIT_FINDINGS.md](AUDIT_FINDINGS.md) §10 and
-[VERIFICATION_REPORT.md](VERIFICATION_REPORT.md) §31. The evidence for this task
-is in [AUDIT_FINDINGS.md](AUDIT_FINDINGS.md) §9.4 (HUD-11) and
-[VERIFICATION_REPORT.md](VERIFICATION_REPORT.md) §30.
+**Status: completed 2026-11-15.** HUD-11 is fixed. The current 844×390 card ends
+at 376.6 px, the 667×374 card ends at 361.5 px, both keep 44 px actions outside
+the scrolling report, and neither creates document scroll. HUD-10/HUD-12 were
+fixed in the follow-up change: a rebuilt shell restores the result and pause
+overlays. The original brief is retained below as history. Evidence is in
+[AUDIT_FINDINGS.md](AUDIT_FINDINGS.md) §9.4, `tests/modal-layout.test.ts` and
+`tests/hud-shell.test.ts`.
 
 ```text
 You are implementing one focused change in the Modern Combined Arms (MCA) RTS
@@ -33,8 +35,8 @@ REQUIREMENTS
 4. Preserve the existing desktop composition at 1280×720 and 1920×1080, and
    preserve current result copy, restart/save/editor/menu behaviour.
 5. Do not change simulation, AI, economy, scenario or save code.
-6. Do not fix the separate HUD-10/HUD-12 lifecycle bugs in this change; they
-   are a follow-up.
+6. This change deliberately left the separate HUD-10/HUD-12 lifecycle bugs for
+   a follow-up; that follow-up is now complete.
 
 EXPECTED TOUCH POINTS
 - The result-screen markup and styles (`.end-screen`, result card, action row).

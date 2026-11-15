@@ -2,6 +2,7 @@ import {
   ELEVATION_HEIGHT,
   HARVESTER_CAPACITY,
   MAX_QUEUE,
+  MAX_QUEUED_ORDERS,
   PLAYER,
   REPAIR_SUPPRESSION_TICKS,
   STRIPPED_BASE_TRICKLE_RATE,
@@ -1795,7 +1796,13 @@ export class Game {
       this.state.commandCount++;
       switch (cmd.type) {
         case 'move':
-          this.commandMove(cmd.team, cmd.ids, cmd.x, cmd.z, !!cmd.attackMove);
+          this.commandMove(cmd.team, cmd.ids, cmd.x, cmd.z, !!cmd.attackMove, !!cmd.queue);
+          break;
+        case 'patrol':
+          this.commandPatrol(cmd.team, cmd.ids, cmd.x, cmd.z);
+          break;
+        case 'guard':
+          this.commandGuard(cmd.team, cmd.ids, cmd.targetId);
           break;
         case 'land':
           this.commandLand(cmd.team, cmd.ids, cmd.x, cmd.z);
@@ -1937,7 +1944,7 @@ export class Game {
     }
   }
 
-  private commandMove(owner: number, ids: number[], x: number, z: number, attackMove: boolean): void {
+  private commandMove(owner: number, ids: number[], x: number, z: number, attackMove: boolean, queue = false): void {
     const selected = this.ownedEntities(owner, ids).filter((e) => e.kind === 'unit');
     const entities = selected.filter((e) => !e.garrisonId);
     if (entities.length === 0) {
@@ -1961,10 +1968,33 @@ export class Game {
     const navBatch =
       needsTraffic && entities.length >= 4 ? this.beginNavBatch(owner) : undefined;
     let failed = 0;
+    let queueFull = 0;
+    let queued = 0;
     for (let i = 0; i < entities.length; i++) {
       const e = entities[i];
       const dest = destinations[i];
       const def = unitDef(e.defId);
+      // Shift-queued movement is appended to the authoritative per-unit queue.
+      // The current order keeps running untouched; arrival starts the next leg.
+      if (queue && e.order) {
+        if ((e.orderQueue?.length ?? 0) >= MAX_QUEUED_ORDERS) {
+          queueFull++;
+          continue;
+        }
+        e.orderQueue = [
+          ...(e.orderQueue ?? []),
+          { type: attackMove ? 'attackMove' : 'move', x: dest.x, z: dest.z },
+        ];
+        queued++;
+        continue;
+      }
+      // A fresh move replaces the old queued route; otherwise a stale waypoint
+      // would fire after the player had already chosen a new destination.
+      if (!queue || !e.order) {
+        e.orderQueue = undefined;
+        e.patrolX = undefined;
+        e.patrolZ = undefined;
+      }
       // An ordinary movement order leaves the beach. A landing craft that is
       // still approaching shore cancels that approach too; the explicit unload
       // command is the only thing that keeps a hull beached.
@@ -2033,6 +2063,17 @@ export class Game {
       e.captureProgress = 0;
       navBatch?.refresh(e.id, e.state === 'moving' || e.path.length > 0);
     }
+    if (queueFull > 0) {
+      this.emit('orderFailed', {
+        team: owner,
+        x,
+        z,
+        text: 'Waypoint queue is full — issue Stop to clear it.',
+        defId: entities[0]?.defId,
+        level: 'warning',
+        sound: 'denied',
+      });
+    }
     if (failed > 0) {
       this.emit('orderFailed', {
         team: owner,
@@ -2047,7 +2088,17 @@ export class Game {
         level: 'warning',
         sound: 'denied',
       });
-    } else {
+    } else if (queued > 0 && queueFull === 0) {
+      this.emit('orderAck', {
+        team: owner,
+        x,
+        z,
+        text: 'Waypoint queued',
+        code: 'moveOrder',
+        defId: entities[0]?.defId,
+        level: 'info',
+      });
+    } else if (queueFull === 0) {
       this.emit('orderAck', {
         team: owner,
         x,
@@ -2058,6 +2109,194 @@ export class Game {
         level: 'info',
       });
     }
+  }
+
+  /**
+   * Patrol between the unit's current ground and the clicked point.
+   *
+   * The arrival handler already knew how to swap the two endpoints; this is the
+   * missing command that creates the first leg. Starting the return point at
+   * the unit's own position means one click is enough, and the two endpoints
+   * stay in authoritative order state for save, snapshot and hash.
+   */
+  private commandPatrol(owner: number, ids: number[], x: number, z: number): void {
+    const selected = this.ownedEntities(owner, ids).filter((e) => e.kind === 'unit');
+    const entities = selected.filter((e) => !e.garrisonId);
+    if (entities.length === 0) {
+      this.emit('orderFailed', {
+        team: owner,
+        x,
+        z,
+        text: selected.some((e) => e.garrisonId)
+          ? 'Garrisoned infantry must exit the building before patrolling.'
+          : 'Select units to patrol.',
+        level: 'warning',
+        sound: 'denied',
+      });
+      return;
+    }
+    const destinations = this.formationPoints(entities, x, z);
+    let failed = 0;
+    for (let i = 0; i < entities.length; i++) {
+      const e = entities[i];
+      const dest = destinations[i];
+      const def = unitDef(e.defId);
+      const originX = e.x;
+      const originZ = e.z;
+      this.releaseBuildTarget(e);
+      e.targetId = 0;
+      e.aimTargetId = 0;
+      e.captureTargetId = 0;
+      e.captureProgress = 0;
+      e.orderQueue = undefined;
+      e.patrolX = originX;
+      e.patrolZ = originZ;
+      if (def.domain === 'naval') e.navalLanding = undefined;
+      if (def.domain === 'air') {
+        e.order = { type: 'patrol', x: dest.x, z: dest.z, x2: originX, z2: originZ };
+        e.path = [{ x: dest.x, z: dest.z }];
+        e.pathIndex = 0;
+        e.destX = dest.x;
+        e.destZ = dest.z;
+        e.state = 'moving';
+        if (e.aircraft) {
+          e.aircraft.serviceTimer = 0;
+          e.aircraft.returningHome = false;
+          e.aircraft.fieldLanding = undefined;
+          this.launchAircraft(e);
+        }
+        continue;
+      }
+      if (e.harvester) e.harvester.phase = 'seek';
+      const plan = this.planMove(e, def, dest.x, dest.z);
+      if (!plan) {
+        failed++;
+        e.order = null;
+        e.path = [];
+        e.pathIndex = 0;
+        e.state = 'idle';
+        e.patrolX = undefined;
+        e.patrolZ = undefined;
+        continue;
+      }
+      e.order = { type: 'patrol', x: plan.x, z: plan.z, x2: originX, z2: originZ };
+      e.path = plan.path;
+      e.pathIndex = 0;
+      e.destX = plan.x;
+      e.destZ = plan.z;
+      e.state = plan.path.length > 0 ? 'moving' : 'idle';
+      e.blockedTicks = 0;
+    }
+    if (failed > 0) {
+      this.emit('orderFailed', {
+        team: owner,
+        x,
+        z,
+        text:
+          failed === entities.length
+            ? 'No route to that patrol point for the selected force.'
+            : `${failed} unit${failed === 1 ? '' : 's'} cannot reach that patrol point.`,
+        defId: entities[0]?.defId,
+        level: 'warning',
+        sound: 'denied',
+      });
+    } else {
+      this.emit('orderAck', {
+        team: owner,
+        x,
+        z,
+        text: 'Patrolling',
+        code: 'moveOrder',
+        defId: entities[0]?.defId,
+        level: 'info',
+      });
+    }
+  }
+
+  /**
+   * Follow a friendly unit. The guard detail keeps its weapons free, so it
+   * fights contacts around the guarded element and returns to station when the
+   * target moves on. The order stores only the target id and its last known
+   * position: the following position is derived in the fixed tick, not baked
+   * into the command, so a moving target does not need a stream of orders.
+   */
+  private commandGuard(owner: number, ids: number[], targetId: number): void {
+    const target = this.getEntity(targetId);
+    const selected = this.ownedEntities(owner, ids).filter((e) => e.kind === 'unit');
+    const guards = selected.filter(
+      (e) => !e.garrisonId && e.id !== targetId,
+    );
+    if (
+      !target ||
+      target.kind !== 'unit' ||
+      target.hp <= 0 ||
+      target.owner < 0 ||
+      this.isHostile(owner, target.owner) ||
+      target.garrisonId
+    ) {
+      this.emit('orderFailed', {
+        team: owner,
+        x: target?.x ?? 0,
+        z: target?.z ?? 0,
+        text: target?.garrisonId
+          ? 'That unit is inside a structure and cannot be guarded.'
+          : 'Select a friendly unit to guard.',
+        defId: selected[0]?.defId,
+        level: 'warning',
+        sound: 'denied',
+      });
+      return;
+    }
+    if (guards.length === 0) {
+      this.emit('orderFailed', {
+        team: owner,
+        x: target.x,
+        z: target.z,
+        text: selected.length > 0
+          ? 'Select another unit to guard that one.'
+          : 'Select units to guard a friendly unit.',
+        defId: selected[0]?.defId,
+        level: 'warning',
+        sound: 'denied',
+      });
+      return;
+    }
+    for (const e of guards) {
+      this.releaseBuildTarget(e);
+      e.orderQueue = undefined;
+      e.patrolX = undefined;
+      e.patrolZ = undefined;
+      e.targetId = 0;
+      e.aimTargetId = 0;
+      e.captureTargetId = 0;
+      e.captureProgress = 0;
+      e.order = { type: 'guard', targetId: target.id, x: target.x, z: target.z };
+      e.guardX = target.x;
+      e.guardZ = target.z;
+      e.path = [];
+      e.pathIndex = 0;
+      e.destX = e.x;
+      e.destZ = e.z;
+      e.state = 'idle';
+      e.blockedTicks = 0;
+      if (unitDef(e.defId).domain === 'naval') e.navalLanding = undefined;
+      if (unitDef(e.defId).domain === 'air' && e.aircraft) {
+        e.aircraft.serviceTimer = 0;
+        e.aircraft.returningHome = false;
+        e.aircraft.fieldLanding = undefined;
+        this.launchAircraft(e);
+      }
+    }
+    this.emit('orderAck', {
+      team: owner,
+      x: target.x,
+      z: target.z,
+      text: `Guarding ${entityName(target)}`,
+      entityId: target.id,
+      defId: guards[0]?.defId,
+      code: 'guardOrder',
+      level: 'info',
+    });
   }
 
   /**
@@ -2310,6 +2549,11 @@ export class Game {
     let firstCapable: Entity | null = null;
     for (const e of entities) {
       this.releaseBuildTarget(e);
+      // An attack is a replacement order, not a queued waypoint: a stale route
+      // must never resume after the target dies.
+      e.orderQueue = undefined;
+      e.patrolX = undefined;
+      e.patrolZ = undefined;
       const weapons = entityWeapons(e);
       const usable = weapons.some(
         (w) => weaponCanHurt(w, target) && (!usesPrimaryAmmo(e, w) || e.ammo > 0),
@@ -2375,6 +2619,9 @@ export class Game {
       if (e.garrisonId) continue;
       this.releaseBuildTarget(e);
       e.order = null;
+      e.orderQueue = undefined;
+      e.patrolX = undefined;
+      e.patrolZ = undefined;
       e.path = [];
       e.pathIndex = 0;
       e.state = e.kind === 'building' ? 'idle' : 'idle';
@@ -2395,6 +2642,9 @@ export class Game {
       this.releaseBuildTarget(e);
       e.stance = 'hold';
       e.order = null;
+      e.orderQueue = undefined;
+      e.patrolX = undefined;
+      e.patrolZ = undefined;
       e.path = [];
       e.pathIndex = 0;
       e.targetId = 0;
@@ -2411,6 +2661,9 @@ export class Game {
     for (const e of this.ownedEntities(owner, ids)) {
       if (e.kind !== 'unit' || e.garrisonId) continue;
       const def = unitDef(e.defId);
+      e.orderQueue = undefined;
+      e.patrolX = undefined;
+      e.patrolZ = undefined;
       if (def.domain === 'air' && e.aircraft) {
         // An explicit return cancels a battlefield stop; the hull is going
         // home, not waiting at a landing zone.
@@ -2418,6 +2671,9 @@ export class Game {
         this.orderAircraftReturn(e);
       } else if (def.domain === 'naval') {
         e.navalLanding = undefined;
+        e.orderQueue = undefined;
+        e.patrolX = undefined;
+        e.patrolZ = undefined;
         const home = this.getEntity(e.homeId);
         if (home && home.hp > 0) {
           e.order = { type: 'return', x: home.x, z: home.z };
@@ -2556,6 +2812,9 @@ export class Game {
         continue;
       }
       this.releaseBuildTarget(e);
+      e.orderQueue = undefined;
+      e.patrolX = undefined;
+      e.patrolZ = undefined;
       e.order = { type: 'capture', targetId: target.id, x: target.x, z: target.z };
       e.captureTargetId = target.id;
       e.captureProgress = 0;
@@ -2678,6 +2937,9 @@ export class Game {
     }
     for (const e of engineers) {
       this.releaseBuildTarget(e);
+      e.orderQueue = undefined;
+      e.patrolX = undefined;
+      e.patrolZ = undefined;
       e.order = { type: 'repair', targetId: target.id, x: target.x, z: target.z };
       e.targetId = 0;
       e.aimTargetId = 0;
@@ -2979,6 +3241,9 @@ export class Game {
       if (accepted >= remaining) break;
       if (mobile && !containerBoardingReady(target)) {
         this.releaseBuildTarget(unit);
+        unit.orderQueue = undefined;
+        unit.patrolX = undefined;
+        unit.patrolZ = undefined;
         unit.order = { type: 'garrison', targetId: target.id, x: target.x, z: target.z };
         unit.path = [];
         unit.pathIndex = 0;
@@ -3017,6 +3282,9 @@ export class Game {
         continue;
       }
       this.releaseBuildTarget(unit);
+      unit.orderQueue = undefined;
+      unit.patrolX = undefined;
+      unit.patrolZ = undefined;
       unit.order = { type: 'garrison', targetId: target.id, x: target.x, z: target.z };
       unit.path = approach.path;
       unit.pathIndex = 0;
@@ -4816,7 +5084,32 @@ export class Game {
       this.state.tick,
       EW_EFFECT,
     );
-    return reach * ew * TILE_SIZE;
+    return reach * ew * this.electronicWarfareFactor(e, 'engagementMultiplier') * TILE_SIZE;
+  }
+
+  /**
+   * Hostile electronic attack around one entity.
+   *
+   * The emitter is a normal mobile unit, so the effect follows it and dies with
+   * it. Only hostile units inside the radius contribute; several jammers stack
+   * up to a floor rather than switching the victim off completely, which keeps
+   * a single support hull useful without letting a swarm erase an army's eyes.
+   */
+  private electronicWarfareFactor(
+    e: Entity,
+    field: 'visionMultiplier' | 'engagementMultiplier',
+  ): number {
+    let factor = 1;
+    for (const source of this.state.entities) {
+      if (source.kind !== 'unit' || source.hp <= 0 || source.owner < 0) continue;
+      if (source.owner === e.owner || !this.isHostile(source.owner, e.owner)) continue;
+      if (source.garrisonId || this.isMobilePassenger(source)) continue;
+      const ew = UNITS[source.defId]?.electronicWarfare;
+      if (!ew) continue;
+      if (dist(source.x, source.z, e.x, e.z) > ew.radius * TILE_SIZE) continue;
+      factor *= ew[field];
+    }
+    return Math.max(field === 'visionMultiplier' ? 0.4 : 0.55, factor);
   }
 
   /**
@@ -7126,6 +7419,7 @@ export class Game {
           visionFactor(sensorFor(e), dayNight) *
           this.weather.visibility *
           seaReach *
+          this.electronicWarfareFactor(e, 'visionMultiplier') *
           ewVisionFactor(
             this.player(e.owner)?.superweapon,
             this.state.tick,
@@ -7193,6 +7487,7 @@ export class Game {
         visionFactor(sensorFor(source), dayNight) *
         this.weather.visibility *
         (1 + ILLUMINATED_TARGET_BONUS) *
+        this.electronicWarfareFactor(source, 'visionMultiplier') *
         ewVisionFactor(
           this.player(source.owner)?.superweapon,
           this.state.tick,
@@ -7240,6 +7535,7 @@ export class Game {
       if (baseScan <= 0) continue;
       const scan =
         (baseScan + this.moduleVision(e)) *
+        this.electronicWarfareFactor(e, 'visionMultiplier') *
         ewScanFactor(this.player(e.owner)?.superweapon, this.state.tick);
       let brownout = gridBrownout.get(e.owner);
       if (brownout === undefined) {
@@ -8447,6 +8743,11 @@ export class Game {
     }
     // Airborne fuel burn and auto-recovery.
     e.fuel = Math.max(0, e.fuel - dt);
+    const oneWay = !!UNITS[e.defId]?.oneWay;
+    if (oneWay && e.fuel <= 0) {
+      this.expendOneWay(e, entityWeapons(e)[0]);
+      return;
+    }
     if (!home || home.hp <= 0) {
       if (e.fuel <= 0) {
         e.hp -= 8 * dt;
@@ -8455,7 +8756,7 @@ export class Game {
     }
     const lowFuel = e.fuel < e.maxFuel * 0.25;
     const noAmmo = e.maxAmmo > 0 && e.ammo <= 0;
-    if ((lowFuel || noAmmo) && !ac.returningHome && e.order?.type !== 'return' && home && home.hp > 0) {
+    if (!oneWay && (lowFuel || noAmmo) && !ac.returningHome && e.order?.type !== 'return' && home && home.hp > 0) {
       this.orderAircraftReturn(e);
       this.emit('alert', {
         team: e.owner,
@@ -8493,6 +8794,12 @@ export class Game {
   }
 
   private orderAircraftReturn(e: Entity): void {
+    // A one-way airframe has no recovery cycle. A recall is a decision to spend
+    // it where it stands rather than fly it back to a berth it cannot use.
+    if (UNITS[e.defId]?.oneWay) {
+      this.expendOneWay(e, entityWeapons(e)[0]);
+      return;
+    }
     const home = this.getEntity(e.homeId);
     if (!home || home.hp <= 0) return;
     if (!e.aircraft) return;
@@ -8920,6 +9227,74 @@ export class Game {
   }
 
   private updateOrderTargeting(e: Entity, def: UnitDef, dt: number): void {
+    if (e.order?.type === 'guard') {
+      const target = this.getEntity(e.order.targetId ?? 0);
+      if (
+        !target ||
+        target.kind !== 'unit' ||
+        target.hp <= 0 ||
+        target.owner < 0 ||
+        this.isHostile(e.owner, target.owner) ||
+        target.garrisonId
+      ) {
+        e.order = null;
+        e.path = [];
+        e.pathIndex = 0;
+        e.state = 'idle';
+        return;
+      }
+      const targetDef = unitDef(target.defId);
+      // A stable slot behind the guarded element: the id offset spreads a
+      // detail around its charge without a shared formation counter, and the
+      // target's facing makes the slot turn with the column.
+      const spacing = Math.max(
+        TILE_SIZE * 1.25,
+        (formationRadius(def) + formationRadius(targetDef)) * 1.6,
+      );
+      const slot = (e.id % 5) - 2;
+      const angle = target.facing + Math.PI + slot * 0.35;
+      const standX = target.x + Math.cos(angle) * spacing;
+      const standZ = target.z + Math.sin(angle) * spacing;
+      const moved =
+        e.order.x === undefined ||
+        dist2(e.order.x, e.order.z ?? target.z, target.x, target.z) > (TILE_SIZE * 0.75) ** 2;
+      if (moved) {
+        e.order = { ...e.order, x: target.x, z: target.z };
+      }
+      e.guardX = target.x;
+      e.guardZ = target.z;
+      const gap = dist(e.x, e.z, target.x, target.z);
+      if (
+        gap > spacing + TILE_SIZE &&
+        (moved || e.path.length === 0)
+      ) {
+        const plan = this.planMove(e, def, standX, standZ);
+        if (plan) {
+          e.path = plan.path;
+          e.pathIndex = 0;
+          e.destX = plan.x;
+          e.destZ = plan.z;
+          e.state = plan.path.length > 0 ? 'moving' : 'idle';
+          e.blockedTicks = 0;
+          if (def.domain === 'air' && e.aircraft) {
+            e.aircraft.serviceTimer = 0;
+            e.aircraft.returningHome = false;
+            e.aircraft.fieldLanding = undefined;
+            this.launchAircraft(e);
+          }
+        } else {
+          e.path = [];
+          e.state = 'idle';
+        }
+      } else if (gap <= spacing + TILE_SIZE && e.path.length === 0) {
+        e.path = [];
+        e.pathIndex = 0;
+        e.destX = e.x;
+        e.destZ = e.z;
+        e.state = 'idle';
+      }
+      return;
+    }
     if (e.order?.type === 'attack') {
       const target = this.getEntity(e.order.targetId ?? 0);
       if (!target || target.hp <= 0) {
@@ -9291,8 +9666,11 @@ export class Game {
     void dt;
     if (e.cooldown > 0) return;
     if (e.kind === 'unit' && UNITS[e.defId]?.domain === 'air') {
-      // Aircraft only auto-engage when explicitly ordered; prevents suicide runs.
-      if (e.order?.type !== 'attack') return;
+      const oneWay = !!UNITS[e.defId]?.oneWay;
+      // A one-way munition may acquire on its approach; a normal aircraft only
+      // auto-engages under an explicit attack order, which prevents suicide runs.
+      if (!oneWay && e.order?.type !== 'attack') return;
+      if (oneWay && e.order?.type === 'return') return;
     }
     const acquired =
       e.kind === 'building'
@@ -9445,7 +9823,43 @@ export class Game {
               ? 'cannon'
               : 'rifle',
     });
+    if (shooterDef?.oneWay) this.expendOneWay(e, weapon);
     void weapons;
+  }
+
+  /**
+   * Spend a one-way airframe after its weapon leaves the rail.
+   *
+   * The shot is already in the projectile list, so the target still resolves
+   * normally. The airframe itself is removed without kill credit to anyone:
+   * this is an expenditure, not a combat loss, but it does count against the
+   * owner's units lost because the commander has to replace it.
+   */
+  private expendOneWay(e: Entity, weapon?: WeaponDef): void {
+    if (e.hp <= 0) return;
+    const def = UNITS[e.defId];
+    e.hp = 0;
+    e.state = 'dead';
+    e.order = null;
+    e.path = [];
+    e.pathIndex = 0;
+    e.targetId = 0;
+    e.aimTargetId = 0;
+    e.ammo = 0;
+    const victim = this.player(e.owner);
+    if (victim) victim.stats.unitsLost++;
+    this.emit('unitLost', {
+      team: e.owner,
+      x: e.x,
+      z: e.z,
+      text: `${def?.name ?? 'Unit'} expended`,
+      entityId: e.id,
+      defId: e.defId,
+      weaponId: weapon?.id,
+      facing: e.facing,
+      level: this.teamOf(e.owner) === this.teamOf(this.localPlayerId) ? 'critical' : 'info',
+      sound: 'explosion',
+    });
   }
 
   /**
@@ -10392,6 +10806,57 @@ export class Game {
     return laneAngle + Math.max(-0.9, Math.min(0.9, angle));
   }
 
+  /**
+   * Start the next shift-queued movement leg. Returns false when the queue is
+   * empty or every queued destination became unreachable while the unit moved,
+   * in which case the caller ends the current order normally.
+   */
+  private startNextQueuedOrder(e: Entity): boolean {
+    const queue = e.orderQueue;
+    if (!queue || queue.length === 0) return false;
+    const def = unitDef(e.defId);
+    while (queue.length > 0) {
+      const next = queue.shift()!;
+      if (next.type !== 'move' && next.type !== 'attackMove') continue;
+      if (next.x === undefined || next.z === undefined) continue;
+      e.patrolX = undefined;
+      e.patrolZ = undefined;
+      e.targetId = 0;
+      e.aimTargetId = 0;
+      e.captureTargetId = 0;
+      e.captureProgress = 0;
+      if (def.domain === 'air') {
+        e.order = { type: next.type, x: next.x, z: next.z };
+        e.path = [{ x: next.x, z: next.z }];
+        e.pathIndex = 0;
+        e.destX = next.x;
+        e.destZ = next.z;
+        e.state = 'moving';
+        if (e.aircraft) {
+          e.aircraft.serviceTimer = 0;
+          e.aircraft.returningHome = false;
+          e.aircraft.fieldLanding = undefined;
+          this.launchAircraft(e);
+        }
+        e.orderQueue = queue.length > 0 ? queue : undefined;
+        return true;
+      }
+      const plan = this.planMove(e, def, next.x, next.z);
+      if (!plan) continue;
+      e.order = { type: next.type, x: plan.x, z: plan.z };
+      e.path = plan.path;
+      e.pathIndex = 0;
+      e.destX = plan.x;
+      e.destZ = plan.z;
+      e.state = plan.path.length > 0 ? 'moving' : 'idle';
+      e.blockedTicks = 0;
+      e.orderQueue = queue.length > 0 ? queue : undefined;
+      return true;
+    }
+    e.orderQueue = undefined;
+    return false;
+  }
+
   private arrive(e: Entity): void {
     e.path = [];
     e.pathIndex = 0;
@@ -10402,16 +10867,18 @@ export class Game {
     e.blockedTicks = 0;
     const order = e.order;
     if (order?.type === 'move' || order?.type === 'attackMove') {
+      if (this.startNextQueuedOrder(e)) return;
       e.order = null;
       e.state = 'idle';
       return;
     }
     if (order?.type === 'patrol' && order.x !== undefined && order.z !== undefined) {
+      if (this.startNextQueuedOrder(e)) return;
       const px = order.x;
       const pz = order.z;
       const otherX = e.patrolX ?? order.x2 ?? e.x;
       const otherZ = e.patrolZ ?? order.z2 ?? e.z;
-      e.order = { type: 'patrol', x: otherX, z: otherZ };
+      e.order = { type: 'patrol', x: otherX, z: otherZ, x2: px, z2: pz };
       e.patrolX = px;
       e.patrolZ = pz;
       const path = this.findPathFor(e, otherX, otherZ);
@@ -10419,6 +10886,7 @@ export class Game {
       e.pathIndex = 0;
       e.destX = otherX;
       e.destZ = otherZ;
+      e.state = e.path.length > 0 ? 'moving' : 'idle';
       return;
     }
     if (order?.type === 'return') {
@@ -11839,6 +12307,23 @@ export class Game {
           e.state,
           e.order?.type ?? '-',
           e.order?.targetId ?? 0,
+          // A queue and patrol endpoints are real simulation state. Only emit
+          // them when present so existing baselines hash exactly as before.
+          ...(e.orderQueue && e.orderQueue.length > 0
+            ? [
+                e.orderQueue
+                  .map(
+                    (order) =>
+                      `${order.type}@${order.x?.toFixed(1) ?? '-'},${order.z?.toFixed(1) ?? '-'},${
+                        order.targetId ?? 0
+                      }`,
+                  )
+                  .join('+'),
+              ]
+            : []),
+          ...(e.patrolX !== undefined
+            ? [`pt@${e.patrolX.toFixed(1)},${(e.patrolZ ?? 0).toFixed(1)}`]
+            : []),
           e.pathIndex,
           e.queue.length,
           e.buildProgress.toFixed(2),

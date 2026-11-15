@@ -238,6 +238,10 @@ const TECH_LIST: readonly TechDef[] = Object.freeze([
     effects: [
       { kind: 'unlockUnit', slot: 'tank' },
       { kind: 'unlockUnit', slot: 'ifv' },
+      // A shoulder-launched air-defence team is part of the same manoeuvre
+      // package: it is the formation's organic answer to a helicopter or a
+      // strike aircraft, not a separate strategic programme.
+      { kind: 'unlockUnit', slot: 'manpadsTeam' },
       // Recon smoke is a manoeuvre-doctrine capability: the screen a recce troop
       // lays for the formation it is leading. It rides on the tier-1 node rather
       // than a ninth technology so the approved eight-node tree is unchanged.
@@ -256,7 +260,7 @@ const TECH_LIST: readonly TechDef[] = Object.freeze([
       { kind: 'grantBuildingModule', module: 'assemblyLine' },
     ],
     description:
-      'Armoured and mechanised doctrine: main battle tanks, infantry fighting vehicles, smoke dischargers for reconnaissance, emergency engine power, and the Advanced Turbine and Assembly Line retrofits.',
+      'Armoured and mechanised doctrine: main battle tanks, infantry fighting vehicles, shoulder-launched air defence, smoke dischargers for reconnaissance, emergency engine power, and the Advanced Turbine and Assembly Line retrofits.',
     icon: 'tank',
   },
   {
@@ -270,13 +274,17 @@ const TECH_LIST: readonly TechDef[] = Object.freeze([
     requires: ['manoeuvre1'],
     effects: [
       { kind: 'unlockUnit', slot: 'td' },
+      // The same advanced-manoeuvre branch fields the mobile electronic-attack
+      // vehicle: a support hull that blinds and disorganises a defence rather
+      // than adding another gun to the line.
+      { kind: 'unlockUnit', slot: 'ewVehicle' },
       // Survival is the other half of armour doctrine: fire from a prepared
       // position, and answer the guided round that is already in the air.
       { kind: 'grantUnitUpgrade', upgrade: 'hullDown' },
       { kind: 'grantUnitUpgrade', upgrade: 'apsBurst' },
     ],
     description:
-      'Purpose-built anti-armour hulls, hull-down deployments and hard-kill active protection for the tactics that keep them alive.',
+      'Purpose-built anti-armour hulls, mobile electronic attack, hull-down deployments and hard-kill active protection for the tactics that keep them alive.',
     icon: 'td',
   },
   {
@@ -325,10 +333,13 @@ const TECH_LIST: readonly TechDef[] = Object.freeze([
       { kind: 'unlockBuilding', slot: 'airfield' },
       { kind: 'unlockUnit', slot: 'uav' },
       { kind: 'unlockUnit', slot: 'interceptor' },
+      // A one-way attack drone is an airfield capability: cheap, attritable and
+      // limited by the same flight line as the manned aircraft it supports.
+      { kind: 'unlockUnit', slot: 'loiteringMunition' },
       { kind: 'grantBuildingModule', module: 'flightlineMaintenance' },
     ],
     description:
-      'An operational airfield with its own flightline maintenance, reconnaissance drones and point air defence.',
+      'An operational airfield with its own flightline maintenance, reconnaissance drones, one-way attack munitions and point air defence.',
     icon: 'airfield',
   },
   {

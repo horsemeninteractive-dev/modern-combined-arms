@@ -19,6 +19,7 @@ export type BattleCursor =
   | 'move'
   | 'attack'
   | 'attackMove'
+  | 'guard'
   | 'capture'
   | 'repair'
   | 'garrison'
@@ -68,6 +69,8 @@ const GLYPHS = {
     'M12 5a7 7 0 1 0 0 14a7 7 0 1 0 0-14M12 10a2 2 0 1 0 0 4a2 2 0 1 0 0-4M12 2v4M12 18v4M2 12h4M18 12h4',
   attackMove:
     'M4 18L18 4M18 4h-6M18 4v6M8 13a3 3 0 1 0 0 6a3 3 0 1 0 0-6M8 13v6M5 16h6',
+  guard:
+    'M12 2l8 3v6c0 5-3.4 8.6-8 11c-4.6-2.4-8-6-8-11V5zM8 11h7M12 8l3 3l-3 3',
   capture: 'M6 21V3M6 4h12l-3 4 3 4H6M3 21h6',
   repair: 'M14.5 4.5a4 4 0 0 0-5.3 5.3L4 15v4h4l5.2-5.2a4 4 0 0 0 5.3-5.3l-2.8 2.8-2.2-2.2zM4 19l3-3',
   garrison: 'M4 21V9l8-6 8 6v12M9 21v-6h6v6M12 8.6a1.4 1.4 0 1 0 0 2.8a1.4 1.4 0 1 0 0-2.8M9 13h6',
@@ -95,6 +98,7 @@ const STYLES: Record<BattleCursor, CursorStyle> = {
   move: { glyph: GLYPHS.move, color: CURSOR_INK, spin: 0 },
   attack: { glyph: GLYPHS.attack, color: CURSOR_RED, spin: 0.9 },
   attackMove: { glyph: GLYPHS.attackMove, color: CURSOR_AMBER, spin: -0.7 },
+  guard: { glyph: GLYPHS.guard, color: CURSOR_GREEN, spin: 0 },
   capture: { glyph: GLYPHS.capture, color: CURSOR_AMBER, spin: 0 },
   repair: { glyph: GLYPHS.repair, color: CURSOR_TEAL, spin: 0 },
   garrison: { glyph: GLYPHS.garrison, color: CURSOR_GREEN, spin: 0 },
@@ -172,6 +176,7 @@ export const NATIVE_CURSORS: Record<BattleCursor, string> = {
   move: 'crosshair',
   attack: 'crosshair',
   attackMove: 'crosshair',
+  guard: 'crosshair',
   capture: 'crosshair',
   repair: 'crosshair',
   garrison: 'crosshair',
@@ -195,11 +200,14 @@ export function battleCursor(mode: CommandMode, ctx: CursorContext = {}): Battle
       return ctx.placementOk === false ? 'placeBlocked' : 'place';
     case 'move':
     case 'land':
+    case 'patrol':
       return 'move';
     case 'attack':
       return 'attack';
     case 'attackMove':
       return 'attackMove';
+    case 'guard':
+      return 'guard';
     case 'capture':
       return 'capture';
     case 'repair':

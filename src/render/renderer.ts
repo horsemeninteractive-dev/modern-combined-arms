@@ -120,6 +120,7 @@ import { ShadowGpu, type GpuShadow } from './shadowGpu';
 import { ShadowMap, shadowLightMatrix, SHADOW_MAP_SIZE } from './shadowMap';
 import { identity, type Vec3 } from './math';
 import { teamColorForOwner } from './teamColor';
+import type { ColorVisionPalette } from '../colorVision';
 import {
   limbModelMatrix,
   rotorModelMatrix,
@@ -226,6 +227,8 @@ export interface RenderSettings {
   nightLights: boolean;
   /** Multiplier for additive light intensity; never changes detection. */
   lightBloom: number;
+  /** Colour-vision override for team-masked surfaces. */
+  colorVision: ColorVisionPalette;
 }
 
 interface TerrainGpu {
@@ -306,6 +309,7 @@ export class Renderer {
     waterDetail: true,
     nightLights: true,
     lightBloom: 1,
+    colorVision: 'standard',
   };
 
   private canvas: HTMLCanvasElement;
@@ -2317,7 +2321,16 @@ export class Renderer {
   }
 
   private teamColorOf(game: Game, owner: number): [number, number, number] {
-    return [...teamColorForOwner(owner, game.player(owner)?.factionId, this.playerColor(owner))];
+    const friendly = owner >= 0 && game.teamOf(owner) === game.teamOf(game.localPlayerId);
+    return [
+      ...teamColorForOwner(
+        owner,
+        game.player(owner)?.factionId,
+        this.playerColor(owner),
+        this.settings.colorVision,
+        friendly,
+      ),
+    ];
   }
 
   private teamColorScenario(owner: number): [number, number, number] {

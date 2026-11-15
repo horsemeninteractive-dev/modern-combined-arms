@@ -7,7 +7,8 @@ same processing chain the narrator generator uses, writes the clips under
 `tmp/narrator-voice-candidates/`, and prints a table of duration and level.
 
 Pick a name from the table, put it in `lines.json` (and `src/data/narrators.ts`),
-then re-run `generate.py --refresh` to rebuild the shipping set.
+set that narrator's `generation` to `kokoro` and re-run `generate.py --refresh`.
+The shipped Eastern set is a recording, so `split.py` is what replaces it.
 
 Usage:
   .dev/voice-venv/Scripts/python tools/narrator-voice/candidates.py

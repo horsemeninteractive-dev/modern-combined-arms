@@ -12,6 +12,132 @@ rendered in game from **Changelog** in the main-menu footer.
 When the version is bumped, rename it to the new `## [x.y.z STAGE] — date`
 heading: `tools/release.mjs` refuses to ship unless that heading exists.
 
+## [0.9.0 BETA] — 2026-11-15
+
+A command, accessibility and roster release. Three shared battlefield roles
+join both alliance baselines, queued waypoints and patrol/guard orders make
+manoeuvre less click-heavy, the battle log becomes searchable, keys and
+controllers are configurable, colour-vision palettes reach every signal, and
+the mobile result screen no longer traps the player. The Eastern narrator is a
+new recording, and the six new units have voices of their own.
+
+### Shared roster expansion
+
+- **A shared MANPADS team gives every nation organic air denial.** `manpadsTeam`
+  is a cheap, garrisonable, air-only barracks team, 145 materials and 10
+  requisition for a 5.5-tile envelope; the Eastern baseline fields the
+  `manpadsTeamEC` "Igla Team" at 135 and 5. Kestrel remains Lithuania's
+  longer-ranged exclusive, so the shared team adds a floor without erasing the
+  national trade.
+- **A mobile EW vehicle turns electronic attack into a battlefield position.**
+  `ewVehicle` (480 / 55) and the tracked `ewVehicleEC` (450 / 50) project a
+  passive eight-tile aura that cuts hostile vision to 60% and engagement reach
+  to 80%; the Eastern vehicle reaches 8.5 tiles at 58% and 78%. It affects enemy
+  reconnaissance, radar/UAV detection and target acquisition, not allies, and is
+  deliberately separate from the off-map EW superweapon.
+- **A loitering munition is a one-way airframe, not a reusable aircraft.**
+  `loiteringMunition` (280 / 35, one warhead, 55 seconds of fuel) and
+  `loiteringMunitionEC` "Lancet Attack Drone" (260 / 30, 60 seconds) launch from
+  an airfield, fire once and are expended; they cannot return, rearm or be
+  recovered. The trade is a reusable flight-line slot for a single precision
+  strike.
+- **The AI fields the new roles without crowding its core branches.** MANPADS
+  demand follows observed hostile air, the EW vehicle waits for a formed army
+  and a crewed economy, and loitering munitions are bought only after a fighter
+  exists. Their research weight is capped so fighters, airfields and shipyards
+  keep their build order.
+- **The roster now registers 71 unit definitions** — 28 shared, 21 Eastern
+  platforms and 22 national units. The national contract is a minimum of one
+  replacement, one exclusive and one structure variant, not a ceiling; no
+  Stage B national units were added in this pass.
+
+### Command and control
+
+- **Shift + right-click queues up to eight waypoints.** The current leg keeps
+  running while later move and attack-move legs wait their turn; a plain move
+  replaces the route and clears the queue. Queues survive save/load through the
+  new v4 save schema, and the multiplayer gate and room snapshot validate their
+  types, map bounds, target references and length.
+- **Patrol and guard are real orders.** `T` sends a unit back and forth between
+  its start and the clicked point; `F` makes a unit follow a friendly unit and
+  release the order when the protected unit dies. Both round-trip through a
+  save and through the authoritative command gate.
+- **Field reports are searchable.** `L` opens a 240-entry battle log with ALL,
+  ALERTS and ROUTINE filters, case-insensitive search, severity labels and a
+  jump-to-position action for reports that carry a real map point.
+
+### Input and accessibility
+
+- **Battle hotkeys are rebindable.** Settings → Controls covers attack-move,
+  patrol, guard, stop, hold, capture, garrison, return, dive, pause, field
+  reports, construction, production tabs, centre-on-base and HUD toggle. A
+  duplicate or reserved key is refused with the conflicting action named, the
+  keycaps follow the saved map, and a reset restores the defaults.
+- **Standard-mapping gamepads can drive the interface.** Menu focus and
+  confirm/back, selection and additive selection, move/attack, control-group
+  assignment/recall and production tabs work from the pad; stick sensitivity is
+  a Settings control. The path was exercised in Chromium with a synthetic pad,
+  not on physical hardware.
+- **Colour-vision palettes cover ownership, health and alerts.** Standard,
+  Deuteranopia, Protanopia and Tritanopia presets share one token source across
+  the canvas, CSS and HUD; every themed signal keeps a shape, dash or pattern
+  beside its colour, so a palette change never makes a state depend on hue alone.
+
+### Presentation and audio
+
+- **The Eastern narrator is a recorded performance.** A single ElevenLabs v4
+  take is split into the 23 cue files by `tools/narrator-voice/split.py`, levelled
+  to the Defender median and marked as an authoritative recording; the Kokoro
+  voice remains a fallback for future lines only. The tool refuses a take whose
+  pause count does not match the cue list.
+- **The six new units have their own voice banks.** The unit-voice manifest now
+  covers 71 definitions, 852 clips and 66 casts; the new casts use the same
+  four-cue, three-take field-radio treatment as the rest of the roster.
+- **The command rail flies the nation's flag.** The flag fills the identity panel
+  and moves under an inline SVG cloth filter while the coalition-tinted crest
+  stays still; the mobile strip uses the same treatment. The HUD's display faces
+  are bundled locally rather than borrowed from the operating system.
+
+### HUD and mobile
+
+- **The mobile result card fits phone landscape.** The card is bounded by the
+  viewport, only its report scrolls, and all four actions stay outside the scroll
+  region at 44 px. At 844×390 the lowest card edge is 376.6 px; at 667×374 it is
+  361.5 px, with no document scroll.
+- **Result and pause overlays survive a layout rebuild.** The HUD remembers the
+  verdict and restores the card after replacing the shell, without replaying the
+  sting; a paused battle rebuilt from phone to desktop keeps the pause overlay
+  and the correct resume control.
+
+### Verification and tooling
+
+- **CI and a nightly measurement job are in the tree.** Every push runs Node 22,
+  `npm ci`, typecheck, the per-push test suite, the production build and a release
+  dry run with full git history. The nightly job records the 48-match AI ladder
+  and the performance benchmark, which are too long and host-sensitive for the
+  per-push gate.
+- **A cross-browser determinism spike ships with the release.** `npm run
+  determinism:spike` runs a seeded AI-vs-AI match in Chromium, Firefox and WebKit
+  and compares the state hash every 100 ticks; all 72 sampled hashes matched in
+  the recorded run. The result and its limits are in
+  [docs/DETERMINISM_SPIKE.md](docs/DETERMINISM_SPIKE.md).
+- **Verification on this release:** `npx tsc --noEmit` clean; `npm run build`
+  clean (2,128.34 kB JS / ~606.6 kB gzip, 279.23 kB CSS); the per-push suite
+  passed 223 files with 3,065 tests and 3 skipped. The AI ladder and perf
+  benchmark remain nightly measurements rather than release-gate assertions.
+
+### Known limits
+
+- The standard gamepad path is emulated in Chromium; no physical controller,
+  physical landscape phone or hardware safe-area test was recorded.
+- No human listening pass is recorded for the new narrator and unit voice
+  assets; their manifests, lengths and cue coverage are checked by tests.
+- The EW aura is simulated but not drawn as a visible bubble, so its edge is
+  learned from the unit card and from the change in enemy vision.
+- [docs/ASSET_PROVENANCE.md](docs/ASSET_PROVENANCE.md) is now in the tree but
+  still lists open terms for the music, narrator recordings, flags and fonts;
+  it is a release checklist, not a claim that every bundled asset is cleared.
+
 ## [0.8.2 BETA] — 2026-11-13
 
 A mobile command pass: the production sheet stays where the player put it, the

@@ -39,6 +39,11 @@ export const EDGE_PAN_SPEED_MIN = 0.4;
 export const EDGE_PAN_SPEED_MAX = 2.5;
 export const EDGE_PAN_SPEED_DEFAULT = 1;
 
+/** Gamepad camera and cursor speed multiplier, applied on both sticks. */
+export const GAMEPAD_SENSITIVITY_MIN = 0.4;
+export const GAMEPAD_SENSITIVITY_MAX = 2.5;
+export const GAMEPAD_SENSITIVITY_DEFAULT = 1;
+
 /** Render scale is a fraction of the device pixel ratio, capped below at 2. */
 export const RENDER_SCALE_MIN = 0.5;
 export const RENDER_SCALE_MAX = 1;
@@ -89,6 +94,18 @@ export function normaliseEdgePanSpeed(value: unknown): number {
   const n = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(n)) return EDGE_PAN_SPEED_DEFAULT;
   return Math.max(EDGE_PAN_SPEED_MIN, Math.min(EDGE_PAN_SPEED_MAX, n));
+}
+
+export function normaliseGamepadSensitivity(value: unknown): number {
+  if (value === null || value === undefined || value === '') {
+    return GAMEPAD_SENSITIVITY_DEFAULT;
+  }
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return GAMEPAD_SENSITIVITY_DEFAULT;
+  return Math.max(
+    GAMEPAD_SENSITIVITY_MIN,
+    Math.min(GAMEPAD_SENSITIVITY_MAX, n),
+  );
 }
 
 export function normaliseRenderScale(value: unknown): number {

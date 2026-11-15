@@ -18,6 +18,8 @@ const EASTERN_PLATFORMS: Readonly<Record<string, string>> = Object.freeze({
   ifv: 'ifvEC',
   tank: 'tankEC',
   td: 'tdEC',
+  manpadsTeam: 'manpadsTeamEC',
+  ewVehicle: 'ewVehicleEC',
   spg: 'spgEC',
   rocketArtillery: 'rocketArtilleryEC',
   aa: 'aaEC',
@@ -25,6 +27,7 @@ const EASTERN_PLATFORMS: Readonly<Record<string, string>> = Object.freeze({
   interceptor: 'interceptorEC',
   fighter: 'fighterEC',
   attackHelo: 'attackHeloEC',
+  loiteringMunition: 'loiteringMunitionEC',
   missileBoat: 'missileBoatEC',
   corvette: 'corvetteEC',
   frigate: 'frigateEC',
@@ -96,12 +99,13 @@ export const ALLIANCES: Readonly<Record<string, AllianceDef>> = Object.freeze(
 
 /**
  * The ten playable nations: five per coalition. Each nation inherits its
- * alliance baseline and then carries three differences: one replacement of an
- * existing slot, one exclusive unit and one building variant. The data contract
- * supports additions, exclusions and further substitutions, but the approved
- * design keeps one of each so a national identity stays legible. Sweden and Iran
- * additionally field a national naval hull (see §24 of the roster and technology
- * specification): their fleet identity needed a ship, not only a yard variant.
+ * alliance baseline and then carries its own differences: at minimum one
+ * replacement of an existing slot, one exclusive unit and one building variant.
+ * The contract is deliberately additive, so a nation may hold more than one
+ * replacement or exclusive once the shared roster has grown enough to support a
+ * second legible specialisation. Sweden and Iran additionally field a national
+ * naval hull (see §24 of the roster and technology specification): their fleet
+ * identity needed a ship, not only a yard variant.
  * Colours are provisional presentation values, not national canon.
  *
  * This is an alternate-history conflict. Coalition membership here is fiction

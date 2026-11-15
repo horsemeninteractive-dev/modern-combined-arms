@@ -32,6 +32,7 @@ const ALL: BattleCursor[] = [
   'move',
   'attack',
   'attackMove',
+  'guard',
   'capture',
   'repair',
   'garrison',
@@ -47,6 +48,8 @@ describe('battle cursor mapping', () => {
     expect(battleCursor('move')).toBe('move');
     expect(battleCursor('attack')).toBe('attack');
     expect(battleCursor('attackMove')).toBe('attackMove');
+    expect(battleCursor('patrol')).toBe('move');
+    expect(battleCursor('guard')).toBe('guard');
     expect(battleCursor('capture')).toBe('capture');
     expect(battleCursor('repair')).toBe('repair');
     expect(battleCursor('garrison')).toBe('garrison');
@@ -247,10 +250,15 @@ describe('cursor integration', () => {
     expect(app).toContain("classList.toggle('custom-cursors'");
     // A refused order must not leave a mark.
     expect(app).toContain('if (target && this.commandAttack(target.id))');
-    expect(app).toContain('if (p && this.commandMove(p.x, p.z, attackMove))');
+    expect(app).toContain('if (p && this.commandMove(p.x, p.z, attackMove, queue))');
 
     const input = readFileSync(new URL('../src/ui/input.ts', import.meta.url), 'utf8');
     expect(input).toContain('markOrderGhost(press.startX, press.startY, order)');
+    // Shift is a waypoint modifier, not attack-move: modifiers must not turn a
+    // deliberately queued move into a different order type.
+    expect(input).toContain(
+      'this.app.orderAt(press.startX, press.startY, false, event.shiftKey)',
+    );
     expect(input).toContain('cursorProperty(fieldCursor, false)');
     // The pointer position is tracked from the window, not only the canvas, and
     // it falls back to the arrow away from the battlefield or over a text field.

@@ -435,7 +435,7 @@ const ADAPT_PRODUCTION: Partial<
   infantry: { rifle: 1.2, apc: 1.1 },
   antiArmour: { rifle: 1.1, tank: 1.1 },
   artillery: { recon: 1.2, td: 1.1 },
-  air: { aa: 1.3, fighter: 1.15 },
+  air: { aa: 1.3, manpadsTeam: 1.2, fighter: 1.15 },
   naval: { submarine: 1.2, frigate: 1.15 },
   fortified: { spg: 1.25, rocketArtillery: 1.2 },
   economy: { recon: 1.15 },
@@ -860,6 +860,8 @@ const SLOT_BASE: Readonly<Record<string, number>> = Object.freeze({
   tank: 1.0,
   ifv: 0.5,
   td: 0.55,
+  manpadsTeam: 0.12,
+  ewVehicle: 0.1,
   // A howitzer is a first-line arm of a combined-arms battlegroup, not only an
   // answer to a bunker. At 0.6 the branch lost every comparison to an airfield
   // on an open map — nothing had been fortified yet, so indirect fire was never
@@ -871,6 +873,7 @@ const SLOT_BASE: Readonly<Record<string, number>> = Object.freeze({
   interceptor: 0.35,
   fighter: 0.4,
   attackHelo: 0.35,
+  loiteringMunition: 0.12,
   missileBoat: 0.3,
   corvette: 0.35,
   frigate: 0.3,
@@ -879,7 +882,12 @@ const SLOT_BASE: Readonly<Record<string, number>> = Object.freeze({
 });
 
 /** Slots that only exist once an airfield stands. */
-const AIR_SLOTS: ReadonlySet<string> = new Set(['interceptor', 'fighter', 'attackHelo']);
+const AIR_SLOTS: ReadonlySet<string> = new Set([
+  'interceptor',
+  'fighter',
+  'attackHelo',
+  'loiteringMunition',
+]);
 
 /** Slots that only make sense on a map with water. */
 const NAVAL_SLOTS: ReadonlySet<string> = new Set([
@@ -924,6 +932,22 @@ function slotDemand(slot: string, signals: ResearchSignals): number {
     case 'interceptor':
     case 'fighter':
       demand += 0.6 * Math.min(1, signals.enemyAir / 2);
+      break;
+    case 'manpadsTeam':
+      // Organic air defence follows the air threat but never replaces the
+      // vehicle-mounted umbrella; it is the cheap answer that can hide forward.
+      demand += 0.45 * Math.min(1, signals.enemyAir / 2);
+      break;
+    case 'ewVehicle':
+      // A jammer is worth most against a commander that is actually fielding
+      // sensors and aircraft, and is otherwise a support hull with a machine gun.
+      demand += 0.3 * Math.min(1, signals.enemyAir / 2);
+      break;
+    case 'loiteringMunition':
+      // One-way attack is a tool for cracking prepared positions and armour;
+      // without a target worth the airframe the commander still keeps a token
+      // handful for opportunistic tasking.
+      demand += signals.fortified > 0 ? 0.35 : 0.1;
       break;
     case 'uav':
       demand += (signals.unitCounts.get('recon') ?? 0) === 0 ? 0.2 : 0;
@@ -3459,6 +3483,10 @@ export class AIController {
       const dronePlanned =
         ctx.st.desiredArmy >= 6 && ctx.threats.length === 0 && (ctx.unitCounts.get('harvester') ?? 0) >= 2;
       need('uav', 1, dronePlanned ? 106 : 78, dronePlanned ? uavPrice : undefined);
+      // One-way attack is a munition, not the wing's core: it is bought after
+      // the fighter and the eye, so it can never crowd a reusable airframe out
+      // of a four-position flight line.
+      if ((ctx.unitCounts.get('fighter') ?? 0) >= 1) need('loiteringMunition', 1, 88);
       // Interceptors are a counter, not a blind opening purchase. Build them
       // once hostile air has actually been seen or remembered.
       if (ctx.enemyAir > 0) need('interceptor', Math.min(2, 1 + ctx.enemyAir), 148);
@@ -3529,6 +3557,12 @@ export class AIController {
     if ((ctx.counts.get('barracks') ?? 0) > 0 && (ctx.unitCounts.get('rifle') ?? 0) >= 4) {
       need('medic', 1, 84);
     }
+    if ((ctx.counts.get('barracks') ?? 0) > 0 && ctx.enemyAir > 0) {
+      // The shoulder team is the forward hedge: cheaper than the AA vehicle and
+      // able to hide in a building, but not a replacement for the vehicle's
+      // longer envelope. One or two are enough beside the shared launcher.
+      need('manpadsTeam', Math.min(2, ctx.enemyAir), 78);
+    }
     // Field recovery is a response to attrition, not an opening purchase. A
     // commander buys it after an actual vehicle has been damaged, so the bay is
     // not spent before there is anything to recover.
@@ -3558,6 +3592,9 @@ export class AIController {
       // last to receive fire support.
       const armyFormed = coreForce >= 6;
       const economyCrewed = (ctx.unitCounts.get('harvester') ?? 0) >= 2;
+      // A mobile jammer is a support hull for a formed army: it blinds the
+      // defence the armour is about to cross, but it is never the opening buy.
+      if (armyFormed && economyCrewed) need('ewVehicle', 1, 58);
       const spgPrice = UNITS[ctx.game.unitIdFor(ctx.aiId, 'spg') ?? '']?.cost.mats;
       // A compact map puts both armies in contact from the opening, so a plan
       // sized for open ground is never whole there: the front is the whole

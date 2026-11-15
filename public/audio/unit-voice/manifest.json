@@ -5031,6 +5031,468 @@
           }
         ]
       }
+    },
+    "manpadsTeam": {
+      "name": "MANPADS Team",
+      "role": "Air defence",
+      "voice": "bm_george",
+      "lang": "en-gb",
+      "speed": 1.02,
+      "lines": {
+        "select": [
+          {
+            "text": "MANPADS team, launcher up.",
+            "file": "manpadsTeam/select-1.mp3",
+            "durationMs": 2110
+          },
+          {
+            "text": "Shoulder team on the net, sky watch.",
+            "file": "manpadsTeam/select-2.mp3",
+            "durationMs": 2580
+          },
+          {
+            "text": "Air watch ready, tubes loaded.",
+            "file": "manpadsTeam/select-3.mp3",
+            "durationMs": 2230
+          }
+        ],
+        "move": [
+          {
+            "text": "Air team shifting to the next hedge.",
+            "file": "manpadsTeam/move-1.mp3",
+            "durationMs": 2230
+          },
+          {
+            "text": "MANPADS moving, launcher shouldered.",
+            "file": "manpadsTeam/move-2.mp3",
+            "durationMs": 2500
+          },
+          {
+            "text": "Sky watch relocating.",
+            "file": "manpadsTeam/move-3.mp3",
+            "durationMs": 2069
+          }
+        ],
+        "attack": [
+          {
+            "text": "Aircraft in the ring, missile away.",
+            "file": "manpadsTeam/attack-1.mp3",
+            "durationMs": 2517
+          },
+          {
+            "text": "Shoulder launch, tracking the fast mover.",
+            "file": "manpadsTeam/attack-2.mp3",
+            "durationMs": 2640
+          },
+          {
+            "text": "Missile off the rail, air target.",
+            "file": "manpadsTeam/attack-3.mp3",
+            "durationMs": 2370
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "No aircraft inside five tiles.",
+            "file": "manpadsTeam/unableToComply-1.mp3",
+            "durationMs": 2730
+          },
+          {
+            "text": "Launcher empty, reloading.",
+            "file": "manpadsTeam/unableToComply-2.mp3",
+            "durationMs": 2027
+          },
+          {
+            "text": "Cannot touch ground troops.",
+            "file": "manpadsTeam/unableToComply-3.mp3",
+            "durationMs": 1877
+          }
+        ]
+      }
+    },
+    "manpadsTeamEC": {
+      "name": "Igla Team",
+      "role": "Air defence",
+      "voice": "am_michael",
+      "lang": "en-us",
+      "speed": 0.98,
+      "lines": {
+        "select": [
+          {
+            "text": "Igla team, grip stock ready.",
+            "file": "manpadsTeamEC/select-1.mp3",
+            "durationMs": 1915
+          },
+          {
+            "text": "Air sentry here, launcher charged.",
+            "file": "manpadsTeamEC/select-2.mp3",
+            "durationMs": 2235
+          },
+          {
+            "text": "Shoulder crew standing by.",
+            "file": "manpadsTeamEC/select-3.mp3",
+            "durationMs": 1725
+          }
+        ],
+        "move": [
+          {
+            "text": "Igla team changing position.",
+            "file": "manpadsTeamEC/move-1.mp3",
+            "durationMs": 1905
+          },
+          {
+            "text": "Relocating the air ambush.",
+            "file": "manpadsTeamEC/move-2.mp3",
+            "durationMs": 1755
+          },
+          {
+            "text": "Launcher up, moving.",
+            "file": "manpadsTeamEC/move-3.mp3",
+            "durationMs": 1315
+          }
+        ],
+        "attack": [
+          {
+            "text": "Igla away, tail chase.",
+            "file": "manpadsTeamEC/attack-1.mp3",
+            "durationMs": 1645
+          },
+          {
+            "text": "Missile out, aircraft locked.",
+            "file": "manpadsTeamEC/attack-2.mp3",
+            "durationMs": 1825
+          },
+          {
+            "text": "Air target, launch.",
+            "file": "manpadsTeamEC/attack-3.mp3",
+            "durationMs": 1285
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "Nothing in the sky to shoot.",
+            "file": "manpadsTeamEC/unableToComply-1.mp3",
+            "durationMs": 1690
+          },
+          {
+            "text": "Tube empty, wait one.",
+            "file": "manpadsTeamEC/unableToComply-2.mp3",
+            "durationMs": 1630
+          },
+          {
+            "text": "No ground target for us.",
+            "file": "manpadsTeamEC/unableToComply-3.mp3",
+            "durationMs": 1745
+          }
+        ]
+      }
+    },
+    "ewVehicle": {
+      "name": "Electronic Warfare Vehicle",
+      "role": "Electronic warfare",
+      "voice": "bm_lewis",
+      "lang": "en-gb",
+      "speed": 1.0,
+      "lines": {
+        "select": [
+          {
+            "text": "Jamming vehicle online, spectrum clear.",
+            "file": "ewVehicle/select-1.mp3",
+            "durationMs": 2581
+          },
+          {
+            "text": "Electronic warfare truck, array up.",
+            "file": "ewVehicle/select-2.mp3",
+            "durationMs": 2350
+          },
+          {
+            "text": "Signals vehicle ready, listening.",
+            "file": "ewVehicle/select-3.mp3",
+            "durationMs": 2197
+          }
+        ],
+        "move": [
+          {
+            "text": "Jamming truck rolling.",
+            "file": "ewVehicle/move-1.mp3",
+            "durationMs": 1570
+          },
+          {
+            "text": "Array stowed, moving the emitter.",
+            "file": "ewVehicle/move-2.mp3",
+            "durationMs": 2069
+          },
+          {
+            "text": "Electronic vehicle shifting.",
+            "file": "ewVehicle/move-3.mp3",
+            "durationMs": 2005
+          }
+        ],
+        "attack": [
+          {
+            "text": "Defensive gun engaging.",
+            "file": "ewVehicle/attack-1.mp3",
+            "durationMs": 2040
+          },
+          {
+            "text": "Machine gun up, close contacts.",
+            "file": "ewVehicle/attack-2.mp3",
+            "durationMs": 2155
+          },
+          {
+            "text": "Truck gun firing.",
+            "file": "ewVehicle/attack-3.mp3",
+            "durationMs": 1280
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "No target for the jammer.",
+            "file": "ewVehicle/unableToComply-1.mp3",
+            "durationMs": 1749
+          },
+          {
+            "text": "Gun cannot reach that.",
+            "file": "ewVehicle/unableToComply-2.mp3",
+            "durationMs": 1621
+          },
+          {
+            "text": "Array still spinning up.",
+            "file": "ewVehicle/unableToComply-3.mp3",
+            "durationMs": 1540
+          }
+        ]
+      }
+    },
+    "ewVehicleEC": {
+      "name": "EW Tracked Vehicle",
+      "role": "Electronic warfare",
+      "voice": "am_onyx",
+      "lang": "en-us",
+      "speed": 0.94,
+      "lines": {
+        "select": [
+          {
+            "text": "Tracked jammer on the net.",
+            "file": "ewVehicleEC/select-1.mp3",
+            "durationMs": 1975
+          },
+          {
+            "text": "Electronic vehicle, domes live.",
+            "file": "ewVehicleEC/select-2.mp3",
+            "durationMs": 2665
+          },
+          {
+            "text": "Signals track ready.",
+            "file": "ewVehicleEC/select-3.mp3",
+            "durationMs": 2055
+          }
+        ],
+        "move": [
+          {
+            "text": "Jammer track moving.",
+            "file": "ewVehicleEC/move-1.mp3",
+            "durationMs": 2005
+          },
+          {
+            "text": "Domes stowed, relocating.",
+            "file": "ewVehicleEC/move-2.mp3",
+            "durationMs": 2385
+          },
+          {
+            "text": "Electronic track rolling.",
+            "file": "ewVehicleEC/move-3.mp3",
+            "durationMs": 2235
+          }
+        ],
+        "attack": [
+          {
+            "text": "Pintle gun engaging.",
+            "file": "ewVehicleEC/attack-1.mp3",
+            "durationMs": 2275
+          },
+          {
+            "text": "Close defence firing.",
+            "file": "ewVehicleEC/attack-2.mp3",
+            "durationMs": 2125
+          },
+          {
+            "text": "Track gun up.",
+            "file": "ewVehicleEC/attack-3.mp3",
+            "durationMs": 1195
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "No hostile network in range.",
+            "file": "ewVehicleEC/unableToComply-1.mp3",
+            "durationMs": 2660
+          },
+          {
+            "text": "Gun out of reach.",
+            "file": "ewVehicleEC/unableToComply-2.mp3",
+            "durationMs": 1360
+          },
+          {
+            "text": "Domes need time to spin.",
+            "file": "ewVehicleEC/unableToComply-3.mp3",
+            "durationMs": 2410
+          }
+        ]
+      }
+    },
+    "loiteringMunition": {
+      "name": "Loitering Munition",
+      "role": "One-way strike",
+      "voice": "af_nova",
+      "lang": "en-us",
+      "speed": 1.06,
+      "lines": {
+        "select": [
+          {
+            "text": "Loitering munition on the rail.",
+            "file": "loiteringMunition/select-1.mp3",
+            "durationMs": 1895
+          },
+          {
+            "text": "One-way bird ready to launch.",
+            "file": "loiteringMunition/select-2.mp3",
+            "durationMs": 1865
+          },
+          {
+            "text": "Attack drone spun up.",
+            "file": "loiteringMunition/select-3.mp3",
+            "durationMs": 1590
+          }
+        ],
+        "move": [
+          {
+            "text": "Munition tracking to the launch point.",
+            "file": "loiteringMunition/move-1.mp3",
+            "durationMs": 2125
+          },
+          {
+            "text": "One-way bird moving.",
+            "file": "loiteringMunition/move-2.mp3",
+            "durationMs": 1505
+          },
+          {
+            "text": "Drone sliding to the target box.",
+            "file": "loiteringMunition/move-3.mp3",
+            "durationMs": 2105
+          }
+        ],
+        "attack": [
+          {
+            "text": "Terminal dive, warhead live.",
+            "file": "loiteringMunition/attack-1.mp3",
+            "durationMs": 1970
+          },
+          {
+            "text": "One-way bird committed.",
+            "file": "loiteringMunition/attack-2.mp3",
+            "durationMs": 1645
+          },
+          {
+            "text": "Warhead down, no return.",
+            "file": "loiteringMunition/attack-3.mp3",
+            "durationMs": 1795
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "No target in the search box.",
+            "file": "loiteringMunition/unableToComply-1.mp3",
+            "durationMs": 2040
+          },
+          {
+            "text": "Fuel short for that run.",
+            "file": "loiteringMunition/unableToComply-2.mp3",
+            "durationMs": 1605
+          },
+          {
+            "text": "Cannot abort, already committed.",
+            "file": "loiteringMunition/unableToComply-3.mp3",
+            "durationMs": 1980
+          }
+        ]
+      }
+    },
+    "loiteringMunitionEC": {
+      "name": "Lancet Attack Drone",
+      "role": "One-way strike",
+      "voice": "am_liam",
+      "lang": "en-us",
+      "speed": 1.08,
+      "lines": {
+        "select": [
+          {
+            "text": "Lancet on the rail, battery hot.",
+            "file": "loiteringMunitionEC/select-1.mp3",
+            "durationMs": 2030
+          },
+          {
+            "text": "One-way drone, ready for tasking.",
+            "file": "loiteringMunitionEC/select-2.mp3",
+            "durationMs": 2050
+          },
+          {
+            "text": "Attack bird waiting.",
+            "file": "loiteringMunitionEC/select-3.mp3",
+            "durationMs": 1370
+          }
+        ],
+        "move": [
+          {
+            "text": "Lancet moving to the launch box.",
+            "file": "loiteringMunitionEC/move-1.mp3",
+            "durationMs": 1870
+          },
+          {
+            "text": "One-way drone shifting.",
+            "file": "loiteringMunitionEC/move-2.mp3",
+            "durationMs": 1570
+          },
+          {
+            "text": "Drone tracking to the new grid.",
+            "file": "loiteringMunitionEC/move-3.mp3",
+            "durationMs": 1840
+          }
+        ],
+        "attack": [
+          {
+            "text": "Lancet in, warhead armed.",
+            "file": "loiteringMunitionEC/attack-1.mp3",
+            "durationMs": 1690
+          },
+          {
+            "text": "Terminal run, no recovery.",
+            "file": "loiteringMunitionEC/attack-2.mp3",
+            "durationMs": 1780
+          },
+          {
+            "text": "One-way strike committed.",
+            "file": "loiteringMunitionEC/attack-3.mp3",
+            "durationMs": 1620
+          }
+        ],
+        "unableToComply": [
+          {
+            "text": "No target for the Lancet.",
+            "file": "loiteringMunitionEC/unableToComply-1.mp3",
+            "durationMs": 1660
+          },
+          {
+            "text": "Not enough fuel for that grid.",
+            "file": "loiteringMunitionEC/unableToComply-2.mp3",
+            "durationMs": 1750
+          },
+          {
+            "text": "Cannot return, one-way only.",
+            "file": "loiteringMunitionEC/unableToComply-3.mp3",
+            "durationMs": 1830
+          }
+        ]
+      }
     }
   }
 }

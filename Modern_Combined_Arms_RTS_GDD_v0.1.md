@@ -1,10 +1,10 @@
 # Modern Combined Arms — Game Design Document
 
 **Document status:** Consolidated working design, reconciled against the shipped build  
-**Version:** 0.1.2  
-**Date:** 5 November 2026  
+**Version:** 0.1.3  
+**Date:** 14 November 2026  
 **Project title:** Modern Combined Arms (MCA)  
-**Shipped build:** 0.5.4 BETA — every competitive battlefield, selectable weather and a running time of day, unit veterancy, garrisonable shelters and bridges, the Scenario Forge and mission workbench, two twelve-operation campaigns, ten playable nations and online 1v1. Release notes are in [CHANGELOG.md](CHANGELOG.md); the verification baseline is in [docs/PHASE_0_RECONCILIATION_AND_BASELINE.md](docs/PHASE_0_RECONCILIATION_AND_BASELINE.md).  
+**Shipped build:** 0.9.0 BETA — forty-five authored battlefields (twenty-eight campaign entries and seventeen competitive maps), selectable weather and a running time of day, unit veterancy, APC/utility-helicopter/landing-craft transport, garrisonable shelters and bridges, the Scenario Forge and mission workbench, two twelve-operation campaigns, ten playable nations, online 1v1, and the shared MANPADS, electronic-warfare and loitering-munition roles. Release notes are in [CHANGELOG.md](CHANGELOG.md); the verification baseline is in [docs/PHASE_0_RECONCILIATION_AND_BASELINE.md](docs/PHASE_0_RECONCILIATION_AND_BASELINE.md).  
 **Important status note:** This document consolidates the current interview decisions and fills unanswered details with recommended defaults where the user authorised recommendations. It is a working baseline, not a claim that every narrative or balance detail is permanently locked. Explicitly provisional ideas are labelled as such. The first playable slice should validate the core experience before the design is expanded into a full production specification.
 
 **How to read it:** §0 states what the build actually does today. Everything
@@ -13,7 +13,7 @@ only marked *implemented* where §0 says so.
 
 ---
 
-## 0. Implementation status (5 November 2026, build 0.5.4)
+## 0. Implementation status (15 November 2026, build 0.9.0)
 
 This section is separated from the design text on purpose. The sections below
 record what the game is meant to be; this table records what it is. Where the two
@@ -22,18 +22,18 @@ the gap is named rather than quietly closed.
 
 | Area | What ships now | Gap against the design text |
 | --- | --- | --- |
-| **Economy** | Harvester → Material Refinery loop on an authored ore field; deposits exhaust. The Command Post pays nothing until a materials plant stands, then 1 mat/s, or the 4 mat/s stripped rate once no hauler and no production line remain. Captured forward supply depots pay 2 mat/s. Ore is scaled per map so a field outlasts the opening. | Intended richer logistics (supply lines, multiple resource classes) is not designed in yet. Balance is fixture- and ladder-validated, not human-player validated. |
-| **Combined arms** | Land, air and naval are all simulated with movement, detection and weapons: tracked/wheeled/foot movement, aircraft with fuel and ammunition and recovery, a three-hull navy including submarines. Artillery is indirect-fire with minimum range and lobbed projectiles. | No mechanised transport or IFV (no passenger load/unload), no recovery-and-tow, no field obstacles, no second buildable naval hull. |
+| **Economy** | Harvester → Material Refinery loop on an authored ore field; deposits exhaust. The Command Post pays nothing until a refinery or a hauler-producing factory stands, then 1 mat/s, or the 4 mat/s stripped rate once no hauler and no production line remain. Captured forward supply depots pay 2 mat/s. Ore is scaled per map so a field outlasts the opening. | Intended richer logistics (supply lines, multiple resource classes) is not designed in yet. Balance is fixture- and ladder-validated, not human-player validated. |
+| **Combined arms** | Land, air and naval are all simulated with movement, detection and weapons: tracked/wheeled/foot movement, aircraft with fuel and ammunition and recovery, a four-hull navy including submarines, and APC, utility-helicopter and landing-craft transport with load/unload state and transport AI. Artillery is indirect-fire with minimum range and lobbed projectiles. | No IFV, no recovery-and-tow, no field obstacles and no second buildable naval hull; attack helicopters remain future work. |
 | **Roster and nations** | Ten playable nations over two alliance baselines, each substituting exactly one baseline slot with a national variant and adding one exclusive unit and one structure variant; Sweden and Iran add a national naval hull. | No national-only upgrade trees or signature abilities; one shared tech tree. National values are not tuned against human play. |
 | **Research** | Applied Research Centre with per-nation projects, research gating production and abilities, and AI research demand. | The intended deep branch-per-nation technology tree is design-only. |
-| **Skirmish** | Twenty-one battlefields in the scenario catalogue (island, competitive and expansion rosters), selectable weather and a running time of day, three AI difficulty levels, mirror-symmetric ladder measurement. | One AI opponent; no team skirmish against AI. |
-| **Campaign** | Two campaign tracks, each twelve authored operations over the built-in theatres (Baltic Line, Eastern Corridor), with mission briefing, mid-mission cinematic overlays, objectives and a debrief; operation tokens persist between operations. | The intended interwoven, branching two-faction narrative with persistent consequences beyond tokens is design-only. Missions are linear within a track. |
+| **Skirmish and catalogue** | Forty-five authored battlefields in the catalogue: twenty-eight campaign entries (four theatres plus twenty-four operations) and seventeen competitive maps; selectable weather and a running time of day, three AI difficulty levels, a commander-doctrine catalogue, mirror-symmetric ladder measurement. | One AI opponent; no team skirmish against AI. |
+| **Campaign** | Two campaign tracks, each twelve authored operations over the built-in theatres (Baltic Line, Eastern Corridor), with mission briefing, mid-mission cinematic overlays, objectives and a debrief; operation tokens and veteran slots persist between operations. | The intended interwoven, branching two-faction narrative with consequences beyond tokens and veterans is design-only. Missions are linear within a track. |
 | **Editor and mission tooling** | Scenario Forge (terrain, structures, ore, objectives, symmetry tools), a mission workbench with JSON import/export and validation, a mission library, and a validated scenario/mission format. | No mod SDK, no scripting language for third parties; authored operations are TypeScript data. |
-| **Multiplayer** | Online 1v1 through a Cloudflare Worker with Durable Objects; rooms joined by code and join code; authoritative room simulation with snapshot projection, command gating and per-seat fog. | No room browser, no matchmaking, no ranked play, no team modes; a seat is not tied to an account, so room results are not written to a career. |
-| **Accounts** | Google/Discord sign-in through an account Worker with D1, HttpOnly first-party session cookies, a guest path, and a career record (rank, service record) for local battles. | Career progression is single-player only; no cross-device save sync from a room. |
+| **Multiplayer** | Online 1v1 through a Cloudflare Worker with Durable Objects; rooms joined by code; authoritative room simulation with snapshot projection, command gating and per-seat fog. A seat can carry a verified account ticket, and a finished room can report its result to the career service when configured. | No room browser, no matchmaking, no ranked play, no team modes; guest seats remain valid and room career delivery is optional. |
+| **Accounts** | Google/Discord sign-in through an account Worker with D1, HttpOnly first-party session cookies, a guest path, and a career record (rank, service record) across local battles and reported online matches. | No cloud save sync; a room result only reaches the career when the seat carried a verified account ticket and the room worker is configured with career intake. |
 | **Presentation** | Hand-written WebGL2 renderer with shadow maps, fog of war, ground decals, particle combat feedback, building construction and deconstruction animation, unit silhouettes, thumbnails rendered from meshes. | Validated by shader compilation, a live context and frame timing, not by pixel-diff captures. |
 | **Audio** | Procedural Web Audio: fire, explosion, per-unit-family movement and idle beds, engine start/spool, building ambience, spatial mix by camera position and zoom, UI sounds, announcer and narrator voices. | Recorded ambience is shipped in the manifest but disabled (synthesis is the live path); audio has never been auditioned in an automated run. |
-| **Input and platforms** | Keyboard/mouse, touch controls, gamepad mapping; PWA install; landscape mobile layout with a rotate prompt. | Gamepad is untested on hardware; the mobile result screen is unusable at small viewports (known defect). No Steam/Play/App Store packaging. |
+| **Input and platforms** | Keyboard/mouse, touch controls, gamepad mapping; PWA install; landscape mobile layout with a rotate prompt. The result card fits phone landscape with a scrolling report and 44 px actions, and the result and pause overlays are restored after a layout rebuild. Gamepad menu focus, cursor selection, additive selection, groups and production tabs are implemented. | Gamepad is untested on hardware. Safe-area behaviour has not been checked on a physical notched device. No Steam/Play/App Store packaging. |
 | **Persistence** | Saves in `localStorage` with versioned migrations and build stamps, settings, campaign progress, mission library. | No cloud saves; saves are tied to the browser profile. |
 
 ---
@@ -457,7 +457,7 @@ Potential roles include:
 
 Aircraft should have persistent state, including fuel and ammunition where appropriate. Recovery, rearming and refuelling should be automated enough to avoid tedious micromanagement, while remaining tactically meaningful. Bases, airfields, access, damage and air-defence threats should matter.
 
-**Implementation status (0.5.4).** Aviation is a two-tier operational model rather than a single airfield. An airfield bases four fixed-wing aircraft on four authored parking positions and offers one recovery-only helicopter pad; a heliport bases two helicopters on two of its own. A position is assigned when the airframe is ordered and is held through take-off, patrol, return, parking and servicing, so the cap is on aircraft assigned to a facility, not on hulls currently parked — a fifth order is refused. National variants inherit the family's capacity. The recovery pad lets a damaged helicopter divert to the nearest strip, but it is never a home and cannot produce: expanding a rotary force still requires heliports, which preserves the strategic distinction while avoiding the frustration of a helicopter with nowhere to land. Losing a facility releases its positions and re-bases surviving hulls to the nearest compatible friendly facility.
+**Implementation status (0.9.0).** Aviation is a two-tier operational model rather than a single airfield. An airfield bases four fixed-wing aircraft on four authored parking positions and offers one recovery-only helicopter pad; a heliport bases two helicopters on two of its own. A position is assigned when the airframe is ordered and is held through take-off, patrol, return, parking and servicing, so the cap is on aircraft assigned to a facility, not on hulls currently parked — a fifth order is refused. National variants inherit the family's capacity. The recovery pad lets a damaged helicopter divert to the nearest strip, but it is never a home and cannot produce: expanding a rotary force still requires heliports, which preserves the strategic distinction while avoiding the frustration of a helicopter with nowhere to land. Losing a facility releases its positions and re-bases surviving hulls to the nearest compatible friendly facility.
 
 The exact abstraction level—such as individual weapon stores, sortie planning and maintenance—should be staged. The core loop needs clear limits and consequences without demanding a detailed flight simulator.
 
@@ -662,9 +662,9 @@ The same map should load in the editor, test mode, skirmish and campaign without
 
 Keyboard/mouse, touch and gamepad should be supported from the outset. They should issue the same conceptual commands, even if the physical interactions differ.
 
-- **Keyboard/mouse:** precise selection, drag-box selection, contextual commands, hotkeys and quick group management.
+- **Keyboard/mouse:** precise selection, drag-box selection, contextual commands, hotkeys and quick group management. Battle actions use a persisted, remappable action map with conflict detection and keycaps rendered from that map; navigation, groups and system keys stay reserved.
 - **Touch:** direct selection and drag selection, plus a dedicated **BOX** selection button for deliberate box-selection mode. Do not rely on hover or tiny controls.
-- **Gamepad:** focus/navigation model, contextual actions and reliable selection/group commands that do not require a mouse.
+- **Gamepad:** standard mapping. The D-pad moves focus through the menu and recalls populated control groups; A activates the focused control or the virtual cursor, B cancels or steps back, and RB + A adds to selection. LB/RB change production category, LT/RT zoom, LS/RS centre selection/base, Start pauses and Back leaves the battle. Holding LB while pressing D-pad left/right assigns the current selection to a group. The virtual cursor covers card and panel actions that do not have a dedicated button.
 
 All modes need clear selection feedback, order previews where useful, command acknowledgement and consistent cancellation behaviour.
 
@@ -723,8 +723,15 @@ Support, at minimum:
 The shipped build implements colour-redundant team identity, an 80–150% interface
 scale, a graphics-quality and render-scale setting, an optional frame-rate
 readout, a choice of Escape behaviour, reduced camera shake and configurable
-visual effects. Input remapping and adjustable control sensitivity are not
-implemented.
+visual effects. The battle action set is remappable from Settings → Controls,
+with duplicate and reserved keys refused, and gamepad stick sensitivity is
+adjustable on the same tab. The standard-mapping pad also drives menu focus,
+selection, additive selection, group assignment/recall and production tabs;
+physical pad verification remains an evidence gap. Settings → Display carries Standard plus the
+Deuteranopia, Protanopia and Tritanopia palettes. Each preset recolours the
+ownership, health and alert signals and keeps the parallel shape/pattern cues:
+solid/dashed/dotted selection rings, broken ownership rails, hatched critical
+health bars, and solid/dashed/double/dotted alert rules.
 
 ### 13.8 Visual direction
 
@@ -751,27 +758,55 @@ The implemented interface follows the sections above with these concrete choices
   setting.
 - **Wayfinding.** `F2` (or a click on a critical toast) jumps to the last alert,
   `F8`/`F9` cycle idle harvesters and engineers, and `Ctrl+Shift+1..4` / `Shift+1..4`
-  save and recall camera bookmarks. `F1` remains the briefing, `F3` the debug overlay
-  and `Ctrl+1..9` the control groups.
+  save and recall camera bookmarks. `L` opens the searchable field reports, where
+  every local event can be filtered by severity and any positioned entry can be
+  clicked to fly the camera to its location. `F1` remains the briefing, `F3` the
+  debug overlay and `Ctrl+1..9` the control groups.
 - **Production feedback.** Facility cards print the blocking reason (`NO MATERIALS`,
   `NEEDS SHIPYARD`, `QUEUE FULL`) on the card, distinguish a temporary shortage from
   missing technology by colour, and keep the full explanation in the tooltip.
 - **Radar.** While the tactical map is offline it collapses to a slim bar that names
   the cause (no radar array, or a grid brownout), and the Radar Array card is flagged
   in the Base tab.
-- **Alerts.** Critical toasts are clickable; world markers and the event log remain
-  non-modal.
+- **Alerts.** Critical toasts are clickable; world markers and the field-report
+  history remain non-modal. The history keeps the last 240 local events, supports
+  text search and ALL / ALERTS / ROUTINE filters, and marks positioned reports with
+  a jump target. Toast severity carries a rule pattern as well as a colour:
+  solid for information, dashed for warning, double for critical and dotted for
+  success. The history repeats the level as `INFO`, `WARN`, `CRIT` or `OK`.
+- **Colour-vision palettes and signal audit.** Settings → Display offers the
+  Standard baseline and three accessibility presets. The presets are presentation
+  only and never enter the simulation or a save's game state.
+- **Patrol and waypoints.** `T` or **PATROL** sends selected mobile units between
+  their current ground and the clicked point; arrival swaps the two endpoints and
+  repeats. Shift + right-click appends up to eight queued move or attack-move
+  waypoints behind the current order. A plain order replaces the route, Stop/Hold
+  clears it, and the queue and patrol endpoints are authoritative state in saves
+  and room snapshots.
+- **Guard.** `F` or **GUARD**, then click a friendly unit: the selected units take
+  station behind it, follow it as it moves, and keep their weapons free against
+  contacts around the guarded element. The target must be a visible, living,
+  friendly unit outside a structure; losing it clears the order. The guard target
+  is authoritative state and survives save/load and room snapshots.
 
-### 13.10 Deliberately not implemented
+### 13.10 Shape and pattern audit
 
-- **Key rebinding** needs a persisted action map, conflict detection, key-cap
-  rendering read from that map, and a settings editor for it.
-- **Patrol** needs the simulation to consume the order's second destination (the
-  order type already carries it) plus command, command-gate and HUD wiring on every
-  seat.
-- **Waypoint queues** need a per-unit queue in authoritative state, snapshot and save
-  migration, and modifier-order input; that is a simulation change, not an interface
-  one.
+The palette pass audited every colour-coded signal and left a second channel on
+each one:
+
+| Signal | Colour channel | Redundant shape/pattern channel |
+| --- | --- | --- |
+| Ownership | Friendly/hostile/neutral palette, chosen team tint in Standard | Selection ring is solid for friendly, dashed for hostile and dotted for neutral; the health plate's team rail is solid, broken or half-length; hostile thumbnails carry a corner diamond; flags, helmet covers and alliance presence pools remain; the selection card prints `HOSTILE` or `NEUTRAL`. |
+| Health and supply | Green/amber/red in Standard, remapped in each preset | Ten discrete cells, a critical diagonal hatch and pulse, a numeric percentage on the selected hull, and a ticked fuel rail. |
+| Alerts | Blue/amber/red/green alert tones | Toast rules are solid, dashed, double or dotted by severity; the field report prints `INFO`, `WARN`, `CRIT` or `OK`; critical alerts remain clickable and bound to `F2`. |
+
+### 13.11 Remaining accessibility work
+
+- **Gamepad hardware** is implemented and was exercised in Chromium with a
+  synthetic standard-mapping pad, but not on a physical controller (P1-6).
+- A human visual pass with each palette on the shipped maps remains an evidence
+  gap; the palette selection, normalisation, team-tint override and pattern
+  selectors are covered by automated tests.
 
 ## 14. Audio and presentation
 
@@ -906,8 +941,12 @@ The slice is not complete merely because a unit can move around a map. It should
 
 ### 16.6 Deliberately out of scope for the first slice
 
-- Full campaign and all 24–30 campaign missions.
-- Complete launch rosters for all six nations.
+These were the first-slice boundaries. Parenthetical notes record where the
+shipped build has since moved past them; the remaining bullets are still future
+work.
+
+- A campaign expansion beyond the 24 authored operations now shipping.
+- Complete launch rosters for the first slice's six nations (the build now ships ten).
 - Full strategic AI.
 - Every advanced naval role (submarines, mines, maritime logistics, naval aviation) at production depth.
 - Comprehensive EW and sensor simulation.
@@ -915,9 +954,9 @@ The slice is not complete merely because a unit can move around a map. It should
 - General-purpose mission scripting.
 - Integrated community map library.
 - Full modding SDK and custom asset pipeline.
-- Multiplayer implementation. (A staging build exists behind a disabled feature
-  flag and is verified by the multiplayer phase reports; it is not part of this
-  slice and is not switched on in any shipped build.)
+- Multiplayer implementation. (The slice excluded it; a live 1v1 staging build
+  now ships through the room worker. Ranked, team modes, a room browser and
+  matchmaking remain future work.)
 - Complete platform store packaging and certification.
 
 The architecture should leave room for these systems, but they should not prevent a complete, testable vertical slice.

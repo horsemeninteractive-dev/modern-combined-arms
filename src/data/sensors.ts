@@ -149,12 +149,18 @@ export const UNIT_SENSORS: Record<string, SensorProfile> = {
   // slot to inherit from, so without an entry it would fall back to a
   // rifleman's eye whatever it actually is.
   kestrelTeam: { ...NIGHT_OPTICS, label: 'MANPADS sight, night optics' },
+  manpadsTeam: { ...NIGHT_OPTICS, label: 'MANPADS sight, night optics' },
+  manpadsTeamEC: { ...NIGHT_OPTICS, label: 'Shoulder-SAM sight, night optics' },
   hedgehogTeam: { ...NIGHT_OPTICS, label: 'Night-vision missile sight' },
   taszar: OPTICAL,
   wilk: { ...VEHICLE, label: 'Thermal imaging, headlights' },
   stormShadow: { ...NIGHT_OPTICS, illuminator: 'headlights', label: 'Mission planning optics, headlights' },
   tosp: { ...NIGHT_OPTICS, illuminator: 'headlights', label: 'Thermobaric sight, headlights' },
   sprut: { ...NIGHT_OPTICS, illuminator: 'headlights', label: 'Open scout optics, headlights' },
+  ewVehicle: { ...THERMAL, kind: 'radar', illuminator: 'headlights', label: 'EW suite and radar, headlights' },
+  ewVehicleEC: { ...THERMAL, kind: 'radar', illuminator: 'headlights', label: 'EW suite and radar, headlights' },
+  loiteringMunition: AVIONICS,
+  loiteringMunitionEC: AVIONICS,
   missileBoat: NAVAL_RADAR,
   frigate: NAVAL_RADAR,
   corvette: NAVAL_RADAR,

@@ -35,7 +35,7 @@ describe('save format versioning', () => {
   it('writes the current version', () => {
     const game = new Game(createIslandAssault(), { enableAI: false });
     expect(game.toSave().version).toBe(SAVE_FORMAT_VERSION);
-    expect(SAVE_FORMAT_VERSION).toBe(3);
+    expect(SAVE_FORMAT_VERSION).toBe(4);
   });
 
   it('upgrades a v1 save to the current schema', () => {

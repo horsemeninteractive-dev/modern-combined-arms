@@ -77,7 +77,7 @@ describe('faction content registry', () => {
       'recovery',
       'transportHelo',
     ]);
-    expect(distinct.length).toBe(18);
+    expect(distinct.length).toBe(21);
     // Neither alliance may borrow the other's platform, and both resolve each
     // slot on the same canonical root.
     for (let index = 0; index < ALLIANCES.defender.baseline.units.length; index += 1) {

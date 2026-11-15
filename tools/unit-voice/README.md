@@ -1,10 +1,10 @@
 # Unit voice generation
 
 Generates the selection / move / attack / unable-to-comply radio bark set for all
-64 unit definitions — canonical slots, Eastern platforms, national replacements,
+71 unit definitions — canonical slots, Eastern platforms, national replacements,
 national exclusives and the two national naval hulls — with local
 [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) ONNX speech. Each cue has
-three takes, so 768 clips in total, and every unit's twelve lines are unique.
+three takes, so 852 clips in total, and every unit's twelve lines are unique.
 The existing strategic announcer clips in `public/audio/narrator/defender/` are **not**
 touched.
 
@@ -35,7 +35,7 @@ checked in, so playing the game does not need the model or Python.
 # everything
 .dev/voice-venv/Scripts/python tools/unit-voice/generate.py
 
-# one unit while iterating (keeps the other 51 manifest entries)
+# one unit while iterating (keeps the other manifest entries)
 .dev/voice-venv/Scripts/python tools/unit-voice/generate.py --only tank
 
 # after editing text, voice or speed
@@ -83,7 +83,7 @@ change a sample slightly.
 
 ## Voice cast
 
-Kokoro-82M has 28 English voices: 20 American and 8 British. There are 64 unit
+Kokoro-82M has 28 English voices: 20 American and 8 British. There are 71 unit
 definitions, so the cast is reused across campaign families while the spoken text
 is unique per unit. British voices carry the UK and most Defender infantry and
 armour; Eastern platforms reuse American voices at different delivery speeds so a

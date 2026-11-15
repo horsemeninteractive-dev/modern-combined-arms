@@ -1,7 +1,9 @@
 import type { App } from '../app';
+import { actionForKey, type BindableActionId } from '../inputBindings';
 import { BUILDINGS } from '../data/buildings';
 import { isGarrisonTarget, isRepairTarget } from './orderIntent';
 import { edgePanVector } from './hudLayout';
+import { PAD, nextFocusIndex, nextGroupSlot, nextPopulatedGroup } from './gamepad';
 import {
   battleCursor,
   cursorProperty,
@@ -11,7 +13,7 @@ import {
   type AppCursor,
 } from './cursors';
 
-/** Arrow keys pan; A/S/H/C stay free for the orders the briefing advertises. */
+/** Arrow keys pan; battle letters are resolved through the saved action map. */
 const PAN_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
 /**
  * How far a right-button press may travel before it counts as a camera drag.
@@ -19,16 +21,6 @@ const PAN_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
  * aiming an order at a unit cannot keep the mouse perfectly still.
  */
 const DRAG_THRESHOLD_PX = 5;
-
-/*
- * Deliberately out of scope for this pass:
- * - Key rebinding needs a persisted action map, conflict detection, key-cap
- *   rendering from the map, and a settings editor for it.
- * - Patrol needs the simulation to consume order.x2/z2 (the type already has
- *   them) plus command, gate and HUD wiring on both seats.
- * - Waypoint queues need a per-unit queue in authoritative state, snapshot and
- *   save migration, and Shift+order input; that is a simulation change.
- */
 
 export class InputController {
   private app: App;
@@ -57,6 +49,9 @@ export class InputController {
   private pinch: { distance: number; cx: number; cy: number } | null = null;
   private padButtons: boolean[] = [];
   private padIndex: number | null = null;
+  private padScreen: string | null = null;
+  /** Last group recalled or assigned with the D-pad. */
+  private padGroup = 0;
   private padWasActive = false;
   /** Last cursor key applied, so the DOM is only touched when it changes. */
   private cursorKey = '';
@@ -229,7 +224,7 @@ export class InputController {
       // The order lands where the button went down, which is where the player
       // aimed: a stray pixel of travel must not move the destination.
       if (!touch && !press.dragging && event.button === 2) {
-        const order = this.app.orderAt(press.startX, press.startY, event.shiftKey);
+        const order = this.app.orderAt(press.startX, press.startY, false, event.shiftKey);
         // Only an order the console accepted leaves a mark: a refused order is
         // already reported by its notice, and a ghost would contradict it.
         if (order) this.app.markOrderGhost(press.startX, press.startY, order);
@@ -308,6 +303,11 @@ export class InputController {
       if (p) app.commandMove(p.x, p.z, false);
       return;
     }
+    if (app.mode === 'patrol') {
+      const p = app.worldAt(clientX, clientY);
+      if (p) app.commandPatrol(p.x, p.z);
+      return;
+    }
     if (app.mode === 'land') {
       const p = app.worldAt(clientX, clientY);
       if (p) app.commandLand(p.x, p.z);
@@ -316,6 +316,7 @@ export class InputController {
     if (
       app.mode === 'attack' ||
       app.mode === 'attackMove' ||
+      app.mode === 'guard' ||
       app.mode === 'capture' ||
       app.mode === 'repair' ||
       app.mode === 'garrison'
@@ -367,6 +368,21 @@ export class InputController {
         return;
       }
       app.commandAttack(target.id);
+      return;
+    }
+    if (app.mode === 'guard') {
+      const target = app.pickAt(clientX, clientY);
+      if (
+        !target ||
+        target.kind !== 'unit' ||
+        target.owner < 0 ||
+        app.game?.isHostile(target.owner, app.localPlayerId)
+      ) {
+        app.notify('Select a friendly unit to guard.', 'warning');
+        app.audio.play('denied');
+        return;
+      }
+      app.commandGuard(target.id);
       return;
     }
     if (app.mode === 'capture') {
@@ -492,9 +508,21 @@ export class InputController {
       this.app.recallGroup(Number(code.slice(5)));
       return;
     }
+    const action = actionForKey(this.app.settings.keyBindings, code);
+    if (action) {
+      event.preventDefault();
+      this.runBinding(action);
+      return;
+    }
     switch (code) {
       case 'Escape':
         event.preventDefault();
+        // The report overlay is a layer above the battle: Escape closes it
+        // before it reaches an order mode or the pause setting.
+        if (this.app.hud.eventLogOpen) {
+          this.app.closeEventLog();
+          break;
+        }
         // A command mode always cancels first; the configured behaviour only
         // governs the otherwise-idle battle.
         if (this.app.mode !== 'none') this.app.cancelMode();
@@ -513,14 +541,6 @@ export class InputController {
         event.preventDefault();
         this.app.cycleIdleUnit('engineer');
         break;
-      case 'KeyP':
-        event.preventDefault();
-        this.app.togglePause();
-        break;
-      case 'Space':
-        event.preventDefault();
-        this.app.centerOnBase();
-        break;
       case 'F3':
         event.preventDefault();
         this.app.debug = !this.app.debug;
@@ -530,48 +550,6 @@ export class InputController {
         event.preventDefault();
         this.app.paused = true;
         this.app.openBriefing();
-        break;
-      case 'KeyA':
-        event.preventDefault();
-        this.app.setMode('attackMove');
-        break;
-      case 'KeyS':
-        event.preventDefault();
-        this.app.commandStop();
-        break;
-      case 'KeyH':
-        event.preventDefault();
-        this.app.commandHold();
-        break;
-      case 'KeyC':
-        event.preventDefault();
-        this.app.setMode('capture');
-        break;
-      case 'KeyG':
-        event.preventDefault();
-        this.app.setMode('garrison');
-        break;
-      case 'KeyR':
-        event.preventDefault();
-        this.app.commandReturn();
-        break;
-      case 'KeyD':
-        event.preventDefault();
-        this.app.commandDive();
-        break;
-      case 'KeyU':
-        // Hides the interface for a clean capture; the same shortcut brings it
-        // back, so a screenshot never traps the player without a HUD.
-        event.preventDefault();
-        this.app.hud.toggleVisibility();
-        break;
-      case 'KeyB':
-        event.preventDefault();
-        this.app.hud.showBuildTab();
-        break;
-      case 'Tab':
-        event.preventDefault();
-        this.app.cycleProductionTab();
         break;
       case 'Equal':
       case 'NumpadAdd':
@@ -587,6 +565,60 @@ export class InputController {
         break;
     }
   };
+
+  /** Dispatch one action from the persisted hotkey map. */
+  private runBinding(action: BindableActionId): void {
+    const app = this.app;
+    switch (action) {
+      case 'attackMove':
+        app.setMode('attackMove');
+        break;
+      case 'patrol':
+        app.setMode('patrol');
+        break;
+      case 'guard':
+        app.setMode('guard');
+        break;
+      case 'stop':
+        app.commandStop();
+        break;
+      case 'hold':
+        app.commandHold();
+        break;
+      case 'capture':
+        app.setMode('capture');
+        break;
+      case 'garrison':
+        app.setMode('garrison');
+        break;
+      case 'return':
+        app.commandReturn();
+        break;
+      case 'dive':
+        app.commandDive();
+        break;
+      case 'pause':
+        app.togglePause();
+        break;
+      case 'eventLog':
+        app.toggleEventLog();
+        break;
+      case 'build':
+        app.hud.showBuildTab();
+        break;
+      case 'productionTab':
+        app.cycleProductionTab();
+        break;
+      case 'centerBase':
+        app.centerOnBase();
+        break;
+      case 'toggleHud':
+        // Hides the interface for a clean capture; the same shortcut brings it
+        // back, so a screenshot never traps the player without a HUD.
+        app.hud.toggleVisibility();
+        break;
+    }
+  }
 
   /* ------------------------------------------------------------------ */
   /* Per-frame camera and gamepad                                        */
@@ -734,7 +766,7 @@ export class InputController {
 
   private updateGamepad(dt: number): void {
     if (this.app.cinematicLocked) return;
-    if (this.app.screen !== 'battle' || typeof navigator.getGamepads !== 'function') return;
+    if (typeof navigator.getGamepads !== 'function') return;
     const pads = navigator.getGamepads();
     let pad: Gamepad | null = null;
     for (const candidate of pads) {
@@ -745,6 +777,26 @@ export class InputController {
     }
     if (!pad) {
       this.padIndex = null;
+      this.padScreen = null;
+      this.padButtons = [];
+      return;
+    }
+    // A screen change must not inherit a held direction or the old cursor.
+    if (this.padScreen !== this.app.screen) {
+      this.padScreen = this.app.screen;
+      this.padIndex = null;
+      this.padButtons = [];
+      this.padGroup = 0;
+    }
+    const pressed = pad.buttons.map((b) => b.pressed);
+    const just = (index: number) => pressed[index] && !this.padButtons[index];
+    if (this.app.screen === 'menu') {
+      this.updateMenuFocus(just);
+      this.padButtons = pressed;
+      return;
+    }
+    if (this.app.screen !== 'battle') {
+      this.padButtons = pressed;
       return;
     }
     const rect = this.canvas.getBoundingClientRect();
@@ -755,43 +807,175 @@ export class InputController {
     }
     const camera = this.app.renderer.camera;
     const dead = 0.22;
+    const sensitivity = this.app.settings.gamepadSensitivity;
     const lx = pad.axes[0] ?? 0;
     const ly = pad.axes[1] ?? 0;
     if (Math.abs(lx) > dead || Math.abs(ly) > dead) {
-      camera.panView(lx * camera.zoom * 1.8 * dt, ly * camera.zoom * 1.8 * dt);
+      camera.panView(
+        lx * camera.zoom * 1.8 * dt * sensitivity,
+        ly * camera.zoom * 1.8 * dt * sensitivity,
+      );
     }
     const rx = pad.axes[2] ?? 0;
     const ry = pad.axes[3] ?? 0;
     if (Math.abs(rx) > dead || Math.abs(ry) > dead) {
       this.app.padCursor.active = true;
       this.padWasActive = true;
-      this.app.padCursor.x = Math.max(0, Math.min(rect.width, this.app.padCursor.x + rx * 620 * dt));
-      this.app.padCursor.y = Math.max(0, Math.min(rect.height, this.app.padCursor.y + ry * 620 * dt));
+      this.app.padCursor.x = Math.max(0, Math.min(rect.width, this.app.padCursor.x + rx * 620 * dt * sensitivity));
+      this.app.padCursor.y = Math.max(0, Math.min(rect.height, this.app.padCursor.y + ry * 620 * dt * sensitivity));
     }
-    const pressed = pad.buttons.map((b) => b.pressed);
-    const just = (index: number) => pressed[index] && !this.padButtons[index];
-    if (just(0)) this.padClick(rect.left + this.app.padCursor.x, rect.top + this.app.padCursor.y);
-    if (just(1)) {
+    if (just(PAD.A)) {
+      this.padClick(
+        rect.left + this.app.padCursor.x,
+        rect.top + this.app.padCursor.y,
+        pressed[PAD.RB],
+      );
+    }
+    if (just(PAD.B)) {
       if (this.app.mode !== 'none') this.app.cancelMode();
       else this.app.setSelection([]);
     }
-    if (just(2)) this.app.setMode('attackMove');
-    if (just(3)) this.app.commandStop();
-    if (just(12)) this.app.hud.cycleTab();
-    if (just(13)) this.app.commandHold();
-    if (just(4)) camera.zoomBy(1.08);
-    if (just(5)) camera.zoomBy(0.92);
-    if (just(9)) this.app.togglePause();
-    if (just(8)) this.app.toMenu();
-    if (just(6)) this.app.centerOnSelection();
-    if (just(7)) this.app.centerOnBase();
+    if (just(PAD.X)) this.app.setMode('attackMove');
+    if (just(PAD.Y)) this.app.commandStop();
+    if (just(PAD.UP)) this.app.cycleProductionTab(1);
+    if (just(PAD.DOWN)) this.app.commandHold();
+    const groupDirection = just(PAD.LEFT) ? -1 : just(PAD.RIGHT) ? 1 : 0;
+    if (groupDirection !== 0) {
+      if (pressed[PAD.LB]) {
+        this.padGroup = nextGroupSlot(this.padGroup, groupDirection);
+        this.app.assignGroup(this.padGroup);
+      } else {
+        const group = nextPopulatedGroup(this.app.groups.keys(), this.padGroup, groupDirection);
+        if (group !== null) {
+          this.padGroup = group;
+          this.app.recallGroup(group);
+        }
+      }
+    }
+    if (groupDirection === 0 && just(PAD.LB)) this.app.cycleProductionTab(-1);
+    // RB is both "next production category" and the additive-selection
+    // modifier; a simultaneous RB+A must not change the category.
+    if (just(PAD.RB) && !pressed[PAD.A]) this.app.cycleProductionTab(1);
+    if (just(PAD.LT)) camera.zoomBy(0.92);
+    if (just(PAD.RT)) camera.zoomBy(1.08);
+    if (just(PAD.START)) this.app.togglePause();
+    if (just(PAD.BACK)) this.app.toMenu();
+    if (just(PAD.LS)) this.app.centerOnSelection();
+    if (just(PAD.RS)) this.app.centerOnBase();
     this.padButtons = pressed;
     void this.padWasActive;
   }
 
-  private padClick(clientX: number, clientY: number): void {
+  /**
+   * Menu navigation is focus-based, not cursor-based: a pad player should be
+   * able to walk the deck with the D-pad and activate the focused control.
+   * The same hit-testing is used for every visible menu level.
+   */
+  private updateMenuFocus(just: (index: number) => boolean): void {
+    const menu = document.getElementById('menu-screen');
+    if (!menu || menu.classList.contains('hidden')) return;
+    const intro = document.getElementById('intro-screen');
+    if (intro && !intro.classList.contains('hidden')) return;
+    const loading = document.getElementById('loading-screen');
+    if (loading && !loading.classList.contains('hidden')) return;
+    const horizontal = just(PAD.LEFT) ? -1 : just(PAD.RIGHT) ? 1 : 0;
+    const vertical = just(PAD.UP) ? -1 : just(PAD.DOWN) ? 1 : 0;
+    if (horizontal !== 0 || vertical !== 0) {
+      this.moveMenuFocus(menu, horizontal, vertical);
+      return;
+    }
+    if (just(PAD.A)) {
+      const items = this.menuFocusables(menu);
+      const active = document.activeElement as HTMLElement | null;
+      if (!active || !items.includes(active)) {
+        const entry = this.menuEntry(items);
+        if (entry) this.focusMenuElement(entry);
+      } else {
+        active.click();
+        // Opening a level hides the control that was focused; land on the new
+        // level's first entry instead of leaving focus on a hidden button.
+        const nextItems = this.menuFocusables(menu);
+        if (!nextItems.includes(active)) {
+          const entry = this.menuEntry(nextItems);
+          if (entry) this.focusMenuElement(entry);
+        }
+      }
+    }
+    if (just(PAD.B)) {
+      const back = this.menuFocusables(menu).find((element) =>
+        element.matches('[data-menu-back]'),
+      );
+      if (back) back.click();
+      else if (this.app.menuView) this.app.showMenuView(null);
+      const nextItems = this.menuFocusables(menu);
+      const active = document.activeElement as HTMLElement | null;
+      if (!active || !nextItems.includes(active)) {
+        const entry = this.menuEntry(nextItems);
+        if (entry) this.focusMenuElement(entry);
+      }
+    }
+  }
+
+  private moveMenuFocus(menu: HTMLElement, dx: number, dy: number): void {
+    const items = this.menuFocusables(menu);
+    if (items.length === 0) return;
+    const active = document.activeElement as HTMLElement | null;
+    const current = active ? items.indexOf(active) : -1;
+    if (current < 0) {
+      const entry = this.menuEntry(items);
+      if (entry) this.focusMenuElement(entry);
+      return;
+    }
+    if (active instanceof HTMLSelectElement && dx !== 0) {
+      this.cycleSelect(active, dx);
+      return;
+    }
+    const next = nextFocusIndex(
+      items.map((element) => element.getBoundingClientRect()),
+      current,
+      dx,
+      dy,
+    );
+    if (next >= 0) this.focusMenuElement(items[next]);
+  }
+
+  /** Prefer the active level's navigation over the account chip or footer. */
+  private menuEntry(items: HTMLElement[]): HTMLElement | undefined {
+    return items.find((element) => element.closest('[data-menu-level]')) ?? items[0];
+  }
+
+  private menuFocusables(menu: HTMLElement): HTMLElement[] {
+    const selector =
+      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    return [...menu.querySelectorAll<HTMLElement>(selector)].filter((element) => {
+      if (element.getAttribute('aria-disabled') === 'true') return false;
+      if (element.closest('[hidden]')) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.width > 1 && rect.height > 1;
+    });
+  }
+
+  private focusMenuElement(element: HTMLElement): void {
+    element.focus({ preventScroll: true });
+    element.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+
+  private cycleSelect(select: HTMLSelectElement, direction: number): void {
+    const options = [...select.options].filter((option) => !option.disabled);
+    if (options.length === 0) return;
+    const current = options.indexOf(select.options[select.selectedIndex]);
+    const at = current < 0 ? 0 : current;
+    const next = options[(at + (direction > 0 ? 1 : -1) + options.length) % options.length];
+    select.selectedIndex = next.index;
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  private padClick(clientX: number, clientY: number, additive = false): void {
     this.app.padCursor.active = true;
+    const wasAdditive = this.app.additiveSelection;
+    if (additive) this.app.additiveSelection = true;
     this.tapAt(clientX, clientY);
+    this.app.additiveSelection = wasAdditive;
   }
 }
 

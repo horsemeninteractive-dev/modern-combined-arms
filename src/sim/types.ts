@@ -84,6 +84,21 @@ export interface MuzzleHardpoint {
   turreted?: boolean;
 }
 
+/**
+ * A mobile electronic-attack envelope. The vehicle emits continuously from its
+ * own position, so the effect moves with it and ends when the hull dies. Both
+ * multipliers are applied to hostile units inside `radius`; they never affect
+ * the owner's own coalition.
+ */
+export interface ElectronicWarfareDef {
+  /** Radius in tiles. */
+  radius: number;
+  /** Multiplier applied to a jammed unit's vision (0.6 = 40% reduction). */
+  visionMultiplier: number;
+  /** Multiplier applied to a jammed unit's effective engagement reach. */
+  engagementMultiplier: number;
+}
+
 export interface UnitDef {
   id: string;
   name: string;
@@ -156,6 +171,13 @@ export interface UnitDef {
   submarine?: SubmarineDef;
   /** Passive sonar radius in tiles. Detects dived submarines through fog. */
   sonar?: number;
+  /** Continuous electronic-attack envelope, emitted while the hull is alive. */
+  electronicWarfare?: ElectronicWarfareDef;
+  /**
+   * One-way attack munition. The airframe is expended when its primary weapon
+   * fires, and it cannot be recovered or rearmed. Used by loitering munitions.
+   */
+  oneWay?: boolean;
   /**
    * Rotary-wing aircraft. A helicopter uses a helo dock, not a flight-line
    * position, which is what lets an airfield recover one without basing it.
@@ -673,6 +695,11 @@ export interface Entity {
   turretFacing: number;
   state: EntityState;
   order: Order | null;
+  /**
+   * Shift-queued orders after the current one. Empty or absent on an ordinary
+   * unit; the simulation executes them in order as each movement leg arrives.
+   */
+  orderQueue?: Order[];
   path: PathPoint[];
   pathIndex: number;
   /** Ticks until the current weapon can fire again. */
@@ -873,6 +900,7 @@ export type SimEventCode =
   | 'rallySet'
   | 'moveOrder'
   | 'attackOrder'
+  | 'guardOrder'
   | 'researchStarted'
   | 'researchComplete'
   | 'researchCancelled'
@@ -941,7 +969,11 @@ export interface SimEvent {
 /* ------------------------------------------------------------------ */
 
 export type Command =
-  | { type: 'move'; team: number; ids: number[]; x: number; z: number; attackMove?: boolean }
+  | { type: 'move'; team: number; ids: number[]; x: number; z: number; attackMove?: boolean; queue?: boolean }
+  /** Patrol between the unit's current ground and one map point. */
+  | { type: 'patrol'; team: number; ids: number[]; x: number; z: number }
+  /** Follow a friendly unit and engage contacts around it. */
+  | { type: 'guard'; team: number; ids: number[]; targetId: number }
   /** Put transport helicopters down on open ground and hold them there. */
   | { type: 'land'; team: number; ids: number[]; x: number; z: number }
   | { type: 'attack'; team: number; ids: number[]; targetId: number }

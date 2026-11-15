@@ -36,7 +36,20 @@ import { sensorFor } from '../sim/sensors';
 import { PHASE_LABELS, formatHour } from '../sim/dayNight';
 import { veterancyProgress } from '../sim/veterancy';
 import { icon, iconSvg } from './icons';
+import { keyLabel, type BindableActionId } from '../inputBindings';
+import { colorVisionTokens, type ColorVisionPalette } from '../colorVision';
 import { escapeHtml } from './modal';
+import {
+  appendEventLog,
+  eventLogEntryFromEvent,
+  eventLogEntryFromNotice,
+  eventLogJumpable,
+  eventLogLevelLabel,
+  eventLogVisible,
+  type EventLogEntry,
+  type EventLogFilter,
+  type EventLogLevel,
+} from './eventLog';
 import {
   PRODUCTION_TABS,
   edgeAutoScrollVelocity,
@@ -203,8 +216,21 @@ function stateLabel(e: Entity): string {
   return e.state.toUpperCase().replace(/_/g, ' ');
 }
 
-function ownerColor(game: Game, e: Entity): string {
-  if (e.owner === -1) return '#8d9d98';
+function ownerColor(
+  game: Game,
+  e: Entity,
+  palette: ColorVisionPalette,
+  localPlayerId: number,
+): string {
+  if (e.owner === -1) {
+    return palette === 'standard' ? '#8d9d98' : colorVisionTokens(palette).neutral;
+  }
+  const tokens = colorVisionTokens(palette);
+  if (palette !== 'standard') {
+    return game.teamOf(e.owner) === game.teamOf(localPlayerId)
+      ? tokens.friendly
+      : tokens.hostile;
+  }
   const p = game.player(e.owner);
   return p ? tryIdentityDef(p.factionId)?.color ?? '#d8e2dd' : '#d8e2dd';
 }
@@ -232,8 +258,13 @@ export class HUD {
   private hoverNode: Element | null = null;
   private pendingProductionKey = '';
   private pendingSelection = false;
-  private logs: Array<{ text: string; level: string; tick: number }> = [];
+  private logs: EventLogEntry[] = [];
+  private logOpen = false;
+  private logQuery = '';
+  private logFilter: EventLogFilter = 'all';
   private endShown = false;
+  /** The verdict is app state, not shell state: a rebuild has to put it back. */
+  private endResult: VictoryState | null = null;
   private minimapDragging = false;
   private minimapFrame = 0;
   /** Native-resolution terrain buffer, upscaled to the dock's device pixels. */
@@ -290,7 +321,11 @@ export class HUD {
   mount(game: Game): void {
     this.game = game;
     this.logs = [];
+    this.logOpen = false;
+    this.logQuery = '';
+    this.logFilter = 'all';
     this.endShown = false;
+    this.endResult = null;
     this.tab = 'base';
     this.inspectedId = 0;
     this.panel = 'none';
@@ -327,7 +362,10 @@ export class HUD {
     this.root = null;
     this.hudEl = null;
     this.game = null;
+    this.logs = [];
+    this.logOpen = false;
     this.endShown = false;
+    this.endResult = null;
     this.powerReadoutOpen = false;
     this.lastPowerReadoutKey = '';
     // Leaving the battlefield takes the scene with it. A shell that is mounted
@@ -383,10 +421,20 @@ export class HUD {
     this.renderProduction(true);
     this.renderObjective();
     this.renderGroups();
+    this.renderEventLog();
     this.renderAddMode();
     this.updateMode(true);
     this.drawMinimap();
     this.lastProductionKey = '';
+    // A rebuilt shell starts with both transient overlays hidden. Pause and the
+    // verdict are app state, so restore them instead of waiting for the next
+    // state transition, which may never come after a victory.
+    this.syncPauseState(true);
+    if (this.endResult) {
+      const result = this.endResult;
+      this.endShown = false;
+      this.showEnd(result, false);
+    }
   }
 
   private markup(game: Game): string {
@@ -411,7 +459,6 @@ export class HUD {
     const front = faction ? ALLIANCES[faction.allianceId] : undefined;
     root.style.setProperty('--front', front?.color ?? '#37b6e0');
     root.style.setProperty('--front-accent', front?.accent ?? '#a8ecff');
-    root.style.setProperty('--front-nation', faction?.color ?? front?.color ?? '#37b6e0');
     // The skin is more than a tint: the eastern coalition reads as hard-edged
     // plate work while the defender coalition keeps the cooler instrument look.
     root.dataset.front = front?.id ?? 'defender';
@@ -447,18 +494,15 @@ export class HUD {
         <div class="rail-body">
           <header class="rail-command" title="${escapeHtml(railTitle)}">
             <div class="rail-identity">
-              <span class="rail-flag-wrap">
-                ${nation ? `<img class="rail-flag" src="${flagTextureUrl(nation)}" alt="${escapeHtml(nationLabel)} flag" />` : ''}
-                <!-- The crest flies on the flag and takes the coalition's colour,
-                     so the side a command belongs to reads without a word. -->
-                <span class="rail-crest" aria-hidden="true"><i></i></span>
-              </span>
-              <span class="rail-nation">${front ? '<i></i>' : ''}${escapeHtml(nationLabel)}</span>
+              <!-- The flag fills the panel and moves; the crest stays still over
+                   it, so the coalition reads from the mark rather than a label. -->
+              ${nation ? `<img class="rail-flag" src="${flagTextureUrl(nation)}" alt="${escapeHtml(nationLabel)} flag" />` : ''}
+              <span class="rail-crest" aria-hidden="true"><i></i></span>
             </div>
           </header>
           <div class="rail-stats">
-            <div class="rail-stat"><span class="rail-label"><i class="resource-swatch"></i>MATS</span><b id="res-mats">0</b><span class="rail-rate" id="res-mats-rate">+0/m</span></div>
-            <div class="rail-stat req"><span class="rail-label"><i class="resource-swatch blue"></i>REQ</span><b id="res-req">0</b><span class="rail-rate" id="res-req-rate">+0.0/s</span></div>
+            <div class="rail-stat"><span class="rail-label">MATS</span><b id="res-mats">0</b><span class="rail-rate" id="res-mats-rate">+0/m</span></div>
+            <div class="rail-stat req"><span class="rail-label">REQ</span><b id="res-req">0</b><span class="rail-rate" id="res-req-rate">+0.0/s</span></div>
           </div>
           <!-- The accord's crest, sitting in the open band between the
                requisition counter and the army counter. -->
@@ -473,7 +517,7 @@ export class HUD {
                  the bottom row. The objective is an icon like its neighbours. -->
             <div class="rail-actions" aria-label="Mission controls">
               <button class="rail-btn" data-act="save" title="Save battle" aria-label="Save battle">${icon('save')}</button>
-              <button class="rail-btn" data-act="pause" id="btn-pause-top" title="Pause (P)" aria-label="Pause battle">${icon('pause')}</button>
+              <button class="rail-btn" data-act="pause" id="btn-pause-top" title="Pause (${this.keycap('pause')})" aria-label="Pause battle">${icon('pause')}</button>
               <button class="rail-btn" data-act="settings" title="Settings" aria-label="Settings">${icon('settings')}</button>
               <button class="rail-btn" data-act="menu" title="Menu" aria-label="Menu">${icon('menu')}</button>
               <button class="rail-btn rail-objective" id="rail-objective-btn" data-act="objective" title="Primary objective — open the briefing" aria-haspopup="dialog">
@@ -542,7 +586,7 @@ export class HUD {
           <div class="mobile-stat army"><span>ARMY</span><b id="res-force">0</b></div>
           <button class="mobile-objective-icon" data-act="objective" title="Primary objective — open the briefing" aria-label="Primary objective — open the briefing" aria-haspopup="dialog">${icon('target')}</button>
           <button class="mobile-action" data-act="save" title="Save battle" aria-label="Save battle">${icon('save')}</button>
-          <button class="mobile-action" data-act="pause" id="btn-pause-top" title="Pause (P)" aria-label="Pause battle">${icon('pause')}</button>
+          <button class="mobile-action" data-act="pause" id="btn-pause-top" title="Pause (${this.keycap('pause')})" aria-label="Pause battle">${icon('pause')}</button>
           <button class="mobile-action" data-act="settings" title="Settings" aria-label="Settings">${icon('settings')}</button>
           <button class="mobile-action" data-act="menu" title="Menu" aria-label="Menu">${icon('menu')}</button>
         </div>
@@ -567,25 +611,50 @@ export class HUD {
       <div class="command-bar" role="toolbar" aria-label="Commands">
         <button class="cmd-btn" data-cmd="move" data-act="move" title="${mobile ? 'Move selected units — tap a destination' : 'Move selected units — click a destination'}">${icon('move')}<span class="lbl">MOVE</span></button>
         <button class="cmd-btn" data-cmd="attack" data-act="attack" title="Attack target (then tap/click)">${icon('attack')}<span class="lbl">ATTACK</span></button>
-        <button class="cmd-btn" data-cmd="attackMove" data-act="attackMove" title="Attack-move (A)">${icon('attackMove')}<span class="lbl">A-MOVE</span><kbd class="cmd-key" aria-hidden="true">A</kbd></button>
+        <button class="cmd-btn" data-cmd="attackMove" data-act="attackMove" title="Attack-move (${this.keycap('attackMove')})">${icon('attackMove')}<span class="lbl">A-MOVE</span><kbd class="cmd-key" data-keycap="attackMove" aria-hidden="true">${this.keycap('attackMove')}</kbd></button>
+        <button class="cmd-btn" data-cmd="patrol" data-act="patrol" title="Patrol between here and a chosen point (${this.keycap('patrol')}); Shift + right-click queues waypoints">${icon('attackMove')}<span class="lbl">PATROL</span><kbd class="cmd-key" data-keycap="patrol" aria-hidden="true">${this.keycap('patrol')}</kbd></button>
+        <button class="cmd-btn" data-cmd="guard" data-act="guard" title="Guard a friendly unit and follow it (${this.keycap('guard')})">${icon('guard')}<span class="lbl">GUARD</span><kbd class="cmd-key" data-keycap="guard" aria-hidden="true">${this.keycap('guard')}</kbd></button>
         <div class="cmd-sep" data-cmd="combatSep"></div>
-        <button class="cmd-btn" data-cmd="stop" data-act="stop" title="Stop (S)">${icon('stop')}<span class="lbl">STOP</span><kbd class="cmd-key" aria-hidden="true">S</kbd></button>
-        <button class="cmd-btn" data-cmd="hold" data-act="hold" title="Hold position (H)">${icon('hold')}<span class="lbl">HOLD POS</span><kbd class="cmd-key" aria-hidden="true">H</kbd></button>
-        <button class="cmd-btn" data-cmd="capture" data-act="capture" title="Capture a strategic objective (C)">${icon('capture')}<span class="lbl">CAPTURE</span><kbd class="cmd-key" aria-hidden="true">C</kbd></button>
+        <button class="cmd-btn" data-cmd="stop" data-act="stop" title="Stop (${this.keycap('stop')})">${icon('stop')}<span class="lbl">STOP</span><kbd class="cmd-key" data-keycap="stop" aria-hidden="true">${this.keycap('stop')}</kbd></button>
+        <button class="cmd-btn" data-cmd="hold" data-act="hold" title="Hold position (${this.keycap('hold')})">${icon('hold')}<span class="lbl">HOLD POS</span><kbd class="cmd-key" data-keycap="hold" aria-hidden="true">${this.keycap('hold')}</kbd></button>
+        <button class="cmd-btn" data-cmd="capture" data-act="capture" title="Capture a strategic objective (${this.keycap('capture')})">${icon('capture')}<span class="lbl">CAPTURE</span><kbd class="cmd-key" data-keycap="capture" aria-hidden="true">${this.keycap('capture')}</kbd></button>
         <button class="cmd-btn" data-cmd="repair" data-act="repair" title="Repair a damaged structure, or resume your own construction site (then tap/click it)">${icon('repair')}<span class="lbl">REPAIR</span></button>
-        <button class="cmd-btn" data-cmd="garrison" data-act="garrison" title="Board a transport or garrison a building (G)">${icon('garrison')}<span class="lbl">GARRISON</span><kbd class="cmd-key" aria-hidden="true">G</kbd></button>
+        <button class="cmd-btn" data-cmd="garrison" data-act="garrison" title="Board a transport or garrison a building (${this.keycap('garrison')})">${icon('garrison')}<span class="lbl">GARRISON</span><kbd class="cmd-key" data-keycap="garrison" aria-hidden="true">${this.keycap('garrison')}</kbd></button>
         <button class="cmd-btn" data-cmd="ungarrison" data-act="ungarrison" title="Unload a transport or order infantry out of a building">${icon('ungarrison')}<span class="lbl">EXIT</span></button>
-        <button class="cmd-btn" data-cmd="return" data-act="return" title="Return aircraft / ship to base (R)">${icon('return')}<span class="lbl">RETURN</span><kbd class="cmd-key" aria-hidden="true">R</kbd></button>
+        <button class="cmd-btn" data-cmd="return" data-act="return" title="Return aircraft / ship to base (${this.keycap('return')})">${icon('return')}<span class="lbl">RETURN</span><kbd class="cmd-key" data-keycap="return" aria-hidden="true">${this.keycap('return')}</kbd></button>
         <button class="cmd-btn" data-cmd="land" data-act="land" title="Land transport helicopters on open ground (then tap/click)">${icon('transportHelo')}<span class="lbl">LAND</span></button>
-        <button class="cmd-btn" data-cmd="dive" data-act="dive" title="Dive or surface selected submarines (D)">${icon('submarine')}<span class="lbl">DIVE</span><kbd class="cmd-key" aria-hidden="true">D</kbd></button>
+        <button class="cmd-btn" data-cmd="dive" data-act="dive" title="Dive or surface selected submarines (${this.keycap('dive')})">${icon('submarine')}<span class="lbl">DIVE</span><kbd class="cmd-key" data-keycap="dive" aria-hidden="true">${this.keycap('dive')}</kbd></button>
         <div class="cmd-sep" data-cmd="supportSep"></div>
-        ${mobile ? '' : `<button class="cmd-btn accent" data-cmd="build" data-act="build" title="Construction (B)">${icon('build')}<span class="lbl">BUILD</span><kbd class="cmd-key" aria-hidden="true">B</kbd></button>
+        ${mobile ? '' : `<button class="cmd-btn accent" data-cmd="build" data-act="build" title="Construction (${this.keycap('build')})">${icon('build')}<span class="lbl">BUILD</span><kbd class="cmd-key" data-keycap="build" aria-hidden="true">${this.keycap('build')}</kbd></button>
         <button class="cmd-btn" data-cmd="research" data-act="research" title="Research tree — unlock units and structures">${icon('research')}<span class="lbl">RESEARCH</span></button>`}
         <button class="cmd-btn" data-cmd="box" data-act="box" title="Box selection">${icon('box')}<span class="lbl">BOX</span></button>
         ${mobile ? `<button class="cmd-btn" data-cmd="groups" data-act="groups" title="Control groups">${icon('squad')}<span class="lbl">GROUPS</span></button>
         <button class="cmd-btn" data-cmd="map" data-act="map" title="Tactical map">${icon('scope')}<span class="lbl">MAP</span></button>` : ''}
+        <button class="cmd-btn" data-cmd="log" data-act="log" title="Field reports — searchable event log (${this.keycap('eventLog')})">${icon('log')}<span class="lbl">LOG</span><kbd class="cmd-key" data-keycap="eventLog" aria-hidden="true">${this.keycap('eventLog')}</kbd></button>
         <button class="cmd-btn" data-cmd="debug" data-act="debug" title="Debug overlay (F3)">${icon('log')}<span class="lbl">DIAG</span></button>
       </div>`;
+  }
+
+  /** The current keycap for a remappable action. */
+  private keycap(action: BindableActionId): string {
+    return keyLabel(this.app.settings.keyBindings[action]);
+  }
+
+  /** Repaint command keycaps after the settings editor changes a binding. */
+  refreshKeycaps(): void {
+    const root = this.root;
+    if (!root) return;
+    root.querySelectorAll<HTMLElement>('[data-keycap]').forEach((key) => {
+      const action = key.dataset.keycap as BindableActionId;
+      if (!this.app.settings.keyBindings[action]) return;
+      key.textContent = this.keycap(action);
+    });
+    root.querySelectorAll<HTMLElement>('[data-act="pause"]').forEach((button) => {
+      button.title = `Pause (${this.keycap('pause')})`;
+    });
+    // Rebuild the command strip so its tooltips and keycaps both come from the
+    // current map rather than from the last selection change.
+    this.renderCommands();
   }
 
   /**
@@ -607,6 +676,8 @@ export class HUD {
       move: own.length > 0,
       attack: armed,
       attackMove: armed,
+      patrol: units.length > 0,
+      guard: units.length > 0,
       combatSep: armed,
       stop:
         units.length > 0 ||
@@ -648,6 +719,7 @@ export class HUD {
       box: true,
       groups: true,
       map: true,
+      log: true,
       debug: true,
     };
     root.querySelectorAll<HTMLElement>('[data-cmd]').forEach((button) => {
@@ -708,7 +780,35 @@ export class HUD {
    * of the battlefield alone and the interface brought back without a menu trip.
    */
   private hudToggleMarkup(): string {
-    return `<button class="hud-toggle" data-act="hud-toggle" aria-pressed="false" title="Hide HUD (U) — clean battlefield for screenshots" aria-label="Hide HUD">${icon('eyeOff')}<span>HUD</span></button>`;
+    return `<button class="hud-toggle" data-act="hud-toggle" aria-pressed="false" title="Hide HUD (${this.keycap('toggleHud')}) — clean battlefield for screenshots" aria-label="Hide HUD">${icon('eyeOff')}<span>HUD</span></button>`;
+  }
+
+  /**
+   * The field report is an overlay rather than a permanent panel: the battle
+   * keeps the map, and the complete local history is one click or `L` away.
+   * Search and severity filters run over the same entries the simulation
+   * publishes, so an alert that reaches a toast is never missing from history.
+   */
+  private eventLogMarkup(): string {
+    const filterButton = (filter: EventLogFilter, label: string): string =>
+      `<button type="button" class="log-filter ${this.logFilter === filter ? 'active' : ''}" data-log-filter="${filter}" aria-pressed="${this.logFilter === filter}">${label}</button>`;
+    return `<section class="event-log-panel${this.logOpen ? '' : ' hidden'}" id="event-log-panel" role="dialog" aria-modal="false" aria-labelledby="event-log-title" aria-hidden="${this.logOpen ? 'false' : 'true'}">
+      <header class="log-head">
+        <span id="event-log-title">FIELD REPORTS</span>
+        <b class="log-count" id="log-count">0</b>
+        <button type="button" class="sheet-close" data-act="log-close" aria-label="Close field reports">×</button>
+      </header>
+      <div class="log-tools">
+        <label class="log-search"><span class="sr-only">Search field reports</span><input id="event-log-search" type="search" placeholder="SEARCH REPORTS" autocomplete="off" spellcheck="false" value="${escapeHtml(this.logQuery)}" /></label>
+        <div class="log-filters" role="group" aria-label="Filter field reports">
+          ${filterButton('all', 'ALL')}
+          ${filterButton('alerts', 'ALERTS')}
+          ${filterButton('routine', 'ROUTINE')}
+        </div>
+      </div>
+      <div class="event-log-list" id="log-list" role="list"></div>
+      <p class="log-empty hidden" id="log-empty">No reports match this filter.</p>
+    </section>`;
   }
 
   private desktopMarkup(game: Game): string {
@@ -719,6 +819,7 @@ export class HUD {
         <span id="mode-text"></span>
         <button data-act="cancel-mode">CANCEL [ESC]</button>
       </div>
+      ${this.eventLogMarkup()}
       ${this.productionMarkup()}
       <div class="perf-readout hidden" id="perf-readout" aria-hidden="true"></div>
       <section class="battle-console hud-bottom">
@@ -741,6 +842,7 @@ export class HUD {
         <span id="mode-text"></span>
         <button data-act="cancel-mode">CANCEL</button>
       </div>
+      ${this.eventLogMarkup()}
       ${this.productionMarkup()}
       <div class="perf-readout hidden" id="perf-readout" aria-hidden="true"></div>
       <button class="mobile-backdrop" data-act="close-sheets" aria-label="Close panel"></button>
@@ -834,6 +936,20 @@ export class HUD {
         }
       });
     }
+    const logSearch = root.querySelector<HTMLInputElement>('#event-log-search');
+    if (logSearch) {
+      logSearch.addEventListener('input', () => {
+        this.logQuery = logSearch.value;
+        this.renderEventLog();
+      });
+      logSearch.addEventListener('keydown', (event: KeyboardEvent) => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          event.stopPropagation();
+          this.closeEventLog();
+        }
+      });
+    }
     this.bindMinimap();
   }
 
@@ -869,6 +985,21 @@ export class HUD {
     if (actEl && root.contains(actEl)) {
       event.stopPropagation();
       this.action(actEl.dataset.act ?? '');
+      return;
+    }
+    const logFilter = target?.closest<HTMLElement>('[data-log-filter]');
+    if (logFilter && root.contains(logFilter)) {
+      this.setLogFilter((logFilter.dataset.logFilter as EventLogFilter) ?? 'all');
+      return;
+    }
+    const logEntry = target?.closest<HTMLElement>('[data-log-x]');
+    if (logEntry && root.contains(logEntry)) {
+      const x = Number(logEntry.dataset.logX);
+      const z = Number(logEntry.dataset.logZ);
+      if (Number.isFinite(x) && Number.isFinite(z)) {
+        this.app.jumpToLogEntry(x, z);
+        this.closeEventLog();
+      }
       return;
     }
     const chip = target?.closest<HTMLElement>('[data-inspect]');
@@ -1002,7 +1133,9 @@ export class HUD {
       // The toggle reports the commander's own choice, not a scene's.
       button.setAttribute('aria-pressed', String(this.hudHidden));
       button.classList.toggle('is-off', this.hudHidden);
-      button.title = this.hudHidden ? 'Show HUD (U)' : 'Hide HUD (U) — clean battlefield for screenshots';
+      button.title = this.hudHidden
+        ? `Show HUD (${this.keycap('toggleHud')})`
+        : `Hide HUD (${this.keycap('toggleHud')}) — clean battlefield for screenshots`;
       button.setAttribute('aria-label', this.hudHidden ? 'Show HUD' : 'Hide HUD');
       button.innerHTML = `${icon(this.hudHidden ? 'eye' : 'eyeOff')}<span>HUD</span>`;
     }
@@ -1064,6 +1197,12 @@ export class HUD {
         break;
       case 'attackMove':
         this.app.setMode('attackMove');
+        break;
+      case 'patrol':
+        this.app.setMode('patrol');
+        break;
+      case 'guard':
+        this.app.setMode('guard');
         break;
       case 'stop':
         this.app.commandStop();
@@ -1157,6 +1296,12 @@ export class HUD {
       case 'box':
         this.app.setMode('box');
         break;
+      case 'log':
+        this.toggleEventLog();
+        break;
+      case 'log-close':
+        this.closeEventLog();
+        break;
       case 'debug':
         this.app.debug = !this.app.debug;
         this.root?.querySelector('#debug-panel')?.classList.toggle('hidden', !this.app.debug);
@@ -1175,19 +1320,24 @@ export class HUD {
     }
   }
 
+  /** Mirror the held pause state into whichever shell is mounted. */
+  private syncPauseState(force = false): void {
+    const root = this.root;
+    if (!root || (!force && this.pausedCache === this.app.paused)) return;
+    this.pausedCache = this.app.paused;
+    root.querySelector('#pause-overlay')?.classList.toggle('hidden', !this.app.paused);
+    const top = root.querySelector('#btn-pause-top');
+    if (top) {
+      top.innerHTML = this.app.paused ? icon('play') : icon('pause');
+      top.setAttribute('title', this.app.paused ? 'Resume (P)' : 'Pause (P)');
+      top.setAttribute('aria-label', this.app.paused ? 'Resume battle' : 'Pause battle');
+    }
+  }
+
   update(game: Game, dt: number, signature: string): void {
     if (!this.root || !this.game) return;
     const now = performance.now();
-    if (this.pausedCache !== this.app.paused) {
-      this.pausedCache = this.app.paused;
-      this.root.querySelector('#pause-overlay')?.classList.toggle('hidden', !this.app.paused);
-      const top = this.root.querySelector('#btn-pause-top');
-      if (top) {
-        top.innerHTML = this.app.paused ? icon('play') : icon('pause');
-        top.setAttribute('title', this.app.paused ? 'Resume (P)' : 'Pause (P)');
-        top.setAttribute('aria-label', this.app.paused ? 'Resume battle' : 'Pause battle');
-      }
-    }
+    this.syncPauseState();
     this.updateMode();
     if (now - this.lastUpdate > 110) {
       this.lastUpdate = now;
@@ -1306,10 +1456,11 @@ export class HUD {
     if (this.layout === 'mobile') this.setPanel('production');
   }
 
-  cycleTab(): void {
+  cycleTab(direction = 1): void {
     const tabs = PRODUCTION_TABS.map((t) => t.id);
     const index = tabs.indexOf(this.tab);
-    this.selectTab(tabs[(index + 1) % tabs.length]);
+    const step = direction < 0 ? -1 : 1;
+    this.selectTab(tabs[(index + step + tabs.length) % tabs.length]);
   }
 
   /** Open or close the research tree without leaving the battlefield. */
@@ -1846,6 +1997,9 @@ export class HUD {
   /* ------------------------------------------------------------------ */
 
   private teamColor(): string {
+    if (this.app.settings.colorVision !== 'standard') {
+      return colorVisionTokens(this.app.settings.colorVision).friendly;
+    }
     const p = this.app.localPlayer;
     return p ? tryIdentityDef(p.factionId)?.color ?? '#d8e2dd' : '#d8e2dd';
   }
@@ -2026,7 +2180,7 @@ export class HUD {
       body.innerHTML = `
         <div class="sel-primary">
           <div class="sel-main">
-            ${this.thumbMarkup(lead.kind, lead.defId, ownerColor(game, lead), 'portrait', leadIcon, 'sel-icon', entities.length)}
+            ${this.thumbMarkup(lead.kind, lead.defId, ownerColor(game, lead, this.app.settings.colorVision, this.app.localPlayerId), 'portrait', leadIcon, 'sel-icon', entities.length)}
             <div class="sel-info">
               <div class="sel-title"><h3>${units.length} ${units.length === 1 ? 'unit' : 'units'}</h3><span>${buildings.length > 0 ? `${buildings.length} ${buildings.length === 1 ? 'structure' : 'structures'}` : ''}</span></div>
               <div class="sel-role">${role}</div>
@@ -2060,7 +2214,12 @@ export class HUD {
     const isEnemy = e.owner !== this.app.localPlayerId && p && game.isHostile(e.owner, this.app.localPlayerId);
     const frac = clamp01(e.hp / e.maxHp);
     const iconName = def?.icon ?? 'target';
-    const objective = BUILDINGS[e.defId]?.capturable ? objectiveMeterState(game, e) : null;
+    const objective = BUILDINGS[e.defId]?.capturable
+      ? objectiveMeterState(game, e, {
+          palette: this.app.settings.colorVision,
+          localPlayerId: this.app.localPlayerId,
+        })
+      : null;
     const garrisonDef = e.kind === 'building' ? BUILDINGS[e.defId]?.garrison : undefined;
     const transportDef = e.kind === 'unit' ? UNITS[e.defId]?.transport : undefined;
     const occupants =
@@ -2259,7 +2418,7 @@ export class HUD {
     body.innerHTML = `
       <div class="sel-primary">
         <div class="sel-main">
-          ${this.thumbMarkup(e.kind, e.defId, ownerColor(game, e), 'portrait', iconName, `sel-icon${isEnemy ? ' enemy' : e.owner === -1 ? ' neutral' : ''}`)}
+          ${this.thumbMarkup(e.kind, e.defId, ownerColor(game, e, this.app.settings.colorVision, this.app.localPlayerId), 'portrait', iconName, `sel-icon${isEnemy ? ' enemy' : e.owner === -1 ? ' neutral' : ''}`)}
           <div class="sel-info">
             <div class="sel-title"><h3>${escapeHtml(def?.name ?? e.defId)}</h3><span>${p ? escapeHtml(tryIdentityDef(p.factionId)?.shortName || p.name) : 'NEUTRAL'}${isOwn ? '' : isEnemy ? ' · HOSTILE' : ''}</span></div>
             <div class="sel-role">${escapeHtml(roleText)}</div>
@@ -2339,7 +2498,9 @@ export class HUD {
     const first = entities.find((e) => chip.ids.includes(e.id));
     if (!first) return '';
     const def = first.kind === 'unit' ? UNITS[chip.defId] : BUILDINGS[chip.defId];
-    const colour = this.game ? ownerColor(this.game, first) : '#d8e2dd';
+    const colour = this.game
+      ? ownerColor(this.game, first, this.app.settings.colorVision, this.app.localPlayerId)
+      : colorVisionTokens(this.app.settings.colorVision).friendly;
     const frac = chip.maxHp > 0 ? clamp01(chip.hp / chip.maxHp) : 0;
     const name = def?.name ?? chip.defId;
     if (chip.kind === 'group') {
@@ -2654,7 +2815,7 @@ export class HUD {
       if (group.some((id) => ids.split(',').map(Number).includes(id))) assigned.push(index);
     }
     if (assigned.length === 0) return '';
-    return `<div class="group-chips">${assigned.map((n) => `<span class="group-chip">GROUP ${n}</span>`).join('')}</div>`;
+    return `<div class="group-chips">${assigned.map((n) => `<span class="group-chip">GROUP <b>${n}</b></span>`).join('')}</div>`;
   }
 
   private renderGroups(): void {
@@ -3415,6 +3576,8 @@ export class HUD {
       move: 'MOVE — select a destination',
       attack: 'ATTACK — select a target',
       attackMove: 'ATTACK-MOVE — select a destination',
+      patrol: 'PATROL — select a point to patrol toward',
+      guard: 'GUARD — select a friendly unit to follow',
       capture: 'CAPTURE — select a strategic objective',
       repair: 'REPAIR — select a damaged structure or your own building site',
       garrison: 'GARRISON / BOARD — select a building or friendly transport',
@@ -3433,28 +3596,90 @@ export class HUD {
     });
   }
 
-  log(text: string, level = 'info', tick = 0): void {
-    this.logs.push({ text, level, tick });
-    if (this.logs.length > 40) this.logs.shift();
-    this.renderLog();
+  log(
+    text: string,
+    level: EventLogLevel = 'info',
+    tick = 0,
+    target?: { x?: number; z?: number; entityId?: number; tick?: number },
+  ): void {
+    this.logs = appendEventLog(
+      this.logs,
+      eventLogEntryFromNotice(text, level, tick, target?.x, target?.z, target?.entityId),
+    );
+    this.renderEventLog();
   }
 
   seedLog(game: Game): void {
     this.logs = [];
     const local = game.localPlayerId;
-    for (const ev of game.state.events.slice(-30)) {
-      if (ev.team === local || ev.type === 'buildingLost') this.logs.push({ text: ev.text, level: ev.level ?? 'info', tick: ev.tick });
+    for (const ev of game.state.events) {
+      if (ev.team === local || ev.type === 'buildingLost') {
+        this.logs = appendEventLog(this.logs, eventLogEntryFromEvent(ev));
+      }
     }
-    this.renderLog();
+    this.renderEventLog();
   }
 
-  private renderLog(): void {
-    const list = this.root?.querySelector('#log-list');
+  /** Whether the field-report overlay is open; the input layer uses it for Escape. */
+  get eventLogOpen(): boolean {
+    return this.logOpen;
+  }
+
+  toggleEventLog(): void {
+    this.logOpen = !this.logOpen;
+    this.syncEventLog();
+    if (this.logOpen) this.renderEventLog();
+  }
+
+  closeEventLog(): void {
+    if (!this.logOpen) return;
+    this.logOpen = false;
+    this.syncEventLog();
+  }
+
+  private syncEventLog(): void {
+    const panel = this.root?.querySelector<HTMLElement>('#event-log-panel');
+    if (!panel) return;
+    panel.classList.toggle('hidden', !this.logOpen);
+    panel.setAttribute('aria-hidden', this.logOpen ? 'false' : 'true');
+    if (this.logOpen) {
+      requestAnimationFrame(() => this.root?.querySelector<HTMLInputElement>('#event-log-search')?.focus());
+    } else {
+      this.root?.querySelector<HTMLInputElement>('#event-log-search')?.blur();
+    }
+  }
+
+  private setLogFilter(filter: EventLogFilter): void {
+    this.logFilter = filter;
+    this.root?.querySelectorAll<HTMLElement>('[data-log-filter]').forEach((button) => {
+      const active = button.dataset.logFilter === filter;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+    this.renderEventLog();
+  }
+
+  private renderEventLog(): void {
+    const root = this.root;
+    if (!root) return;
+    const list = root.querySelector<HTMLElement>('#log-list');
     if (!list) return;
-    list.innerHTML = this.logs
-      .slice(-24)
+    const visible = this.logs.filter((entry) => eventLogVisible(entry, this.logQuery, this.logFilter));
+    const count = root.querySelector<HTMLElement>('#log-count');
+    if (count) count.textContent = String(visible.length);
+    const empty = root.querySelector<HTMLElement>('#log-empty');
+    empty?.classList.toggle('hidden', visible.length > 0);
+    list.innerHTML = visible
+      .slice()
       .reverse()
-      .map((l) => `<div class="log-entry ${escapeHtml(l.level)}"><time>${fmtTime(l.tick)}</time><span>${escapeHtml(l.text)}</span></div>`)
+      .map((entry) => {
+        const jumpable = eventLogJumpable(entry);
+        const body = `<time>${fmtTime(entry.tick)}</time><span class="log-level">${eventLogLevelLabel(entry.level)}</span><span class="log-text">${escapeHtml(entry.text)}</span>${jumpable ? '<span class="log-jump" aria-hidden="true">↗</span>' : ''}`;
+        if (!jumpable) {
+          return `<div class="log-entry ${escapeHtml(entry.level)}" role="listitem">${body}</div>`;
+        }
+        return `<button type="button" class="log-entry jumpable ${escapeHtml(entry.level)}" role="listitem" data-log-x="${entry.x}" data-log-z="${entry.z}" title="Jump to this report">${body}</button>`;
+      })
       .join('');
   }
 
@@ -3557,7 +3782,11 @@ export class HUD {
       const tz = e.z / TILE_SIZE;
       // Remembered structures stay on the map as faint marks.
       ctx.globalAlpha = vision === 'remembered' ? 0.42 : 1;
-      ctx.fillStyle = e.owner === -1 ? '#c9d2ce' : ownerColor(game, e);
+      ctx.fillStyle = e.owner === -1
+        ? this.app.settings.colorVision === 'standard'
+          ? '#c9d2ce'
+          : colorVisionTokens(this.app.settings.colorVision).neutral
+        : ownerColor(game, e, this.app.settings.colorVision, this.app.localPlayerId);
       if (e.kind === 'building') {
         const def = BUILDINGS[e.defId];
         ctx.fillRect(tx - (def?.footprint.w ?? 1) / 2, tz - (def?.footprint.h ?? 1) / 2, Math.max(2, def?.footprint.w ?? 2), Math.max(2, def?.footprint.h ?? 2));
@@ -3582,7 +3811,11 @@ export class HUD {
       if (entity && game.visionStateOf(team, contact.entityId) === 'remembered') continue;
       const cxp = contact.x / TILE_SIZE;
       const czp = contact.z / TILE_SIZE;
-      const colour = entity ? ownerColor(game, entity) : '#c9d2ce';
+      const colour = entity
+        ? ownerColor(game, entity, this.app.settings.colorVision, this.app.localPlayerId)
+        : this.app.settings.colorVision === 'standard'
+          ? '#c9d2ce'
+          : colorVisionTokens(this.app.settings.colorVision).neutral;
       ctx.globalAlpha = contactAlpha(game.state.tick, contact);
       ctx.fillStyle = colour;
       ctx.strokeStyle = colour;
@@ -3779,9 +4012,12 @@ export class HUD {
       <div class="section">SIM ${game.stats().ms.toFixed(2)}ms · fog ${game.state.scenario.settings.fog ? 'on' : 'off'}</div>`;
   }
 
-  showEnd(result: VictoryState): void {
+  showEnd(result: VictoryState, announce = true): void {
     if (!this.game || !this.root || this.endShown) return;
+    const root = this.root.querySelector('#end-root');
+    if (!root) return;
     this.endShown = true;
+    this.endResult = result;
     // The result card lives inside the HUD; a hidden interface must not swallow
     // the verdict.
     this.setHudHidden(false);
@@ -3789,8 +4025,6 @@ export class HUD {
     const stats = p?.stats;
     const game = this.game;
     const victory = result === 'victory';
-    const root = this.root.querySelector('#end-root');
-    if (!root) return;
     const enemies = game.state.players.filter((q) => q.id !== this.app.localPlayerId);
     const enemyStats = enemies[0]?.stats;
     // End copy names the two identities actually fighting, not the legacy map.
@@ -3925,6 +4159,7 @@ export class HUD {
         if (act === 'menu') this.app.toMenu();
       });
     });
-    this.app.audio.play(victory ? 'victory' : 'defeat');
+    // Rebuilding the card after a rotation must not replay the verdict sting.
+    if (announce) this.app.audio.play(victory ? 'victory' : 'defeat');
   }
 }

@@ -1,5 +1,7 @@
 # MCA: Modern Combined Arms
 
+[![CI](https://github.com/horsemeninteractive-dev/modern-combined-arms/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/horsemeninteractive-dev/modern-combined-arms/actions/workflows/ci.yml)
+
 A playable vertical slice of a modern combined-arms real-time strategy game: author
 an island, launch it into a real battle, build an economy, command land, air and
 naval forces against a skirmish AI, and win or lose the island.
@@ -34,8 +36,9 @@ and the measurements behind both — is in
 npm install
 npm run dev        # http://127.0.0.1:5173
 npm run build      # typecheck + production bundle in dist/
-npm test           # the full Vitest suite (190 files)
+npm test           # the full Vitest suite (226 test files)
 npm run bench      # measured simulation/save/pathfinding performance
+npm run determinism:spike  # Chromium/Firefox/WebKit state-hash comparison
 ```
 
 No framework, no runtime dependencies: TypeScript modules, a hand-written WebGL2
@@ -116,6 +119,16 @@ The worker is registered only in production builds, so `npm run dev` never pins
 stale modules. Regenerate the icons with `node tools/make-icons.mjs` after
 editing [public/insignia.svg](public/insignia.svg).
 
+## Continuous integration
+
+Every push and pull request runs
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml): Node 22, `npm ci`,
+typecheck, the test suite with the long AI-matchup ladder and perf file excluded,
+the production build, and a release dry run. The workflow reads full git history
+so the release build stamp has the real commit count. Run `npm run ai:matchups`
+and `npm run bench` on an idle host or in a nightly job when those measurements
+matter.
+
 ## Release it
 
 `npm run release` is the whole release. It checks that `package.json`, the
@@ -161,12 +174,13 @@ override the project, branch and verification URL.
   editor.
   Touch devices held upright get a blocking rotate prompt instead of a broken
   portrait battlefield.
-- **Four theatres with a selector**: the Skirmish screen lists every built-in
-  map as a card carrying its own terrain raster, focus and size. Selecting one
-  repaints the brief, retitles the deck and swaps the battlefield behind the
-  menu. Deploying shows a full loading screen over that same render, with the
-  theatre, command, opposition, domains and opposing commander, and holds it
-  long enough to read.
+- **Forty-five authored battlefields**: twenty-eight campaign entries (four
+  theatres plus twenty-four operations) and seventeen competitive maps. The
+  Skirmish screen lists the competitive roster as cards carrying
+  their own terrain raster, focus and size. Selecting one repaints the brief,
+  retitles the deck and swaps the battlefield behind the menu. Deploying shows
+  a full loading screen over that same render, with the theatre, command,
+  opposition, domains and opposing commander, and holds it long enough to read.
 - **Island Assault — Kestrel Bay** (96×72): western beachhead, central ridge with
   one road pass, forested northern flank, contested signals relays, eastern
   expeditionary base, and a deep bay reaching the enemy coast.
@@ -183,10 +197,15 @@ override the project, branch and verification URL.
   Hall** (six occupants, three firing positions) and the **Foundry Works** under
   its twin chimneys (five occupants), with the relay, radar and depot objectives
   laid out around them.
-  The three new maps are authored on the western half and mirrored across the
-  centre line, so both commanders get identical ground, deposits, objectives
+  The campaign theatres are authored on the western half and mirrored across
+  the centre line, so both commanders get identical ground, deposits, objectives
   and starting forces (`tests/maps.test.ts` compares every tile and entity with
   its mirror).
+- **Competitive roster**: Open Front, Woodland Divide, Drylands, Ironworks,
+  Crossing Point, High Ground, Littoral, Contact Zone, Blackwater Fens, Hedgerow
+  Vale, Thorn Scrub, Granite Steps, Saffron Erg, Ashcross Sprawl, Freight Yards,
+  Silt Delta and Cormorant Isle. All seventeen are square, four-way rotationally
+  symmetric, declare four start slots and are audited by `auditCompetitiveMap`.
 - **Economy**: materials from deposits via harvesters carrying 300-material
   loads, requisition from command posts and captured relays, engineer-placed and
   engineer-repaired structures (repair is free but suspended for a second after
@@ -256,7 +275,7 @@ override the project, branch and verification URL.
   low-frequency drift that breaks up large grass fields without touching road,
   ore or buildable colours, and shrubs, bushes and tufts are drawn from three
   green families at a lifted value so cover reads as vegetation rather than dark
-  spots. No shadow maps, no post-processing and no camera change.
+  spots. Shadow maps are in; post-processing and camera changes are not.
 - **AI**: a seeded skirmish commander, not a script. The match seed picks a
   temperament (armour, infantry, air, economy or pressure), then a utility
   planner scores construction, production, scouting and attacks against its own
@@ -305,7 +324,8 @@ override the project, branch and verification URL.
   portrait, with a count badge for a group.
   HUD type comes from one scale (`--fs-xs` to `--fs-xl`, 11–18 px) multiplied
   by an interface-scale property, and resource figures are set larger than their
-  labels. Command buttons carry their hotkey on desktop and drop it on touch.
+  labels. Command buttons carry their saved hotkey on desktop and drop it on
+  touch; the Controls tab rebinds them and the caps follow.
   Unaffordable and locked production and construction cards print the reason on
   the card itself (`NO MATERIALS`, `NEEDS SHIPYARD`, `QUEUE FULL`) and separate a
   temporary shortage from missing technology by colour. While no radar is
@@ -326,20 +346,28 @@ override the project, branch and verification URL.
 
 | Action | Desktop | Touch | Gamepad |
 | --- | --- | --- | --- |
+| Menu navigate / confirm / back | Pointer + keyboard | Tap | D-pad, A, B |
 | Select / box select | LMB click / drag | Tap / drag, or **BOX** | A on cursor |
-| Add to selection | Shift | **ADD** toggle, then tap | — |
+| Add to selection | Shift | **ADD** toggle, then tap | RB + A |
 | Move / attack / rally | RMB | Tap destination / **ATTACK** | A / X |
 | Attack-move | `A` | **A-MOVE** command bar | X |
-| Stop / hold | `S` / `H` | **STOP** / command bar | Y |
+| Patrol | `T` | **PATROL** command bar | — |
+| Guard a friendly unit | `F` | **GUARD** command bar | — |
+| Rebind battle hotkeys | Settings → Controls | — | — |
+| Colour-vision palette | Settings → Display | — | — |
+| Queue a waypoint | Shift + RMB (up to 8) | — | — |
+| Stop / hold | `S` / `H` | **STOP** / command bar | Y / D-pad down |
 | Repair damaged structure | RMB with a Combat Engineer selected | **REPAIR**, then tap the structure | — |
 | Capture objective | RMB relay/depot/radar, or `C` | **CAPTURE** | — |
 | Garrison / exit | RMB a shelter with infantry, or **GARRISON** / **EXIT** | **GARRISON** / **EXIT BUILDING** | — |
 | Return aircraft/ship | `R` | **RETURN** | — |
 | Dive / surface submarine | `D` | **DIVE** | — |
-| Construction | `B`, or engineer + **BUILD** | **BUILD** tab | — |
-| Control groups | `Ctrl+1..9`, `1..9` | group strip | — |
-| Pan / zoom | Arrow keys, screen edge, RMB/middle drag, wheel | one-finger pan, pinch | left/right stick |
+| Construction | `B`, or engineer + **BUILD** | **BUILD** tab | A on card |
+| Production tabs | click tab | tab rail | LB / RB, D-pad up |
+| Control groups | `Ctrl+1..9`, `1..9` | group strip | D-pad left/right recall; LB + D-pad assigns |
+| Pan / zoom | Arrow keys, screen edge, RMB/middle drag, wheel | one-finger pan, pinch | left stick pan, right stick cursor, LT/RT zoom |
 | Pause / speed | `P` / `+` `-` | **PAUSE** | Start |
+| Field reports | `L`, or **LOG** | **LOG** | — |
 | Debug overlay | `F3` | **DIAG** | — |
 | Select all army | `Ctrl+A` | — | — |
 | Select every visible unit of a type | double-click it | double-tap | — |
@@ -347,10 +375,16 @@ override the project, branch and verification URL.
 | Jump to last alert | `F2`, or click a critical toast | tap the toast | — |
 | Camera bookmarks | `Ctrl+Shift+1..4` save, `Shift+1..4` recall | — | — |
 
-Attack-move and stop deliberately own `A` and `S`; camera panning uses the arrow
-keys, screen edge, drag and the wheel so keyboard orders never conflict. The
-briefing stays on `F1` and the debug overlay on `F3`, so camera bookmarks use
-`Shift+1..4` rather than the function row, and `Ctrl+1..9` remain control groups.
+Attack-move, stop, patrol and guard default to `A`, `S`, `T` and `F`. Every
+battle action in the command bar can be rebound in Settings → Controls; a
+duplicate or reserved key is refused, and the keycaps follow the saved map.
+Gamepad stick sensitivity is on the same tab. The Display tab offers Standard,
+Deuteranopia, Protanopia and Tritanopia palettes; every one keeps a shape or
+pattern beside the colour, so ownership, health and alert levels remain readable
+without hue. Camera panning uses the arrow keys, screen edge, drag and the wheel
+so keyboard orders never conflict. A plain
+move replaces the current order and clears any queued route; Shift + RMB appends
+up to eight waypoints, and Stop or Hold clears them.
 Escape pauses the battle or opens the menu, according to the setting; an active
 command mode always cancels first.
 
@@ -394,14 +428,18 @@ legacy presets, old maps and existing saves keep the unmodified baseline. See
 
 ## Tests and measurements
 
-`npm test` runs 2,515 tests across 171 files, including nation identity, roster
-gating and national substitutions, national counterplay fixtures, two-run
-state-hash determinism, batch-size
-invariance, save/load round-trip, blocked paths,
-aircraft recovery, naval navigation, reload and the three-hull fleet, full-ammo
-ship repair, AI shipyard/naval and airfield/fighter production, indirect-fire minimum range
-and lobbed-projectile round-trip, recovery repair, interceptor/drone/coastal
-roles, scenario validation, terrain-surface picking and measured performance. The infrastructure suite
+`npm test` collects 226 test files. With the long AI-matchup ladder and the perf
+file excluded, 224 files collect 3,065 passing tests and 3 skipped, including
+nation identity, roster gating and national substitutions, national counterplay
+fixtures, two-run state-hash determinism, batch-size invariance, save/load
+round-trip, blocked paths, aircraft recovery, naval navigation, reload and the
+four-hull fleet, full-ammo ship repair, AI shipyard/naval and airfield/fighter
+production, indirect-fire minimum range and lobbed-projectile round-trip,
+recovery repair, interceptor/drone/coastal roles, scenario validation,
+terrain-surface picking and measured performance. `npm run determinism:spike`
+runs a seeded AI-vs-AI match in Chromium, Firefox and WebKit and compares the
+state hash every 100 ticks; the recorded result is in
+[docs/DETERMINISM_SPIKE.md](docs/DETERMINISM_SPIKE.md). The infrastructure suite
 covers relay/depot/radar capture, passive income, brownout, multiple depots and
 save/load; the garrison suite covers entry, capacity, exit, protection, firing,
 enemy clearing, destruction and AI occupation. `npm run ai:matchups` runs the
@@ -481,7 +519,7 @@ latest runs are recorded in
 
 ## Known limitations
 
-- Gamepad support is implemented but was not exercised on physical hardware.
+- Gamepad support is implemented and was exercised in Chromium with a synthetic standard-mapping pad; it was not exercised on physical hardware. The pass covers menu focus, selection, additive selection, group assignment/recall and production tabs.
 - The desktop/mobile HUD structure and touch targets are measured in a Chromium
   viewport; physical notches, safe-area insets and low-end touch devices were not
   exercised. Thumbnails are generated at runtime from the low-poly meshes (no
@@ -506,22 +544,23 @@ latest runs are recorded in
   they have no national-only upgrades or signature abilities yet;
   every shared slot is common. The national values are not balance-tuned against
   human play, and no human match has been played with each of the ten nations.
-- The shared baseline has no mechanised transport or IFV: the simulation still
-  lacks passenger/load/unload state. Recovery is a repair vehicle, not a
-  recovery-and-tow system. Attack helicopters, field obstacles and a second
-  buildable naval hull remain future roles. See
+- The shared baseline carries infantry in the APC, utility helicopter and
+  landing craft, with load/unload state and transport AI. There is no IFV, no
+  recovery-and-tow system, no field obstacles and no second buildable naval
+  hull; attack helicopters remain a future role. See
   [docs/PHASE_2_ROSTER.md](docs/PHASE_2_ROSTER.md).
 - AI difficulty is tuned by mirrored AI-vs-AI matchups, not human win rates.
   The symmetric ladder arena has no water or ridges, so air and naval branches
   are verified separately; the levels describe relative commander strength in
   the ladder, not a promised outcome against a particular player.
-- **The mobile result screen is not usable yet.** At 844×390 the card is taller
-  than the viewport and all four actions are below the visible area; at 667×374
-  the card is 499 px tall in a 374 px viewport. The page does not scroll and the
-  action buttons are 36.9 px high. Rotating or resizing after a result also
-  removes the result card, and resizing while paused hides the pause overlay
-  while the simulation stays paused. See [docs/AUDIT_FINDINGS.md](docs/AUDIT_FINDINGS.md)
-  §9.4 (HUD-10, HUD-11, HUD-12).
+- **The mobile result card now fits in phone landscape.** At 844×390 its lowest
+  observed bottom edge is 376.6 px in a 390 px viewport; at 667×374 it is
+  361.5 px, and its report scrolls inside the card. All four actions are 44 px
+  high, stay outside the scroll region, and **RESTART SCENARIO** was clicked
+  successfully at 844×390. The result card and pause overlay are also restored
+  after a desktop↔mobile rebuild; Chromium kept the victory card through three
+  rebuilds and kept the pause card visible when a paused 667×374 battle was
+  rebuilt at 1280×720. See [docs/AUDIT_FINDINGS.md](docs/AUDIT_FINDINGS.md) §9.4.
 - At 1280×720 the persistent desktop HUD leaves 62.1% clear battlefield (chrome
   37.9%), and at 1920×1080 it leaves 72.1% (chrome 27.9%). These are CSS-pixel
   measurements from a Chromium viewport, not a pixel-diff review, and they were

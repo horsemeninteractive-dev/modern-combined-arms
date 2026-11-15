@@ -78,6 +78,10 @@ const RECORDED_VOICE_SETS: ReadonlySet<string> = new Set([
   'attackHelo',
   'transportHelo',
   'navalSupport',
+  // Shared roles added with the arsenal expansion.
+  'manpadsTeam',
+  'ewVehicle',
+  'loiteringMunition',
   // National replacements.
   'pathfinder',
   'spearhead',
@@ -124,6 +128,9 @@ const RECORDED_VOICE_SETS: ReadonlySet<string> = new Set([
   'frigateEC',
   'submarineEC',
   'navalSupportEC',
+  'manpadsTeamEC',
+  'ewVehicleEC',
+  'loiteringMunitionEC',
 ]);
 
 /**

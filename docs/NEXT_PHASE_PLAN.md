@@ -1,7 +1,11 @@
 # Next Phase Plan — MCA Current-State Audit
 
 Date: 2026-10-24  
-Status: **Current plan after the second current-state re-audit (2026-10-24),
+Status: **Historical plan after the second current-state re-audit (2026-10-24).**
+HUD-10, HUD-11 and HUD-12 were fixed on 2026-11-15; the HUD items below are
+retained as the historical ordering.
+
+Superseded status: **Current plan after the second current-state re-audit,
 updated after the AI commander revision.** [AUDIT_FINDINGS.md](AUDIT_FINDINGS.md)
 §7–§8 and [VERIFICATION_REPORT.md](VERIFICATION_REPORT.md) §28–§29 remain the
 historical pre-remediation and post-remediation records; §9–§10 and §30–§31 are

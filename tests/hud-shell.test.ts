@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 const hud = readFileSync(new URL('../src/ui/hud.ts', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../src/app.ts', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 
 /** The rail, from its opening element to the `</aside>` that closes it. */
 function railMarkup(): string {
@@ -54,19 +55,27 @@ describe('command rail', () => {
     expect(styles).toMatch(/\.rail-actions \.rail-objective \{[^}]*grid-column: 1 \/ -1/);
   });
 
-  it('flies the coloured crest on the nation flag instead of a coalition label', () => {
+  it('fills the top panel with the waving nation flag behind a static crest', () => {
     const rail = railMarkup();
     // The side a command belongs to is read from the crest's colour, not from a
-    // word: neither the coalition name nor an MCA wordmark is printed.
+    // word: neither the coalition name, the nation name nor a colour swatch is
+    // printed in the rail any more.
     expect(rail).not.toContain('rail-theatre');
     expect(rail).not.toContain('rail-wordmark');
+    expect(rail).not.toContain('rail-nation');
+    expect(rail).not.toContain('resource-swatch');
     const identity = rail.slice(rail.indexOf('rail-identity'));
     expect(identity).toContain('rail-flag');
     expect(identity).toContain('rail-crest');
     expect(identity.indexOf('rail-flag')).toBeLessThan(identity.indexOf('rail-crest'));
-    expect(identity).toContain('rail-nation');
     expect(identity).toContain('nationLabel');
-    expect(styles).toContain('.rail-nation {');
+    // The image fills the panel and the crest is a sibling, so the crest stays
+    // still while the cloth is displaced by the inline SVG filter.
+    expect(styles).toMatch(/\.rail-flag \{[^}]*width: 100%[^}]*height: 100%[^}]*object-fit: cover/);
+    expect(styles).toContain("filter: url('#flag-wave')");
+    expect(styles).toContain('.flag-wave-defs {');
+    expect(html).toContain('id="flag-wave"');
+    expect(html).toContain('feDisplacementMap');
     // The crest is a mask tinted by the coalition colour, so one asset serves
     // every faction rather than a blue and a red copy.
     expect(styles).toMatch(/\.rail-crest i \{[^}]*background: var\(--front/);
@@ -81,7 +90,8 @@ describe('touch safe areas', () => {
     expect(styles).toMatch(
       /\.mobile-power-strip \{[^}]*padding: 0 calc\(8px \+ env\(safe-area-inset-right, 0px\)\) 0 calc\(8px \+ env\(safe-area-inset-left, 0px\)\)/,
     );
-    expect(styles).toMatch(/\.layout-mobile \.hud-toggle \{[^}]*left: calc\(8px \+ env\(safe-area-inset-left, 0px\)\)/);
+    expect(styles).toMatch(/\.layout-mobile \.mobile-command-row \{[^}]*padding-right: 46px/);
+    expect(styles).toMatch(/\.layout-mobile \.hud-toggle \{[^}]*right: env\(safe-area-inset-right, 0px\)[^}]*bottom: env\(safe-area-inset-bottom, 0px\)/);
   });
 
   it('fits the longest production label inside the narrow touch rail', () => {
@@ -180,6 +190,22 @@ describe('hud entry', () => {
     expect(visibility).toContain('void hud.offsetWidth');
     expect(visibility).toContain("hud.classList.add('hud-enter')");
     expect(styles).toMatch(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.hud\.hud-enter \.hud-rail/);
+  });
+});
+
+describe('overlay lifecycle across a layout rebuild', () => {
+  it('restores the held pause and verdict instead of leaving the new shell empty', () => {
+    const shell = hud.slice(hud.indexOf('private renderShell'), hud.indexOf('private markup'));
+    // Both overlays are app state, but the rebuilt markup starts them hidden.
+    expect(shell).toContain('this.syncPauseState(true);');
+    expect(shell).toContain('this.showEnd(result, false);');
+    expect(hud).toContain('private endResult: VictoryState | null = null;');
+    expect(hud).toContain('this.endResult = result;');
+    // Rebuilding the card must not replay the verdict sting.
+    expect(hud).toContain('if (announce) this.app.audio.play');
+    // A fresh battle starts with no remembered verdict.
+    const mount = hud.slice(hud.indexOf('mount(game: Game): void'), hud.indexOf('unmount(): void'));
+    expect(mount).toContain('this.endResult = null;');
   });
 });
 

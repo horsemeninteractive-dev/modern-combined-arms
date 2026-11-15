@@ -263,9 +263,9 @@ npm run release                  # uploads dist/ to Pages and polls until live
 
 - No human playtest of the balance changes recorded above; they are covered by
   fixtures and the ladder only.
-- The mobile result screen remains unusable at small viewports (see
-  [docs/AUDIT_FINDINGS.md](AUDIT_FINDINGS.md) §9.4), which is a known defect and
-  not a regression from this pass.
+- The mobile result screen was unusable at small viewports in this baseline;
+  HUD-11 and the HUD-10/HUD-12 layout-rebuild defects were fixed on 2026-11-15
+  (see [docs/AUDIT_FINDINGS.md](AUDIT_FINDINGS.md) §9.4).
 - Gamepad support, physical touch devices and audio have never been exercised on
   hardware.
 - The account service's live OAuth round trip needs real client secrets and is

@@ -4,6 +4,28 @@
   initial-value: 0%;
 }
 
+/* The eastern plate's digit face, used only for numeric counters. */
+@font-face {
+  font-family: 'ReNix';
+  src: url('/fonts/reNix-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  /* The face is a nixie-tube digit set: no letters, colon, slash or comma.
+     Restricting it to digits means a mixed string keeps its words and
+     separators in the fallback face instead of dropping glyphs. */
+  unicode-range: U+0030-0039;
+}
+
+/* The defender console's digit face. */
+@font-face {
+  font-family: 'Seven Segment';
+  src: url('/fonts/Seven Segment.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --bg: #070b0d;
   --bg-2: #0c1215;
@@ -32,6 +54,24 @@
   --red: #ef6c4d;
   --red-soft: #ffb29b;
   --green: #86c791;
+  /* Colour-vision signals. JS replaces these from src/colorVision.ts when the
+     player picks a preset; these standard values prevent an unstyled first
+     paint before App.applySettings runs. */
+  --cv-friendly: #52c5e6;
+  --cv-friendly-soft: #a6e8f8;
+  --cv-hostile: #ef6c4d;
+  --cv-hostile-soft: #ffb29b;
+  --cv-neutral: #b9c6c1;
+  --cv-ok: #86c791;
+  --cv-ok-soft: #b6e3bd;
+  --cv-wounded: #e0a34a;
+  --cv-wounded-soft: #f1c27e;
+  --cv-critical: #ef6c4d;
+  --cv-critical-soft: #ffb29b;
+  --cv-info: #52c5e6;
+  --cv-info-soft: #a6e8f8;
+  --cv-success: #86c791;
+  --cv-success-soft: #b6e3bd;
   --mono: 'SFMono-Regular', 'Cascadia Mono', 'Roboto Mono', Consolas, monospace;
   --sans: 'Inter', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
   --display: 'Bahnschrift', 'DIN Alternate', 'DIN Condensed', 'Roboto Condensed', 'Arial Narrow', 'Helvetica Neue', sans-serif;
@@ -989,10 +1029,10 @@ html.custom-cursors select { cursor: default !important; }
 .account-notice[data-level='success']::before { content: 'OK'; color: var(--green); }
 .account-notice[data-level='info'] { border-left-color: var(--blue); }
 .account-notice[data-level='info']::before { content: 'i'; color: var(--blue); }
-.account-notice[data-level='warning'] { border-left-color: var(--amber); }
-.account-notice[data-level='warning']::before { content: '!'; color: var(--amber); }
-.account-notice[data-level='critical'] { border-left-color: var(--red); }
-.account-notice[data-level='critical']::before { content: '!'; color: var(--red); }
+.account-notice[data-level='warning'] { border-left-color: var(--cv-wounded); }
+.account-notice[data-level='warning']::before { content: '!'; color: var(--cv-wounded); }
+.account-notice[data-level='critical'] { border-left-color: var(--cv-critical); }
+.account-notice[data-level='critical']::before { content: '!'; color: var(--cv-critical); }
 
 .account-fineprint { margin: 12px 0 0; color: var(--ink-faint); font-size: 9.5px; letter-spacing: 0.05em; }
 
@@ -1763,8 +1803,6 @@ html.custom-cursors select { cursor: default !important; }
 
 .hud { position: absolute; inset: 0; pointer-events: none; font-size: var(--fs-sm); --top-h: 0px; --console-h: calc(156px * var(--ui-scale)); --console-pad: 5px; --console-gap: 4px; --console-actions: calc(30px * var(--ui-scale)); --console-border: 1px; --selection-h: calc(var(--console-h) - var(--console-border) - 2 * var(--console-pad) - var(--console-gap) - var(--console-actions)); --selection-top-offset: var(--console-h); --sidebar-w: max(clamp(calc(236px * var(--ui-scale)), 15vw, calc(268px * var(--ui-scale))), 220px); --rail-body-w: calc(96px * var(--ui-scale)); --power-w: calc(20px * var(--ui-scale)); --rail-w: calc(var(--rail-body-w) + var(--power-w)); --tab-w: clamp(60px, calc(60px * var(--ui-scale)), 96px); }
 .hud > * { pointer-events: auto; }
-.resource-swatch { width: 5px; height: 5px; background: var(--amber); flex: 0 0 auto; }
-.resource-swatch.blue { background: var(--blue); }
 
 /* Left command rail: resources, army, objective, control groups and mission actions. */
 /*
@@ -1790,35 +1828,35 @@ html.custom-cursors select { cursor: default !important; }
   /* Room for the interface toggle, which is the rail's last strip. */
   padding-bottom: 23px; scrollbar-width: thin;
 }
-/* One command header, not two bands: the brand, the coalition and the nation
-   under its flag share a single tinted block with one rule beneath it. */
-.rail-command { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 10px 4px 8px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
-/* The crest flies on the flag itself: the MCA mark in the coalition's colour,
-   plated so it stays legible over any national flag. */
-/* The wrapper is exactly the flag's box: inline flow would add the image's
-   descender, which pushed a centred crest one pixel low. */
-.rail-flag-wrap { position: relative; display: block; line-height: 0; font-size: 0; }
-.rail-flag-wrap .rail-flag { display: block; }
+/* The command header is a flag panel: full width, no words. The cloth moves;
+   the crest over it stays static so the coalition mark never blurs. */
+.rail-command { display: block; padding: 0; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+.rail-identity { position: relative; display: block; width: 100%; height: calc(72px * var(--ui-scale)); overflow: hidden; flex: 0 0 auto; background: #0a0f11; }
+.rail-flag { display: block; width: 100%; height: 100%; object-fit: cover; transform: scale(1.06); filter: url('#flag-wave'); }
+/* Vignette so the crest and the flag edges stay readable on bright cloth. */
+.rail-identity::after { content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none; background: linear-gradient(180deg, rgba(4,8,10,0.34), transparent 38%, rgba(4,8,10,0.5)); box-shadow: inset 0 0 26px rgba(0,0,0,0.55), inset 0 -10px 20px rgba(0,0,0,0.4); }
 .rail-crest {
-  position: absolute; inset: 0; margin: auto;
-  display: grid; place-items: center; width: 32px; height: 32px;
+  position: absolute; inset: 0; margin: auto; z-index: 2;
+  filter: drop-shadow(0 4px 7px rgba(0, 0, 0, 0.75));
+  display: grid; place-items: center; width: 40px; height: 40px;
   background: rgba(9, 14, 16, 0.82);
   border: 1px solid var(--front, #37b6e0);
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 3px 8px rgba(0, 0, 0, 0.65);
 }
 .rail-crest i {
-  display: block; width: 23px; height: 23px;
+  display: block; width: 28px; height: 28px;
   background: var(--front, #37b6e0);
   -webkit-mask: url('/insignia-crest.svg') center / contain no-repeat;
   mask: url('/insignia-crest.svg') center / contain no-repeat;
 }
 .hud-rail .brand-mark { width: 28px; height: 28px; }
-/* The player's nation, under the brand and above the resources. The rail is
-   only 96px wide, so the flag is width-bound and the alliance sits beneath. */
-.rail-identity { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 0; flex: 0 0 auto; }
-.rail-flag { height: 40px; max-width: 100%; width: auto; object-fit: contain; background: rgba(255,255,255,0.03); border: 1px solid rgba(167,190,184,0.24); box-shadow: 0 1px 4px rgba(0,0,0,0.55); }
-.rail-nation { display: inline-flex; align-items: center; gap: 3px; max-width: 100%; font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.06em; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rail-nation i { width: 5px; height: 5px; flex: 0 0 auto; }
+@media (prefers-reduced-motion: reduce) {
+  .rail-flag, .mobile-flag { filter: none; transform: none; }
+}
+
+/* The inline SVG filter lives in index.html; the document keeps it out of flow. */
+.flag-wave-defs { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }
+
 .rail-stats { display: flex; flex-direction: column; flex: 0 0 auto; }
 .rail-stat { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 4px 5px; border-bottom: 1px solid var(--line); overflow: hidden; text-align: center; }
 .rail-label { display: flex; justify-content: center; align-items: center; gap: 3px; max-width: 100%; font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.04em; color: var(--ink-dim); white-space: nowrap; overflow: hidden; }
@@ -1964,7 +2002,7 @@ html.custom-cursors select { cursor: default !important; }
 .rail-actions .rail-objective .icon { width: 15px; height: 15px; }
 .rail-actions .rail-objective .rail-label { color: var(--red-soft); letter-spacing: 0.12em; }
 .rail-actions .rail-objective:hover { color: var(--ink); border-color: var(--line-strong); border-left-color: var(--red); background: linear-gradient(90deg, rgba(239,108,77,0.26), rgba(239,108,77,0.08)); }
-.rail-actions .rail-objective.bad { background: rgba(239,108,77,0.3); color: #fff; animation: power-pulse 1.6s ease-in-out infinite; }
+.rail-actions .rail-objective.bad { background: color-mix(in srgb, var(--cv-critical) 30%, transparent); color: #fff; animation: power-pulse 1.6s ease-in-out infinite; }
 /* The rail's foot: force size sits directly above the control-group strip. */
 .rail-tail { display: flex; flex-direction: column; flex: 0 0 auto; }
 .rail-tail .rail-stat-army { padding: 4px 4px 3px; border-bottom: 1px solid var(--line); }
@@ -2031,14 +2069,66 @@ html.custom-cursors select { cursor: default !important; }
 .objective-row .status { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-faint); flex: 0 0 auto; }
 .objective-row .status.done { background: var(--green); }
 .objective-row .status.active { background: var(--amber); box-shadow: 0 0 6px rgba(224,163,74,0.45); }
-.event-log { max-height: 210px; overflow: hidden; display: flex; flex-direction: column-reverse; }
-.event-log .log-list { padding: 6px 10px 9px; display: flex; flex-direction: column; gap: 1px; overflow: hidden; }
-.log-entry { display: flex; gap: 7px; font-size: var(--fs-sm); color: var(--ink-dim); padding: 3px 2px; border-bottom: 1px solid rgba(255,255,255,0.025); }
-.log-entry time { font-family: var(--mono); font-size: var(--fs-xs); color: var(--ink-dim); flex: 0 0 44px; }
-.log-entry.warning { color: var(--amber-soft); }
-.log-entry.critical { color: var(--red-soft); }
-.log-entry.success { color: var(--green); }
+/*
+ * Field reports. The log is a review surface, not a permanent panel: it opens
+ * over the map for the whole local history and closes back to the battle.
+ */
+.event-log-panel {
+  position: fixed; top: 12px; left: calc(116px * var(--ui-scale) + 12px);
+  width: min(390px, calc(100vw - 140px)); max-height: min(62vh, 540px);
+  z-index: 85; display: flex; flex-direction: column;
+  border: 1px solid var(--line-strong); background: rgba(7, 12, 14, 0.97);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55); font-family: var(--mono);
+}
+.log-head {
+  display: flex; align-items: center; gap: 8px; padding: 9px 10px;
+  border-bottom: 1px solid var(--line); font-size: var(--fs-xs);
+  letter-spacing: 0.14em; color: var(--ink-dim);
+}
+.log-head > span:first-child { flex: 1; }
+.log-count {
+  min-width: 24px; padding: 2px 5px; border: 1px solid var(--line);
+  color: var(--amber-soft); font-size: var(--fs-xs); text-align: center;
+}
+.log-head .sheet-close { position: static; margin-left: 2px; }
+.log-tools { display: flex; flex-direction: column; gap: 7px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.log-search input {
+  width: 100%; min-height: 28px; padding: 5px 7px; border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03); color: var(--ink);
+  font: inherit; font-size: var(--fs-sm); letter-spacing: 0.04em;
+}
+.log-search input::placeholder { color: var(--ink-faint); letter-spacing: 0.1em; }
+.log-search input:focus-visible { outline: 1px solid var(--amber); outline-offset: 1px; }
+.log-filters { display: flex; gap: 4px; }
+.log-filter {
+  flex: 1; min-height: 26px; padding: 3px 6px; border: 1px solid var(--line);
+  background: transparent; color: var(--ink-faint); font: inherit;
+  font-size: var(--fs-xs); letter-spacing: 0.08em; cursor: pointer;
+}
+.log-filter:hover, .log-filter:focus-visible { color: var(--ink); border-color: var(--line-strong); outline: none; }
+.log-filter.active { color: var(--amber-soft); border-color: rgba(224, 163, 74, 0.55); background: rgba(224, 163, 74, 0.08); }
+.event-log-list { min-height: 0; overflow-y: auto; padding: 0 10px 8px; }
+.log-entry {
+  display: flex; align-items: baseline; gap: 7px; width: 100%;
+  padding: 5px 2px; border: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.035);
+  background: transparent; color: var(--ink-dim); font: inherit;
+  font-size: var(--fs-sm); line-height: 1.35; text-align: left;
+}
+.log-entry time { flex: 0 0 44px; color: var(--ink-dim); font-size: var(--fs-xs); }
+.log-level { flex: 0 0 38px; font-size: var(--fs-xs); letter-spacing: 0.06em; color: var(--ink-faint); }
+.log-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.log-entry.warning { color: var(--cv-wounded-soft); }
+.log-entry.warning .log-level { color: var(--cv-wounded); }
+.log-entry.critical { color: var(--cv-critical-soft); }
+.log-entry.critical .log-level { color: var(--cv-critical); }
+.log-entry.success { color: var(--cv-success); }
+.log-entry.success .log-level { color: var(--cv-success); }
 .log-entry.info { color: var(--ink-dim); }
+.log-entry.jumpable { cursor: pointer; }
+.log-entry.jumpable:hover, .log-entry.jumpable:focus-visible { background: rgba(255, 255, 255, 0.05); outline: 1px solid var(--line-strong); outline-offset: -1px; }
+.log-jump { flex: 0 0 auto; color: var(--amber); font-size: var(--fs-xs); }
+.log-empty { margin: 0; padding: 14px 10px; color: var(--ink-faint); font-size: var(--fs-sm); }
+.layout-mobile .event-log-panel { top: 58px; left: 8px; right: 8px; width: auto; max-height: 62vh; }
 /*
  * Field reports: a quiet log in the top-left corner, not a stack of cards over
  * the battlefield. Each line is typed in behind a colour-coded rule, with a
@@ -2063,10 +2153,12 @@ html.custom-cursors select { cursor: default !important; }
 }
 .toast.clickable { pointer-events: auto; cursor: pointer; }
 .toast.clickable:hover, .toast.clickable:focus-visible { outline: 1px solid var(--amber); outline-offset: 3px; }
-.toast.info { border-left-color: var(--blue-soft); }
-.toast.warning { border-left-color: var(--amber); }
-.toast.critical { border-left-color: var(--red); }
-.toast.success { border-left-color: var(--green); }
+/* Severity carries a rule pattern as well as a colour: solid, dashed, double
+   and dotted. The typed text and screen-reader copy remain the primary cue. */
+.toast.info { border-left: 2px solid var(--cv-info); }
+.toast.warning { border-left: 2px dashed var(--cv-wounded); }
+.toast.critical { border-left: 3px double var(--cv-critical); }
+.toast.success { border-left: 2px dotted var(--cv-success); }
 .toast .t-text { white-space: pre-wrap; }
 .toast .t-caret {
   display: inline-block; width: 6px; height: 11px; margin-left: 2px; vertical-align: -1px;
@@ -2236,7 +2328,7 @@ html.custom-cursors select { cursor: default !important; }
 .sel-line span, .sel-line b { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sel-line b { font-weight: 500; color: var(--ink); }
 .sel-line b.good { color: var(--green); }
-.sel-line b.bad { color: var(--amber-soft); }
+.sel-line b.bad { color: var(--cv-wounded-soft); }
 .sel-hint { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.04em; color: var(--amber-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .group-mix { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.02em; color: var(--ink-dim); }
 .group-mix span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -2278,19 +2370,25 @@ html.custom-cursors select { cursor: default !important; }
 .roster-chip .chip-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .roster-chip .chip-name { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: var(--fs-xs); color: var(--ink-dim); }
 .roster-chip.active .chip-name { color: var(--amber-soft); }
-.chip-hp { display: block; height: 2px; background: rgba(255,255,255,0.08); }
-.chip-hp i { display: block; height: 100%; background: var(--green); }
-.chip-hp i.mid { background: var(--amber); }
-.chip-hp i.low { background: var(--red); }
+.chip-hp { position: relative; display: block; height: 2px; background: rgba(255,255,255,0.08); }
+.chip-hp i { display: block; height: 100%; background: var(--cv-ok); }
+.chip-hp i.mid { background: var(--cv-wounded); }
+.chip-hp i.low { background: var(--cv-critical); background-image: repeating-linear-gradient(45deg, rgba(4,8,9,0.38) 0 2px, transparent 2px 4px); }
 .roster-empty { align-self: center; padding-left: 6px; font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.06em; color: var(--ink-dim); white-space: nowrap; }
 .idle-hint { height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 5px; }
 .idle-hint .hint-title { font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.12em; color: var(--ink-dim); }
 .idle-hint p { margin: 0; font-size: var(--fs-sm); color: var(--ink-dim); line-height: 1.4; }
 .key-row { display: none; }
 .sel-main { display: flex; gap: 9px; align-items: flex-start; min-width: 0; }
-.sel-icon { width: 48px; height: 48px; flex: 0 0 auto; border: 1px solid var(--line); display: grid; place-items: center; color: var(--blue-soft); position: relative; overflow: hidden; }
-.sel-icon.enemy { color: var(--red-soft); }
+.sel-icon { width: 48px; height: 48px; flex: 0 0 auto; border: 1px solid var(--line); display: grid; place-items: center; color: var(--cv-friendly-soft); position: relative; overflow: hidden; }
+.sel-icon.enemy { color: var(--cv-hostile-soft); }
 .sel-icon.neutral { color: var(--ink-dim); }
+/* A hostile thumbnail carries a corner diamond, not only a red tint. The
+   thumb's own gradient uses ::after, so the marker lives on ::before. */
+.sel-icon.enemy::before, .roster-chip .chip-art.enemy::before {
+  content: ''; position: absolute; top: 4px; right: 4px; z-index: 3; width: 5px; height: 5px;
+  border: 1px solid currentColor; transform: rotate(45deg); pointer-events: none;
+}
 .sel-icon svg { width: 26px; height: 26px; }
 .sel-count-badge { position: absolute; right: 2px; bottom: 2px; z-index: 3; min-width: 18px; padding: 1px 3px; background: rgba(224,163,74,0.92); color: #1b1407; font-family: var(--mono); font-size: var(--fs-xs); font-weight: 700; line-height: 1.15; text-align: center; }
 
@@ -2315,12 +2413,13 @@ html.custom-cursors select { cursor: default !important; }
 .hp-block { margin-top: 5px; }
 .hp-label { display: flex; justify-content: space-between; gap: 6px; min-width: 0; font-family: var(--mono); font-size: var(--fs-xs); color: var(--ink-dim); margin-bottom: 2px; }
 .hp-label span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hp-note { display: flex; justify-content: space-between; gap: 6px; margin-top: 2px; font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.02em; color: var(--amber); }
+.hp-note { display: flex; justify-content: space-between; gap: 6px; margin-top: 2px; font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.02em; color: var(--cv-wounded); }
 .hp-note span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hp-bar { height: 3px; background: rgba(255,255,255,0.08); overflow: hidden; }
-.hp-bar i { display: block; height: 100%; background: var(--green); transition: width 160ms linear; }
-.hp-bar i.mid { background: var(--amber); }
-.hp-bar i.low { background: var(--red); }
+.hp-bar { position: relative; height: 3px; background: rgba(255,255,255,0.08); overflow: hidden; }
+.hp-bar i { display: block; height: 100%; background: var(--cv-ok); transition: width 160ms linear; }
+.hp-bar i.mid { background: var(--cv-wounded); }
+.hp-bar i.low { background: var(--cv-critical); background-image: repeating-linear-gradient(45deg, rgba(4,8,9,0.38) 0 2px, transparent 2px 4px); }
+.hp-bar::after, .chip-hp::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 1px), rgba(4,8,9,0.62) calc(10% - 1px) 10%); }
 .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 6px; }
 .battle-console .stat-grid { grid-template-columns: repeat(2, 1fr); }
 .stat { border-left: 1px solid var(--line); padding-left: 6px; min-width: 0; }
@@ -2333,15 +2432,15 @@ html.custom-cursors select { cursor: default !important; }
 .supply-row { display: flex; align-items: center; gap: 5px; margin-top: 1px; min-width: 0; }
 .supply-row b { margin-top: 0; }
 .supply-pips { display: flex; gap: 2px; align-items: flex-end; }
-.supply-pips i { width: 3px; height: 8px; background: var(--amber); box-shadow: inset 0 -1px 0 rgba(0,0,0,0.35); }
+.supply-pips i { width: 3px; height: 8px; background: var(--cv-wounded); box-shadow: inset 0 -1px 0 rgba(0,0,0,0.35); }
 .supply-pips i.spent { background: rgba(255,255,255,0.08); box-shadow: none; }
 /* Endurance meter: a tracked rail with internal ticks, the same instrument
    treatment as the command rail's power gauge. Blue is the information tone;
    half a tank turns it amber and a fifth turns it red. */
 .supply-meter { position: relative; flex: 0 1 46px; min-width: 20px; height: 4px; background: rgba(255,255,255,0.08); overflow: hidden; }
-.supply-meter i { display: block; height: 100%; background: var(--blue); transition: width 160ms linear; }
-.supply-meter.low i { background: var(--amber); }
-.supply-meter.critical i { background: var(--red); }
+.supply-meter i { display: block; height: 100%; background: var(--cv-info); transition: width 160ms linear; }
+.supply-meter.low i { background: var(--cv-wounded); }
+.supply-meter.critical i { background: var(--cv-critical); }
 .supply-meter::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(90deg, transparent 0 5px, rgba(4,8,9,0.62) 5px 6px); }
 .sel-orders { display: flex; gap: 5px; margin-top: 7px; flex-wrap: wrap; }
 .garrison-orders { margin-top: 4px; }
@@ -2487,7 +2586,7 @@ html.custom-cursors select { cursor: default !important; }
 .build-card .b-flag { display: none; position: absolute; top: 5px; right: 5px; z-index: 4; padding: 1px 4px; background: rgba(239,108,77,0.92); color: #240b06; font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.04em; }
 .build-card.suggested { border-color: rgba(239,108,77,0.62); background: rgba(239,108,77,0.07); }
 .build-card.suggested .b-flag { display: block; }
-.grid-alert { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; padding: 5px 8px; border-bottom: 1px solid rgba(239,108,77,0.4); background: rgba(239,108,77,0.1); font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.02em; line-height: 1.35; color: var(--red-soft); }
+.grid-alert { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; padding: 5px 8px; border-bottom: 1px solid color-mix(in srgb, var(--cv-critical) 40%, transparent); background: color-mix(in srgb, var(--cv-critical) 10%, transparent); font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.02em; line-height: 1.35; color: var(--cv-critical-soft); }
 .grid-alert span { flex: 1; min-width: 0; }
 .grid-alert-btn { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; min-height: 26px; padding: 3px 8px; border: 1px solid rgba(239,108,77,0.55); background: rgba(239,108,77,0.16); color: var(--red-soft); font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.04em; }
 .grid-alert-btn:hover { background: rgba(239,108,77,0.28); color: #fff; }
@@ -2825,7 +2924,7 @@ html.custom-cursors select { cursor: default !important; }
 .layout-mobile .mobile-roster .roster-empty { padding-left: 8px; }
 .layout-mobile .add-toggle { flex: 0 0 44px; width: 44px; height: 46px; border: 0; border-left: 1px solid var(--line); background: rgba(255,255,255,0.03); color: var(--ink-dim); font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.04em; }
 .layout-mobile .add-toggle.active { background: rgba(224,163,74,0.18); color: var(--amber-soft); }
-.layout-mobile .mobile-command-row { flex: 0 0 44px; min-height: 0; display: flex; }
+.layout-mobile .mobile-command-row { flex: 0 0 44px; min-height: 0; display: flex; padding-right: 46px; }
 .layout-mobile .command-bar { flex: 1 1 auto; height: 44px; padding: 0 1px; gap: 3px; justify-content: flex-start; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .layout-mobile .command-bar::-webkit-scrollbar { height: 0; }
 .layout-mobile .cmd-btn { flex: 0 0 auto; min-width: 58px; height: 44px; padding: 0 5px; flex-direction: column; justify-content: center; gap: 1px; font-size: var(--fs-xs); letter-spacing: 0.02em; }
@@ -2863,7 +2962,28 @@ html.custom-cursors select { cursor: default !important; }
 .hud-toggle:hover,
 .hud-toggle:focus-visible { opacity: 1; color: var(--amber-soft); border-color: var(--line-strong); outline: none; }
 .hud-toggle.is-off { opacity: 0.9; color: var(--amber-soft); border-color: rgba(224, 163, 74, 0.5); }
-.layout-mobile .hud-toggle { top: calc(var(--top-h) + 6px + env(safe-area-inset-top, 0px)); left: calc(8px + env(safe-area-inset-left, 0px)); bottom: auto; width: auto; padding: 0 7px; border: 1px solid var(--line); }
+/* Touch: docked to the far right of the bottom command strip, in the gap the
+   row reserves for it, so it reads as the strip's last control. Absolute (not
+   a flex child) keeps it visible while the rest of the HUD is hidden. */
+.layout-mobile .hud-toggle {
+  top: auto; left: auto;
+  right: env(safe-area-inset-right, 0px);
+  bottom: env(safe-area-inset-bottom, 0px);
+  width: 46px; height: 44px; padding: 0;
+  flex-direction: column; gap: 1px;
+  border: 0; border-left: 1px solid var(--line);
+  background: rgba(6, 10, 12, 0.98);
+  opacity: 0.82;
+}
+/* Coalition skins give every toggle a full frame; the docked touch version
+   keeps only its seam so it reads as part of the command strip. */
+[data-front] .layout-mobile .hud-toggle {
+  border: 0;
+  border-left: 1px solid color-mix(in srgb, var(--front, #37b6e0) 40%, transparent);
+  border-radius: 0;
+  clip-path: none;
+}
+.layout-mobile .hud-toggle .icon { width: 17px; height: 17px; }
 /* Everything except the toggle leaves the frame; the battlefield takes it back. */
 .hud.hud-hidden > :not(.hud-toggle) { display: none !important; }
 .layout-mobile .perf-readout { top: calc(var(--top-h) + 6px + env(safe-area-inset-top, 0px)); left: auto; right: calc(60px + 8px + env(safe-area-inset-right, 0px)); bottom: auto; }
@@ -2871,7 +2991,7 @@ html.custom-cursors select { cursor: default !important; }
 .debug-panel b { color: var(--ink); font-weight: 500; }
 .debug-panel .section { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
 /* End screen */
-.end-screen { position: absolute; inset: 0; background: rgba(4,7,9,0.34); backdrop-filter: blur(6px); display: grid; place-items: center; z-index: 70; overflow: hidden; }
+.end-screen { position: absolute; inset: 0; background: rgba(4,7,9,0.34); backdrop-filter: blur(6px); display: grid; place-items: center; z-index: 70; overflow: hidden; padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
 /* The same field-monitor grain the menu shell uses, so the verdict belongs to
    the game rather than looking like a flag pasted behind a dialog. */
 .end-screen::after {
@@ -2939,7 +3059,7 @@ html.custom-cursors select { cursor: default !important; }
 .end-screen.defeat .end-sting-rule { background: rgba(255, 176, 158, 0.72); box-shadow: 0 0 14px rgba(210, 84, 60, 0.35); }
 .end-card {
   display: flex; flex-direction: column;
-  width: min(620px, 90vw); max-height: 88vh; max-height: 88dvh; overflow: hidden;
+  width: min(620px, 90vw); max-height: 88vh; max-height: min(88dvh, 100%); overflow: hidden;
   border: 1px solid var(--line-strong); background: rgba(10,16,18,0.97); padding: 34px 36px; box-shadow: var(--shadow);
   position: relative; z-index: 3; animation: endCardIn 0.8s cubic-bezier(0.16, 0.9, 0.24, 1) 1.8s both;
 }
@@ -2962,7 +3082,7 @@ html.custom-cursors select { cursor: default !important; }
 }
 @keyframes endStingSub { from { opacity: 0; transform: translateY(8px); letter-spacing: 0.6em; } to { opacity: 1; transform: none; } }
 @keyframes endStingFade { 0%, 66% { opacity: 1; } 100% { opacity: 0; } }
-@keyframes endCardIn { from { opacity: 0; transform: translateY(26px) scale(0.985); filter: blur(6px); } to { opacity: 1; transform: none; filter: blur(0); } }
+@keyframes endCardIn { from { opacity: 0; transform: translateY(10px); filter: blur(6px); } to { opacity: 1; transform: none; filter: blur(0); } }
 @media (prefers-reduced-motion: reduce) {
   .end-flag, .end-sting, .end-card { animation: none; }
   .end-sting { display: none; }
@@ -2979,6 +3099,13 @@ html.custom-cursors select { cursor: default !important; }
   flex: 0 0 auto; display: flex; gap: 8px; flex-wrap: wrap;
   padding-top: 16px; border-top: 1px solid var(--line);
 }
+/* Phone landscape: the result is the only way back into the loop, so every
+   action keeps a full touch target. Width-based too, because a desktop window
+   can be shortened to the same composition. */
+@media (max-width: 899px), (max-height: 479px) {
+  .end-actions .btn { min-width: 44px; min-height: 44px; }
+}
+.layout-mobile .end-actions .btn { min-width: 44px; min-height: 44px; }
 /* Career line on the verdict card. Empty for a test run or a failed read. */
 .end-career-slot:empty { display: none; }
 .end-career {
@@ -3215,6 +3342,26 @@ html.custom-cursors select { cursor: default !important; }
 .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; background: var(--ink-faint); transition: 120ms; }
 .switch.on { border-color: var(--amber); background: rgba(224,163,74,0.2); }
 .switch.on::after { left: 18px; background: var(--amber); }
+.keybind-heading { margin: 14px 0 4px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.08); }
+.keybind-heading b { display: block; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink); }
+.keybind-heading small { display: block; margin-top: 3px; color: var(--ink-faint); font-size: 10px; }
+.keybind-list { max-height: 250px; overflow-y: auto; padding-right: 4px; }
+.keybind-row { padding: 5px 0; }
+.keybind-row small { display: none; }
+.keybind-btn {
+  min-width: 66px; padding: 4px 8px; border: 1px solid rgba(167,190,184,0.38);
+  background: rgba(255,255,255,0.04); color: var(--ink);
+  font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+}
+.keybind-btn:hover { border-color: var(--amber); color: var(--amber); }
+.keybind-btn.listening { border-color: var(--amber); color: var(--amber); background: rgba(224,163,74,0.16); animation: keybind-pulse 1s ease-in-out infinite; }
+.keybind-reset {
+  padding: 4px 9px; border: 1px solid var(--line-strong); background: rgba(255,255,255,0.04);
+  color: var(--ink-dim); font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em;
+}
+.keybind-reset:hover { color: var(--ink); border-color: var(--amber); }
+.bind-status { min-height: 16px; padding-top: 6px; color: var(--ink-dim); font-size: 10px; }
+@keyframes keybind-pulse { 50% { box-shadow: 0 0 0 2px rgba(224,163,74,0.24); } }
 .controls-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px; font-size: 11px; color: var(--ink-dim); }
 .controls-grid div { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 5px; }
 .controls-grid kbd { font-family: var(--mono); font-size: 9px; border: 1px solid var(--line); padding: 1px 4px; color: var(--ink); }
@@ -4040,9 +4187,9 @@ html.custom-cursors select { cursor: default !important; }
   background-image: linear-gradient(180deg, rgba(224, 163, 74, 0.12), transparent 80%);
 }
 /*
- * Coalition flavour. `--front`, `--front-accent` and `--front-nation` are set
- * by the HUD from the local player's nation: defender-aligned commands read
- * blue, the eastern coalition red, and each nation's own shade marks its flag.
+ * Coalition flavour. `--front` and `--front-accent` are set by the HUD from
+ * the local player's alliance: defender-aligned commands read blue, the eastern
+ * coalition red. Units, markers and the minimap keep the player's team tint.
  * Chrome only — units, markers and the minimap keep the player's team tint.
  */
 .rail-command {
@@ -4058,10 +4205,6 @@ html.custom-cursors select { cursor: default !important; }
 }
 .rail-crest i {
   filter: drop-shadow(0 0 4px color-mix(in srgb, var(--front, #37b6e0) 55%, transparent));
-}
-.rail-nation i {
-  background: var(--front-nation, var(--front, var(--ink-dim)));
-  box-shadow: 0 0 6px color-mix(in srgb, var(--front, #37b6e0) 70%, transparent);
 }
 .mobile-nation {
   box-shadow: inset 2px 0 0 var(--front, transparent);
@@ -4875,6 +5018,7 @@ body.orientation-locked { overflow: hidden; touch-action: none; }
 .cmd-btn:focus-visible { outline: 2px solid var(--amber); outline-offset: 1px; color: var(--ink); }
 .cmd-key {
   margin-left: 2px; padding: 0 3px; border: 1px solid rgba(167,190,184,0.34);
+  min-width: 16px; text-align: center;
   font-family: var(--mono); font-size: var(--fs-xs); line-height: 1.35; color: var(--ink-dim);
 }
 .layout-mobile .cmd-key { display: none; }
@@ -5387,13 +5531,13 @@ body.cinematic-active #hud-root > * { pointer-events: none; }
 }
 [data-front="eastern"] .rail-brand,
 [data-front="eastern"] .rail-identity { border: 0; }
-[data-front="eastern"] .rail-command { border-bottom: 0; gap: 6px; padding-bottom: 0; }
+[data-front="eastern"] .rail-command { border-bottom: 0; }
 [data-front="eastern"] .rail-command::after {
   content: "";
   display: block;
-  width: calc(100% + 8px);
+  width: 100%;
   height: 5px;
-  margin: 6px -4px 0;
+  margin: 0;
   background: repeating-linear-gradient(135deg, var(--eb) 0 5px, #120c0b 5px 10px);
 }
 [data-front="eastern"] .rail-stat {
@@ -5415,7 +5559,6 @@ body.cinematic-active #hud-root > * { pointer-events: none; }
   font-weight: 700;
   letter-spacing: var(--stencil);
 }
-[data-front="eastern"] .rail-nation { color: #ffe7db; letter-spacing: 0.12em; }
 [data-front="eastern"] .rail-crest { border-width: 2px; background: #0a0605; }
 [data-front="eastern"] .group-chip,
 [data-front="eastern"] .control-group {
@@ -5590,7 +5733,7 @@ body.cinematic-active #hud-root > * { pointer-events: none; }
   display: block;
   width: 100%;
   height: 1px;
-  margin-top: 6px;
+  margin-top: 0;
   background: linear-gradient(90deg, color-mix(in srgb, var(--front) 55%, transparent), transparent);
 }
 [data-front="defender"] .rail-stat { border-bottom: 1px solid rgba(167, 190, 184, 0.14); }
@@ -5695,6 +5838,9 @@ body.cinematic-active #hud-root > * { pointer-events: none; }
 [data-front="eastern"] {
   --font-hud: 'Bahnschrift SemiCondensed', 'Bahnschrift', 'DIN Condensed',
     'Arial Narrow', 'Roboto Condensed', sans-serif;
+  /* Counters get their own face: the plate's digits stay legible at the small
+     sizes the rail and readouts use, while words keep the stencil. */
+  --font-counter: 'ReNix', 'Bahnschrift SemiCondensed', 'Bahnschrift', monospace;
   --amber-soft: #ffc09a;
 }
 
@@ -5711,7 +5857,6 @@ body.cinematic-active #hud-root > * { pointer-events: none; }
 [data-front="eastern"] .facility-name,
 [data-front="eastern"] .b-name,
 [data-front="eastern"] .rail-btn,
-[data-front="eastern"] .rail-nation,
 [data-front="eastern"] .group-chip,
 [data-front="eastern"] .cost-chip,
 [data-front="eastern"] .rail-power-caption,
@@ -5759,11 +5904,60 @@ body.cinematic-active #hud-root > * { pointer-events: none; }
 [data-front="eastern"] .rail-clock b {
   display: inline-block;
   padding: 0 7px;
+  /* The nixie digits are taller than the mono face; without the extra line
+     box the top and bottom of the glyphs clip against the plate. */
+  line-height: 1.4;
   background: #0a0605;
   box-shadow: inset 0 0 0 1px var(--eb-dim), inset 0 0 10px rgba(200, 69, 47, 0.22);
   color: #ffd9c9;
   font-family: var(--font-hud);
   letter-spacing: 0.04em;
+}
+
+/* Counters: digit-only nodes. Mixed strings (rates, power totals, unit stats)
+   keep the stencil face, so no word renders in a face that only has digits. */
+[data-front="eastern"] .rail-stat b,
+[data-front="eastern"] .rail-clock b,
+[data-front="eastern"] .rail-power-read,
+[data-front="eastern"] .pr-val,
+[data-front="eastern"] .mobile-stat b,
+[data-front="eastern"] .mobile-power-strip b,
+[data-front="eastern"] .sel-count-badge,
+[data-front="eastern"] .control-group b,
+[data-front="eastern"] .group-chip b,
+[data-front="eastern"] .cost-chip b,
+[data-front="eastern"] .chip-count,
+[data-front="eastern"] .u-queue {
+  font-family: var(--font-counter);
+  font-variant-numeric: tabular-nums;
+  /* reNix ships a single weight; use it as drawn instead of faux-bolding it. */
+  font-synthesis: none;
+}
+
+/* Defender counters use the seven-segment face on the same digit-only nodes. */
+[data-front="defender"] .rail-stat b,
+[data-front="defender"] .rail-clock b,
+[data-front="defender"] .rail-power-read,
+[data-front="defender"] .pr-val,
+[data-front="defender"] .mobile-stat b,
+[data-front="defender"] .mobile-power-strip b,
+[data-front="defender"] .sel-count-badge,
+[data-front="defender"] .control-group b,
+[data-front="defender"] .group-chip b,
+[data-front="defender"] .cost-chip b,
+[data-front="defender"] .chip-count,
+[data-front="defender"] .u-queue {
+  font-family: 'Seven Segment', 'Bahnschrift SemiCondensed', 'Bahnschrift', monospace;
+  font-variant-numeric: tabular-nums;
+  font-synthesis: none;
+}
+
+/* The seven-segment digits sit on a 0.7 em body, so they read smaller than the
+   mono face at the same size. MATS and REQ get one step up; the army counter
+   keeps its own smaller size. */
+[data-front="defender"] .rail-stat:not(.rail-stat-army) b {
+  font-size: calc(var(--fs-xl) * 1.2);
+  line-height: 1.1;
 }
 
 /* Tabs become full plates with a painted leading edge. */
@@ -6045,22 +6239,23 @@ body.cinematic-active #hud-root > * { pointer-events: none; }
 /* ========================================================================== */
 .mobile-flag-wrap {
   position: relative; display: block; line-height: 0; font-size: 0;
-  margin: auto 5px; flex: 0 0 auto;
+  width: 52px; height: 100%; margin: 0; overflow: hidden; flex: 0 0 auto;
+  background: #0a0f11; border-right: 1px solid rgba(0, 0, 0, 0.55);
 }
 .mobile-flag {
-  display: block; width: 34px; height: 22px; object-fit: cover;
-  border: 1px solid rgba(0, 0, 0, 0.55);
+  display: block; width: 100%; height: 100%; object-fit: cover;
+  transform: scale(1.08); filter: url('#flag-wave');
 }
 /* The MCA crest, plated on the national flag exactly as the rail flies it. */
 .mobile-crest {
-  position: absolute; inset: 0; margin: auto;
-  display: grid; place-items: center; width: 20px; height: 20px;
+  position: absolute; inset: 0; margin: auto; z-index: 2;
+  display: grid; place-items: center; width: 24px; height: 24px;
   background: rgba(9, 14, 16, 0.82);
   border: 1px solid var(--front, #37b6e0);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 3px 6px rgba(0, 0, 0, 0.7);
 }
 .mobile-crest i {
-  display: block; width: 13px; height: 13px;
+  display: block; width: 15px; height: 15px;
   background: var(--front, #37b6e0);
   -webkit-mask: url('/insignia-crest.svg') center / contain no-repeat;
   mask: url('/insignia-crest.svg') center / contain no-repeat;

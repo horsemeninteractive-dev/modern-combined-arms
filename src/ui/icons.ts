@@ -51,6 +51,7 @@ const PATHS: Record<string, string> = {
   attackMove: `<path d="M4 18L18 4M18 4h-6M18 4v6"/><circle cx="8" cy="16" r="3"/><path d="M8 13v6M5 16h6"/>`,
   stop: `<rect x="5" y="5" width="14" height="14" rx="1"/><path d="M9 9h6v6H9z"/>`,
   hold: `<path d="M12 2l8 3v6c0 5-3.4 8.6-8 11-4.6-2.4-8-6-8-11V5z"/><path d="M8 12l3 3 5-6"/>`,
+  guard: `<path d="M12 2l8 3v6c0 5-3.4 8.6-8 11-4.6-2.4-8-6-8-11V5z"/><path d="M8 11h7M12 8l3 3-3 3"/>`,
   capture: `<path d="M6 21V3"/><path d="M6 4h12l-3 4 3 4H6"/><path d="M3 21h6"/>`,
   repair: `<path d="M14.5 4.5a4 4 0 0 0-5.3 5.3L4 15v4h4l5.2-5.2a4 4 0 0 0 5.3-5.3l-2.8 2.8-2.2-2.2z"/><path d="M4 19l3-3"/>`,
   sell: `<path d="M3 4h7l10 10-6 6L4 10z"/><circle cx="7" cy="8" r="1.3"/><path d="M13 20l-4 1 1-4"/>`,

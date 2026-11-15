@@ -1,6 +1,6 @@
 import { BUILDINGS } from '../data/buildings';
 import { UNITS } from '../data/units';
-import { SAVE_FORMAT, SAVE_FORMAT_VERSION, TILE_SIZE } from '../sim/constants';
+import { MAX_QUEUED_ORDERS, SAVE_FORMAT, SAVE_FORMAT_VERSION, TILE_SIZE } from '../sim/constants';
 import { Game } from '../sim/game';
 import { parseScenario, type Scenario } from '../sim/scenario';
 import type { SaveData, SerializedGameState } from '../sim/save';
@@ -435,6 +435,26 @@ function validateEntities(
     if (typeof raw.construction !== 'boolean' || !Array.isArray(raw.queue)) {
       fail('invalid-entities', 'Saved entity construction state is incomplete.');
     }
+    if (raw.orderQueue !== undefined) {
+      if (!Array.isArray(raw.orderQueue) || raw.orderQueue.length > MAX_QUEUED_ORDERS) {
+        fail('invalid-entities', 'Saved entity waypoint queue is malformed or too long.');
+      }
+      for (const order of raw.orderQueue) {
+        if (!isRecord(order) || (order.type !== 'move' && order.type !== 'attackMove')) {
+          fail('invalid-entities', 'Saved entity waypoint type is invalid.');
+        }
+        if (
+          !finite(order.x) ||
+          !finite(order.z) ||
+          order.x < 0 ||
+          order.z < 0 ||
+          order.x > scenario.width * TILE_SIZE ||
+          order.z > scenario.height * TILE_SIZE
+        ) {
+          fail('invalid-entities', 'Saved entity waypoint is outside the map.');
+        }
+      }
+    }
     ids.add(raw.id);
     entities.push(raw as unknown as Entity);
   }
@@ -483,6 +503,9 @@ function validateReferences(
     if (entity.garrisonId) requireEntity(entity.garrisonId, 'garrisonId');
     if (entity.homeId) requireEntity(entity.homeId, 'homeId');
     if (entity.order?.targetId) requireEntity(entity.order.targetId, 'order.targetId');
+    for (const order of entity.orderQueue ?? []) {
+      if (order.targetId) requireEntity(order.targetId, 'orderQueue.targetId');
+    }
   }
   if (!Array.isArray(state.contacts) || !Array.isArray(state.charted)) {
     fail('invalid-references', 'Saved fog memory is incomplete.');

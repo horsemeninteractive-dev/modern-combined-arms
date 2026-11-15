@@ -2,11 +2,12 @@
 """Generate and validate the battlefield narrator voice sets with Kokoro-82M.
 
 One catalogue (`lines.json`) holds every narrator's identity, Kokoro voice,
-processing preset and spoken text. The tool synthesises the narrators marked
-`"generation": "kokoro"`, writes their clips and a manifest that records the
-line id, narrator, spoken text, voice, speed, asset path, duration and status for
-every cue. Narrators marked `"generation": "legacy"` are existing recordings:
-their files are verified and recorded but never rewritten.
+processing preset and spoken text. The tool synthesises only the narrators marked
+`"generation": "kokoro"`, writes their clips and a manifest that records the line
+id, narrator, spoken text, voice, speed, asset path, duration and status for every
+cue. Narrators marked `"generation": "recorded"` (or the older `"legacy"`) are
+existing recordings: their files are verified and recorded but never rewritten,
+even when the catalogue still carries a Kokoro voice for a future line.
 
 Pipeline per line:
   Kokoro-82M (24 kHz) -> trim -> highpass -> lowpass -> presence lift
@@ -58,6 +59,7 @@ MANIFEST_VERSION = 1
 # is a synthesised artefact rather than a report.
 MIN_SECONDS = 0.4
 MAX_SECONDS = 8.0
+KNOWN_GENERATIONS = frozenset({"kokoro", "recorded", "legacy"})
 MIN_RMS_DB = -40.0
 MAX_PEAK_DB = -0.2
 
@@ -270,6 +272,13 @@ def main() -> int:
         unknown = selected - set(narrators)
         if unknown:
             parser.error(f"unknown narrator id(s): {', '.join(sorted(unknown))}")
+    unknown_generation = sorted(
+        {str(entry.get("generation")) for entry in narrators.values()} - KNOWN_GENERATIONS
+    )
+    if unknown_generation:
+        # A typo must not look like a recording and silently leave stale assets in
+        # place, so an unrecognised generation is a hard error.
+        parser.error(f"unknown generation value(s): {', '.join(unknown_generation)}")
 
     synthesise = [
         (narrator_id, entry)
@@ -342,7 +351,10 @@ def main() -> int:
         # Both narrators declare their cue list, so a legacy folder is recorded
         # under the same ids as a generated one and cannot silently drift.
         for line_id in entry.get("cues") or sorted(entry["lines"]):
-            text = entry["lines"].get(line_id) if generated else None
+            # A recorded narrator that still has an authored script keeps it in the
+            # manifest, so the audit record shows what was actually spoken. The
+            # Defender script was never recorded and stays empty.
+            text = entry["lines"].get(line_id)
             # The runtime cue table owns the filename (`VOICE_MANIFEST[id].file`),
             # and every existing recording is named after its cue id in lower case
             # (`unitlost.mp3`). Writing `unitLost.mp3` here would 404 in a browser

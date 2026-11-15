@@ -5,6 +5,8 @@ export type GridMode =
   | 'land'
   | 'attack'
   | 'attackMove'
+  | 'patrol'
+  | 'guard'
   | 'capture'
   | 'repair'
   | 'garrison'

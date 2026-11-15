@@ -13,7 +13,7 @@ paths.
 
 Since the alliance-baseline stage, the two coalitions no longer share one
 roster: the Defender Coalition fields the canonical platforms and the Eastern
-Coalition fields its own replacements for the 18 combat slots. A national
+Coalition fields its own replacements for the 21 combat slots. A national
 variant therefore resolves through a chain — canonical slot → alliance platform
 → national replacement — rather than a single hop. Russia's and Belarus's
 substitutions sit two levels down that chain; the three Defender substitutions
@@ -45,7 +45,7 @@ substitution changes how a role is used, not whether the role exists.
 
 - Six registered national definitions, each with a stable id, doctrine and
   player-facing blurb.
-- Two frozen alliance baselines that differ in all 18 combat slots and share
+- Two frozen alliance baselines that differ in all 21 combat slots and share
   the four utility roles (`engineer`, `harvester`, `recovery`, `medic`), with
   every platform registered as a variant of its canonical slot.
 - Multi-level `variantOf` resolution (`src/data/variant.ts`), so a replacement
@@ -304,8 +304,9 @@ phase should add national capabilities or close shared-roster gaps.
 ## Stage 3 — complete national specialisations (2026-11-02)
 
 Phase 4 shipped one substitution per nation and was superseded. Every nation now
-has exactly three differences from its alliance baseline: one replacement, one
-exclusive unit and one structure variant. The design record and the full
+has at least three differences from its alliance baseline: one replacement, one
+exclusive unit and one structure variant, and some carry further national
+unlocks where the shared roster leaves a coherent gap. The design record and the full
 verification evidence are in
 `docs/ALLIANCE_ROSTER_AND_TECHNOLOGY_SPEC.md` §17; this section is the Phase 4
 view of the same content.

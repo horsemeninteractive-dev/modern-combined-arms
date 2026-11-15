@@ -11,6 +11,9 @@ import {
   EDGE_PAN_WIDTH_DEFAULT,
   EDGE_PAN_WIDTH_MAX,
   EDGE_PAN_WIDTH_MIN,
+  GAMEPAD_SENSITIVITY_DEFAULT,
+  GAMEPAD_SENSITIVITY_MAX,
+  GAMEPAD_SENSITIVITY_MIN,
   GRAPHICS_PRESETS,
   normaliseEdgePanSpeed,
   normaliseEdgePanWidth,
@@ -22,6 +25,7 @@ import {
   graphicsPreset,
   nextIdleIndex,
   normaliseEscBehavior,
+  normaliseGamepadSensitivity,
   normaliseGraphicsQuality,
   normaliseRenderScale,
   normaliseShadowDetail,
@@ -120,6 +124,21 @@ describe('edge pan tuning', () => {
   });
 });
 
+describe('gamepad sensitivity', () => {
+  it('clamps stick sensitivity and never disables the pad with junk', () => {
+    expect(normaliseGamepadSensitivity(GAMEPAD_SENSITIVITY_DEFAULT)).toBe(
+      GAMEPAD_SENSITIVITY_DEFAULT,
+    );
+    expect(normaliseGamepadSensitivity(GAMEPAD_SENSITIVITY_MIN)).toBe(GAMEPAD_SENSITIVITY_MIN);
+    expect(normaliseGamepadSensitivity(GAMEPAD_SENSITIVITY_MAX)).toBe(GAMEPAD_SENSITIVITY_MAX);
+    expect(normaliseGamepadSensitivity(0.01)).toBe(GAMEPAD_SENSITIVITY_MIN);
+    expect(normaliseGamepadSensitivity(9)).toBe(GAMEPAD_SENSITIVITY_MAX);
+    for (const value of [undefined, null, 'fast', Number.NaN]) {
+      expect(normaliseGamepadSensitivity(value)).toBe(GAMEPAD_SENSITIVITY_DEFAULT);
+    }
+  });
+});
+
 describe('escape behaviour', () => {
   it('keeps the current pause default and only accepts the documented alternative', () => {
     expect(normaliseEscBehavior('pause')).toBe('pause');
@@ -172,6 +191,9 @@ describe('settings tabs', () => {
     expect(app).toContain(`{ id: 'music', label: 'Playlist' }`);
     expect(app).toContain('data-settings-tab="${tab.id}"');
     expect(app).toContain('data-settings-panel="${id}"');
+    expect(app).toContain('data-bind="${action.id}"');
+    expect(app).toContain('data-bind-status');
+    expect(app).toContain('assignKeyBinding');
     // Every settings key sits in exactly one tab, so nothing is hidden or duplicated.
     const all = keys(app.slice(app.indexOf('const displayRows'), app.indexOf('const tabs:')));
     expect(new Set(all).size).toBe(all.length);
@@ -189,6 +211,7 @@ describe('settings tabs', () => {
     expect(keys(groups.display)).toEqual(
       [
         'cinematics',
+        'colorVision',
         'effects',
         'fogVisual',
         'fpsReadout',
@@ -204,7 +227,14 @@ describe('settings tabs', () => {
       ].sort(),
     );
     expect(keys(groups.input)).toEqual(
-      ['customCursors', 'edgePan', 'edgePanSpeed', 'edgePanWidth', 'escBehavior'].sort(),
+      [
+        'customCursors',
+        'edgePan',
+        'edgePanSpeed',
+        'edgePanWidth',
+        'escBehavior',
+        'gamepadSensitivity',
+      ].sort(),
     );
     expect(keys(groups.audio)).toEqual(
       ['ambient', 'music', 'sfx', 'unitVoice', 'voice'].sort(),

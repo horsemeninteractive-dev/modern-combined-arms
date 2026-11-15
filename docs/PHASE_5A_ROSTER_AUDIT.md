@@ -1,7 +1,9 @@
 # Phase 5A — Battlefield Roster & Capability Gap Audit
 
 **Status:** audit originally written before implementation. Phase 5C added the
-shared APC and Phase 5D added the shared utility transport helicopter; the
+shared APC, Phase 5D added the shared utility transport helicopter, and the
+Stage A arsenal expansion added the shared MANPADS team, EW vehicle and loitering
+munition; the
 roster and gap figures below are updated, while the original recommendations are
 retained as the historical audit record. No commit, reset, stash or revert was
 performed.
@@ -12,7 +14,7 @@ judgements that are recommendations rather than facts, and the design decisions
 that need the owner's approval before Phase 5B.
 
 **Headline result.** The roster is broad and, for what it contains, functional:
-64 registered unit definitions (24 shared, 18 Eastern alliance platforms, 22
+71 registered unit definitions (28 shared, 21 Eastern alliance platforms, 22
 national), 49 registered structures (39 shared, 10 national), four research
 branches with a coherent unlock graph, and working air, naval, garrison,
 detection and AI production systems. At the time of the audit the decisive gap
@@ -126,8 +128,9 @@ They fill the same canonical slots as the Defender baseline and are selected by
 
 ### 1.3 National units (22)
 
-Each nation has exactly one replacement, one exclusive and one structure variant
-(plus a national naval hull for Sweden and Iran), verified by
+Each nation has at least one replacement, one exclusive and one structure variant
+(plus a national naval hull for Sweden and Iran, and further national units where
+documented), verified by
 `tests/national-roster-complete.test.ts`.
 
 | ID | Nation | Kind | Replaces | Armament | Gate | Completeness |
@@ -244,7 +247,7 @@ Status key: **C** complete, **P** partial, **M** missing, **N/R** not required,
 | --- | --- | --- |
 | General-purpose rifle infantry | **C** | `rifle` / `rifleEC`; `rifle` weapon and armour multipliers |
 | Anti-tank infantry | **C** | `atgm`, `hedgehogTeam`, `spikeTeam` |
-| Anti-air infantry | **P** | only Lithuania's `kestrelTeam` (`manpads`); no shared MANPADS |
+| Anti-air infantry | **C** | shared `manpadsTeam` / `manpadsTeamEC` (`lightManpads`); Lithuania's longer-ranged `kestrelTeam` remains its national exclusive |
 | Engineers / combat engineering | **P** | `engineer` is a tracked vehicle: builds, repairs, captures; no bridging, breaching, mine-clearing or obstacle construction |
 | Medical support | **C** | `medic` heals one infantry at a time (`game.ts`); no medevac |
 | Reconnaissance infantry | **M** | `recon` and `pathfinder` are vehicles; no foot scout |
@@ -592,9 +595,9 @@ One system, three domain rules:
    combined arms.*
 5. **No foot reconnaissance / forward observer** — `pathfinder` and `sprut` are
    vehicles; infantry has no stealthy eye. *Important.*
-6. **No shared MANPADS or mortar team** — both exist only as national
-   exclusives, so nine nations lack infantry organic AA/indirect fire.
-   *Important.*
+6. **No shared mortar team** — the shared MANPADS gap is closed, but `taszar`
+   remains Hungary's exclusive and nine nations still lack infantry organic
+   indirect fire. *Important.*
 7. **No SEAD/EW/AEW/maritime-patrol aircraft** — the air game is strike,
    intercept and recon only. *Important, but a later phase.*
 8. **No mines, obstacles, field fortifications or mine countermeasures** —
@@ -693,8 +696,8 @@ One system, three domain rules:
 - **Exclusions:** no new capabilities.
 
 **Other critical capability recommendation:** infantry reconnaissance and a
-shared MANPADS/mortar team are real gaps but do not block transport. Recommend
-them for a later content phase (or 5G if the owner wants them in Phase 5);
+shared mortar team are real gaps but do not block transport. The shared MANPADS
+team has since shipped. Recommend the remaining roles for a later content phase;
 mines, fortifications, SEAD and ASW aviation should be deferred.
 
 ---
@@ -740,7 +743,8 @@ naval deployment, shared baseline plus at most two national variants.
 2. May passengers fire while embarked? (Recommend no.)
 3. Does the transport helo get a door gun at reduced capacity?
 4. Is the APC shared only, or shared + national variants?
-5. Is infantry recon / shared MANPADS / shared mortar in Phase 5 or deferred?
+5. Is infantry recon / shared mortar in Phase 5 or deferred? (Shared MANPADS was
+   approved and shipped in the Stage A arsenal expansion.)
 6. Are mines/fortifications/SEAD/ASW aviation explicitly out of scope?
 
 **Not audited in depth:** campaign-specific roster restrictions
