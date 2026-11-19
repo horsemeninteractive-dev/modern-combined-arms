@@ -39,9 +39,9 @@ describe('structure inventory', () => {
       technologies: Object.keys(TECHS).length,
     };
     console.log('[econ]', JSON.stringify({ kind: 'inventory', ...report }));
-    expect(report.shared).toBe(15);
+    expect(report.shared).toBe(17);
     expect(report.national).toBe(10);
-    expect(report.buildable).toBe(25);
+    expect(report.buildable).toBe(27);
     expect(report.modules).toBe(5);
     expect(report.unitUpgrades).toBe(7);
     expect(report.technologies).toBe(18);

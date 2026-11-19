@@ -1,6 +1,6 @@
 import type { App } from '../app';
 import { BUILDINGS, isIndestructibleStructure } from '../data/buildings';
-import { UNITS } from '../data/units';
+import { ALL_UNITS } from '../data/units';
 import { tryIdentityDef } from '../data/factions';
 import { TILE_SIZE } from '../sim/constants';
 import type { Entity, GameState } from '../sim/types';
@@ -519,7 +519,7 @@ export class Overlay {
     if (!game) return;
     const camera = app.renderer.camera;
     const ctx = this.ctx;
-    const def = e.kind === 'unit' ? UNITS[e.defId] : BUILDINGS[e.defId];
+    const def = e.kind === 'unit' ? ALL_UNITS[e.defId] : BUILDINGS[e.defId];
     if (!def) return;
     const palette = colorVisionTokens(app.settings.colorVision);
     const friendly = e.owner >= 0 && game.teamOf(e.owner) === game.teamOf(app.localPlayerId);
@@ -534,7 +534,7 @@ export class Overlay {
     ctx.save();
     if (e.kind === 'unit') {
       const altitude =
-        UNITS[e.defId]?.domain === 'air' && !e.aircraft?.landed ? AIR_UNIT_ALTITUDE : 0;
+        ALL_UNITS[e.defId]?.domain === 'air' && !e.aircraft?.landed ? AIR_UNIT_ALTITUDE : 0;
       const p = camera.worldToScreen(e.x, terrainVisualHeight(game.state.scenario, e.x, e.z) + altitude + 0.15, e.z);
       if (!p.visible) return;
       const scale = camera.width / (camera.halfW * 2);
@@ -546,7 +546,7 @@ export class Overlay {
       ctx.stroke();
       ctx.fillStyle = withAlpha(color, 0.12);
       ctx.fill();
-      if (e.kind === 'unit' && UNITS[e.defId]?.domain === 'air') {
+      if (e.kind === 'unit' && ALL_UNITS[e.defId]?.domain === 'air') {
         const ground = camera.worldToScreen(e.x, terrainVisualHeight(game.state.scenario, e.x, e.z), e.z);
         ctx.strokeStyle = 'rgba(166,232,248,0.24)';
         ctx.lineWidth = 1;
@@ -722,10 +722,10 @@ export class Overlay {
     if (!game) return;
     const camera = app.renderer.camera;
     const ctx = this.ctx;
-    const def = e.kind === 'unit' ? UNITS[e.defId] : BUILDINGS[e.defId];
+    const def = e.kind === 'unit' ? ALL_UNITS[e.defId] : BUILDINGS[e.defId];
     if (!def) return;
     const altitude =
-      e.kind === 'unit' && UNITS[e.defId]?.domain === 'air' && !e.aircraft?.landed
+      e.kind === 'unit' && ALL_UNITS[e.defId]?.domain === 'air' && !e.aircraft?.landed
         ? AIR_UNIT_ALTITUDE
         : 0;
     // Structures anchor above the highest projected point of their top band.
@@ -884,7 +884,7 @@ export class Overlay {
       ctx.fillStyle = softColor;
       ctx.fillText(`${healthPercent(frac)}%`, plateX + plateW + 4, y + height);
     }
-    if (selected && e.kind === 'unit' && hasServiceStrip(UNITS[e.defId]?.domain)) {
+    if (selected && e.kind === 'unit' && hasServiceStrip(ALL_UNITS[e.defId]?.domain)) {
       bottom += this.drawServiceStrip(e, plateX, bottom + 5, plateW, app.settings.colorVision) + 4;
     }
     if (selected && e.suppression > 0.2) {
@@ -953,7 +953,7 @@ export class Overlay {
   private drawHoverLabel(app: App, e: Entity, rect: DOMRect): void {
     const game = app.game;
     if (!game) return;
-    const def = e.kind === 'unit' ? UNITS[e.defId] : BUILDINGS[e.defId];
+    const def = e.kind === 'unit' ? ALL_UNITS[e.defId] : BUILDINGS[e.defId];
     if (!def) return;
     const ctx = this.ctx;
     const x = app.pointer.x - rect.left + 16;
@@ -974,7 +974,7 @@ export class Overlay {
     const capturable = !!BUILDINGS[e.defId]?.capturable && e.owner !== app.localPlayerId;
     const engineerReady =
       capturable &&
-      app.ownSelected().some((u) => UNITS[u.defId]?.canCapture && !u.garrisonId);
+      app.ownSelected().some((u) => ALL_UNITS[u.defId]?.canCapture && !u.garrisonId);
     const action = engineerReady
       ? remembered
         ? 'RIGHT-CLICK · CAPTURE FROM MEMORY'
@@ -1029,6 +1029,35 @@ export class Overlay {
       y: groundAt(corner.x, corner.z),
     }));
     const project = (x: number, y: number, z: number) => camera.worldToScreen(x, y, z);
+    // A wall is a run, not one tile: draw every tile from the anchored start
+    // to the cursor so the player can see the line before the second click.
+    if (app.placeStart && def.wall) {
+      const tiles = app.wallLineTiles(tileX, tileZ);
+      ctx.save();
+      ctx.setLineDash([5, 4]);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      for (const tile of tiles) {
+        const cx = (tile.tileX + 0.5) * TILE_SIZE;
+        const cz = (tile.tileZ + 0.5) * TILE_SIZE;
+        const c = project(cx, groundAt(tile.tileX + 0.5, tile.tileZ + 0.5), cz);
+        if (tile === tiles[0]) ctx.moveTo(c.x, c.y);
+        else ctx.lineTo(c.x, c.y);
+      }
+      ctx.stroke();
+      ctx.restore();
+      const start = app.placeStart;
+      const startPoint = project(
+        (start.tileX + 0.5) * TILE_SIZE,
+        groundAt(start.tileX + 0.5, start.tileZ + 0.5),
+        (start.tileZ + 0.5) * TILE_SIZE,
+      );
+      ctx.beginPath();
+      ctx.arc(startPoint.x, startPoint.y, 3.2, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
     // Ground plate: the footprint the building will occupy.
     ctx.beginPath();
     for (let i = 0; i < corners.length; i++) {

@@ -28,6 +28,8 @@ export interface SyncBaseline {
   charted: string;
   smoke: string;
   resultKey: string;
+  /** An Outbreak room's survival readout, as the last delta put it. */
+  outbreakKey: string;
 }
 
 function sameQueue(a: QueueItem[] | undefined, b: QueueItem[] | undefined): boolean {
@@ -216,6 +218,7 @@ export function createBaseline(
     charted: JSON.stringify(state.charted),
     smoke: smokeKey(state.smoke),
     resultKey: resultKey(state.result),
+    outbreakKey: state.outbreak ? JSON.stringify(state.outbreak) : '',
   };
 }
 
@@ -304,6 +307,13 @@ export function buildDelta(
 
   const key = resultKey(state.result);
   if (key !== baseline.resultKey) changes.result = state.result;
+
+  // A wave clock and kill tally change a few times a second at most, so the
+  // whole record rides the delta only when one of its numbers moves.
+  const outbreakKey = state.outbreak ? JSON.stringify(state.outbreak) : '';
+  if (state.outbreak && outbreakKey !== baseline.outbreakKey) {
+    changes.outbreak = { ...state.outbreak };
+  }
 
   return changes;
 }

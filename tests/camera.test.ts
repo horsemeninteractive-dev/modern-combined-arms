@@ -30,6 +30,24 @@ describe('isometric camera', () => {
     expect(dyX / Math.abs(dx)).toBeCloseTo(0.5, 3);
   });
 
+  it('orbits the projection around the focus when yaw is authored', () => {
+    const cam = camera();
+    cam.setFraming(cam.cx, cam.cz, cam.zoom, 0);
+    const centre = cam.worldToScreen(cam.cx, 0, cam.cz);
+    const north = cam.worldToScreen(cam.cx, 0, cam.cz - 20);
+    // At yaw 0 the view looks north, so north is straight up the screen.
+    expect(north.y).toBeLessThan(centre.y);
+    expect(north.x).toBeCloseTo(centre.x, 4);
+
+    cam.setFraming(cam.cx, cam.cz, cam.zoom, Math.PI / 2);
+    const orbited = cam.worldToScreen(cam.cx, 0, cam.cz - 20);
+    expect(orbited.x).toBeGreaterThan(centre.x);
+    expect(orbited.y).toBeCloseTo(centre.y, 4);
+    const ground = cam.screenToGround(cam.width / 2, cam.height / 2, 0);
+    expect(ground.x).toBeCloseTo(cam.cx, 3);
+    expect(ground.z).toBeCloseTo(cam.cz, 3);
+  });
+
   it('keeps the camera focus at screen centre when grounded', () => {
     const cam = camera();
     const ground = cam.screenToGround(cam.width / 2, cam.height / 2, 0);

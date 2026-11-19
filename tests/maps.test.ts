@@ -153,6 +153,12 @@ describe('theatre variety', () => {
     expect(kinds.has('warehouse')).toBe(true);
     expect(kinds.has('officeBlock')).toBe(true);
     expect(kinds.size).toBeGreaterThanOrEqual(4);
+
+    // The civic strongpoints introduced for authored maps are part of the
+    // city's normal garrison roster, mirrored once for each side.
+    for (const id of ['fireStation', 'clinic', 'marketHall']) {
+      expect(scenario.structures.filter((s) => s.defId === id).length, id).toBe(2);
+    }
   });
 
   it('puts a mirrored landmark pair in the central square', () => {

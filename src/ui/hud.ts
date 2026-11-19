@@ -8,7 +8,7 @@ import {
   buildingRequirements,
   isIndestructibleStructure,
 } from '../data/buildings';
-import { UNITS } from '../data/units';
+import { UNITS, ALL_UNITS } from '../data/units';
 import {
   BRANCH_NAMES,
   BUILDING_MODULES,
@@ -194,11 +194,11 @@ function stateLabel(e: Entity): string {
     if (e.navalLanding.beached) return 'BEACHED';
     return 'APPROACHING SHORE';
   }
-  if (e.kind === 'unit' && UNITS[e.defId]?.domain === 'naval' && UNITS[e.defId]?.transport) {
+  if (e.kind === 'unit' && ALL_UNITS[e.defId]?.domain === 'naval' && ALL_UNITS[e.defId]?.transport) {
     return 'AT SEA';
   }
   if (e.aircraft) {
-    if (UNITS[e.defId]?.transport) {
+    if (ALL_UNITS[e.defId]?.transport) {
       if (e.aircraft.roll?.next === 'fieldLand') return 'LANDING';
       if (e.aircraft.landed) return 'LANDED';
       if (e.aircraft.fieldLanding) return 'APPROACHING LZ';
@@ -671,7 +671,7 @@ export class HUD {
     const units = own.filter((e) => e.kind === 'unit');
     const has = (predicate: (e: (typeof units)[number]) => boolean): boolean =>
       units.some(predicate);
-    const armed = has((e) => (UNITS[e.defId]?.weapons?.length ?? 0) > 0);
+    const armed = has((e) => (ALL_UNITS[e.defId]?.weapons?.length ?? 0) > 0);
     const show: Record<string, boolean> = {
       move: own.length > 0,
       attack: armed,
@@ -685,15 +685,15 @@ export class HUD {
           (e) => e.kind === 'building' && (BUILDINGS[e.defId]?.weapons?.length ?? 0) > 0,
         ),
       hold: units.length > 0,
-      capture: has((e) => !!UNITS[e.defId]?.canCapture && !e.garrisonId),
-      repair: has((e) => !!UNITS[e.defId]?.canBuild),
-      garrison: has((e) => !!UNITS[e.defId]?.canGarrison && !e.garrisonId),
+      capture: has((e) => !!ALL_UNITS[e.defId]?.canCapture && !e.garrisonId),
+      repair: has((e) => !!ALL_UNITS[e.defId]?.canBuild),
+      garrison: has((e) => !!ALL_UNITS[e.defId]?.canGarrison && !e.garrisonId),
       ungarrison:
         units.some((e) => !!e.garrisonId) ||
         this.app.selectedEntities().some((e) => {
-          if (e.kind !== 'building' && !UNITS[e.defId]?.transport) return false;
+          if (e.kind !== 'building' && !ALL_UNITS[e.defId]?.transport) return false;
           if (e.kind === 'unit') {
-            const domain = UNITS[e.defId]?.domain;
+            const domain = ALL_UNITS[e.defId]?.domain;
             if (domain === 'air' || domain === 'naval') {
               return e.owner === this.app.localPlayerId;
             }
@@ -703,16 +703,16 @@ export class HUD {
             .some((occupant) => occupant.owner === this.app.localPlayerId);
         }),
       return: has((e) => {
-        const domain = UNITS[e.defId]?.domain;
+        const domain = ALL_UNITS[e.defId]?.domain;
         return domain === 'air' || domain === 'naval';
       }),
       land: has(
         (e) =>
-          UNITS[e.defId]?.domain === 'air' &&
-          !!UNITS[e.defId]?.transport &&
+          ALL_UNITS[e.defId]?.domain === 'air' &&
+          !!ALL_UNITS[e.defId]?.transport &&
           !!e.aircraft,
       ),
-      dive: has((e) => !!UNITS[e.defId]?.submarine),
+      dive: has((e) => !!ALL_UNITS[e.defId]?.submarine),
       supportSep: true,
       build: true,
       research: true,
@@ -2160,7 +2160,7 @@ export class HUD {
       const buildings = entities.filter((e) => e.kind === 'building');
       const lead = units[0] ?? entities[0];
       const leadIcon = lead.kind === 'unit'
-        ? UNITS[lead.defId]?.icon ?? 'squad'
+        ? ALL_UNITS[lead.defId]?.icon ?? 'squad'
         : BUILDINGS[lead.defId]?.icon ?? 'command';
       const types = new Map<string, number>();
       for (const e of units) types.set(e.defId, (types.get(e.defId) ?? 0) + 1);
@@ -2172,7 +2172,7 @@ export class HUD {
       // be taller than the band at a small interface scale and clip the tail of
       // the list, so the mix is a single ellipsised line that names every type.
       const mix = [...types.entries()].sort((a, b) => b[1] - a[1]);
-      const mixLine = mix.map(([id, n]) => `${UNITS[id]?.shortName ?? id} ×${n}`).join(' · ');
+      const mixLine = mix.map(([id, n]) => `${ALL_UNITS[id]?.shortName ?? id} ×${n}`).join(' · ');
       const composition = mixLine
         ? `<div class="group-mix"><span title="${escapeHtml(mixLine)}">${escapeHtml(mixLine)}</span></div>`
         : '';
@@ -2207,7 +2207,7 @@ export class HUD {
       return;
     }
     const e = inspected ?? entities[0];
-    const def = e.kind === 'unit' ? UNITS[e.defId] : BUILDINGS[e.defId];
+    const def = e.kind === 'unit' ? ALL_UNITS[e.defId] : BUILDINGS[e.defId];
     const p = game.player(e.owner);
     const isOwn = e.owner === this.app.localPlayerId;
     const isFriendly = e.owner >= 0 && !game.isHostile(e.owner, this.app.localPlayerId);
@@ -2221,7 +2221,7 @@ export class HUD {
         })
       : null;
     const garrisonDef = e.kind === 'building' ? BUILDINGS[e.defId]?.garrison : undefined;
-    const transportDef = e.kind === 'unit' ? UNITS[e.defId]?.transport : undefined;
+    const transportDef = e.kind === 'unit' ? ALL_UNITS[e.defId]?.transport : undefined;
     const occupants =
       garrisonDef || (transportDef && isFriendly) ? game.garrisonOccupants(e.id) : [];
     const stateText = objective ? objective.caption : stateLabel(e);
@@ -2316,7 +2316,7 @@ export class HUD {
       stats = `
         <div class="stat-grid">
           <div class="stat"><span>STATE</span><b title="${escapeHtml(compactState)}">${escapeHtml(compactState)}</b></div>
-          <div class="stat"><span>${benefit ? 'BENEFIT' : 'QUEUE'}</span><b title="${escapeHtml(benefitFull)}">${benefit ? escapeHtml(benefit) : `${e.queue.length}${q ? ` · ${UNITS[q.defId]?.shortName ?? q.defId}` : ''}`}</b></div>
+          <div class="stat"><span>${benefit ? 'BENEFIT' : 'QUEUE'}</span><b title="${escapeHtml(benefitFull)}">${benefit ? escapeHtml(benefit) : `${e.queue.length}${q ? ` · ${ALL_UNITS[q.defId]?.shortName ?? q.defId}` : ''}`}</b></div>
           <div class="stat"><span>VISION</span><b>${def.vision} tiles</b></div>
           <div class="stat"><span>SENSORS</span><b title="${escapeHtml(sensorFor(e).label)}">${escapeHtml(sensorFor(e).label)}</b></div>
           <div class="stat"><span>POWER</span><b${powerTitle ? ` title="${escapeHtml(powerTitle)}"` : ''}>${gridPower > 0 ? `+${gridPower}` : `${gridPower}`}</b></div>
@@ -2339,7 +2339,7 @@ export class HUD {
     }
     if (transportDef) {
       const occupancy = Math.min(transportDef.capacity, occupants.length);
-      const names = [...new Set(occupants.map((u) => UNITS[u.defId]?.shortName ?? u.defId))];
+      const names = [...new Set(occupants.map((u) => ALL_UNITS[u.defId]?.shortName ?? u.defId))];
       const mix = names.length > 0 ? ` · ${names.join(' + ')}` : ' · EMPTY';
       const airState = e.aircraft
         ? e.aircraft.roll?.next === 'fieldLand'
@@ -2352,7 +2352,7 @@ export class HUD {
         ? e.navalLanding.beached
           ? ' · BEACHED'
           : ' · APPROACHING SHORE'
-        : UNITS[e.defId]?.domain === 'naval'
+        : ALL_UNITS[e.defId]?.domain === 'naval'
           ? ' · AT SEA'
           : '';
       statusLines += `<div class="sel-line"><span>PASSENGERS ${occupancy}/${transportDef.capacity}${airState}${seaState}${escapeHtml(mix)}</span><b>${Math.max(0, transportDef.capacity - occupancy)} SPACES</b></div>`;
@@ -2497,7 +2497,7 @@ export class HUD {
   private rosterChip(chip: SelectionChipView, entities: Entity[]): string {
     const first = entities.find((e) => chip.ids.includes(e.id));
     if (!first) return '';
-    const def = first.kind === 'unit' ? UNITS[chip.defId] : BUILDINGS[chip.defId];
+    const def = first.kind === 'unit' ? ALL_UNITS[chip.defId] : BUILDINGS[chip.defId];
     const colour = this.game
       ? ownerColor(this.game, first, this.app.settings.colorVision, this.app.localPlayerId)
       : colorVisionTokens(this.app.settings.colorVision).friendly;
@@ -2743,7 +2743,7 @@ export class HUD {
         e.kind === 'unit' &&
         e.owner === this.app.localPlayerId &&
         !e.garrisonId &&
-        !!UNITS[e.defId]?.canGarrison,
+        !!ALL_UNITS[e.defId]?.canGarrison,
     );
     const inside = entities.some(
       (e) =>
@@ -2759,26 +2759,26 @@ export class HUD {
         e.kind !== 'unit' ||
         e.owner < 0 ||
         game.isHostile(e.owner, this.app.localPlayerId) ||
-        !UNITS[e.defId]?.transport
+        !ALL_UNITS[e.defId]?.transport
       ) {
         return false;
       }
       // Air and naval carriers move under their owner's command, so only the
       // owner may open the carrier-wide unload transaction. A ground carrier
       // still lets a passenger owner extract their own squad.
-      const domain = UNITS[e.defId]?.domain;
+      const domain = ALL_UNITS[e.defId]?.domain;
       if (domain === 'air' || domain === 'naval') return e.owner === this.app.localPlayerId;
       return game.garrisonOccupants(e.id).some((u) => u.owner === this.app.localPlayerId);
     });
     const insideTransport = entities.some((e) => {
       if (e.kind !== 'unit' || !e.garrisonId) return false;
       const carrier = game.getEntity(e.garrisonId);
-      if (!carrier || !UNITS[carrier.defId]?.transport) return false;
-      const domain = UNITS[carrier.defId]?.domain;
+      if (!carrier || !ALL_UNITS[carrier.defId]?.transport) return false;
+      const domain = ALL_UNITS[carrier.defId]?.domain;
       return domain !== 'air' && domain !== 'naval' || carrier.owner === this.app.localPlayerId;
     });
     const ownTransport = entities.some(
-      (e) => e.kind === 'unit' && e.owner === this.app.localPlayerId && !!UNITS[e.defId]?.transport,
+      (e) => e.kind === 'unit' && e.owner === this.app.localPlayerId && !!ALL_UNITS[e.defId]?.transport,
     );
     if (!eligible && !inside && !holdsBuilding && !holdsTransport && !insideTransport && !ownTransport) {
       return '';
@@ -2901,7 +2901,7 @@ export class HUD {
       // player, so a national roster cannot disagree with the facility list.
       const list = game.productionEntries(this.app.localPlayerId, f.defId);
       const cards = list.map((id) => {
-        const udef = UNITS[id];
+        const udef = ALL_UNITS[id];
         if (!udef) return '';
         // Every alliance platform is also a variant, so the badge keys on the
         // national marker instead: only a nation-specific definition earns it.
@@ -3250,11 +3250,11 @@ export class HUD {
           ...powerReadout(grid).consumers,
         ].map((line) => line.id))
       : null;
-    const engineer = this.game?.entitiesOf(this.app.localPlayerId, 'unit').find((e) => UNITS[e.defId]?.canBuild);
+    const engineer = this.game?.entitiesOf(this.app.localPlayerId, 'unit').find((e) => ALL_UNITS[e.defId]?.canBuild);
     const roster = this.game?.rosterFor(this.app.localPlayerId);
     const allianceId = p ? tryIdentityDef(p.factionId)?.allianceId : undefined;
     const cards = BUILDABLE_BY_PLAYER
-      .filter((def) => structureTab(!!def.weapons?.length) === tab)
+      .filter((def) => structureTab(!!def.weapons?.length || !!def.wall) === tab)
       .filter((def) => !roster || roster.buildings.includes(def.id))
       .map((def) => {
         const affordable = p ? p.mats >= def.cost.mats && p.req >= def.cost.req : false;
@@ -3475,7 +3475,7 @@ export class HUD {
     for (const effect of tech.effects) {
       if (effect.kind === 'unlockUnit') {
         const actual = game.unitIdFor(owner, effect.slot) ?? effect.slot;
-        labels.push(UNITS[actual]?.name ?? effect.slot);
+        labels.push(ALL_UNITS[actual]?.name ?? effect.slot);
       } else if (effect.kind === 'unlockBuilding') {
         const actual = game.buildingIdFor(owner, effect.slot) ?? effect.slot;
         labels.push(BUILDINGS[actual]?.name ?? effect.slot);

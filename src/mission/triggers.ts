@@ -88,6 +88,13 @@ export interface MissionTriggerEffects {
   groupActivated?(group: MissionAiGroupDoc): void;
   /** Bring one reinforcement wave onto the map, once. */
   waveSpawned?(wave: MissionReinforcementDoc): void;
+  /**
+   * Request presentation of one authored sequence.
+   *
+   * This is a request, not a state change: the mission runtime is untouched and
+   * the presentation layer decides how to queue scenes that are already busy.
+   */
+  cinematicRequested?(cinematic: string): void;
   /** Finish the battle with an authored verdict; the ordinary result path runs. */
   missionEnded?(outcome: MissionOutcome): void;
 }
@@ -321,6 +328,14 @@ function applyAction(
       // retried on the next tick and double the column.
       if (!runtime.markWaveSpawned(wave.id)) return;
       effects.waveSpawned?.(wave);
+      return;
+    }
+    case 'startCinematic': {
+      // Validation guarantees the reference and the in-mission context; a
+      // hand-edited document simply does not request a scene.
+      const sequence = runtime.doc.cinematics.find((entry) => entry.id === action.cinematic);
+      if (!sequence || sequence.kind !== 'inMission') return;
+      effects.cinematicRequested?.(sequence.id);
       return;
     }
     case 'endMission':

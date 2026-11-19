@@ -79,9 +79,9 @@ function surfaceAt(mesh: MeshBuffers, x: number, z: number): number {
 }
 
 describe('garrisonable building stock', () => {
-  it('offers twenty distinct shelters rather than a dozen repeated ones', () => {
+  it('offers twenty-three distinct shelters rather than a dozen repeated ones', () => {
     const garrisonable = Object.values(BUILDINGS).filter((def) => def.garrison);
-    expect(garrisonable).toHaveLength(20);
+    expect(garrisonable).toHaveLength(23);
     const ids = garrisonable.map((def) => def.id);
     expect(new Set(ids).size).toBe(ids.length);
     for (const id of NEW_SHELTERS) expect(ids, id).toContain(id);

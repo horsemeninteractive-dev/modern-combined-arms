@@ -2,9 +2,10 @@ import { ELEVATION_HEIGHT, HARVESTER_CAPACITY, TICK_RATE, TILE_SIZE } from '../s
 import { Terrain, tileIndex } from '../sim/terrain';
 import { effectivePixelRatio, type ShadowDetail } from '../settings';
 import { BUILDINGS } from '../data/buildings';
-import { UNITS } from '../data/units';
+import { ALL_UNITS } from '../data/units';
 import { NATION_LIST } from '../data/factions';
 import { footprintCenter } from '../sim/map';
+import { pickupColor } from '../outbreak/pickups';
 import type { Scenario } from '../sim/scenario';
 import type { Entity } from '../sim/types';
 import type { Game } from '../sim/game';
@@ -45,6 +46,7 @@ import {
   buildingDamageTint,
   type BuildingDamageStage,
 } from './buildingDamage';
+import { buildingDamageShell, wreckSettle } from './buildingRuin';
 import { buildingModuleMesh } from './buildingModules';
 import {
   buildCommandFlagCloth,
@@ -76,6 +78,7 @@ import {
   buildGrassTuftMesh,
   buildLampMesh,
   buildOreMesh,
+  buildPickupCrateMesh,
   buildReedMesh,
   buildRockMesh,
   buildRubbleMesh,
@@ -96,7 +99,7 @@ import {
   standPulse,
   type ClearedStand,
 } from './standClearance';
-import { materialLut } from './materials';
+import { MATERIAL_COUNT, materialLut } from './materials';
 import {
   buildPropInstances,
   buildRoadDetails,
@@ -118,16 +121,19 @@ import { DecalGpu } from './decalGpu';
 import { DecalStore, decalAlpha, type GroundDecal } from './decalStore';
 import { ShadowGpu, type GpuShadow } from './shadowGpu';
 import { ShadowMap, shadowLightMatrix, SHADOW_MAP_SIZE } from './shadowMap';
+import { PostPipeline } from './post';
 import { identity, type Vec3 } from './math';
 import { teamColorForOwner } from './teamColor';
 import type { ColorVisionPalette } from '../colorVision';
 import {
+  gaitModelMatrix,
   limbModelMatrix,
   rotorModelMatrix,
   turretModelMatrix,
   unitBodyHeading,
   unitDrawnBodyHeading,
 } from './unitTransform';
+import { infectedGaitPose, infectedGaitProfile, infectedLegSwing } from './infectedGait';
 import { rotateLocalOffset } from '../core/math';
 import { stepRotorPower } from './rotorSpool';
 import { engineerWorkPose, workLightInstances } from './workLight';
@@ -157,8 +163,15 @@ const SILHOUETTE_ALPHA = 0.5;
 
 /** Texture unit reserved for the detailed shadow map, clear of every lit pass. */
 const SHADOW_TEXTURE_UNIT = 5;
-/** Light-space depth bias before the grazing-angle scale in the shader. */
-const SHADOW_BIAS = 0.00018;
+/**
+ * Floor on the light-space depth bias.
+ *
+ * The useful bias is a property of the fitted box, not of the scene: it has to
+ * cover roughly one shadow texel of depth, and the box resizes as the camera
+ * zooms. `renderShadowMap` derives the real value from the frame's texel size
+ * and this is only the floor that keeps a very tight box from acneing.
+ */
+const SHADOW_BIAS_MIN = 0.00006;
 
 interface VisualEntity {
   x: number;
@@ -179,6 +192,14 @@ interface VisualEntity {
   /** Infantry walk cycle phase in radians and 0..1 blend. */
   gait: number;
   pace: number;
+  /**
+   * Smoothed drawn yaw rate in radians per second, positive to the body's
+   * right. Presentation only: it is the rate the renderer itself turned the
+   * body, used to bank an infected body into a corner.
+   */
+  turnRate: number;
+  /** 0..1 commitment to closing on the aimed target; see `infectedGait.ts`. */
+  press: number;
   /** 0 stowed .. 1 deployed, visual-only launcher elevation. */
   elevation: number;
   /** 0 closed .. 1 fully raised, for a production building's shutter. */
@@ -204,6 +225,14 @@ interface VisualEntity {
   tailRotorAngle: number;
 }
 
+interface CinematicActorStage {
+  x?: number;
+  z?: number;
+  facing?: number;
+  alpha?: number;
+  pose?: 'idle' | 'walk' | null;
+}
+
 interface MeshProgram {
   program: WebGLProgram;
   u: Record<string, WebGLUniformLocation | null>;
@@ -219,6 +248,14 @@ export interface RenderSettings {
   renderScale: number;
   /** Shadow fidelity: off, the flat projected pass, or a real shadow map. */
   shadowDetail: ShadowDetail;
+  /** Ground-contact occlusion; the post pass can be switched off. */
+  ambientOcclusion: boolean;
+  /** HDR bloom around lamps, glints and explosions. */
+  bloom: boolean;
+  /** Water screen-space reflections; off falls back to the sky tint. */
+  screenSpaceReflections: boolean;
+  /** Short directional sun shadows that ground units on the road. */
+  contactShadows: boolean;
   /** Team-coloured outlines where a unit is hidden behind a structure. */
   silhouettes: boolean;
   /** Animated water normals; off keeps the sea but freezes the ripple. */
@@ -305,6 +342,10 @@ export class Renderer {
     grid: false,
     renderScale: 1,
     shadowDetail: 'detailed',
+    ambientOcclusion: true,
+    bloom: true,
+    screenSpaceReflections: true,
+    contactShadows: true,
     silhouettes: true,
     waterDetail: true,
     nightLights: true,
@@ -320,10 +361,13 @@ export class Renderer {
   private waterProgram!: MeshProgram;
   private propProgram!: MeshProgram;
   private particleGpu!: ParticleGpu;
+  private post!: PostPipeline;
   private decalGpu!: DecalGpu;
   private shadowGpu!: ShadowGpu;
   private shadowProgram!: MeshProgram;
   private shadowMap!: ShadowMap;
+  /** Light-space depth bias for this frame, in shadow-clip units. */
+  private shadowBias = SHADOW_BIAS_MIN;
   /** Top-down depth of the battlefield, for lamp occlusion. */
   private lampShadow!: ShadowMap;
   private lampMatrix = identity();
@@ -367,6 +411,9 @@ export class Renderer {
   private snowCapInstances: PropInstance[] = [];
   private rockInstances: PropInstance[] = [];
   private oreInstances: OreInstance[] = [];
+  /** Crates standing in for the horde's drops, one instance per pickup. */
+  private pickupCrateMesh!: InstancedMesh;
+  private pickupInstances: PropInstance[] = [];
   private bushInstances: PropInstance[] = [];
   /** Authored detail batches: one instanced mesh per kind that owns a mesh. */
   private decorMeshes = new Map<string, InstancedMesh>();
@@ -402,10 +449,14 @@ export class Renderer {
   private fogData: Uint8Array | null = null;
   private lastFogTick = -999;
   private lastOreRefresh = 0;
+  /** Wall tiles indexed for corner-flag tests; rebuilt once per frame. */
+  private wallFlagTiles: Set<string> | null = null;
   private buildingMeshes = new Map<
     string,
     {
       body: StaticMesh;
+      corner: StaticMesh | null;
+      diagonal: StaticMesh | null;
       garrisoned: StaticMesh | null;
       /** Spent span, drawn in place of the body for a bridge at zero hit points. */
       ruined: StaticMesh | null;
@@ -427,6 +478,27 @@ export class Renderer {
    * footprint, picking or the flag mount.
    */
   private damageMeshes = new Map<string, StaticMesh | null>();
+  /** Family ruin shells for stages 2–3, cached per structure and footprint. */
+  private damageBodyMeshes = new Map<string, StaticMesh | null>();
+  /**
+   * Structures destroyed inside the local team's sight. The simulation removes
+   * the entity; this preserves the burnt shell as presentation, so a match does
+   * not erase a landmark the moment its health reaches zero.
+   */
+  private readonly buildingWrecks: Array<{
+    defId: string;
+    owner: number;
+    x: number;
+    y: number;
+    z: number;
+    facing: number;
+    /**
+     * Simulation tick the structure came down on. Battle time, not wall time:
+     * pausing to look at the wreckage must not make it sink, and running at 3x
+     * must not leave shells standing for three times as long.
+     */
+    atTick: number;
+  }> = [];
   private moduleMeshes = new Map<string, StaticMesh | null>();
   private flagMeshes = new Map<string, FlagMesh>();
   private flagTextures = new Map<string, WebGLTexture>();
@@ -458,6 +530,8 @@ export class Renderer {
     }
   >();
   private visuals = new Map<number, VisualEntity>();
+  /** Presentation-only actor staging, keyed by live entity id. */
+  private cinematicActors = new Map<number, CinematicActorStage>();
   /**
    * Hulls that just earned a rank, keyed by entity id and stamped with the
    * render clock. Presentation only: nothing here reaches the simulation, a
@@ -595,12 +669,14 @@ export class Renderer {
    */
   private initGpuResources(): void {
     const gl = this.gl;
+    this.post?.dispose();
     this.shadowMap?.dispose();
     this.lampShadow?.dispose();
     this.lampShadow?.dispose();
     this.unitMeshes.clear();
     this.buildingMeshes.clear();
     this.damageMeshes.clear();
+    this.damageBodyMeshes.clear();
     this.moduleMeshes.clear();
     this.flagMeshes.clear();
     this.commandFlagMesh = null;
@@ -633,6 +709,7 @@ export class Renderer {
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
       'uSun', 'uAmbient', 'uTone', 'uFogTex', 'uFogTexOld', 'uFogBlend', 'uShoreTex',
       'uUseFog', 'uTime', 'uWorldSize', 'uSea', 'uHaze', 'uHazeColor', 'uHazeRef',
+      'uReflection', 'uReflectionDepth', 'uReflectionStrength',
     ]);
     this.propProgram.u = uniformMap(gl, this.propProgram.program, [
       'uEye', 'uRight', 'uUp', 'uForward', 'uHalf', 'uNear', 'uFar',
@@ -663,6 +740,7 @@ export class Renderer {
     this.lampsMesh = new InstancedMesh(gl, buildLampMesh());
     this.signsMesh = new InstancedMesh(gl, buildSignPostMesh());
     this.rubbleMesh = new InstancedMesh(gl, buildRubbleMesh());
+    this.pickupCrateMesh = new InstancedMesh(gl, buildPickupCrateMesh());
     this.reedsMesh = new InstancedMesh(gl, buildReedMesh());
     this.polesMesh = new InstancedMesh(gl, buildUtilityPoleMesh());
     for (const batch of DECOR_BATCHES) {
@@ -678,7 +756,10 @@ export class Renderer {
     this.fogTextureOld = this.createTexture();
     this.shoreTexture = this.createTexture();
 
-    for (const id of Object.keys(UNITS)) {
+    // Every drawable definition, not just the player roster: the infected are
+    // ordinary units to the simulation but they never join `UNITS`, so a
+    // roster-only loop would leave them with no body mesh and no shadow.
+    for (const id of Object.keys(ALL_UNITS)) {
       const style = unitStyle(id);
       if (style) {
         this.unitMeshes.set(id, {
@@ -704,6 +785,8 @@ export class Renderer {
       const body = style?.body ?? FALLBACK_BUILDING;
       this.buildingMeshes.set(id, {
         body: new StaticMesh(gl, body),
+        corner: style?.corner ? new StaticMesh(gl, style.corner) : null,
+        diagonal: style?.diagonal ? new StaticMesh(gl, style.diagonal) : null,
         garrisoned: style?.garrisoned ? new StaticMesh(gl, style.garrisoned) : null,
         ruined: style?.ruined ? new StaticMesh(gl, style.ruined) : null,
         turret: style?.turret ? new StaticMesh(gl, style.turret) : null,
@@ -732,6 +815,7 @@ export class Renderer {
     if (this.commandFlag) this.setCommandFlag(this.commandFlag);
     this.whiteTexture = this.createWhiteTexture();
     this.materialTexture = this.createMaterialTexture();
+    this.post = new PostPipeline(gl);
 
     gl.enable(gl.DEPTH_TEST);
     gl.depthFunc(gl.LEQUAL);
@@ -819,7 +903,7 @@ export class Renderer {
   }
 
   /**
-   * A 8x1 property LUT. Nearest filtering is intentional: material ids are
+   * A MATERIAL_COUNT x 1 property LUT. Nearest filtering is intentional: material ids are
    * categorical, and interpolation would invent blends no builder authored.
    */
   private createMaterialTexture(): WebGLTexture {
@@ -832,7 +916,7 @@ export class Renderer {
       gl.TEXTURE_2D,
       0,
       gl.RGBA,
-      8,
+      MATERIAL_COUNT,
       1,
       0,
       gl.RGBA,
@@ -888,6 +972,7 @@ export class Renderer {
       this.canvas.width = pw;
       this.canvas.height = ph;
     }
+    this.post.resize(pw, ph);
     this.camera.setViewport(w, h);
   }
 
@@ -968,8 +1053,10 @@ export class Renderer {
     this.scenario = scenario;
     this.game = null;
     this.visuals.clear();
+    this.cinematicActors.clear();
     this.promotionFlashes.clear();
     this.wrecks.clear();
+    this.buildingWrecks.length = 0;
     this.decals.clear();
     this.projectileViews.clear();
     this.particles.clear();
@@ -1007,8 +1094,10 @@ export class Renderer {
     }
     this.game = game;
     this.visuals.clear();
+    this.cinematicActors.clear();
     this.promotionFlashes.clear();
     this.wrecks.clear();
+    this.buildingWrecks.length = 0;
     this.decals.clear();
     this.trailTimers.clear();
     this.projectileTrailTimers.clear();
@@ -1068,11 +1157,11 @@ export class Renderer {
     // A night floor that keeps terrain and units readable, warmed at the edges
     // of the day and cooled under moonlight. These are the *base* values: the
     // lightning pass layers its flash on top of them every frame.
-    this.baseAmbient = 0.24 + 0.26 * light;
+    this.baseAmbient = 0.15 + 0.35 * light;
     this.baseTone = [
-      (0.58 + 0.42 * light) * (1 + 0.13 * warm),
-      (0.67 + 0.33 * light) * (1 + 0.02 * warm),
-      (0.95 + 0.05 * light) * (1 - 0.1 * warm),
+      (0.46 + 0.54 * light) * (1 + 0.13 * warm),
+      (0.54 + 0.46 * light) * (1 + 0.02 * warm),
+      (0.84 + 0.16 * light) * (1 - 0.1 * warm),
     ];
     this.baseClear = [
       0.006 + 0.03 * light,
@@ -1458,7 +1547,7 @@ export class Renderer {
       pose: (e) => {
         const v = this.visuals.get(e.id);
         if (!v) return null;
-        const def = e.kind === 'unit' ? UNITS[e.defId] : undefined;
+        const def = e.kind === 'unit' ? ALL_UNITS[e.defId] : undefined;
         const driving = e.state === 'moving' && !!def && def.moveClass !== 'foot' && def.domain !== 'air';
         return { x: v.x, z: v.z, facing: driving ? v.motion : v.facing };
       },
@@ -1739,6 +1828,8 @@ export class Renderer {
           damageTimer: 0,
           gait: 0,
           pace: 0,
+          turnRate: 0,
+          press: 0,
           elevation: 0,
           door: 0,
           doorHold: 0,
@@ -1748,13 +1839,13 @@ export class Renderer {
           // air starts at cruise; anything else would pop at the far end of a
           // climb it never made.
           emergeAlt:
-            e.kind === 'unit' && UNITS[e.defId]?.domain === 'air'
+            e.kind === 'unit' && ALL_UNITS[e.defId]?.domain === 'air'
               ? e.aircraft?.climb ?? (e.aircraft?.landed ? 0 : 1)
               : 1,
           trackTimer: 0,
           // A helicopter first seen already airborne has its disc at full rate;
           // one first seen on the ground spins up when it lifts off.
-          rotorPower: e.kind === 'unit' && UNITS[e.defId]?.domain === 'air' && !e.aircraft?.landed ? 1 : 0,
+          rotorPower: e.kind === 'unit' && ALL_UNITS[e.defId]?.domain === 'air' && !e.aircraft?.landed ? 1 : 0,
           rotorAngle: 0,
           tailRotorAngle: 0,
         };
@@ -1776,7 +1867,7 @@ export class Renderer {
         v.door += (target - v.door) * (1 - Math.exp(-dt * 9));
         if (v.door < 0.002) v.door = 0;
       }
-      const udef = e.kind === 'unit' ? UNITS[e.defId] : undefined;
+      const udef = e.kind === 'unit' ? ALL_UNITS[e.defId] : undefined;
       const walking =
         !!udef &&
         udef.moveClass === 'foot' &&
@@ -1784,6 +1875,26 @@ export class Renderer {
         e.path.length > 0;
       v.pace += ((walking ? 1 : 0) - v.pace) * (1 - Math.exp(-dt * 9));
       if (v.pace > 0.02) v.gait += dt * 8.5 * v.pace;
+      // How committed an infected body is to the thing it is aimed at. Only the
+      // horde reads this: a target it is closing on, or one it is already
+      // hitting, leans the body forward and quickens the stride. Everything
+      // else keeps press at zero, and a unit with no aim target leans at
+      // nothing at all.
+      if (udef && e.kind === 'unit' && infectedGaitProfile(e.defId)) {
+        const target = e.aimTargetId ? this.visuals.get(e.aimTargetId) : undefined;
+        const distance = target ? Math.hypot(target.x - v.x, target.z - v.z) : Infinity;
+        const committed = !target
+          ? 0
+          : e.state === 'attacking'
+            ? 1
+            : distance <= 3
+              ? 0.85
+              : distance <= 10
+                ? 0.6
+                : 0.35;
+        v.press += (committed - v.press) * (1 - Math.exp(-dt * 3));
+        if (v.press < 0.002) v.press = 0;
+      }
       const deployed =
         e.kind === 'unit' &&
         e.defId === 'mlrs' &&
@@ -1849,6 +1960,11 @@ export class Renderer {
         v.z += (e.z - v.z) * ease;
         const facingDiff = normalizeDiff(e.facing - v.facing);
         v.facing += facingDiff * k;
+        // The rate the body is actually being turned at, derived from the same
+        // eased heading the mesh is drawn on. Drawn yaw is the negated heading,
+        // so a right-hand turn is a positive rate.
+        const yawRate = dt > 0 ? -(facingDiff * k) / dt : 0;
+        v.turnRate += (yawRate - v.turnRate) * (1 - Math.exp(-dt * 10));
         const turretDiff = normalizeDiff(e.turretFacing - v.turret);
         v.turret += turretDiff * k;
       }
@@ -1866,7 +1982,7 @@ export class Renderer {
    */
   private startEmergence(game: Game, e: Entity, v: VisualEntity): void {
     if (e.kind !== 'unit' || e.garrisonId) return;
-    const def = UNITS[e.defId];
+    const def = ALL_UNITS[e.defId];
     if (!def) return;
     // A hull that rolled out of the hangar already parked on its stand did not
     // come through the doorway: it appears where the simulation put it.
@@ -1928,7 +2044,7 @@ export class Renderer {
       if (!v) continue;
       const distToCamera = Math.hypot(v.x - this.camera.cx, v.z - this.camera.cz);
       if (distToCamera > this.camera.zoom * 2.8) continue;
-      const def = UNITS[e.defId];
+      const def = ALL_UNITS[e.defId];
       const moved = e.path.length > 0 && e.state === 'moving';
       if (def && e.kind === 'unit') {
         v.trailTimer -= dt;
@@ -2198,7 +2314,7 @@ export class Renderer {
           // The simulation reports the real muzzle height; only fall back to
           // the old per-domain guess for legacy events.
           let mx = ev.x;
-          let my = ev.y ?? (shooter?.kind === 'unit' && UNITS[shooter.defId]?.domain === 'air'
+          let my = ev.y ?? (shooter?.kind === 'unit' && ALL_UNITS[shooter.defId]?.domain === 'air'
             ? AIR_UNIT_ALTITUDE
             : groundY + (shooter?.kind === 'building' ? 3.2 : 1.5));
           let mz = ev.z;
@@ -2260,7 +2376,7 @@ export class Renderer {
           break;
         }
         case 'unitLost': {
-          const def = ev.defId ? UNITS[ev.defId] : undefined;
+          const def = ev.defId ? ALL_UNITS[ev.defId] : undefined;
           const y = groundY + 0.4;
           if (def?.domain === 'air') {
             this.particles.explosion(ev.x, y + 0.3, ev.z, 1.05);
@@ -2286,6 +2402,21 @@ export class Renderer {
         case 'buildingLost':
           this.particles.collapse(ev.x, groundY + 0.4, ev.z, 1.4);
           this.addShake(ev.x, ev.z, 0.34);
+          // A bridge stays as a walkable/blocked entity, and walkable ruins have
+          // their own authored wreck. Every other structure is removed from the
+          // simulation, so keep a burnt shell where it stood.
+          if (ev.defId && !BUILDINGS[ev.defId]?.walkable) {
+            if (this.buildingWrecks.length >= 64) this.buildingWrecks.shift();
+            this.buildingWrecks.push({
+              defId: ev.defId,
+              owner: ev.team,
+              x: ev.x,
+              y: groundY,
+              z: ev.z,
+              facing: ev.facing ?? 0,
+              atTick: this.game?.state.tick ?? 0,
+            });
+          }
           break;
         case 'buildingPlaced':
         case 'buildingComplete':
@@ -2304,6 +2435,42 @@ export class Renderer {
           break;
       }
     }
+  }
+
+  /**
+   * Pulse screen shake for an authored cinematic beat.
+   *
+   * Shares the combat shake budget and the player's shake setting, so a scene
+   * can never shake more violently than an explosion on the same screen.
+   */
+  cinematicShake(amount: number): void {
+    if (!this.settings.shake) return;
+    this.shake = Math.min(0.7, this.shake + Math.max(0, amount) * 0.6);
+  }
+
+  /** Presentation-only transform for one live entity, used by a cinematic actor beat. */
+  stageCinematicActor(id: number, stage: CinematicActorStage): void {
+    this.cinematicActors.set(id, { ...this.cinematicActors.get(id), ...stage });
+  }
+
+  /** Drop every staged actor; the simulation was never touched. */
+  clearCinematicActors(): void {
+    this.cinematicActors.clear();
+  }
+
+  /**
+   * A staged shot: muzzle flash, short tracer and an impact puff, with no
+   * projectile entity and no damage. Ballistics remain a simulation concern.
+   */
+  cinematicFire(fromX: number, fromZ: number, toX: number, toZ: number, scale = 1): void {
+    const scenario = this.scenario;
+    if (!scenario) return;
+    const fromY = tileWorldHeight(scenario, fromX, fromZ) + 1.05;
+    const toY = tileWorldHeight(scenario, toX, toZ) + 0.7;
+    this.particles.muzzle(fromX, fromY, fromZ, Math.max(0.5, scale));
+    this.particles.tracer(fromX, fromY, fromZ, toX, toY, toZ, 0.045 * Math.max(0.5, scale));
+    this.particles.impact(toX, toY, toZ, false, Math.max(0.4, scale));
+    this.cinematicShake(0.05 * scale);
   }
 
   private addShake(x: number, z: number, amount: number): void {
@@ -2370,6 +2537,7 @@ export class Renderer {
       return;
     }
     this.resize();
+    this.wallFlagTiles = null;
     this.camera.shakeX = Math.sin(this.time * 91) * this.shake;
     this.camera.shakeY = Math.cos(this.time * 73) * this.shake * 0.6;
     this.camera.update();
@@ -2388,6 +2556,7 @@ export class Renderer {
     // Lightning changes every frame, so it is layered on after the grade rather
     // than folded into it.
     this.applyFlash();
+    this.post.bindScene();
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.clearColor(...this.clearColor, 1);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -2411,13 +2580,17 @@ export class Renderer {
       this.groundSpots.length = 0;
       this.lampOccludersReady = false;
     }
+    this.refreshPickups();
     this.renderShadowMap();
     this.drawTerrain();
     this.drawWater();
     this.drawGroundDecals();
     this.drawShadows();
     this.drawProps();
-    if (lightsOn) this.lightGpu.draw(this.camera, this.lightPools);
+    // Ground pools are drawn whenever the list has entries, not only at night:
+    // a horde drop marks its patch of ground in daylight too, and that splash
+    // is what makes the crate findable without a model.
+    if (this.lightPools.length > 0) this.lightGpu.draw(this.camera, this.lightPools);
     if (this.game) {
       // Silhouettes go down before the units themselves. The depth buffer then
       // holds only terrain, structures and props, so a friendly hull in front of
@@ -2431,11 +2604,87 @@ export class Renderer {
     }
     // Wall lamps, lit windows and lens glows ride on top of the models, so a
     // building cannot cover the light it is carrying. Depth still hides the
-    // ones on the far side of it.
+    // ones on the far side of it. Horde drops join the same batch: each crate
+    // carries a beacon, and the glow is what finds it across the map.
     if (this.lightGlows.length > 0) {
       this.lightGpu.draw(this.camera, this.lightGlows);
     }
     this.drawParticles();
+    // Bloom and occlusion are explicit presentation switches, independent of
+    // the particle/tracer effect toggle and of the graphics preset.
+    this.post.options.bloom = this.settings.bloom ? 0.5 : 0;
+    this.post.options.ao = this.settings.ambientOcclusion ? 0.6 : 0;
+    this.post.options.contact = this.settings.contactShadows ? 0.55 : 0;
+    this.post.setCamera(this.camera, NEAR, FAR);
+    this.post.setSun(this.sun);
+    this.post.end();
+  }
+
+  /**
+   * The crate and beacons of the infected's drops.
+   *
+   * Each drop is a crate standing on the ground with a coloured band, and a glow
+   * that finds it from across the map — a ground pool where the lights pass
+   * exist, and a camera-facing spark above the lid that reads in daylight too.
+   * At battle zoom the crate is only a few pixels, so the beacon is what makes a
+   * drop an event; the crate is what keeps the patch of colour from being empty
+   * when the camera comes in close. The pulse is driven by the simulation tick,
+   * so it stops when the match is paused.
+   *
+   * The instance list is filled here rather than at draw time because the shadow
+   * pass runs before the props do: a crate that casts a shadow has to be in the
+   * buffer by then.
+   */
+  private refreshPickups(): void {
+    const game = this.game;
+    const outbreak = game?.outbreak;
+    this.pickupInstances.length = 0;
+    if (!game || !outbreak || outbreak.activePickups.length === 0) return;
+    const scenario = this.scenario;
+    const pulse = (tick: number, id: number): number =>
+      0.72 + 0.28 * Math.sin((tick + id * 11) * 0.14);
+    for (const pickup of outbreak.activePickups) {
+      const color = pickupColor(pickup.kind);
+      const groundY = scenario ? tileWorldHeight(scenario, pickup.x, pickup.z) : 0;
+      const shimmer = pulse(game.state.tick, pickup.id);
+      // The instance tint multiplies the whole crate, so it is pulled toward
+      // white: the timber only warms, and the near-white band takes the drop's
+      // colour outright. The kind then reads on the crate as well as in the glow.
+      this.pickupInstances.push({
+        x: pickup.x,
+        y: groundY - 0.02,
+        z: pickup.z,
+        // A per-drop heading, so a field of crates does not look stamped.
+        rotation: (pickup.id * 1.31) % (Math.PI * 2),
+        scale: 1.3,
+        color: [0.6 + 0.4 * color[0], 0.6 + 0.4 * color[1], 0.6 + 0.4 * color[2]],
+      });
+      this.lightPools.push({
+        x: pickup.x,
+        y: groundY + 0.12,
+        z: pickup.z,
+        radius: 3.4,
+        rotation: 0,
+        stretch: 1,
+        glow: 0,
+        cone: 0,
+        color,
+        intensity: 0.7 * shimmer,
+      });
+      this.lightGlows.push({
+        x: pickup.x,
+        y: groundY + 1.0,
+        z: pickup.z,
+        radius: 1.5,
+        rotation: 0,
+        stretch: 1,
+        glow: 1,
+        cone: 0,
+        color,
+        intensity: 1.7 * shimmer,
+      });
+    }
+    this.pickupCrateMesh.setInstances(this.pickupInstances);
   }
 
   private setCameraUniforms(program: MeshProgram): void {
@@ -2633,8 +2882,7 @@ export class Renderer {
     }
     this.drawShadowCasters(cx, cz, footprint);
     gl.disable(gl.POLYGON_OFFSET_FILL);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    this.post.bindScene();
     this.lampOccludersReady = true;
   }
 
@@ -2714,6 +2962,29 @@ export class Renderer {
     gl.uniform2f(p.u.uWorldSize, this.scenario.width * TILE_SIZE, this.scenario.height * TILE_SIZE);
     bindTextureUnit(gl, 1, this.shoreTexture, p.u.uShoreTex ?? null);
     this.bindFogFields(p.u, 0, 2);
+    // Unit 3 is the previous resolved scene, unit 4 its depth. Both are copied
+    // by the post pass after the frame, so the sea reflects the battlefield as
+    // it stood last frame rather than trying to read the target it is drawing to.
+    const reflection = this.post.reflectionTexture;
+    const reflectionDepth = this.post.reflectionDepth;
+    if (reflection) {
+      bindTextureUnit(gl, 3, reflection, p.u.uReflection ?? null);
+    } else {
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.uniform1i(p.u.uReflection ?? null, 3);
+    }
+    if (reflectionDepth) {
+      bindTextureUnit(gl, 4, reflectionDepth, p.u.uReflectionDepth ?? null);
+    } else {
+      gl.activeTexture(gl.TEXTURE4);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.uniform1i(p.u.uReflectionDepth ?? null, 4);
+    }
+    gl.uniform1f(
+      p.u.uReflectionStrength ?? null,
+      reflection && reflectionDepth && this.settings.screenSpaceReflections ? 1.0 : 0,
+    );
     // The sea is one plane across the whole map, so every coastal triangle meets
     // it at a grazing angle. Geometric clearance alone still left the shoreline
     // interleaving at long range, so the plane is biased away from the camera in
@@ -2842,6 +3113,12 @@ export class Renderer {
     for (const [batch, mesh] of this.decorMeshes) {
       mesh.draw(this.decorInstances[batch]?.length ?? 0);
     }
+    // Horde drops: the crate the beacon hangs over. Lit like any other prop, so
+    // a drop in a lit yard reads as an object rather than a decal, and drawn
+    // here while the emissive uniform is still off.
+    if (this.pickupInstances.length > 0) {
+      this.pickupCrateMesh.draw(this.pickupInstances.length);
+    }
     // Servicing kit on any airframe currently being turned around: a bowser, a
     // pump skid, a hose and two crew walking between them, with the bowser's
     // beacon turning. The kit only exists while a servicing run is under way, so
@@ -2927,8 +3204,15 @@ export class Renderer {
     const tip = this.airShadowOffset(height * 0.85);
     const halfW = (footprintW * TILE_SIZE) / 2;
     const halfH = (footprintH * TILE_SIZE) / 2;
-    for (let i = 1; i <= 4; i++) {
-      const t = i / 4;
+    // Stack enough thin slices that the streak reads as one soft shadow. Four
+    // overlapping ellipses, as this used to be, is literally four rims: each
+    // one adds its own ring of darkening, and at battle zoom the result is a
+    // striped, blocky smear that looks like a low-resolution texture. Sixteen
+    // low-alpha slices with a continuous taper accumulate into a smooth ramp
+    // for the same total darkness.
+    const SLICES = 16;
+    for (let i = 0; i < SLICES; i++) {
+      const t = (i + 0.5) / SLICES;
       shadows.push({
         x: x + tip.x * t,
         y,
@@ -2936,7 +3220,7 @@ export class Renderer {
         rx: halfW * (1.14 - 0.4 * t) + 0.6,
         rz: halfH * (1.02 - 0.3 * t) + 0.6,
         rotation: 0,
-        alpha: 0.4 * strength,
+        alpha: 0.09 * strength,
       });
     }
   }
@@ -3002,7 +3286,7 @@ export class Renderer {
     bindTextureUnit(gl, SHADOW_TEXTURE_UNIT, this.shadowMap.texture, u.uShadowMap ?? null);
     gl.uniformMatrix4fv(u.uLightVP ?? null, false, this.shadowMatrix);
     gl.uniform2f(u.uShadowTexel ?? null, 1 / this.shadowMap.size, 1 / this.shadowMap.size);
-    gl.uniform1f(u.uShadowBias ?? null, SHADOW_BIAS);
+    gl.uniform1f(u.uShadowBias ?? null, this.shadowBias);
     gl.uniform1f(
       u.uShadowStrength ?? null,
       this.settings.shadowDetail === 'detailed' ? this.detailedShadowStrength() : 0,
@@ -3030,10 +3314,24 @@ export class Renderer {
     const cz = (rect.z0 + rect.z1) * 0.5;
     const footprint = Math.hypot(rect.x1 - rect.x0, rect.z1 - rect.z0) * 0.5;
     // Low sun throws a long shadow; extend the box so a mast's shadow still
-    // lands inside the map at dawn and dusk.
-    const radius = footprint + 26 + 20 / Math.max(0.28, this.sun[1]);
-    const volume = shadowLightMatrix(this.sun, cx, cz, radius);
+    // lands inside the map at dawn and dusk. The margin is deliberately lean:
+    // every unit of it is spent on the whole map's texels, and the old +26 and
+    // 20/sun.y terms together cost about a third of the resolution at battle
+    // framing for shadows that mostly fell outside the view anyway.
+    const radius = footprint + 14 + Math.min(64, 14 / Math.max(0.34, this.sun[1]));
+    // Fit the box to whole shadow texels so camera drift cannot slide the
+    // shadow pattern across the terrain.
+    const volume = shadowLightMatrix(this.sun, cx, cz, radius, 4, this.shadowMap.size);
     this.shadowMatrix = volume.matrix;
+    // One texel of depth, expressed in shadow-clip units. A fixed constant is
+    // either too small at wide framing, where a flat parade ground breaks into
+    // acne stripes, or too large when zoomed in, where the shadow peels off the
+    // object casting it.
+    const texelWorld = (radius * 2) / this.shadowMap.size;
+    this.shadowBias = Math.max(
+      SHADOW_BIAS_MIN,
+      (texelWorld * 0.9) / (volume.distance * 2 + 320),
+    );
     const p = this.shadowProgram;
     gl.useProgram(p.program);
     gl.uniformMatrix4fv(p.u.uLightVP, false, volume.matrix);
@@ -3066,6 +3364,11 @@ export class Renderer {
     this.snowCapsMesh.draw(this.snowCapInstances.length);
     this.rocksMesh.draw(this.rockInstances.length);
     this.oreMesh.draw(this.oreInstances.length);
+    // A drop crate casts like any other prop, so it sits on the ground instead
+    // of hovering over it. Its instance buffer was filled before this pass.
+    if (this.pickupInstances.length > 0) {
+      this.pickupCrateMesh.draw(this.pickupInstances.length);
+    }
     this.bushesMesh.draw(this.bushInstances.length);
     this.shrubsMesh.draw(this.shrubInstances.length);
     this.tuftsMesh.draw(this.tuftInstances.length);
@@ -3080,8 +3383,7 @@ export class Renderer {
     }
     this.drawShadowCasters(cx, cz, footprint);
     gl.disable(gl.POLYGON_OFFSET_FILL);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+    this.post.bindScene();
   }
 
   /**
@@ -3106,15 +3408,17 @@ export class Renderer {
       for (const e of game.state.entities) {
         if (e.hp <= 0) continue;
         if (e.kind === 'unit' && (e.garrisonId || e.submarine?.dived)) continue;
-        if (game.visionStateOf(team, e.id) !== 'visible') continue;
+        const staged = this.cinematicActors.get(e.id);
+        if (game.visionStateOf(team, e.id) !== 'visible' && !staged) continue;
+        if ((staged?.alpha ?? 1) <= 0.001) continue;
         const v = this.visuals.get(e.id);
-        const x = v?.x ?? e.x;
-        const z = v?.z ?? e.z;
+        const x = staged?.x ?? v?.x ?? e.x;
+        const z = staged?.z ?? v?.z ?? e.z;
         if (!near(x, z)) continue;
         // Cast the drawn pose, not the simulation tick: the hull the player
         // sees is an eased visual heading, and a shadow on the tick pose leads
         // the model through every turn.
-        const facing = v?.facing ?? e.facing;
+        const facing = staged?.facing ?? v?.facing ?? e.facing;
         const turretFacing = v?.turret ?? e.turretFacing;
         const groundY = game.deckHeightAt(x, z) ?? tileWorldHeight(this.scenario!, x, z);
         if (e.kind === 'building') {
@@ -3151,7 +3455,7 @@ export class Renderer {
           }
           continue;
         }
-        const def = UNITS[e.defId];
+        const def = ALL_UNITS[e.defId];
         const style = this.unitMeshes.get(e.defId);
         if (!def || !style) continue;
         const air = def.domain === 'air';
@@ -3170,8 +3474,8 @@ export class Renderer {
           def.moveClass,
           facing,
           turret,
-          v?.motion ?? facing,
-          !!v && (e.state === 'moving' || e.path.length > 0),
+          staged?.facing ?? v?.motion ?? facing,
+          staged?.pose === 'walk' || (!!v && (e.state === 'moving' || e.path.length > 0)),
         );
         const vs = unitVisualScale(e.defId);
         gl.uniformMatrix4fv(p.u.uModel, false, modelFor(x, y, z, -bodyFacing, vs, vs));
@@ -3224,7 +3528,7 @@ export class Renderer {
       rig.body.draw();
     }
     for (const u of scenario.units) {
-      const def = UNITS[u.defId];
+      const def = ALL_UNITS[u.defId];
       const style = this.unitMeshes.get(u.defId);
       if (!def || !style) continue;
       const x = (u.x + 0.5) * TILE_SIZE;
@@ -3259,7 +3563,7 @@ export class Renderer {
         if (e.kind === 'unit' && e.garrisonId) continue;
         if (!game.isVisibleTo(team, e.id)) continue;
         const building = BUILDINGS[e.defId];
-        const def = building ? null : UNITS[e.defId];
+        const def = building ? null : ALL_UNITS[e.defId];
         if (!building && !def) continue;
         if (def?.domain === 'naval') continue;
         const v = this.visuals.get(e.id);
@@ -3356,7 +3660,7 @@ export class Renderer {
         );
       }
       for (const u of this.scenario.units) {
-        const def = UNITS[u.defId];
+        const def = ALL_UNITS[u.defId];
         if (!def || def.domain === 'naval') continue;
         const x = (u.x + 0.5) * TILE_SIZE;
         const z = (u.z + 0.5) * TILE_SIZE;
@@ -3645,7 +3949,7 @@ export class Renderer {
       this.drawStaticMesh(def.id, true, s.owner, center.x, y, center.z, s.facing ?? 0, 0, 1, 0, false);
     }
     for (const u of this.scenario.units) {
-      const def = UNITS[u.defId];
+      const def = ALL_UNITS[u.defId];
       if (!def) continue;
       const x = (u.x + 0.5) * TILE_SIZE;
       const z = (u.z + 0.5) * TILE_SIZE;
@@ -3687,7 +3991,11 @@ export class Renderer {
       gl.enable(gl.BLEND);
       gl.depthMask(true);
     }
-    body.draw();
+    const wallCorner =
+      building && buildingRig?.corner && this.wallCornerVisible(defId, owner, x, z)
+        ? buildingRig.corner
+        : null;
+    (wallCorner ?? body).draw();
     if (building && buildingRig?.turret) {
       const tm = turretModelMatrix(x, y, z, facing, turret, buildingRig.turretOffset, 1, vertical);
       gl.uniformMatrix4fv(mp.u.uModel, false, tm);
@@ -3697,7 +4005,19 @@ export class Renderer {
     // Previews and prop passes show every part at rest: no clock, no queue.
     if (building && buildingRig) {
       this.drawBuildingParts(buildingRig, x, y, z, 0, 0, vertical, facing);
-      if (!construction && owner >= 0) {
+      this.drawWallDiagonalJoints(
+        buildingRig,
+        defId,
+        owner,
+        x,
+        y,
+        z,
+        vertical,
+        team,
+        alpha,
+        flash,
+      );
+      if (!construction && owner >= 0 && this.wallFlagVisible(defId, owner, x, z)) {
         const factionId = this.scenario?.players.find((p) => p.id === owner)?.factionId;
         const flagNation = factionId ? flagNationForFaction(factionId) : undefined;
         if (flagNation) {
@@ -3875,11 +4195,11 @@ export class Renderer {
     this.bindFlagTexture();
     bindTextureUnit(gl, MESH_MATERIAL_TEXTURE_UNIT, this.materialTexture, mp.u.uMatLut ?? null);
     this.bindShadowSampling(mp);
-    // The mesh program needs this frame's cones too, because a bridge deck is a
-    // mesh standing over the water: without them the pool stops at the bank.
+    // The mesh program receives this frame's cones as well. A headlamp that only
+    // lights the road leaves the wall, hull or building beside it unlit, which
+    // is the clearest tell that the lamp is a decal rather than a light.
     this.bindGroundSpots(mp);
-    gl.uniform1f(mp.u.uSpotGate ?? null, 0);
-    let lampGate = 0;
+    gl.uniform1f(mp.u.uSpotGate ?? null, 1);
     const team = game.teamOf(game.localPlayerId);
     for (const e of game.state.entities) {
       // A shot-out bridge stays on the map as wreckage, so it is still drawn:
@@ -3891,14 +4211,18 @@ export class Renderer {
       // stays on the map as a dimmed silhouette once it leaves vision, and a
       // structure never seen is not drawn at all.
       const vision = game.visionStateOf(team, e.id);
-      if (vision === 'hidden') continue;
-      const remembered = vision === 'remembered';
+      const staged = this.cinematicActors.get(e.id);
+      // Explicit staging may reveal an authored actor through fog, but nothing
+      // is drawn unless the scene named it. An unseen background entity stays
+      // unseen.
+      if (vision === 'hidden' && !staged) continue;
+      const remembered = !staged && vision === 'remembered';
       const v = this.visuals.get(e.id);
-      const x = v?.x ?? e.x;
-      const z = v?.z ?? e.z;
-      const facing = v?.facing ?? e.facing;
+      const x = staged?.x ?? v?.x ?? e.x;
+      const z = staged?.z ?? v?.z ?? e.z;
+      const facing = staged?.facing ?? v?.facing ?? e.facing;
       const turret = remembered ? e.facing : v?.turret ?? e.turretFacing;
-      const def = BUILDINGS[e.defId] ? null : UNITS[e.defId];
+      const def = BUILDINGS[e.defId] ? null : ALL_UNITS[e.defId];
       const isAir = def?.domain === 'air';
       // A unit crossing a bridge stands on the deck, not on the sea bed the
       // terrain surface reports under it.
@@ -3935,7 +4259,8 @@ export class Renderer {
       const dismantling = !construction && !!e.deconstruct;
       const verticalScale = buildingVerticalScale(e);
       const liveAlpha = construction ? 0.72 : e.hp / e.maxHp < 0.25 ? 0.94 : 1;
-      const alpha = remembered ? 0.46 : liveAlpha;
+      const alpha = (remembered ? 0.46 : liveAlpha) * (staged?.alpha ?? 1);
+      if (alpha <= 0.001) continue;
       // A charted structure is memory, not sight, and it has to read that way at
       // a glance: half alpha alone left a garrisonable tenement looking exactly
       // as solid and as brightly trimmed as a building the team can see right
@@ -3968,14 +4293,6 @@ export class Renderer {
       );
       // Moving parts are frozen on a remembered silhouette: the shape that was
       // charted is all the team can know, not what it is doing now.
-      // Only a walkable span is lit by the lamps: every other hull and wall is a
-      // caster for the occluder map, not a receiver of the cone.
-      const walkableDeck = e.kind === 'building' && !!BUILDINGS[e.defId]?.walkable;
-      const nextGate = walkableDeck ? 1 : 0;
-      if (nextGate !== lampGate) {
-        lampGate = nextGate;
-        gl.uniform1f(mp.u.uSpotGate ?? null, nextGate);
-      }
       const rig = e.kind === 'building' ? this.buildingMeshes.get(e.defId) : null;
       const doorOpen = rig?.door && !remembered ? v?.door ?? 0 : 0;
       const rotorAngle = rig?.rotor && !remembered ? this.time * rig.rotorRate + e.id * 0.9 : 0;
@@ -3996,11 +4313,13 @@ export class Renderer {
         construction || dismantling,
         e.harvester ? Math.min(1, e.harvester.ore / HARVESTER_CAPACITY) : 0,
         {
-          gait: v?.gait ?? 0,
-          pace: v?.pace ?? 0,
+          gait: staged?.pose === 'walk' ? this.time * 8.5 : staged?.pose === 'idle' ? 0 : v?.gait ?? 0,
+          pace: staged?.pose === 'walk' ? 1 : staged?.pose === 'idle' ? 0 : v?.pace ?? 0,
           elevation: v?.elevation ?? 0,
-          motion: v?.motion ?? e.facing,
-          moving: e.state === 'moving' || e.path.length > 0,
+          turn: v?.turnRate ?? 0,
+          press: v?.press ?? 0,
+          motion: staged?.facing ?? v?.motion ?? e.facing,
+          moving: staged?.pose === 'walk' ? true : e.state === 'moving' || e.path.length > 0,
           rotor: v?.rotorAngle ?? 0,
           tailRotor: v?.tailRotorAngle ?? 0,
         },
@@ -4016,6 +4335,7 @@ export class Renderer {
         e.kind === 'building' && !construction ? e.modules ?? [] : [],
       );
     }
+    this.drawBuildingWrecks();
     gl.uniform1f(mp.u.uSpotGate ?? null, 0);
     gl.uniform3f(mp.u.uTint, 1, 1, 1);
     gl.uniform3f(mp.u.uCamo, 1, 1, 1);
@@ -4067,7 +4387,7 @@ export class Renderer {
       const tz = Math.floor(z / TILE_SIZE);
       if (tx < 0 || tz < 0 || tx >= map.width || tz >= map.height) continue;
       if (map.tiles[tileIndex(map.width, tx, tz)].t === Terrain.Forest) continue;
-      const def = UNITS[e.defId];
+      const def = ALL_UNITS[e.defId];
       const groundY = tileWorldHeight(this.scenario!, x, z);
       const y =
         def?.domain === 'air'
@@ -4093,6 +4413,8 @@ export class Renderer {
           gait: v?.gait ?? 0,
           pace: v?.pace ?? 0,
           elevation: v?.elevation ?? 0,
+          turn: v?.turnRate ?? 0,
+          press: v?.press ?? 0,
           motion: v?.motion ?? e.facing,
           moving: false,
         },
@@ -4124,6 +4446,10 @@ export class Renderer {
           gait: number;
           pace: number;
           elevation?: number;
+          /** Signed drawn yaw rate, radians per second; banks the horde. */
+          turn?: number;
+          /** 0..1 commitment to the aimed target; leans the horde in. */
+          press?: number;
           motion?: number;
           moving?: boolean;
           rotor?: number;
@@ -4146,11 +4472,23 @@ export class Renderer {
     // shares the glass material but is not a window in a wall.
     gl.uniform1f(
       mp.u.uNightGlow,
-      kind === 'building' ? this.buildingWindowGlow(owner, construction, remembered) : 0,
+      kind === 'building' && !collapsed && damageStage < 2
+        ? this.buildingWindowGlow(owner, construction, remembered)
+        : 0,
     );
     if (kind === 'building') {
       const rig = this.buildingMeshes.get(defId);
       if (!rig) return;
+      // Stage 2 and 3 replace the intact body with the family ruin shell. The
+      // shell has the same footprint, so no collision, cover or picking data
+      // moves; only the silhouette changes from a building to a gutted shell.
+      const shell = collapsed
+        ? rig.ruined
+          ? null
+          : this.damageShellFor(defId, 3)
+        : damageStage >= 2
+          ? this.damageShellFor(defId, damageStage as 2 | 3)
+          : null;
       const occupied = collapsed && rig.ruined
         ? rig.ruined
         : garrisonOwner !== null && rig.garrisoned
@@ -4164,24 +4502,45 @@ export class Renderer {
       );
       gl.uniform1f(mp.u.uAlpha, alpha);
       gl.uniform1f(mp.u.uFlash, flash);
-      occupied.draw();
+      const wallCorner =
+        rig.corner && this.wallCornerVisible(defId, owner, x, z) ? rig.corner : null;
+      (shell ?? wallCorner ?? occupied).draw();
       // Debris and retrofit hardware share the body's transform, alpha and hit
       // flash: they are part of the structure, not a separate overlay.
       if (damageStage > 0) this.damageMeshFor(defId, damageStage)?.draw();
-      for (const moduleId of modules) this.moduleMeshFor(defId, moduleId)?.draw();
-      if (rig.turret) {
-        // Mount height and mesh both follow the construction squash, so a gun
-        // sits on the revetment that exists instead of hovering over it.
-        gl.uniformMatrix4fv(
-          mp.u.uModel,
-          false,
-          turretModelMatrix(x, y, z, facing, turretFacing, rig.turretOffset, 1, verticalScale),
+      if (!shell) {
+        for (const moduleId of modules) this.moduleMeshFor(defId, moduleId)?.draw();
+        if (rig.turret) {
+          // Mount height and mesh both follow the construction squash, so a gun
+          // sits on the revetment that exists instead of hovering over it.
+          gl.uniformMatrix4fv(
+            mp.u.uModel,
+            false,
+            turretModelMatrix(x, y, z, facing, turretFacing, rig.turretOffset, 1, verticalScale),
+          );
+          rig.turret.draw();
+        }
+        this.drawBuildingParts(rig, x, y, z, doorOpen, rotorAngle, verticalScale, facing);
+        this.drawWallDiagonalJoints(
+          rig,
+          defId,
+          owner,
+          x,
+          y,
+          z,
+          verticalScale,
+          team,
+          alpha,
+          flash,
         );
-        rig.turret.draw();
       }
-      this.drawBuildingParts(rig, x, y, z, doorOpen, rotorAngle, verticalScale, facing);
       const flagOwner = flagOwnerForBuilding(owner, garrisonOwner);
-      if (!construction && flagOwner >= 0) {
+      if (
+        !construction &&
+        !collapsed &&
+        flagOwner >= 0 &&
+        this.wallFlagVisible(defId, flagOwner, x, z)
+      ) {
         const factionId = this.game?.player(flagOwner)?.factionId;
         const flagNation = factionId ? flagNationForFaction(factionId) : undefined;
         if (flagNation) {
@@ -4209,12 +4568,12 @@ export class Renderer {
     const vs = unitVisualScale(defId) * verticalScale;
     // A unit with no turret mesh aims with its whole body; a turreted hull
     // keeps its own heading; an airframe follows its flight heading.
-    const airframe = UNITS[defId]?.domain === 'air';
+    const airframe = ALL_UNITS[defId]?.domain === 'air';
     const bodyFacing = anim
       ? unitDrawnBodyHeading(
           !!style.turret,
           airframe,
-          UNITS[defId]?.moveClass,
+          ALL_UNITS[defId]?.moveClass,
           facing,
           turretFacing,
           anim.motion ?? facing,
@@ -4236,7 +4595,20 @@ export class Renderer {
       periscope.draw();
       return;
     }
-    const model = modelFor(x, y, z, -bodyFacing, vs, vs);
+    // Infected bodies rock about their own feet instead of sliding: the pose is
+    // a function of the same pace and gait phase a rifleman's legs already use,
+    // and the profile is null for every other definition, so the roster's
+    // matrix path is untouched.
+    const gait = kind === 'unit' ? infectedGaitProfile(defId) : null;
+    const gaitPose = gait
+      ? infectedGaitPose(gait, anim?.gait ?? 0, anim?.pace ?? 0, {
+          turn: anim?.turn ?? 0,
+          press: anim?.press ?? 0,
+        })
+      : null;
+    const model = gaitPose
+      ? gaitModelMatrix(x, y, z, bodyFacing, vs, gaitPose)
+      : modelFor(x, y, z, -bodyFacing, vs, vs);
     gl.uniformMatrix4fv(mp.u.uModel, false, model);
     gl.uniform3fv(mp.u.uTeamColor, team);
     gl.uniform1f(mp.u.uAlpha, alpha);
@@ -4258,7 +4630,10 @@ export class Renderer {
       if (rig) {
         const pace = anim?.pace ?? 0;
         const phase = anim?.gait ?? 0;
-        const swing = 0.15 + 0.5 * pace * Math.sin(phase);
+        const swing =
+          gait && gaitPose
+            ? infectedLegSwing(gait, gaitPose, pace)
+            : 0.15 + 0.5 * pace * Math.sin(phase);
         for (const side of [1, -1]) {
           const hip: Vec3 = [rig.hip[0], rig.hip[1], rig.hip[2] * side];
           const lm = limbModelMatrix(x, y, z, bodyFacing, hip, swing * side, vs);
@@ -4314,6 +4689,104 @@ export class Renderer {
       );
       style.tailRotor.draw();
     }
+  }
+
+  /**
+   * Persistent burnt shells left by structures destroyed in sight.
+   *
+   * They are drawn after the live entities with the same mesh program, so they
+   * receive the same light, fog and shadow treatment. They never enter the
+   * simulation: a wreck is not a building, cannot be targeted, and does not
+   * block a route.
+   */
+  private drawBuildingWrecks(): void {
+    if (this.buildingWrecks.length === 0) return;
+    // A burnt shell is a moment in the battle, not permanent scenery. It stands
+    // long enough to be read as the building that was there, then settles into
+    // the ground and is gone — the field belongs to whoever is still standing on
+    // it, and a match should not end as a museum of every structure lost.
+    for (let i = this.buildingWrecks.length - 1; i >= 0; i--) {
+      const wreck = this.buildingWrecks[i];
+      const age = ((this.game?.state.tick ?? 0) - wreck.atTick) / TICK_RATE;
+      const { sink, alpha, gone } = wreckSettle(age, this.shellHeightFor(wreck.defId));
+      if (gone) {
+        this.buildingWrecks.splice(i, 1);
+        continue;
+      }
+      this.drawEntityMesh(
+        'building',
+        wreck.defId,
+        wreck.owner,
+        wreck.x,
+        wreck.y - sink,
+        wreck.z,
+        wreck.facing,
+        wreck.facing,
+        1,
+        alpha,
+        0,
+        false,
+        0,
+        null,
+        null,
+        0,
+        0,
+        false,
+        false,
+        true,
+        3,
+        [],
+      );
+    }
+  }
+
+  /**
+   * Height of a structure's burnt shell, cached per definition.
+   *
+   * The wreck has to disappear *into* the ground, so the settle needs the height
+   * of the mesh actually drawn — a low burnt shell, not the intact tower it
+   * replaced. Burying by the tower's height made a two-metre shell vanish the
+   * moment it started to sink.
+   */
+  private shellHeights = new Map<string, number>();
+
+  private shellHeightFor(defId: string): number {
+    const cached = this.shellHeights.get(defId);
+    if (cached !== undefined) return cached;
+    const def = BUILDINGS[defId];
+    let height = 2;
+    if (def) {
+      const buffers = buildingDamageShell(defId, 3, {
+        halfX: (def.footprint.w * TILE_SIZE) / 2,
+        halfZ: (def.footprint.h * TILE_SIZE) / 2,
+        top: buildingTopHeight(defId),
+      });
+      if (buffers) {
+        for (let i = 1; i < buffers.positions.length; i += 3) {
+          if (buffers.positions[i] > height) height = buffers.positions[i];
+        }
+      }
+    }
+    this.shellHeights.set(defId, height);
+    return height;
+  }
+
+  /** Cached GPU mesh for a structure's family ruin shell. */
+  private damageShellFor(defId: string, stage: 2 | 3): StaticMesh | null {
+    const key = `${defId}:${stage}`;
+    const cached = this.damageBodyMeshes.get(key);
+    if (cached !== undefined) return cached;
+    const def = BUILDINGS[defId];
+    const buffers = def
+      ? buildingDamageShell(defId, stage, {
+          halfX: (def.footprint.w * TILE_SIZE) / 2,
+          halfZ: (def.footprint.h * TILE_SIZE) / 2,
+          top: buildingTopHeight(defId),
+        })
+      : undefined;
+    const mesh = buffers ? new StaticMesh(this.gl, buffers) : null;
+    this.damageBodyMeshes.set(key, mesh);
+    return mesh;
   }
 
   /** Cached GPU mesh for one structure's current damage stage. */
@@ -4399,6 +4872,94 @@ export class Renderer {
       );
       rig.door.draw();
     }
+  }
+
+  /**
+   * Fill the gap between diagonally adjacent wall tiles. The body panel runs
+   * along the wall's authored heading; this short joint sits at the midpoint
+   * between the two tile centres, so a wall laid at an angle still reads as one
+   * continuous barrier instead of a row of floating blocks.
+   */
+  private drawWallDiagonalJoints(
+    rig: { diagonal: StaticMesh | null },
+    defId: string,
+    owner: number,
+    x: number,
+    y: number,
+    z: number,
+    verticalScale: number,
+    team: Vec3,
+    alpha: number,
+    flash: number,
+  ): void {
+    if (!rig.diagonal) return;
+    const tx = Math.floor(x / TILE_SIZE);
+    const tz = Math.floor(z / TILE_SIZE);
+    const tiles = this.wallFlagTileSet();
+    const gl = this.gl;
+    const mp = this.meshProgram;
+    // One joint per diagonal pair: take the eastward half of each pair.
+    for (const [dx, dz] of [[1, 1], [1, -1]] as const) {
+      if (!tiles.has(`${owner}|${defId}|${tx + dx}|${tz + dz}`)) continue;
+      const nx = (tx + dx + 0.5) * TILE_SIZE;
+      const nz = (tz + dz + 0.5) * TILE_SIZE;
+      const angle = Math.atan2(dz, dx);
+      gl.uniformMatrix4fv(
+        mp.u.uModel,
+        false,
+        modelFor((x + nx) / 2, y, (z + nz) / 2, -angle, 1, verticalScale),
+      );
+      gl.uniform3fv(mp.u.uTeamColor, team);
+      gl.uniform1f(mp.u.uAlpha, alpha);
+      gl.uniform1f(mp.u.uFlash, flash);
+      rig.diagonal.draw();
+    }
+  }
+
+  /**
+   * Wall runs are made of one structure per tile, but only a bent or junction
+   * tile should carry a flag. A straight run keeps its ownership panel and
+   * leaves the skyline clean. Every non-wall structure still flies its flag.
+   */
+  private wallFlagVisible(defId: string, owner: number, x: number, z: number): boolean {
+    if (!BUILDINGS[defId]?.wall) return true;
+    return this.wallCornerVisible(defId, owner, x, z);
+  }
+
+  /** True when a wall tile joins both a horizontal and a vertical wall arm. */
+  private wallCornerVisible(defId: string, owner: number, x: number, z: number): boolean {
+    if (!BUILDINGS[defId]?.wall) return false;
+    const tx = Math.floor(x / TILE_SIZE);
+    const tz = Math.floor(z / TILE_SIZE);
+    const tiles = this.wallFlagTileSet();
+    // Only the same wall type joins: a sandbag line laid beside concrete is
+    // two independent barriers, not a corner at every shared edge.
+    const key = (dx: number, dz: number) => `${owner}|${defId}|${tx + dx}|${tz + dz}`;
+    const horizontal = tiles.has(key(1, 0)) || tiles.has(key(-1, 0));
+    const vertical = tiles.has(key(0, 1)) || tiles.has(key(0, -1));
+    return horizontal && vertical;
+  }
+
+  private wallFlagTileSet(): Set<string> {
+    if (this.wallFlagTiles) return this.wallFlagTiles;
+    const tiles = new Set<string>();
+    if (this.game) {
+      for (const e of this.game.state.entities) {
+        if (e.kind !== 'building' || e.hp <= 0 || !BUILDINGS[e.defId]?.wall) continue;
+        tiles.add(
+          `${e.owner}|${e.defId}|${Math.floor(e.x / TILE_SIZE)}|${Math.floor(e.z / TILE_SIZE)}`,
+        );
+      }
+    } else {
+      // The forge has no live game; authored walls still have to meet one
+      // another with the same caps, flags and angled joints they use in battle.
+      for (const s of this.scenario?.structures ?? []) {
+        if (!BUILDINGS[s.defId]?.wall) continue;
+        tiles.add(`${s.owner}|${s.defId}|${s.x}|${s.z}`);
+      }
+    }
+    this.wallFlagTiles = tiles;
+    return tiles;
   }
 
   /**

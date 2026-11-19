@@ -98,6 +98,16 @@ describe('coastal field', () => {
     expect(WATER_FS).toContain('vec3 shoreField = texture(uShoreTex, vUv).rgb;');
     expect(WATER_FS).toContain('float coast = shoreField.b;');
     expect(WATER_FS).toContain('float depth = smoothstep(0.12, 0.96, shallowness);');
+    // The sea's screen-space reflection is driven by the same resolved scene
+    // depth the AO pass uses and covers the whole surface, not just the shore.
+    expect(WATER_FS).toContain('uniform sampler2D uReflection;');
+    expect(WATER_FS).toContain('vec4 screenReflection(vec3 origin, vec3 dir, float maxDistance)');
+    expect(WATER_FS).toContain('float reflectionReach = mix(52.0, 14.0, smoothstep(0.0, 0.8, openSea));');
+    expect(WATER_FS).toContain('ssr = screenReflection(vWorld + n * 0.12, reflectedDir, reflectionReach);');
+    expect(WATER_FS).toContain('* mix(1.0, 0.3, smoothstep(0.15, 0.8, openSea));');
+    expect(WATER_FS).toContain('float seaHeight = seaSurface(surface.xz, uTime, uSea) * openWater * (0.16 + 0.52 * uSea);');
+    expect(WATER_FS).toContain('if (openWater <= 0.1 || aboveWater > 0.25) {');
+    expect(WATER_FS).not.toContain('coast > 0.2');
     // The vertex stage gates its displacement on the alpha weight, not on the
     // shallowness channel: land reads as R=0, which the old test treated as open
     // sea and displaced.

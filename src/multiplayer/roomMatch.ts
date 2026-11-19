@@ -30,6 +30,7 @@ import {
   type HelloMessage,
   type KeepaliveAckMessage,
   type RoomClosedMessage,
+  type RoomGameMode,
   type RoomPhase,
   type SyncMessage,
   type SyncState,
@@ -44,6 +45,7 @@ import {
   type TeamSnapshot,
 } from './projection';
 import { buildDelta, createBaseline, type SyncBaseline } from './teamDelta';
+import { buildLobbyScenario, defaultOutbreakLobbyConfig } from './lobbyConfig';
 import {
   createRoomSnapshot,
   restoreRoomSnapshot,
@@ -146,7 +148,7 @@ interface SeatState extends RoomSeatDefinition {
 
 export interface RoomMatchOptions {
   roomId: string;
-  mode: '1v1';
+  mode: RoomGameMode;
   seats: readonly RoomSeatDefinition[];
   matchDurationMs: number;
   matchDeadlineAt: number;
@@ -190,7 +192,7 @@ export interface TickResult {
 
 export interface RoomMatchStatus {
   roomId: string;
-  mode: '1v1';
+  mode: RoomGameMode;
   protocol: typeof ROOM_PROTOCOL_VERSION;
   phase: RoomPhase;
   tick: number;
@@ -280,7 +282,7 @@ export function seatTokenMatches(supplied: string, expected: string): boolean {
   return sameToken(supplied, expected);
 }
 
-function assertSeatTable(seats: readonly RoomSeatDefinition[]): void {
+function assertSeatTable(seats: readonly RoomSeatDefinition[], mode: RoomGameMode): void {
   if (seats.length !== 2) throw new Error('Phase 2A rooms require exactly two seats.');
   if (seats.some((seat) => seat.seatId !== 0 && seat.seatId !== 1)) {
     throw new Error('Seat ids must be 0 or 1.');
@@ -288,7 +290,13 @@ function assertSeatTable(seats: readonly RoomSeatDefinition[]): void {
   if (seats.some((seat) => seat.team !== 0 && seat.team !== 1)) {
     throw new Error('Seat team must be 0 or 1.');
   }
-  if (new Set(seats.map((seat) => seat.playerId)).size !== seats.length) {
+  if (mode === 'outbreak') {
+    // Co-op is two commanders on one army: both seats speak for player 0, so
+    // the ownership rules in the command gate need no co-op branch at all.
+    if (seats.some((seat) => seat.playerId !== 0 || seat.team !== 0)) {
+      throw new Error('Outbreak seats both command the defending player.');
+    }
+  } else if (new Set(seats.map((seat) => seat.playerId)).size !== seats.length) {
     throw new Error('Seat player ids must be unique.');
   }
   if (seats.some((seat) => !seat.token)) throw new Error('Every seat needs a token.');
@@ -300,7 +308,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export class RoomMatch {
   readonly roomId: string;
-  readonly mode = '1v1' as const;
+  readonly mode: RoomGameMode;
   readonly protocol = ROOM_PROTOCOL_VERSION;
   readonly game: Game;
   readonly matchDeadlineAt: number;
@@ -335,7 +343,7 @@ export class RoomMatch {
   private readonly matchIdentities: MatchSeatIdentity[];
 
   constructor(options: RoomMatchOptions) {
-    assertSeatTable(options.seats);
+    assertSeatTable(options.seats, options.mode);
     // Campaign missions are single-player in this stage. A room is an
     // authoritative 1v1 construct, so a mission-bearing scenario is refused at
     // this boundary rather than quietly hosting a runtime nobody owns.
@@ -343,6 +351,7 @@ export class RoomMatch {
       throw new Error('Multiplayer rooms cannot host a mission scenario.');
     }
     this.roomId = options.roomId;
+    this.mode = options.mode;
     this.matchDurationMs = options.matchDurationMs;
     this.matchDeadlineAt = options.matchDeadlineAt;
     this.abandonAfterMs = options.abandonAfterMs ?? 30_000;
@@ -374,12 +383,19 @@ export class RoomMatch {
     } else {
       // No game was handed in, so build the catalogue's default multiplayer
       // battlefield rather than a campaign theatre a lobby cannot choose.
-      const scenario = scenarioById(defaultScenarioId('multiplayer'))!.create();
+      const scenario =
+        options.mode === 'outbreak'
+          ? buildLobbyScenario(defaultOutbreakLobbyConfig(options.matchDurationMs))
+          : scenarioById(defaultScenarioId('multiplayer'))!.create();
       if (scenario.mission) {
         throw new Error('The multiplayer battlefield catalogue cannot carry a mission.');
       }
       scenario.settings.fog = true;
-      scenario.settings.timeLimitSec = Math.max(1, Math.ceil(options.matchDurationMs / 1000));
+      // Outbreak is endless: it has no match clock to lose on, only the
+      // Command Post. A 1v1 room still ends on its duration.
+      if (options.mode !== 'outbreak') {
+        scenario.settings.timeLimitSec = Math.max(1, Math.ceil(options.matchDurationMs / 1000));
+      }
       scenario.players[0].isAI = false;
       scenario.players[1].isAI = false;
       this.game = new Game(scenario, { localPlayerId: -1, enableAI: false });
@@ -656,7 +672,19 @@ export class RoomMatch {
   finishAtDeadline(now = Date.now()): void {
     if (this.closed) return;
     this.diagnostics.recordDeadline();
-    const result = evaluateMatchResult(this.game, { forceTimeLimit: true });
+    // A co-op run has no winning side to award at the reservation's deadline:
+    // the horde holding more hit points is not a victory for anybody. The room
+    // closes the run as abandoned, which every seat reads as a draw.
+    const result: NeutralMatchResult =
+      this.mode === 'outbreak'
+        ? {
+            ...evaluateMatchResult(this.game),
+            phase: 'finished',
+            winnerTeam: null,
+            reason: 'abandoned',
+            tick: this.game.state.tick,
+          }
+        : evaluateMatchResult(this.game, { forceTimeLimit: true });
     this.finish(result, now);
   }
 
@@ -1268,6 +1296,8 @@ export class RoomMatch {
 /** Rebuild a room from a validated server snapshot and its seat token table. */
 export function restoreRoomMatch(options: {
   roomId: string;
+  /** What the room hosted; absent means the legacy 1v1 room. */
+  mode?: RoomGameMode;
   seats: readonly RoomSeatDefinition[];
   matchDurationMs: number;
   matchDeadlineAt: number;
@@ -1317,7 +1347,7 @@ export function restoreRoomMatch(options: {
   });
   return new RoomMatch({
     roomId: options.roomId,
-    mode: '1v1',
+    mode: options.mode ?? '1v1',
     seats: options.seats,
     matchDurationMs: options.matchDurationMs,
     matchDeadlineAt: options.matchDeadlineAt,

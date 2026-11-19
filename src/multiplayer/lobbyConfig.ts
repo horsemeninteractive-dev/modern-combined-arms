@@ -24,9 +24,11 @@ import {
   isKnownFactionId,
   tryIdentityDef,
 } from '../data/factions';
-import type { Scenario } from '../sim/scenario';
+import type { OutbreakDifficulty, Scenario } from '../sim/scenario';
 import { normaliseStartHour } from '../sim/dayNight';
 import { isWeatherKind, normaliseWeather, type WeatherKind } from '../sim/weather';
+import { OUTBREAK_DIFFICULTIES } from '../outbreak/config';
+import { createOutbreakScenario, OUTBREAK_MAP_ID } from '../outbreak/scenario';
 
 export const LOBBY_CONFIG_VERSION = 1 as const;
 
@@ -66,6 +68,18 @@ export interface LobbySeatConfig {
   ready: boolean;
 }
 
+/** What kind of match a room hosts. Capacity is the same: two seats either way. */
+export type LobbyMode = '1v1' | 'outbreak';
+
+/**
+ * An Outbreak lobby. Both seats command the same defence, so there is no second
+ * nation to choose: the room carries the difficulty instead, and the horde is
+ * the only opponent.
+ */
+export interface LobbyOutbreakConfig {
+  difficulty: OutbreakDifficulty;
+}
+
 export interface LobbyConfigV1 {
   version: typeof LOBBY_CONFIG_VERSION;
   mapId: string;
@@ -80,6 +94,8 @@ export interface LobbyConfigV1 {
   weather: WeatherKind;
   /** Indexed by seat id, so seat 0 is always the host's own configuration. */
   seats: LobbySeatConfig[];
+  /** Present only on a co-op room: it is what makes the room an Outbreak run. */
+  outbreak?: LobbyOutbreakConfig;
 }
 
 export type LobbyErrorCode =
@@ -90,6 +106,7 @@ export type LobbyErrorCode =
   | 'invalid-weather'
   | 'invalid-nation'
   | 'invalid-colour'
+  | 'invalid-outbreak'
   | 'duplicate-colour';
 
 export interface LobbyProblem {
@@ -163,10 +180,42 @@ function defaultNations(mapId: string): [string, string] {
  * default is that duration when it is legal, otherwise the standard default, so
  * a room never starts life with a configuration the validator would reject.
  */
+/**
+ * A co-op room's opening state: the Outbreak battlefield, both seats on the same
+ * army, and the difficulty the host chose. The seed is authored rather than
+ * random because the room, not a client, is the only builder of the world; two
+ * peers must derive byte-identical ground from the same lobby.
+ */
+export function defaultOutbreakLobbyConfig(
+  matchDurationMs: number = DEFAULT_MATCH_DURATION_MS,
+  difficulty: OutbreakDifficulty = 'normal',
+): LobbyConfigV1 {
+  const duration = isValidMatchDuration(matchDurationMs)
+    ? matchDurationMs
+    : DEFAULT_MATCH_DURATION_MS;
+  const nation = PLAYABLE_NATION_IDS[0] ?? 'lithuania';
+  const scenario = createOutbreakScenario({ difficulty, mode: 'coop', nationId: nation });
+  return {
+    version: LOBBY_CONFIG_VERSION,
+    mapId: OUTBREAK_MAP_ID,
+    matchDurationMs: duration,
+    startHour: normaliseStartHour(scenario.settings.startHour, 18),
+    weather: normaliseWeather(scenario.settings.weather),
+    seats: [
+      { nation, color: LOBBY_COLORS[0], ready: false },
+      { nation, color: LOBBY_COLORS[1], ready: false },
+    ],
+    outbreak: { difficulty },
+  };
+}
+
 export function defaultLobbyConfig(
   mapId: string = defaultScenarioId('multiplayer'),
   matchDurationMs: number = DEFAULT_MATCH_DURATION_MS,
+  mode: LobbyMode = '1v1',
+  difficulty: OutbreakDifficulty = 'normal',
 ): LobbyConfigV1 {
+  if (mode === 'outbreak') return defaultOutbreakLobbyConfig(matchDurationMs, difficulty);
   const safeMap = isPlayableMapId(mapId) ? mapId : defaultScenarioId('multiplayer');
   const authoredScenario = scenarioById(safeMap)?.create();
   const authored = authoredScenario?.settings.startHour ?? 18;
@@ -203,7 +252,33 @@ export function validateLobbyConfig(raw: unknown): LobbyParseResult {
       },
     };
   }
-  if (!isPlayableMapId(raw.mapId)) {
+  // An Outbreak room plays exactly one battlefield: the basin the mode was
+  // authored on. It is not in the multiplayer catalogue, so it is checked by
+  // identity rather than by the skirmish list.
+  let outbreak: LobbyOutbreakConfig | undefined;
+  if (raw.outbreak !== undefined) {
+    const block = raw.outbreak;
+    if (
+      !isRecord(block) ||
+      typeof block.difficulty !== 'string' ||
+      !(block.difficulty in OUTBREAK_DIFFICULTIES)
+    ) {
+      return {
+        ok: false,
+        problem: { code: 'invalid-outbreak', message: 'Outbreak difficulty is not a known level.' },
+      };
+    }
+    outbreak = { difficulty: block.difficulty as OutbreakDifficulty };
+    if (raw.mapId !== OUTBREAK_MAP_ID) {
+      return {
+        ok: false,
+        problem: {
+          code: 'invalid-map',
+          message: 'An Outbreak room must play the Outbreak battlefield.',
+        },
+      };
+    }
+  } else if (!isPlayableMapId(raw.mapId)) {
     return { ok: false, problem: { code: 'invalid-map', message: 'Selected map is not in the multiplayer catalogue.' } };
   }
   if (!isValidMatchDuration(raw.matchDurationMs)) {
@@ -256,6 +331,7 @@ export function validateLobbyConfig(raw: unknown): LobbyParseResult {
       startHour,
       weather,
       seats,
+      ...(outbreak ? { outbreak } : {}),
     },
   };
 }
@@ -271,7 +347,32 @@ export function lobbyConfigProblem(raw: unknown): string | null {
  * has asked to start and every condition has passed; it reads nothing from a
  * client beyond the already-validated lobby configuration.
  */
+/**
+ * A co-op room's battlefield.
+ *
+ * The same authored basin the solo mode plays, built once by the room so both
+ * seats fight identical ground. Only the host's seat configures the army: the
+ * guest commands that same army, and the infected stay the infected — which is
+ * why this path never patches a second player.
+ */
+function buildOutbreakLobbyScenario(config: LobbyConfigV1): Scenario {
+  const scenario = createOutbreakScenario({
+    difficulty: config.outbreak!.difficulty,
+    mode: 'coop',
+    nationId: config.seats[0].nation,
+  });
+  scenario.settings.fog = true;
+  scenario.settings.startHour = normaliseStartHour(config.startHour, scenario.settings.startHour);
+  scenario.settings.weather = normaliseWeather(config.weather);
+  const host = scenario.players[0];
+  host.isAI = false;
+  host.factionId = config.seats[0].nation;
+  host.color = config.seats[0].color;
+  return scenario;
+}
+
 export function buildLobbyScenario(config: LobbyConfigV1): Scenario {
+  if (config.outbreak) return buildOutbreakLobbyScenario(config);
   const entry = scenarioById(config.mapId);
   if (!entry || !isPlayableMapId(config.mapId)) {
     // Defence in depth: the room validates the same catalogue before it starts,

@@ -12,6 +12,15 @@ export interface NavGrid {
   moveClass: MoveClass;
   /** 1 = blocked by a structure (or impassable for this mover). */
   occupied?: Uint8Array;
+  /** 1 = blocks infantry and wheeled vehicles; tracked vehicles may cross. */
+  footBlocked?: Uint8Array;
+  /**
+   * 1 = impassable for this particular mover even though the mover's class may
+   * usually cross it. Used for a tracked column's own sandbag lines: a hull is
+   * allowed to grind through *enemy* bags but must route around the position
+   * its own infantry are holding.
+   */
+  avoid?: Uint8Array;
   /**
    * 1 = traffic worth avoiding, but passable. Idle friendly units are marked
    * here so a route prefers the open lane around a formation instead of
@@ -116,6 +125,13 @@ class MinHeap {
 
 function passable(nav: NavGrid, index: number): boolean {
   if (nav.occupied?.[index]) return false;
+  if (nav.avoid?.[index]) return false;
+  if (
+    (nav.moveClass === 'foot' || nav.moveClass === 'wheeled') &&
+    nav.footBlocked?.[index]
+  ) {
+    return false;
+  }
   const t = nav.terrain[index] as TerrainId;
   // Avoid importing the full terrain table here for hot-path clarity: use moveCost
   // with the tile's own coordinates in the caller.
@@ -199,7 +215,8 @@ export function nearestWalkable(
         nav.moveClass,
       ),
     ) &&
-    !nav.occupied?.[startIndex]
+    !nav.occupied?.[startIndex] &&
+    !nav.avoid?.[startIndex]
   ) {
     return startIndex;
   }
@@ -214,6 +231,7 @@ export function nearestWalkable(
         if (!inBounds(nav.width, nav.height, x, z)) continue;
         const i = tileIndex(nav.width, x, z);
         if (nav.occupied?.[i]) continue;
+        if (nav.avoid?.[i]) continue;
         const cost = moveCost(
           nav.width,
           nav.height,

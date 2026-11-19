@@ -9,6 +9,7 @@ import type {
   TeamSnapshot,
 } from './projection';
 import type { ContactRecord, SimEvent, SmokeCloud } from '../sim/types';
+import type { OutbreakHudState } from '../outbreak/types';
 
 /**
  * Phase 2A wire protocol.
@@ -249,6 +250,12 @@ export function parseClientMessage(
   };
 }
 
+/**
+ * What a room is hosting. A co-op room seats two commanders on one army; the
+ * seat table is the difference, not a second simulation.
+ */
+export type RoomGameMode = '1v1' | 'outbreak';
+
 export interface HelloMessage {
   type: 'hello';
   v: typeof ROOM_PROTOCOL_VERSION;
@@ -257,7 +264,7 @@ export interface HelloMessage {
   seat: number;
   playerId: number;
   team: number;
-  mode: '1v1';
+  mode: RoomGameMode;
   phase: RoomPhase;
   tick: number;
   tickHz: number;
@@ -294,6 +301,8 @@ export interface LobbyMessage {
     startHour: number;
     /** Authoritative weather kind, so both seats fight the same sky. */
     weather: string;
+    /** Present on a co-op room: the run's difficulty, chosen by the host. */
+    outbreak?: { difficulty: string };
     /** Seat order, so index 0 is always the host. */
     seats: Array<{
       nation: string;
@@ -391,6 +400,8 @@ export interface DeltaChanges {
   projectiles?: { upsert: ProjectedProjectile[]; remove: number[] };
   events?: SimEvent[];
   result?: ProjectedMatchResult;
+  /** An Outbreak room's survival readout, resent whenever it changes. */
+  outbreak?: OutbreakHudState;
 }
 
 /**

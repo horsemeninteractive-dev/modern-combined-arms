@@ -1,4 +1,5 @@
 import type { UnitDef } from '../sim/types';
+import { ZOMBIE_UNITS } from './zombies';
 import { resolveVariantChain } from './variant';
 
 const ROSTER: UnitDef[] = [
@@ -1967,6 +1968,53 @@ const ALLIANCE_UNITS: UnitDef[] = [
 export const UNITS: Record<string, UnitDef> = Object.fromEntries(
   [...ROSTER, ...ALLIANCE_UNITS, ...NATIONAL_UNITS].map((u) => [u.id, u]),
 );
+
+/**
+ * The infected platform set.
+ *
+ * Kept out of `UNITS` because that map is the *player* roster: its guarantees
+ * (a recorded voice bank, an authored hull for every entry, baseline mirrors)
+ * are about things a player can build. The horde has none of them and never
+ * will, so combat, movement, saves, snapshots and rendering resolve defIds
+ * through `ALL_UNITS` instead, which is the union of both.
+ */
+export const HORDE_UNITS: Record<string, UnitDef> = Object.fromEntries(
+  ZOMBIE_UNITS.map((u) => [u.id, u]),
+);
+
+/**
+ * Every unit definition the simulation can carry, player and infected.
+ *
+ * A live view rather than a copy: a definition registered on `UNITS` after this
+ * module loaded (a test fixture carrier, an authored mission platform) must be
+ * visible to the simulation immediately, and the infected must be visible
+ * without ever joining the player roster.
+ */
+export const ALL_UNITS: Record<string, UnitDef> = new Proxy(UNITS, {
+  get(target, key, receiver) {
+    if (typeof key === 'string' && !Object.hasOwn(target, key) && Object.hasOwn(HORDE_UNITS, key)) {
+      return HORDE_UNITS[key];
+    }
+    return Reflect.get(target, key, receiver);
+  },
+  has(target, key) {
+    return Object.hasOwn(target, key) || (typeof key === 'string' && Object.hasOwn(HORDE_UNITS, key));
+  },
+  ownKeys(target) {
+    return [
+      ...Object.keys(target),
+      ...Object.keys(HORDE_UNITS).filter((id) => !Object.hasOwn(target, id)),
+    ];
+  },
+  getOwnPropertyDescriptor(target, key) {
+    const own = Reflect.getOwnPropertyDescriptor(target, key);
+    if (own) return own;
+    if (typeof key === 'string' && Object.hasOwn(HORDE_UNITS, key)) {
+      return { value: HORDE_UNITS[key], enumerable: true, configurable: true, writable: false };
+    }
+    return undefined;
+  },
+});
 export const UNIT_LIST = ROSTER;
 
 /** Registered alliance platforms; excluded from the shared baseline. */
@@ -1988,7 +2036,7 @@ export function unitFamily(id: string): string {
 }
 
 export function unitDef(id: string): UnitDef {
-  const def = UNITS[id];
+  const def = ALL_UNITS[id];
   if (!def) throw new Error(`Unknown unit definition: ${id}`);
   return def;
 }

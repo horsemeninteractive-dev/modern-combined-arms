@@ -373,9 +373,42 @@ export function cinematic(options: {
     kind: options.kind,
     skippable: true,
     ...(options.atSeconds === undefined ? {} : { atSeconds: options.atSeconds }),
+    // The launch chain plays opening then briefing as one sequence, and the
+    // campaign frames its operations the same way. A dip at each edge keeps
+    // those joined scenes from cutting hard into one another.
+    transition: {
+      in: { kind: 'fade', durationSeconds: 0.7 },
+      out: { kind: 'fade', durationSeconds: 0.9 },
+    },
     steps,
     dialogue: [],
   };
+}
+
+/**
+ * The deployment briefing: the commander's own note over the command post,
+ * followed by the operation's first order.
+ *
+ * The beats are the dossier prose the operation already authors, so the spoken
+ * brief and the written one cannot drift apart and every operation gets the
+ * launch briefing step without a second copy of its copy. The camera opens on
+ * the friendly command post, which keeps the shot distinct from the opening's
+ * framing of the field. The helper marks the scene skippable.
+ */
+function briefingCinematic(spec: OperationSpec): MissionCinematicDoc {
+  const lines: string[] = [];
+  const note = spec.briefing.commanderNote?.trim();
+  const firstOrder = spec.briefing.instructions?.[0]?.trim();
+  if (note) lines.push(note);
+  if (firstOrder) lines.push(firstOrder);
+  return cinematic({
+    id: 'briefing',
+    kind: 'briefing',
+    speaker: spec.opening.speaker,
+    lines: lines.length > 0 ? lines : [spec.briefing.summary ?? spec.situation],
+    target: { kind: 'entity', entity: 'own-hq' },
+    zoom: 34,
+  });
 }
 
 /** The objective lines the deck and dossier list, primary first. */
@@ -425,6 +458,7 @@ export function buildOperation(spec: OperationSpec): AuthoredOperation {
         target: spec.opening.target,
         zoom: spec.opening.zoom,
       }),
+      briefingCinematic(spec),
       ...(spec.inMission
         ? [
             cinematic({

@@ -78,12 +78,19 @@ export interface LobbyMatchView {
   deadlineAt: number | null;
 }
 
+/** What the room hosts, as the room itself reports it. */
+export type LobbyModeView = '1v1' | 'outbreak';
+
 export interface LobbyView {
   phase: LobbyPhase;
   socket: SocketPhase;
   roomId: string | null;
   seat: number | null;
   joinCode: string | null;
+  /** The room's game mode. A co-op room seats both players on one army. */
+  mode: LobbyModeView;
+  /** Present on a co-op room: the run's difficulty. */
+  outbreak: { difficulty: string } | null;
   mapId: string | null;
   /** Authoritative start hour both seats will fight at, 0..24. */
   startHour: number;
@@ -137,6 +144,8 @@ function emptyView(): LobbyView {
     roomId: null,
     seat: null,
     joinCode: null,
+    mode: '1v1',
+    outbreak: null,
     mapId: null,
     startHour: 18,
     weather: 'clear',
@@ -322,11 +331,22 @@ export class LobbyClient {
   /* HTTP surface                                                      */
   /* ---------------------------------------------------------------- */
 
-  async createRoom(matchDurationMs: number, roomCode = makeRoomCode()): Promise<boolean> {
-    this.view = { ...emptyView(), phase: 'creating', roomId: roomCode };
+  async createRoom(
+    matchDurationMs: number,
+    roomCode = makeRoomCode(),
+    mode: LobbyModeView = '1v1',
+    difficulty = 'normal',
+  ): Promise<boolean> {
+    this.view = { ...emptyView(), phase: 'creating', roomId: roomCode, mode };
     this.emit();
     const response = await this.post(`/api/multiplayer/rooms/${encodeURIComponent(roomCode)}/open`, {
-      body: { roomId: roomCode, mode: '1v1', matchDurationMs },
+      body: {
+        roomId: roomCode,
+        mode,
+        matchDurationMs,
+        // Only a co-op room has a survival difficulty to carry.
+        ...(mode === 'outbreak' ? { difficulty } : {}),
+      },
     });
     if (!response.ok) return this.fail(response.status, response.body);
     const seat = typeof response.body.seat === 'number' ? response.body.seat : null;
@@ -586,6 +606,7 @@ export class LobbyClient {
         ...this.view,
         phase: started ? 'playing' : 'lobby',
         seat: typeof message.seat === 'number' ? message.seat : this.view.seat,
+        mode: message.mode === 'outbreak' ? 'outbreak' : this.view.mode,
         seats,
         ...(frozenIdentities.length > 0 ? { matchIdentities: frozenIdentities } : {}),
         match: started
@@ -693,6 +714,11 @@ export class LobbyClient {
       seat,
       hostSeat: typeof message.hostSeat === 'number' ? message.hostSeat : 0,
       mapId: config && typeof config.mapId === 'string' ? config.mapId : null,
+      mode: config && record(config.outbreak) ? 'outbreak' : this.view.mode,
+      outbreak:
+        config && record(config.outbreak) && typeof config.outbreak.difficulty === 'string'
+          ? { difficulty: config.outbreak.difficulty }
+          : this.view.outbreak,
       startHour:
         config && typeof config.startHour === 'number' ? config.startHour : this.view.startHour,
       weather:

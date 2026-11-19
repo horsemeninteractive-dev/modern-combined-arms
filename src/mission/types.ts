@@ -173,6 +173,8 @@ export type MissionAction =
   | { kind: 'message'; text: string }
   | { kind: 'activateAiGroup'; group: string }
   | { kind: 'spawnReinforcement'; reinforcement: string }
+  /** Request an in-mission cinematic. Presentation only: no mission state moves. */
+  | { kind: 'startCinematic'; cinematic: string }
   | { kind: 'endMission'; outcome: MissionOutcome };
 
 /**
@@ -246,23 +248,66 @@ export interface MissionEntityDoc {
   notes?: string;
 }
 
-/** Where a sequence plays, and therefore whether it pauses the battle. */
+/**
+ * Where a sequence plays, and therefore whether it pauses the battle.
+ *
+ * `campaignIntro` and `campaignFinale` are campaign-level scenes and live on
+ * the campaign definition rather than in a mission document. `briefing` and
+ * `debrief` are mission-level scenes that frame their respective screens.
+ */
 export type MissionCinematicContext =
+  | 'campaignIntro'
   | 'opening'
+  | 'briefing'
   | 'inMission'
+  | 'debrief'
   | 'intermission'
-  | 'ending';
+  | 'ending'
+  | 'campaignFinale';
 
 /** Authored camera framing. Positions are tile coordinates; entities are keys. */
 export type MissionCinematicTarget =
   | { kind: 'position'; x: number; z: number }
-  | { kind: 'entity'; entity: string };
+  | { kind: 'entity'; entity: string }
+  /** The framing the scene found when it started; returns the camera mid-scene. */
+  | { kind: 'restore' };
+
+/** How a scene enters or leaves the frame. */
+export type MissionCinematicTransitionKind = 'cut' | 'fade';
+
+/**
+ * One authored edge transition.
+ *
+ * A `fade` dips through black for its duration, which is what lets a chain of
+ * scenes read as one continuous presentation. A `cut` is the historical
+ * behaviour and adds no time: the next scene simply starts on its first frame.
+ */
+export interface MissionCinematicTransition {
+  kind: MissionCinematicTransitionKind;
+  /** Seconds the dip takes. Zero on a fade is treated as a cut. */
+  durationSeconds: number;
+}
+
+/** Existing particle effects a cinematic beat may fire. */
+export type MissionCinematicEffectKind = 'explosion' | 'smoke' | 'dust' | 'muzzle';
+
+/** Staging actions an actor beat can ask the renderer to perform. */
+export type MissionCinematicActorAction =
+  | 'move'
+  | 'turn'
+  | 'animate'
+  | 'fire'
+  | 'enter'
+  | 'leave'
+  | 'appear'
+  | 'disappear';
 
 /**
  * One ordered timeline beat.
  *
  * A camera beat moves to a framing and holds it; a line beat shows a subtitle;
- * a notify beat raises the ordinary mission notice. All timing is in seconds of
+ * a notify beat raises the ordinary mission notice. An actor beat stages an
+ * existing entity on the render layer only. All timing is in seconds of
  * presentation time, never simulation time.
  */
 export type MissionCinematicStep =
@@ -271,10 +316,21 @@ export type MissionCinematicStep =
       target: MissionCinematicTarget;
       /** Half-height of the orthographic view; defaults to the current zoom. */
       zoom?: number;
+      /**
+       * Orbit yaw around the focus, in degrees. 45 is the default isometric
+       * view; 0 looks north along -Z. Omit to keep the current yaw.
+       */
+      rotationDegrees?: number;
       /** Seconds spent travelling to the framing; 0 cuts immediately. */
       durationSeconds: number;
       /** Seconds held on the framing after the move. */
       holdSeconds?: number;
+      /** Follow an entity target while the beat runs. */
+      track?: boolean;
+      /** Screen-shake pulse when the beat starts, 0..1. */
+      shake?: number;
+      /** Interpolation; smooth defaults, linear is constant-rate, cut ignores duration. */
+      ease?: 'smooth' | 'linear' | 'cut';
     }
   | {
       kind: 'line';
@@ -284,8 +340,110 @@ export type MissionCinematicStep =
       durationSeconds: number;
       /** Silent beat before the next step. */
       pauseSeconds?: number;
+      /** Optional portrait image path, relative to the site root. */
+      portrait?: string;
+      /** Optional voice clip path, played through the existing voice channel. */
+      voice?: string;
+      /** Render the line on the radio channel rather than as a scene caption. */
+      radio?: boolean;
     }
-  | { kind: 'notify'; text: string; durationSeconds?: number };
+  | {
+      kind: 'notify';
+      text: string;
+      durationSeconds?: number;
+      /** Optional kicker above the notice, e.g. a place or operation name. */
+      heading?: string;
+    }
+  | {
+      kind: 'effect';
+      effect: MissionCinematicEffectKind;
+      target: MissionCinematicTarget;
+      scale?: number;
+      durationSeconds?: number;
+    }
+  | {
+      kind: 'actor';
+      action: 'move';
+      entity: string;
+      /** Destination in tile coordinates. The simulation position never moves. */
+      x: number;
+      z: number;
+      durationSeconds: number;
+      ease?: 'smooth' | 'linear' | 'cut';
+    }
+  | {
+      kind: 'actor';
+      action: 'turn';
+      entity: string;
+      /** Final presentation heading in degrees, measured like the map facing. */
+      facingDegrees: number;
+      durationSeconds: number;
+      ease?: 'smooth' | 'linear' | 'cut';
+    }
+  | {
+      kind: 'actor';
+      action: 'animate';
+      entity: string;
+      /** Procedural poses the renderer owns; there is no skeletal clip library. */
+      pose: 'idle' | 'walk';
+      durationSeconds: number;
+    }
+  | {
+      kind: 'actor';
+      action: 'fire';
+      entity: string;
+      target: MissionCinematicTarget;
+      scale?: number;
+      durationSeconds: number;
+    }
+  | {
+      kind: 'actor';
+      action: 'enter';
+      entity: string;
+      /** Authored structure key. The actor fades and moves to its exterior. */
+      structure: string;
+      durationSeconds: number;
+    }
+  | {
+      kind: 'actor';
+      action: 'leave';
+      entity: string;
+      structure: string;
+      /** Destination in tile coordinates after leaving the structure. */
+      x: number;
+      z: number;
+      durationSeconds: number;
+    }
+  | {
+      kind: 'actor';
+      action: 'appear' | 'disappear';
+      entity: string;
+      durationSeconds: number;
+    }
+  | {
+      kind: 'sound';
+      /** Existing synthesised or recorded cue name, never a new audio path. */
+      cue: string;
+      gain?: number;
+      durationSeconds?: number;
+    }
+  | {
+      kind: 'card';
+      /** Large centred title, e.g. a chapter or a date. */
+      heading: string;
+      /** Optional line under the heading, e.g. a place. */
+      subheading?: string;
+      /** Optional short paragraph under the subheading. */
+      body?: string;
+      durationSeconds: number;
+    }
+  | {
+      kind: 'music';
+      /** Catalogue track id, never a file path. The saved playlist is untouched. */
+      track: string;
+      /** Seconds the beat holds before the next one; the cue plays on. */
+      durationSeconds?: number;
+    };
 
 /**
  * One in-engine cinematic sequence.
@@ -303,6 +461,11 @@ export interface MissionCinematicDoc {
   atSeconds?: number;
   /** Ordered timeline. */
   steps: MissionCinematicStep[];
+  /**
+   * How the scene enters and leaves the frame. Omitted means a hard cut at both
+   * edges, which is what every document authored before transitions did.
+   */
+  transition?: { in?: MissionCinematicTransition; out?: MissionCinematicTransition };
   /**
    * Legacy flat dialogue, folded into `steps` by the parser. Kept so an early
    * document still parses and so callers can read the lines without walking the

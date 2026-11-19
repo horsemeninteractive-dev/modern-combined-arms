@@ -80,6 +80,7 @@ const ACTION_LABEL: Record<MissionAction['kind'], string> = {
   message: 'Message',
   activateAiGroup: 'Activate AI group',
   spawnReinforcement: 'Spawn reinforcement',
+  startCinematic: 'Start cinematic',
   endMission: 'End mission',
 };
 
@@ -389,8 +390,21 @@ export function entityReferences(doc: MissionDoc, key: string): string[] {
   });
   doc.cinematics.forEach((cinematic, ci) => {
     cinematic.steps.forEach((step, si) => {
-      if (step.kind === 'camera' && step.target.kind === 'entity' && step.target.entity === key) {
+      if (
+        (step.kind === 'camera' || step.kind === 'effect') &&
+        step.target.kind === 'entity' &&
+        step.target.entity === key
+      ) {
         refs.push(`cinematics[${ci}].steps[${si}].target`);
+      }
+      if (step.kind === 'actor') {
+        if (step.entity === key) refs.push(`cinematics[${ci}].steps[${si}].entity`);
+        if ((step.action === 'enter' || step.action === 'leave') && step.structure === key) {
+          refs.push(`cinematics[${ci}].steps[${si}].structure`);
+        }
+        if (step.action === 'fire' && step.target.kind === 'entity' && step.target.entity === key) {
+          refs.push(`cinematics[${ci}].steps[${si}].target`);
+        }
       }
     });
   });
@@ -451,6 +465,8 @@ export function describeAction(action: MissionAction): string {
       return `Release AI group ${action.group}`;
     case 'spawnReinforcement':
       return `Bring in reinforcement ${action.reinforcement}`;
+    case 'startCinematic':
+      return `Play cinematic ${action.cinematic}`;
     case 'endMission':
       return `End mission as ${action.outcome}`;
   }
@@ -789,7 +805,9 @@ export function focusForPath(path: string, doc: MissionDoc): MissionFocus {
   if (cinematicEntityMatch) {
     const step =
       doc.cinematics[Number(cinematicEntityMatch[1])]?.steps[Number(cinematicEntityMatch[2])];
-    if (step?.kind === 'camera' && step.target.kind === 'entity') focus.entityKey = step.target.entity;
+    if ((step?.kind === 'camera' || step?.kind === 'effect') && step.target.kind === 'entity') {
+      focus.entityKey = step.target.entity;
+    }
   }
   const conditionRegionMatch = /^triggers\[(\d+)\]\.conditions\[(\d+)\]\.region/.exec(path);
   if (conditionRegionMatch) {

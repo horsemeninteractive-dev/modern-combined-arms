@@ -218,7 +218,11 @@ export function resolveRoster(id: string): RosterDef {
     if (!alliance) {
       fail(`legacy faction "${id}"`, `unknown alliance "${legacy.allianceId}"`);
     }
-    roster = mergeRoster(alliance.baseline, {}, `legacy faction "${id}"`);
+    // A horde is not a fielded army: it has no production chain and its roster
+    // is exactly the list of infected it can put on the field.
+    roster = legacy.horde
+      ? Object.freeze({ units: Object.freeze([...legacy.units]), buildings: Object.freeze([]) })
+      : mergeRoster(alliance.baseline, {}, `legacy faction "${id}"`);
   }
 
   cache.set(id, roster);
@@ -364,6 +368,13 @@ export function validateRosterRegistry(): void {
       fail(`legacy faction "${legacy.id}"`, `unknown alliance "${legacy.allianceId}"`);
     }
     const alliance = ALLIANCES[legacy.allianceId];
+    if (legacy.horde) {
+      if (legacy.units.length === 0) fail(`legacy faction "${legacy.id}"`, 'horde has no units');
+      for (const id of legacy.units) {
+        if (!Object.hasOwn(UNITS, id)) fail(`legacy faction "${legacy.id}"`, `unknown unit "${id}"`);
+      }
+      continue;
+    }
     const mirrors =
       legacy.units.length === alliance.baseline.units.length &&
       legacy.units.every((id, index) => id === alliance.baseline.units[index]) &&

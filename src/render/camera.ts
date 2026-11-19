@@ -3,11 +3,13 @@ import { clamp, cross, normalize, type Vec3 } from './math';
 
 /**
  * Classic 2:1 dimetric isometric view, as used by the reference RTS games:
- * the map is rotated 45° and viewed from 30° above the horizon. With an
- * orthographic projection that turns every square tile into a 2:1 diamond.
+ * by default the map is rotated 45° and viewed from 30° above the horizon.
+ * With an orthographic projection that turns every square tile into a 2:1
+ * diamond. Authored cinematics may orbit the yaw while keeping that pitch.
  */
 const YAW = Math.PI / 4;
 const PITCH = (30 * Math.PI) / 180;
+const FULL_TURN = Math.PI * 2;
 const DISTANCE = 1400;
 
 /**
@@ -29,6 +31,8 @@ export class Camera {
   cz = 0;
   /** Half-height of the orthographic view in world units. */
   zoom = 40;
+  /** Orbit angle around the focus. The default 45° is the classic isometric view. */
+  yaw = YAW;
   aspect = 16 / 9;
   width = 1;
   height = 1;
@@ -77,8 +81,8 @@ export class Camera {
     if (this.screenLift !== 0) {
       const groundPerPixelY = this.halfH * 2 / this.height / Math.max(0.2, Math.sin(this.pitch));
       const lift = this.screenLift * groundPerPixelY;
-      this.cx += lift * Math.sin(YAW);
-      this.cz += lift * Math.cos(YAW);
+      this.cx += lift * Math.sin(this.yaw);
+      this.cz += lift * Math.cos(this.yaw);
     }
     // Persistent HUD columns move the usable battlefield centre away from the
     // viewport centre. Move the camera along its screen-right axis so the framed
@@ -111,10 +115,11 @@ export class Camera {
    * through it would drift by one lift every time a cinematic ended. This is
    * the symmetric restore used by presentation code.
    */
-  setFraming(cx: number, cz: number, zoom: number): void {
+  setFraming(cx: number, cz: number, zoom: number, yaw = this.yaw): void {
     this.cx = cx;
     this.cz = cz;
     this.zoom = clamp(zoom, CLOSE_ZOOM, 110);
+    this.yaw = yaw;
     this.update();
   }
 
@@ -134,9 +139,12 @@ export class Camera {
   update(): void {
     this.halfH = this.zoom;
     this.halfW = this.zoom * this.aspect;
+    // Keep a restored or interpolated orbit in one canonical turn so callers
+    // never need to know how many revolutions preceded it.
+    this.yaw = ((this.yaw % FULL_TURN) + FULL_TURN) % FULL_TURN;
     const s = Math.sin(this.pitch);
     const c = Math.cos(this.pitch);
-    this.forward = normalize([-Math.sin(YAW) * c, -s, -Math.cos(YAW) * c]);
+    this.forward = normalize([-Math.sin(this.yaw) * c, -s, -Math.cos(this.yaw) * c]);
     this.right = normalize(cross(this.forward, [0, 1, 0]));
     this.up = normalize(cross(this.right, this.forward));
     this.eye = [
@@ -177,8 +185,8 @@ export class Camera {
     // Screen-down follows the ground projection of the view direction; a
     // pitched view compresses ground depth by sin(pitch).
     const groundPerPixelY = worldPerPixelY / Math.max(0.2, Math.sin(this.pitch));
-    this.cx += dy * groundPerPixelY * Math.sin(YAW);
-    this.cz += dy * groundPerPixelY * Math.cos(YAW);
+    this.cx += dy * groundPerPixelY * Math.sin(this.yaw);
+    this.cz += dy * groundPerPixelY * Math.cos(this.yaw);
     this.clampToMap();
     this.update();
   }

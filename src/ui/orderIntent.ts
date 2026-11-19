@@ -1,5 +1,5 @@
 import { BUILDINGS } from '../data/buildings';
-import { UNITS } from '../data/units';
+import { ALL_UNITS } from '../data/units';
 import type { Entity } from '../sim/types';
 
 export type ContextOrder = 'capture' | 'repair' | 'garrison' | 'attack' | 'move';
@@ -45,7 +45,7 @@ export function isTransportTarget(
     target.hp > 0 &&
     target.owner >= 0 &&
     (friendly || target.owner === localPlayerId) &&
-    !!UNITS[target.defId]?.transport
+    !!ALL_UNITS[target.defId]?.transport
   );
 }
 
@@ -81,13 +81,13 @@ export function contextOrderFor(
   if (
     BUILDINGS[target.defId]?.capturable &&
     target.owner !== localPlayerId &&
-    selected.some((e) => UNITS[e.defId]?.canCapture && !e.garrisonId)
+    selected.some((e) => ALL_UNITS[e.defId]?.canCapture && !e.garrisonId)
   ) {
     return 'capture';
   }
   if (
     isRepairTarget(target, localPlayerId, occupants) &&
-    selected.some((e) => UNITS[e.defId]?.canBuild)
+    selected.some((e) => ALL_UNITS[e.defId]?.canBuild)
   ) {
     return 'repair';
   }
@@ -99,8 +99,8 @@ export function contextOrderFor(
       (e) =>
         e.kind === 'unit' &&
         !e.garrisonId &&
-        !!UNITS[e.defId]?.canGarrison &&
-        UNITS[e.defId]?.armour === 'infantry',
+        !!ALL_UNITS[e.defId]?.canGarrison &&
+        ALL_UNITS[e.defId]?.armour === 'infantry',
     )
   ) {
     return 'garrison';

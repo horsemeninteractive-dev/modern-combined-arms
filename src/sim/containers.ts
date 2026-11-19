@@ -1,5 +1,5 @@
 import { BUILDINGS } from '../data/buildings';
-import { UNITS } from '../data/units';
+import { ALL_UNITS } from '../data/units';
 import { TILE_SIZE } from './constants';
 import type { ContainerDef, Entity } from './types';
 
@@ -31,7 +31,7 @@ export function containerSpec(entity: Entity | null | undefined): ContainerSpec 
     if (!def) return null;
     return { entity, def, mobile: false, capacity: def.capacity };
   }
-  const def = UNITS[entity.defId]?.transport;
+  const def = ALL_UNITS[entity.defId]?.transport;
   if (!def) return null;
   return { entity, def, mobile: true, capacity: def.capacity };
 }
@@ -71,13 +71,13 @@ export function containerBoardingRange(entity: Entity | null | undefined): numbe
  */
 export function containerRequiresLanding(entity: Entity | null | undefined): boolean {
   const spec = containerSpec(entity);
-  return !!spec?.mobile && UNITS[entity!.defId]?.domain === 'air';
+  return !!spec?.mobile && ALL_UNITS[entity!.defId]?.domain === 'air';
 }
 
 /** A naval transport can only exchange passengers while beached. */
 export function containerRequiresBeaching(entity: Entity | null | undefined): boolean {
   const spec = containerSpec(entity);
-  return !!spec?.mobile && UNITS[entity!.defId]?.domain === 'naval';
+  return !!spec?.mobile && ALL_UNITS[entity!.defId]?.domain === 'naval';
 }
 
 /**
@@ -115,7 +115,7 @@ export function containerAcceptsPassenger(
 ): boolean {
   const spec = containerSpec(container);
   if (!spec || unit.kind !== 'unit' || unit.hp <= 0 || unit.garrisonId) return false;
-  const def = UNITS[unit.defId];
+  const def = ALL_UNITS[unit.defId];
   if (!def || def.armour !== 'infantry' || !def.canGarrison) return false;
   return (spec.def.passenger ?? 'infantry') === 'infantry';
 }

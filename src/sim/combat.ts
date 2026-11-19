@@ -1,7 +1,7 @@
 import { TILE_SIZE } from './constants';
 import { inBounds, tileCover, tileIndex, tileSight } from './terrain';
 import { BUILDINGS, isIndestructibleStructure } from '../data/buildings';
-import { UNITS } from '../data/units';
+import { ALL_UNITS } from '../data/units';
 import { WEAPONS } from '../data/weapons';
 import type { ArmourClass, Entity, RuntimeMap, TargetClass, WeaponDef } from './types';
 
@@ -19,22 +19,22 @@ export function weaponCanHurt(weapon: WeaponDef, target: Entity): boolean {
 
 export function entityArmour(e: Entity): ArmourClass {
   if (e.kind === 'building') return BUILDINGS[e.defId]?.armour ?? 'structure';
-  return UNITS[e.defId]?.armour ?? 'light';
+  return ALL_UNITS[e.defId]?.armour ?? 'light';
 }
 
 export function entityTargetClass(e: Entity): TargetClass {
   if (e.kind === 'building') return 'structure';
-  return UNITS[e.defId]?.targetClass ?? 'ground';
+  return ALL_UNITS[e.defId]?.targetClass ?? 'ground';
 }
 
 export function entityVision(e: Entity): number {
   if (e.kind === 'building') return BUILDINGS[e.defId]?.vision ?? 6;
-  return UNITS[e.defId]?.vision ?? 6;
+  return ALL_UNITS[e.defId]?.vision ?? 6;
 }
 
 export function entityName(e: Entity): string {
   if (e.kind === 'building') return BUILDINGS[e.defId]?.name ?? e.defId;
-  return UNITS[e.defId]?.name ?? e.defId;
+  return ALL_UNITS[e.defId]?.name ?? e.defId;
 }
 
 export function canWeaponTarget(weapon: WeaponDef, target: Entity): boolean {
@@ -52,7 +52,7 @@ export function canWeaponTarget(weapon: WeaponDef, target: Entity): boolean {
 
 /** Weapons available to an entity definition (without ammo considerations). */
 export function entityWeapons(e: Entity): WeaponDef[] {
-  const ids = e.kind === 'building' ? BUILDINGS[e.defId]?.weapons : UNITS[e.defId]?.weapons;
+  const ids = e.kind === 'building' ? BUILDINGS[e.defId]?.weapons : ALL_UNITS[e.defId]?.weapons;
   if (!ids) return [];
   return ids.map((id) => WEAPON_CACHE[id]).filter(Boolean);
 }
@@ -61,7 +61,7 @@ const WEAPON_CACHE: Record<string, WeaponDef> = WEAPONS;
 
 /** Whether a weapon is the entity's primary ammunition-limited system. */
 export function usesPrimaryAmmo(e: Entity, weapon: WeaponDef): boolean {
-  const def = UNITS[e.defId];
+  const def = ALL_UNITS[e.defId];
   if (!def?.ammo) return false;
   return def.weapons[0] === weapon.id && e.kind === 'unit';
 }

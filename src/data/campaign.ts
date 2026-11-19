@@ -14,10 +14,11 @@
  * module per campaign, because twenty-four mission documents in one file cannot
  * be read or reviewed. This module stays the single catalogue.
  */
-import type { MissionDoc } from '../mission/types';
+import type { MissionCinematicDoc, MissionDoc } from '../mission/types';
 import type { CampaignVeteranSlot } from '../campaign/types';
 import { BALTIC_OPERATIONS } from './campaign/opsBaltic';
 import { EASTERN_OPERATIONS } from './campaign/opsEastern';
+import { BALTIC_FRAMING_SCENES, EASTERN_FRAMING_SCENES } from './campaign/framingScenes';
 
 /**
  * Definition version. Kept at 1 across the content expansion: the original
@@ -83,6 +84,16 @@ export interface CampaignDef {
   /** The persistent named individuals the campaign starts with. */
   roster: readonly CampaignRosterEntry[];
   missions: readonly CampaignMission[];
+  /**
+   * Campaign-level framing scenes: the introduction, the intermission that
+   * plays after every accepted operation, and the finale.
+   *
+   * They are authored independently of any mission, so a campaign can open,
+   * breathe and close without borrowing an operation's theatre document. The
+   * shipped scenes live in `campaign/framingScenes.ts`; the workbench stores
+   * edits as a browser overlay instead of rewriting this definition.
+   */
+  cinematics?: readonly MissionCinematicDoc[];
 }
 
 /** Campaign variables every operation's consequences are allowed to write. */
@@ -108,6 +119,7 @@ export const CAMPAIGNS: readonly CampaignDef[] = [
       { id: 'vet-vilkas', name: 'Cpl. Tomas Vilkas', defId: 'medic', role: 'veteran' },
     ],
     missions: BALTIC_OPERATIONS,
+    cinematics: BALTIC_FRAMING_SCENES,
   },
   {
     id: 'eastern-corridor',
@@ -125,6 +137,7 @@ export const CAMPAIGNS: readonly CampaignDef[] = [
       { id: 'vet-amari', name: 'Cpl. Nadia Amari', defId: 'atgm', role: 'veteran' },
     ],
     missions: EASTERN_OPERATIONS,
+    cinematics: EASTERN_FRAMING_SCENES,
   },
 ];
 

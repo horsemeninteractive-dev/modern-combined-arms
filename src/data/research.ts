@@ -56,6 +56,8 @@ export const TIER_ZERO_BUILDINGS: readonly string[] = Object.freeze([
   'refinery',
   'powerPlant',
   'mgNest',
+  'sandbagWall',
+  'concreteWall',
   'atTurret',
   'radar',
   'researchCentre',

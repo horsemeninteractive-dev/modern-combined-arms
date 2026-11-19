@@ -28,6 +28,8 @@ export const DAMAGE_SPILL = 0.85;
 
 /** Structures whose damage story is already told by another mesh. */
 const NO_DAMAGE_MESH = new Set(['ruin', 'bridge']);
+/** Low fieldworks have no glazing or roof to blow out. */
+const NO_FACADE_DETAIL = new Set(['sandbagWall', 'concreteWall']);
 
 export function buildingDamageStage(fraction: number): BuildingDamageStage {
   if (!Number.isFinite(fraction)) return 0;
@@ -86,7 +88,9 @@ function extentsFor(defId: string): Extents | null {
   return {
     halfX: (def.footprint.w * TILE_SIZE) / 2,
     halfZ: (def.footprint.h * TILE_SIZE) / 2,
-    top: Math.max(1.5, buildingTopHeight(defId)),
+    // Use the rendered top rather than a 1.5 m floor: a low fieldworks mesh
+    // must not grow rebar through its own roof just because it is short.
+    top: Math.max(0.5, buildingTopHeight(defId)),
   };
 }
 
@@ -113,8 +117,113 @@ function sidePoint(
 }
 
 /**
+ * Blown glazing at the first damage stage.
+ *
+ * The intact body keeps its window joinery; these dark, slightly proud panes
+ * read as missing glass and the shards below them as the pieces that came out.
+ * They are positioned on the perimeter rather than copied from every window
+ * bay, so one shared damage mesh can dress any structure without a second copy
+ * of its facade.
+ */
+function blownGlazing(
+  b: MeshBuilder,
+  rand: () => number,
+  extents: Extents,
+): void {
+  const sides = [0, 1 + Math.floor(rand() * 3)];
+  for (const side of sides) {
+    const span = (side % 2 === 0 ? extents.halfX : extents.halfZ) * 1.4;
+    const bays = 2 + Math.floor(rand() * 2);
+    for (let i = 0; i < bays; i++) {
+      const along = (i / Math.max(1, bays - 1) - 0.5) * span + (rand() - 0.5) * 0.45;
+      const point = sidePoint(side, along, 0.035, extents);
+      const width = 0.8 + rand() * 0.55;
+      // Keep the opening inside even the lowest structure. The shard scatter
+      // below is bounded by the same height, so a flat fieldworks silhouette
+      // cannot grow a pane above its own roof line.
+      const height = Math.max(0.28, Math.min(0.9, extents.top * 0.2)) * (0.8 + rand() * 0.35);
+      const y = Math.min(extents.top - height * 0.7, Math.max(height * 0.7, extents.top * 0.55));
+      const horizontal = side % 2 === 0;
+      // A black reveal, then a few shards still caught in the frame.
+      b.box(
+        point.x,
+        y,
+        point.z,
+        horizontal ? width : 0.08,
+        height,
+        horizontal ? 0.08 : width,
+        [0.04, 0.038, 0.035],
+      );
+      for (let s = 0; s < 4; s++) {
+        const off = (rand() - 0.5) * width;
+        b.boxRot(
+          point.x + (horizontal ? off : 0) + (rand() - 0.5) * 0.12,
+          y + height * (0.15 + rand() * 0.55),
+          point.z + (horizontal ? 0 : off) + (rand() - 0.5) * 0.12,
+          0.18 + rand() * 0.16,
+          0.04,
+          0.12 + rand() * 0.1,
+          (rand() - 0.5) * 1.4,
+          PALETTE.glassDark,
+        );
+      }
+      // The sill catches a spill of broken panes on the ground.
+      for (let s = 0; s < 3; s++) {
+        const ground = sidePoint(side, along + (rand() - 0.5) * 0.8, 0.35 + rand() * 0.3, extents);
+        b.boxRot(
+          ground.x,
+          0.04 + rand() * 0.05,
+          ground.z,
+          0.2 + rand() * 0.2,
+          0.035,
+          0.12 + rand() * 0.12,
+          rand() * Math.PI,
+          PALETTE.glassDark,
+        );
+      }
+    }
+  }
+}
+
+/** Dislodged roof tiles and a lifted edge course, without cutting the roof. */
+function roofDamage(b: MeshBuilder, rand: () => number, extents: Extents): void {
+  const palette = [PALETTE.concreteDark, PALETTE.brick, PALETTE.oliveDark, PALETTE.hullDark];
+  for (let i = 0; i < 9; i++) {
+    const x = (rand() * 2 - 1) * extents.halfX * 0.82;
+    const z = (rand() * 2 - 1) * extents.halfZ * 0.82;
+    const y = extents.top - 0.2 + rand() * 0.12;
+    b.boxRot(
+      x,
+      y,
+      z,
+      0.55 + rand() * 0.55,
+      0.06,
+      0.34 + rand() * 0.38,
+      rand() * Math.PI,
+      palette[Math.floor(rand() * palette.length)],
+    );
+  }
+  // A lifted ridge course gives the roof a clear broken edge from the camera.
+  for (let i = 0; i < 4; i++) {
+    const x = -extents.halfX * 0.6 + i * (extents.halfX * 0.4);
+    b.boxRot(
+      x,
+      extents.top - 0.08 - i * 0.015,
+      -extents.halfZ * 0.72,
+      0.65,
+      0.08,
+      0.3,
+      0.25 + i * 0.08,
+      PALETTE.concreteDark,
+    );
+  }
+}
+
+/**
  * Deterministic damage geometry for one structure and stage. Stage 0 has no
- * mesh; callers draw the undamaged body alone.
+ * mesh; callers draw the undamaged body alone. Stages 2 and 3 are drawn with a
+ * family shell in the renderer; this mesh keeps the debris and fire anchors
+ * shared between every family.
  */
 export function buildingDamageMesh(
   defId: string,
@@ -137,10 +246,14 @@ export function buildingDamageMesh(
   const stages: ReadonlyArray<{ chunks: number; beams: number; rods: number; lift: number }> = [
     { chunks: 0, beams: 0, rods: 0, lift: 0 },
     { chunks: 3, beams: 1, rods: 0, lift: 0.34 },
-    { chunks: 7, beams: 2, rods: 2, lift: 0.72 },
-    { chunks: 13, beams: 3, rods: 5, lift: 1.2 },
+    { chunks: 60, beams: 4, rods: 4, lift: 0.72 },
+    { chunks: 96, beams: 7, rods: 10, lift: 1.2 },
   ];
   const plan = stages[stage];
+  if (stage === 1 && !NO_FACADE_DETAIL.has(defId)) {
+    blownGlazing(b, rand, extents);
+    if (extents.top >= 2.5) roofDamage(b, rand, extents);
+  }
   const sides = stage >= 2 ? [sideA, sideB] : [sideA];
 
   for (let index = 0; index < sides.length; index++) {

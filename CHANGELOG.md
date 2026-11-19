@@ -12,6 +12,90 @@ rendered in game from **Changelog** in the main-menu footer.
 When the version is bumped, rename it to the new `## [x.y.z STAGE] — date`
 heading: `tools/release.mjs` refuses to ship unless that heading exists.
 
+## [0.10.0 BETA] — 2026-11-19
+
+The survival release. **Outbreak** ships as a mode of its own — one basin, four
+roads and a horde that never stops coming — playable solo or as a two-seat
+co-op room. Campaigns gain authored framing scenes, structures collapse through
+staged ruins, and contact shadows, ambient occlusion, bloom and water
+reflections become graphics settings a player can turn on individually.
+
+### Outbreak
+
+- **Relay Basin is a survival map built for a siege.** One Command Post at the
+  centre of the basin, four entry roads, capturable relays and supply depots on
+  the perimeter, and a wave director that plans each assault from a seeded RNG
+  so a co-op room fights the same horde on both seats. Four difficulties scale
+  the first wave, the escort mix and the prep window.
+- **The horde attacks what it can break.** Relays and supply depots are
+  objectives the player captures, not targets: aimless infected no longer spend
+  a wave grinding against a structure that cannot be destroyed. Both the
+  director's target picker and the simulation's attackable test refuse them, so
+  an auto-engagement cannot re-acquire a relay after a retarget.
+- **The basin is ore-rich on purpose.** Two depots are not enough economy to
+  hold a perimeter, so seams now sit beside every road, on all four diagonals
+  and in contested deposits on the mid-ring — 181 ore tiles and just under
+  50,000 ore in total.
+- **Infected drop supplies.** A rare kill leaves a crate worth crossing the wire
+  for: 160 materials, 60 requisition, a field manual that promotes the crews
+  nearby, or a stimulant that gives 15 seconds of battle speed. Each drop is a
+  modelled supply box with a coloured band, a ground pool and a beacon above it,
+  and it is lost 75 seconds after it falls. Rolls are seeded from the match's own
+  stream, so co-op peers agree on what fell and where.
+- **Screamers fly.** A winged mutant that circles above the line and dives on
+  ground units, structures and aircraft alike, weaker against air than ground.
+  Anti-air and interceptors finally have a target inside the mode.
+- **Fortifications shape the line.** A sandbag wall (45 materials) stops
+  infantry and wheeled vehicles while your own tracked hulls route around it and
+  enemy armour grinds through; a concrete wall (120) stops everything.
+- **Co-op is one army, two seats.** An Outbreak room pins the lobby to the basin
+  and its difficulty, seats both commanders on the same force, and publishes the
+  wave clock, hostile count, kill breakdown and drops over the delta stream, so
+  neither seat runs a director of its own.
+
+### Campaign scenes
+
+- **Every campaign now opens, breathes and closes.** Framing scenes for the
+  campaign intro, the intermission after an accepted operation and the finale are
+  authored on the campaign definition and share the mission presentation format:
+  the same timeline, camera beats, validation and playback clock.
+- **Framing scenes can be replayed and rewritten.** The command deck replays a
+  campaign's scenes, and an in-game authoring pass stores its own versioned
+  overlay for the scenes alone — operations, variables, roster and progression
+  stay in the shipped definition.
+- **Cinematics are switchable by context.** Campaign, briefing and battle scenes
+  have their own settings, so turning off a battle intro keeps the mission brief.
+- **Scene chains no longer swallow each other.** Each chain carries its own
+  follow-up, so a deployment or result card queued behind a second cinematic is
+  no longer stranded.
+
+### Structures and presentation
+
+- **Structures fall through staged ruins.** A damaged building switches to a
+  family-specific ruin shell with the same footprint — roofless halls, gutted
+  stations, collapsed bays — instead of scaling its intact model down.
+- **Wreck shells settle and vanish.** A destroyed structure stands as burnt
+  wreckage for seven seconds, settles for three, and is cleared, so a long
+  defence does not fill the basin with rubble.
+- **Shadows and contact** are cleaner: rotated PCF taps, a jittered contact-march
+  and a bias floor remove the banding on long walls and flat ground.
+
+### Graphics
+
+- **Ambient occlusion, bloom, contact shadows and water reflections** are
+  separate settings, with low/medium/high/custom quality presets over the top.
+  Each effect can be switched off without dropping the preset.
+
+### Multiplayer and accounts
+
+- **The room accepts the whole roster.** Room snapshots validate saved entities
+  against every installed unit definition, including the horde's, so an Outbreak
+  room can persist and resume a defence with its infected in place.
+- **The survival readout rides the room delta** whenever a number moves, and the
+  room's drops now travel with it: both seats see the same crates and beacons.
+- **Accounts are unchanged in schema** — no migration is needed for this release;
+  the account Worker is rebuilt and deployed alongside the room Worker.
+
 ## [0.9.0 BETA] — 2026-11-15
 
 A command, accessibility and roster release. Three shared battlefield roles

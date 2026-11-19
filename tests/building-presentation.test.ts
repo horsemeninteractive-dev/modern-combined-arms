@@ -16,11 +16,12 @@ function teamCoverage(positions: Float32Array, teamMask: Float32Array): number[]
 
 describe('building ownership surfaces', () => {
   it('gives every player-buildable structure a substantial team-masked surface', () => {
-    // Fourteen shared structures — the bronze set, the Strategic Operations
-    // Centre and the Heliport — and one national variant per nation. Every
+    // Seventeen shared structures — the bronze set, the two wall types, the
+    // Strategic Operations Centre and the Heliport — and one national variant
+    // per nation. Every
     // national variant is player-buildable for its own nation, so it has to
     // carry the same ownership surface as the shared building it replaces.
-    expect(BUILDABLE_BY_PLAYER).toHaveLength(25);
+    expect(BUILDABLE_BY_PLAYER).toHaveLength(27);
     for (const def of BUILDABLE_BY_PLAYER) {
       const mesh = buildingMesh(def.id);
       expect(mesh, def.id).toBeDefined();
@@ -151,6 +152,40 @@ describe('building presentation contracts', () => {
       expect(mesh, def.id).toBeDefined();
       expect(mesh!.indices.length, def.id).toBeGreaterThan(0);
       for (const v of mesh!.positions) expect(Number.isFinite(v), def.id).toBe(true);
+    }
+  });
+
+  it('keeps the three new garrisonable buildings inside their tile footprints', () => {
+    // Body details and the occupied dressing both have to stay on the tiles the
+    // building occupies: an awning, painted bay or wire ring over the edge
+    // visually blocks ground that is still walkable and placeable.
+    const TILE = 4;
+    for (const id of ['fireStation', 'clinic', 'marketHall'] as const) {
+      const def = BUILDINGS[id];
+      const style = buildingStyle(id)!;
+      const halfW = (def.footprint.w * TILE) / 2;
+      const halfD = (def.footprint.h * TILE) / 2;
+      for (const [variant, mesh] of [
+        ['body', style.body],
+        ['garrisoned', style.garrisoned],
+      ] as const) {
+        expect(mesh, `${id} ${variant}`).toBeDefined();
+        const positions = mesh!.positions;
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minZ = Infinity;
+        let maxZ = -Infinity;
+        for (let i = 0; i < positions.length; i += 3) {
+          minX = Math.min(minX, positions[i]);
+          maxX = Math.max(maxX, positions[i]);
+          minZ = Math.min(minZ, positions[i + 2]);
+          maxZ = Math.max(maxZ, positions[i + 2]);
+        }
+        expect(minX, `${id} ${variant} west edge`).toBeGreaterThanOrEqual(-halfW - 1e-6);
+        expect(maxX, `${id} ${variant} east edge`).toBeLessThanOrEqual(halfW + 1e-6);
+        expect(minZ, `${id} ${variant} north edge`).toBeGreaterThanOrEqual(-halfD - 1e-6);
+        expect(maxZ, `${id} ${variant} south edge`).toBeLessThanOrEqual(halfD + 1e-6);
+      }
     }
   });
 

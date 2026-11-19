@@ -1,6 +1,6 @@
 import type { Game } from './game';
 import { BUILDINGS, buildingFamily, isIndestructibleStructure } from '../data/buildings';
-import { UNITS, unitFamily } from '../data/units';
+import { unitFamily, ALL_UNITS } from '../data/units';
 import {
   COMMANDER_PROFILE_VERSION,
   COMMANDER_TARGET_CATEGORIES,
@@ -137,7 +137,7 @@ export function scoutedForceMix(game: Game, aiId: number): ScoutedForceMix {
   const count = (entityId: number, defId: string): void => {
     if (seen.has(entityId)) return;
     seen.add(entityId);
-    const def = UNITS[defId];
+    const def = ALL_UNITS[defId];
     // Unarmed engineers and harvesters do not change which perimeter gun is
     // useful, and aircraft/naval units are outside the MG/AT remit.
     if (!def || def.domain !== 'land' || def.weapons.length === 0) return;
@@ -513,7 +513,7 @@ function opponentTendencyOf(enemy: KnownEnemy): OpponentTendency | null {
     if (!def.produces && !def.commandPost) return 'fortified';
     return null;
   }
-  const def = UNITS[enemy.defId];
+  const def = ALL_UNITS[enemy.defId];
   if (!def) return null;
   if (def.domain === 'air') return 'air';
   if (def.domain === 'naval') return 'naval';
@@ -542,7 +542,7 @@ function contactCategory(enemy: KnownEnemy): CommanderTargetCategory {
     if (def?.refinery) return 'economy';
     return 'defence';
   }
-  const def = UNITS[enemy.defId];
+  const def = ALL_UNITS[enemy.defId];
   if (!def) return 'combat';
   if (def.domain === 'air') return 'air';
   if (def.domain === 'naval') return 'naval';
@@ -1443,7 +1443,7 @@ export class AIController {
       ) {
         return false;
       }
-      return (UNITS[e.defId]?.weapons.length ?? 0) > 0;
+      return (ALL_UNITS[e.defId]?.weapons.length ?? 0) > 0;
     });
 
     // The harvester already scans for a reachable deposit every time it seeks;
@@ -1500,8 +1500,8 @@ export class AIController {
       power: game.powerStatus(ai.id),
       hasWater: this.waterCache,
       combat,
-      enemyAir: known.filter((e) => UNITS[e.defId]?.domain === 'air').length,
-      enemyNaval: known.filter((e) => UNITS[e.defId]?.domain === 'naval').length,
+      enemyAir: known.filter((e) => ALL_UNITS[e.defId]?.domain === 'air').length,
+      enemyNaval: known.filter((e) => ALL_UNITS[e.defId]?.domain === 'naval').length,
       haulingIdle,
     };
     // Opponent recognition is a commanded behaviour: the seeded path keeps the
@@ -1634,9 +1634,9 @@ export class AIController {
         // A surface escort pings when hostile hulls are about; the sweep is the
         // answer to a boat it cannot see yet, which is exactly why it is spent
         // on a suspected contact rather than a confirmed one.
-        if ((UNITS[unit.defId]?.sonar ?? 0) <= 0) return false;
+        if ((ALL_UNITS[unit.defId]?.sonar ?? 0) <= 0) return false;
         return ctx.visible.some(
-          (enemy) => near(enemy, 20) && UNITS[enemy.defId]?.domain === 'naval',
+          (enemy) => near(enemy, 20) && ALL_UNITS[enemy.defId]?.domain === 'naval',
         );
       case 'firesOnTarget': {
         // A battery that is already moving is not laid; it needs a target inside
@@ -1746,7 +1746,7 @@ export class AIController {
         }
         // An aircraft or a scout hull is a node in the picture the attack is
         // aimed at, so its sight radius stands in for 'fielded network'.
-        const unit = UNITS[e.defId];
+        const unit = ALL_UNITS[e.defId];
         return !!unit && (unit.vision ?? 0) >= 11;
       });
       if (networks.length === 0) return null;
@@ -2005,7 +2005,7 @@ export class AIController {
       else value = 70;
       if (def?.airfield || def?.shipyard) value += 20;
     } else {
-      const def = UNITS[enemy.defId];
+      const def = ALL_UNITS[enemy.defId];
       if (def?.weapons.length) value = 42;
       if (enemy.defId === 'harvester') value = 58;
       if (enemy.defId === 'engineer') value = 34;
@@ -2239,7 +2239,7 @@ export class AIController {
     // An unarmed scout is flown differently from an armed one: it keeps the
     // edge of the army's reach instead of ranging alone, and a nearby combat
     // unit walks the same route. Its optics are unchanged; only its exposure is.
-    const unarmed = (UNITS[recon.defId]?.weapons.length ?? 1) === 0;
+    const unarmed = (ALL_UNITS[recon.defId]?.weapons.length ?? 1) === 0;
     // Breaking contact is checked every think, including while a patrol order
     // is still running, so a sighting does not have to wait out the patrol.
     if (unarmed && this.withdrawScout(ctx, recon)) return;
@@ -2302,7 +2302,7 @@ export class AIController {
       // position: a recon aircraft survives by seeing further than the air
       // defence shoots, and a deep-recon airframe earns its larger orbit.
       const angle = this.random(ctx) * Math.PI * 2;
-      const standoff = Math.max(12, (UNITS[uav.defId]?.vision ?? 20) * 0.8);
+      const standoff = Math.max(12, (ALL_UNITS[uav.defId]?.vision ?? 20) * 0.8);
       const radius = (standoff + this.random(ctx) * 4) * TILE_SIZE;
       point = {
         x: ctx.st.targetBaseX + Math.cos(angle) * radius,
@@ -2379,7 +2379,7 @@ export class AIController {
     let lead = 24 * TILE_SIZE;
     let best = Number.POSITIVE_INFINITY;
     for (const unit of ctx.combat) {
-      if (UNITS[unit.defId]?.domain !== 'land') continue;
+      if (ALL_UNITS[unit.defId]?.domain !== 'land') continue;
       const d = dist(unit.x, unit.z, point.x, point.z);
       if (d < best) {
         best = d;
@@ -2414,7 +2414,7 @@ export class AIController {
     let best = 22 * TILE_SIZE;
     for (const unit of ctx.combat) {
       if (unit.id === scout.id || !this.free(unit)) continue;
-      if (UNITS[unit.defId]?.domain !== 'land') continue;
+      if (ALL_UNITS[unit.defId]?.domain !== 'land') continue;
       const d = dist(unit.x, unit.z, scout.x, scout.z);
       if (d < best) {
         best = d;
@@ -2432,7 +2432,7 @@ export class AIController {
         attackMove: true,
       })
     ) {
-      ctx.st.lastDecision = `${escort.defId} escorting the ${UNITS[scout.defId]?.shortName ?? 'scout'}`;
+      ctx.st.lastDecision = `${escort.defId} escorting the ${ALL_UNITS[scout.defId]?.shortName ?? 'scout'}`;
     }
   }
 
@@ -2675,7 +2675,7 @@ export class AIController {
         (counts.get('refinery') ?? 0) > 0 &&
         (counts.get('barracks') ?? 0) > 0;
       const droneId = ctx.game.unitIdFor(ctx.aiId, 'uav');
-      const droneReach = droneId ? (UNITS[droneId]?.vision ?? 0) : 0;
+      const droneReach = droneId ? (ALL_UNITS[droneId]?.vision ?? 0) : 0;
       const reconWorth = coreReady && droneReach >= 20 ? 44 + (droneReach - 20) * 2 : 0;
       // Air Operations is what unlocked this option. A commander that has paid
       // for the branch follows through: the field is worth more than a second
@@ -2688,7 +2688,7 @@ export class AIController {
       // the enemy breaks it without teaching the AI anything it could not know.
       const rosterAir = ctx.game
         .rosterFor(ctx.aiId)
-        .units.some((id) => UNITS[id]?.domain === 'air');
+        .units.some((id) => ALL_UNITS[id]?.domain === 'air');
       const score =
         (ctx.strategy === 'air' ? 148 : ctx.profile.tech > 0.58 ? 52 + ctx.profile.tech * 50 : 0) +
         opening.air +
@@ -2772,11 +2772,11 @@ export class AIController {
       // sighted.
       const rosterNaval = ctx.game
         .rosterFor(ctx.aiId)
-        .units.some((id) => UNITS[id]?.domain === 'naval');
+        .units.some((id) => ALL_UNITS[id]?.domain === 'naval');
       const score =
         44 + ctx.profile.tech * 34 + opening.naval + branchPaid +
         (rosterNaval ? 20 : 0) +
-        (ctx.known.some((e) => UNITS[e.defId]?.domain === 'naval') ? 36 : 0) +
+        (ctx.known.some((e) => ALL_UNITS[e.defId]?.domain === 'naval') ? 36 : 0) +
         (ctx.strategy === 'economy' ? 10 : 0);
       // No bank gate: the option already requires the naval branch to be open,
       // and the planner's facility save is what buys it. A 900-material entry
@@ -2950,7 +2950,7 @@ export class AIController {
     const haulers = ctx.unitCounts.get('harvester') ?? 0;
     if (refineries > 0 && haulers > 0) return 0;
     const engineerId = ctx.game.unitIdFor(ctx.aiId, 'engineer');
-    const def = engineerId ? UNITS[engineerId] : undefined;
+    const def = engineerId ? ALL_UNITS[engineerId] : undefined;
     if (!engineerId || !def) return 0;
     // A replacement already in a queue is the recovery, not a reason to stop.
     if ((this.queuedCounts(ctx).get(engineerId) ?? 0) > 0) return 0;
@@ -2994,7 +2994,7 @@ export class AIController {
     // hold the bank hostage for the rest of the match.
     if (!ctx.game.hasRemainingOre()) return 0;
     const harvesterId = ctx.game.unitIdFor(ctx.aiId, 'harvester');
-    const def = harvesterId ? UNITS[harvesterId] : undefined;
+    const def = harvesterId ? ALL_UNITS[harvesterId] : undefined;
     if (!harvesterId || !def) return 0;
     if ((this.queuedCounts(ctx).get(harvesterId) ?? 0) > 0) return 0;
     const factory = ctx.complete.some((b) => b.defId === 'factory');
@@ -3467,7 +3467,7 @@ export class AIController {
     // die one at a time, so the unarmed substitution is bought as a single
     // protected eye instead of a triad of free kills.
     const reconId = ctx.game.unitIdFor(ctx.aiId, 'recon');
-    const reconUnarmed = reconId !== undefined && (UNITS[reconId]?.weapons.length ?? 0) === 0;
+    const reconUnarmed = reconId !== undefined && (ALL_UNITS[reconId]?.weapons.length ?? 0) === 0;
     const reconTarget = ctx.st.targetKnown ? 1 : reconUnarmed ? 1 : 3;
     need('recon', reconTarget, 168);
 
@@ -3479,7 +3479,7 @@ export class AIController {
       // bank is only held for it when the price is already most of the way
       // saved — a drone shot down while the army is short of tanks is not
       // replaced by starving the army.
-      const uavPrice = UNITS[ctx.game.unitIdFor(ctx.aiId, 'uav') ?? '']?.cost.mats;
+      const uavPrice = ALL_UNITS[ctx.game.unitIdFor(ctx.aiId, 'uav') ?? '']?.cost.mats;
       const dronePlanned =
         ctx.st.desiredArmy >= 6 && ctx.threats.length === 0 && (ctx.unitCounts.get('harvester') ?? 0) >= 2;
       need('uav', 1, dronePlanned ? 106 : 78, dronePlanned ? uavPrice : undefined);
@@ -3527,7 +3527,7 @@ export class AIController {
     }
     const liftable = ctx.own.filter((unit) => {
       if (unit.kind !== 'unit' || unit.hp <= 0 || unit.garrisonId) return false;
-      const def = UNITS[unit.defId];
+      const def = ALL_UNITS[unit.defId];
       return !!def && def.armour === 'infantry' && def.canGarrison === true;
     }).length;
     const transportNeed = transportDemand({
@@ -3569,7 +3569,7 @@ export class AIController {
     if ((ctx.counts.get('factory') ?? 0) > 0) {
       const damagedVehicle = ctx.own.some((e) => {
         if (e.kind !== 'unit' || e.hp <= 0 || e.hp >= e.maxHp * 0.8) return false;
-        const def = UNITS[e.defId];
+        const def = ALL_UNITS[e.defId];
         return def?.domain === 'land' && def.armour !== 'infantry';
       });
       if (damagedVehicle) need('recovery', 1, 72);
@@ -3595,7 +3595,7 @@ export class AIController {
       // A mobile jammer is a support hull for a formed army: it blinds the
       // defence the armour is about to cross, but it is never the opening buy.
       if (armyFormed && economyCrewed) need('ewVehicle', 1, 58);
-      const spgPrice = UNITS[ctx.game.unitIdFor(ctx.aiId, 'spg') ?? '']?.cost.mats;
+      const spgPrice = ALL_UNITS[ctx.game.unitIdFor(ctx.aiId, 'spg') ?? '']?.cost.mats;
       // A compact map puts both armies in contact from the opening, so a plan
       // sized for open ground is never whole there: the front is the whole
       // battlefield. The required line therefore shrinks with the map, and a
@@ -3629,7 +3629,7 @@ export class AIController {
       // it lands once a howitzer is already on the field, so the saturation
       // tier reaches play without displacing the observed-fire tier.
       const rockets = ctx.game.unitIdFor(ctx.aiId, 'rocketArtillery');
-      const rocketPrice = rockets ? UNITS[rockets]?.cost.mats : undefined;
+      const rocketPrice = rockets ? ALL_UNITS[rockets]?.cost.mats : undefined;
       if (rockets && armyFormed && economyCrewed && (ctx.unitCounts.get('spg') ?? 0) >= 1) {
         need('rocketArtillery', 1, 116, rocketPrice);
       }
@@ -3640,7 +3640,7 @@ export class AIController {
       // Bulsae-4 over the shared assault gun) fields its own version on the same
       // order, which is the only order that puts that kit on the field at all.
       const tankDestroyer = ctx.game.unitIdFor(ctx.aiId, 'td');
-      const tdPrice = tankDestroyer ? UNITS[tankDestroyer]?.cost.mats : undefined;
+      const tdPrice = tankDestroyer ? ALL_UNITS[tankDestroyer]?.cost.mats : undefined;
       if (
         tankDestroyer &&
         armyFormed &&
@@ -3661,7 +3661,7 @@ export class AIController {
       // to carry is a tank without a turret. Sweden's CV90 replaces the shared
       // IFV, so this is likewise the order that fields a national kit.
       const ifv = ctx.game.unitIdFor(ctx.aiId, 'ifv');
-      const ifvPrice = ifv ? UNITS[ifv]?.cost.mats : undefined;
+      const ifvPrice = ifv ? ALL_UNITS[ifv]?.cost.mats : undefined;
       if (ifv && armyFormed && economyCrewed && (ctx.unitCounts.get('rifle') ?? 0) >= 3) {
         need('ifv', 1, 96, ifvPrice);
       }
@@ -3682,8 +3682,8 @@ export class AIController {
     const enemyMilitary = ctx.known.filter(
       (e) =>
         e.kind === 'unit' &&
-        UNITS[e.defId]?.domain === 'land' &&
-        (UNITS[e.defId]?.weapons.length ?? 0) > 0,
+        ALL_UNITS[e.defId]?.domain === 'land' &&
+        (ALL_UNITS[e.defId]?.weapons.length ?? 0) > 0,
     ).length;
     const targetArmy = desiredArmySize(
       enemyMilitary,
@@ -3733,7 +3733,7 @@ export class AIController {
     const fieldArmy = Math.max(4, Math.round(ctx.st.desiredArmy * 0.5));
     if (ctx.combat.length >= fieldArmy && ctx.threats.length === 0) {
       for (const defId of ctx.game.rosterFor(ctx.aiId).units) {
-        const def = UNITS[defId];
+        const def = ALL_UNITS[defId];
         if (!def?.national || def.variantOf !== undefined) continue;
         const buildable = ctx.complete.some(
           (b) => ctx.game.productionStatus(ctx.aiId, b.id, defId).ok,
@@ -4093,7 +4093,7 @@ export class AIController {
       // moment the line is short. The economy fixes are untouched either way:
       // this only decides which purchase the bank is held for.
       const corePressure = ctx.profile.difficulty === 'recruit' ? 0 : coreShortfall;
-      const def = UNITS[saving.defId];
+      const def = ALL_UNITS[saving.defId];
       // Holding for a battery the base cannot train is a freeze, not a plan:
       // the facility was destroyed or never built, and the line starved behind
       // a purchase that could never arrive.
@@ -4125,7 +4125,7 @@ export class AIController {
       }
     }
     for (const item of desired) {
-      const def = UNITS[item.defId];
+      const def = ALL_UNITS[item.defId];
       if (!def) continue;
       if (def.cost.mats > budget.mats || def.cost.req > budget.req) continue;
       const facility = ctx.complete.find(
@@ -4270,7 +4270,7 @@ export class AIController {
       (enemy) =>
         enemy.owner >= 0 &&
         ctx.game.isHostile(ctx.aiId, enemy.owner) &&
-        (UNITS[enemy.defId]?.weapons.length ?? 0) > 0 &&
+        (ALL_UNITS[enemy.defId]?.weapons.length ?? 0) > 0 &&
         dist(enemy.x, enemy.z, carrier.x, carrier.z) < 9 * TILE_SIZE,
     );
     if (!recovering && (hurt || (threatened && op.stage !== 'unload'))) {
@@ -4611,7 +4611,7 @@ export class AIController {
           unit.hp > 0 &&
           !unit.garrisonId &&
           !this.claimed.has(unit.id) &&
-          UNITS[unit.defId]?.domain !== 'air' &&
+          ALL_UNITS[unit.defId]?.domain !== 'air' &&
           dist(unit.x, unit.z, carrier.x, carrier.z) < 30 * TILE_SIZE,
       )
       .sort(
@@ -4633,7 +4633,7 @@ export class AIController {
   }
 
   private transportName(carrier: Entity): string {
-    return UNITS[carrier.defId]?.name ?? 'transport';
+    return ALL_UNITS[carrier.defId]?.name ?? 'transport';
   }
 
   /* ---------------------------------------------------------------------- */
@@ -4647,7 +4647,7 @@ export class AIController {
   private manageAir(ctx: AIContext): void {
     for (const plane of ctx.own) {
       if (plane.kind !== 'unit' || plane.hp <= 0) continue;
-      const def = UNITS[plane.defId];
+      const def = ALL_UNITS[plane.defId];
       if (def?.domain !== 'air' || def.weapons.length === 0) continue;
       if (!this.free(plane) || plane.aircraft?.returningHome) continue;
       const landed = plane.aircraft?.landed ?? false;
@@ -4657,7 +4657,7 @@ export class AIController {
         (e) => e.kind === 'building',
         (e) => unitFamily(e.defId) === 'tank',
         (e) => unitFamily(e.defId) === 'harvester',
-        (e) => !!UNITS[e.defId],
+        (e) => !!ALL_UNITS[e.defId],
       ])
         .filter((e) => weapons.some((weapon) => canWeaponTarget(weapon, e)))
         .sort(
@@ -4682,8 +4682,8 @@ export class AIController {
 
   private manageNaval(ctx: AIContext): void {
     for (const ship of ctx.own) {
-      if (ship.kind !== 'unit' || UNITS[ship.defId]?.domain !== 'naval') continue;
-      const isSub = !!UNITS[ship.defId]?.submarine;
+      if (ship.kind !== 'unit' || ALL_UNITS[ship.defId]?.domain !== 'naval') continue;
+      const isSub = !!ALL_UNITS[ship.defId]?.submarine;
       const sub = ship.submarine;
       if (isSub && sub) {
         // Dive while a hostile warship is near; surface when the coast is clear
@@ -4691,7 +4691,7 @@ export class AIController {
         const threat = ctx.visible.some(
           (e) =>
             e.kind === 'unit' &&
-            UNITS[e.defId]?.domain === 'naval' &&
+            ALL_UNITS[e.defId]?.domain === 'naval' &&
             dist(ship.x, ship.z, e.x, e.z) < 16 * TILE_SIZE,
         );
         const wantDive = threat && sub.battery > 10;
@@ -4735,7 +4735,7 @@ export class AIController {
               targetId: contact.id,
             })
           ) {
-            ctx.st.lastDecision = `${UNITS[ship.defId]?.name ?? 'Escort'} hunting a submerged contact`;
+            ctx.st.lastDecision = `${ALL_UNITS[ship.defId]?.name ?? 'Escort'} hunting a submerged contact`;
           }
           continue;
         }
@@ -4744,8 +4744,8 @@ export class AIController {
         .filter((e) => e.owner !== -1)
         .filter((e) =>
           isSub
-            ? UNITS[e.defId]?.domain === 'naval'
-            : UNITS[e.defId]?.domain === 'naval' || BUILDINGS[e.defId]?.commandPost,
+            ? ALL_UNITS[e.defId]?.domain === 'naval'
+            : ALL_UNITS[e.defId]?.domain === 'naval' || BUILDINGS[e.defId]?.commandPost,
         )
         .filter((e) => dist(ship.x, ship.z, e.x, e.z) < 34 * TILE_SIZE)
         .sort((a, b) => {
@@ -4754,14 +4754,14 @@ export class AIController {
           // escort whose whole job is to kill him; the sonar hull is discounted
           // rather than banned so a lonely frigate is still a legal target.
           const score = (e: Entity) =>
-            (UNITS[e.defId]?.hp ?? 0) - ((UNITS[e.defId]?.sonar ?? 0) > 0 ? 800 : 0);
+            (ALL_UNITS[e.defId]?.hp ?? 0) - ((ALL_UNITS[e.defId]?.sonar ?? 0) > 0 ? 800 : 0);
           return score(b) - score(a) || a.id - b.id;
         })[0];
       if (!target) continue;
       if (
         this.order(ctx, ship, { type: 'attack', team: ctx.aiId, ids: [ship.id], targetId: target.id })
       ) {
-        ctx.st.lastDecision = `${UNITS[ship.defId]?.name ?? 'Warship'} engaging ${target.defId}`;
+        ctx.st.lastDecision = `${ALL_UNITS[ship.defId]?.name ?? 'Warship'} engaging ${target.defId}`;
       }
     }
   }
@@ -4872,10 +4872,10 @@ export class AIController {
           e.kind === 'unit' &&
           e.hp > 0 &&
           !e.garrisonId &&
-          !!UNITS[e.defId]?.canGarrison &&
+          !!ALL_UNITS[e.defId]?.canGarrison &&
           // Medics may take cover by hand, but the commander keeps unarmed
           // support outside so it can keep treating the line.
-          (UNITS[e.defId]?.weapons.length ?? 0) > 0 &&
+          (ALL_UNITS[e.defId]?.weapons.length ?? 0) > 0 &&
           this.free(e),
       )
       .sort((a, b) => a.id - b.id);
@@ -4937,8 +4937,8 @@ export class AIController {
     const enemyMilitary = ctx.known.filter(
       (e) =>
         e.kind === 'unit' &&
-        UNITS[e.defId]?.domain === 'land' &&
-        (UNITS[e.defId]?.weapons.length ?? 0) > 0,
+        ALL_UNITS[e.defId]?.domain === 'land' &&
+        (ALL_UNITS[e.defId]?.weapons.length ?? 0) > 0,
     ).length;
     ctx.st.desiredArmy = desiredArmySize(
       enemyMilitary,
@@ -4958,7 +4958,7 @@ export class AIController {
     // legal for a tank and a corvette at once — and the wave silently never
     // launches. Naval tasking owns the fleet; the offensive owns the land.
     const idle = ctx.combat.filter(
-      (e) => this.free(e) && UNITS[e.defId]?.domain !== 'naval',
+      (e) => this.free(e) && ALL_UNITS[e.defId]?.domain !== 'naval',
     );
     // A commander that keeps a home guard does not lose its base to a
     // counter-attack while its army is across the map. The guard is simply not

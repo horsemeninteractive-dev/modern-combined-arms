@@ -32,6 +32,13 @@ import type { Scenario } from '../sim/scenario';
 export interface MultiplayerPanelOptions {
   /** Worker origin, e.g. https://mca-multiplayer-staging.example.workers.dev */
   origin: string;
+  /**
+   * What kind of room the deck's host button opens. An Outbreak room seats both
+   * players on one army, so the panel shows the mode instead of the 1v1 copy.
+   */
+  mode?: '1v1' | 'outbreak';
+  /** The survival difficulty a hosted co-op room carries. */
+  difficulty?: string;
   onChange?: (view: LobbyView) => void;
   /**
    * Called once when the room confirms the match started. The host screen
@@ -311,19 +318,30 @@ export class MultiplayerPanel {
       </div>`;
   }
 
+  /** Switch the deck between the 1v1 and Outbreak room shapes. */
+  setMode(mode: '1v1' | 'outbreak', difficulty?: string): void {
+    const nextDifficulty = difficulty ?? this.options.difficulty;
+    if (this.options.mode === mode && this.options.difficulty === nextDifficulty) return;
+    this.options.mode = mode;
+    this.options.difficulty = nextDifficulty;
+    if (this.mounted) this.render(this.view);
+  }
+
   private renderEntry(view: LobbyView): void {
     const busy = view.phase === 'creating' || view.phase === 'joining';
+    const coop = this.options.mode === 'outbreak';
     const error = view.error
       ? `<p class="mp-error" role="alert">${escapeHtml(view.error.message)} <span class="mono">${escapeHtml(view.error.code)}</span></p>`
       : '';
     this.host.innerHTML = `
       <div class="mp-shell">
         <div class="menu-view-head">
-          <p class="eyebrow">NETWORK PLAY · 1V1</p>
-          <h2>Multiplayer</h2>
+          <p class="eyebrow">NETWORK PLAY · ${coop ? 'OUTBREAK CO-OP' : '1V1'}</p>
+          <h2>${coop ? 'Outbreak <em>co-op</em>' : 'Multiplayer'}</h2>
           <p class="lede">
-            Two players, one authoritative room. Host a match and share the room code
-            and join code, or join a room someone shared with you.
+            ${coop
+              ? 'Two commanders, one defence. Host a room and share its codes, or join one; both seats hold the same Command Post, the same economy and the same wave clock.'
+              : 'Two players, one authoritative room. Host a match and share the room code and join code, or join a room someone shared with you.'}
           </p>
         </div>
         ${error}
@@ -384,7 +402,12 @@ export class MultiplayerPanel {
     });
     this.host.querySelector('#mp-host')?.addEventListener('click', () => {
       const chosen = DURATIONS[this.durationIndex] ?? DURATIONS[1];
-      void client.createRoom(chosen.ms);
+      void client.createRoom(
+        chosen.ms,
+        undefined,
+        this.options.mode ?? '1v1',
+        this.options.difficulty ?? 'normal',
+      );
     });
     const join = () => {
       const roomCode = this.host.querySelector<HTMLInputElement>('#mp-room-code')?.value.trim();
@@ -409,6 +432,7 @@ export class MultiplayerPanel {
 
   private renderLobby(view: LobbyView): void {
     const seats = view.seats;
+    const coop = view.mode === 'outbreak';
     const mine = view.seat ?? 0;
     const hostSeat = view.hostSeat;
     const seatCard = (index: number): string => {
@@ -472,7 +496,7 @@ export class MultiplayerPanel {
           <span class="mp-card-head">BATTLEFIELD</span>
           <canvas class="mp-map-canvas" id="mp-map-canvas" aria-label="${escapeHtml(mapName(view.mapId))} terrain map"></canvas>
           ${
-            view.isHost
+            view.isHost && !coop
               ? `<label class="mp-field">
                   <span>Map</span>
                   <select id="mp-map" ${view.phase === 'lobby' ? '' : 'disabled'}>
@@ -484,7 +508,11 @@ export class MultiplayerPanel {
                 </label>`
               : `<p class="mp-seat-name">${escapeHtml(mapName(view.mapId))}</p>`
           }
-          <p class="mp-hint" id="mp-map-detail">${escapeHtml(mapDetail(view.mapId))}</p>
+          <p class="mp-hint" id="mp-map-detail">${
+            coop
+              ? 'The basin is fixed: Outbreak is fought on the same ground as the solo run.'
+              : escapeHtml(mapDetail(view.mapId))
+          }</p>
           ${
             view.isHost
               ? `<label class="mp-field">
@@ -514,7 +542,9 @@ export class MultiplayerPanel {
           <p class="mp-hint" id="mp-weather-detail">${escapeHtml(weatherFor(view.weather).hint)}</p>
           <p class="mp-hint">
             ${view.isHost
-              ? 'Changing the battlefield, start time or weather clears both ready states.'
+              ? coop
+                ? 'Changing the start time or weather clears both ready states.'
+                : 'Changing the battlefield, start time or weather clears both ready states.'
               : 'The host chooses the battlefield, start time and weather.'}
           </p>
         </section>
@@ -770,6 +800,8 @@ function emptyView(): LobbyView {
     roomId: null,
     seat: null,
     joinCode: null,
+    mode: '1v1',
+    outbreak: null,
     mapId: null,
     startHour: 18,
     weather: 'clear',

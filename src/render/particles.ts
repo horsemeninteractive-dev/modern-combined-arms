@@ -522,6 +522,50 @@ export class ParticleSystem {
   }
 
   /**
+   * One short cinematic tracer. It is a stretched additive sprite, not a
+   * simulated projectile: a staged shot must never create ammunition, damage or
+   * a collision target in the game state.
+   */
+  tracer(
+    x0: number,
+    y0: number,
+    z0: number,
+    x1: number,
+    y1: number,
+    z1: number,
+    width = 0.05,
+  ): void {
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const dz = z1 - z0;
+    const len = Math.hypot(dx, dy, dz);
+    if (len < 0.01) return;
+    const w = Math.max(0.02, width);
+    this.push({
+      x: (x0 + x1) / 2,
+      y: (y0 + y1) / 2,
+      z: (z0 + z1) / 2,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      life: 0.09,
+      maxLife: 0.09,
+      size0: w,
+      size1: w * 0.6,
+      r: 1,
+      g: 0.86,
+      b: 0.45,
+      alpha: 0.9,
+      gravity: 0,
+      drag: 0,
+      additive: true,
+      stretch: len / (2 * w),
+      soft: 0.08,
+      dir: [dx / len, dy / len, dz / len],
+    });
+  }
+
+  /**
    * One frame of a cutting beam from the harvester's drum to the seam face.
    *
    * The particle pass already lays a streak along a world axis, so the beam is

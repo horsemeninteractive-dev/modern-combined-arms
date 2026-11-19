@@ -58,6 +58,13 @@ export interface WeaponDef {
   /** Minimum range in tiles. Absent means the weapon can fire at point blank. */
   minRange?: number;
   /**
+   * A contact weapon: claws, a bone hammer, a bite. Its reach is measured to a
+   * structure's wall rather than to the centre of its roof, so a mass the size of
+   * a Command Post can be struck from the ground beside it. Contact weapons also
+   * do not need a sight line to the roof they are standing against.
+   */
+  melee?: boolean;
+  /**
    * Anti-submarine weapon. It can only engage a submarine while that boat is
    * dived, and cannot be used against surface ships.
    */
@@ -116,6 +123,12 @@ export interface UnitDef {
   vision: number;
   hp: number;
   armour: ArmourClass;
+  /**
+   * A body that stays under the sight line. Shooters lose accuracy against it
+   * at range and only get an ordinary shot at arm's length, which is what makes
+   * a crawler something to find rather than something to out-shoot.
+   */
+  lowProfile?: boolean;
   cost: Cost;
   buildTime: number;
   producedBy: string[];
@@ -183,6 +196,13 @@ export interface UnitDef {
    * position, which is what lets an airfield recover one without basing it.
    */
   rotary?: boolean;
+  /**
+   * An air-domain body with no airfield behind it: it stays aloft for its whole
+   * life, holds no berth, burns no fuel and never lands. Outbreak's flying
+   * mutant is one, which is what keeps the aircraft recovery cycle from trying
+   * to fly a zombie home to a base that does not exist.
+   */
+  flier?: boolean;
 }
 
 /**
@@ -334,6 +354,13 @@ export interface BuildingDef {
    */
   walkable?: boolean;
   /**
+   * Fortification rules. A sandbag line stops infantry and wheeled vehicles
+   * but lets tracked vehicles crush through; a concrete wall stops every
+   * ground mover. Walls are still structures for construction, damage and
+   * placement.
+   */
+  wall?: { blocksFoot: boolean; blocksVehicles: boolean };
+  /**
    * Net grid power: positive structures generate, negative structures draw.
    * Absent means zero. A deficit slows construction and production for the
    * owner until supply catches up.
@@ -477,6 +504,12 @@ export interface FactionDef extends FactionIdentity {
   readonly allianceId: string;
   readonly units: readonly string[];
   readonly buildings: readonly string[];
+  /**
+   * A hostile horde rather than a fielded army: its roster is its own list of
+   * infected, it builds nothing, and it is exempt from the rule that a legacy
+   * preset must mirror its alliance baseline. Only Outbreak uses one.
+   */
+  readonly horde?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -989,7 +1022,7 @@ export type Command =
   | { type: 'produce'; team: number; buildingId: number; defId: string }
   | { type: 'cancelProduction'; team: number; buildingId: number; index: number }
   | { type: 'reorderProduction'; team: number; buildingId: number; defId: string; beforeDefId?: string }
-  | { type: 'placeBuilding'; team: number; builderId?: number; defId: string; tileX: number; tileZ: number }
+  | { type: 'placeBuilding'; team: number; builderId?: number; defId: string; tileX: number; tileZ: number; facing?: number }
   /** Sell one finished owned structure; it dismantles before paying a 75% refund. */
   | { type: 'sellBuilding'; team: number; buildingId: number }
   | { type: 'setRally'; team: number; buildingId: number; x: number; z: number }

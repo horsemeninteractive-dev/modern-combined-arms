@@ -3138,6 +3138,16 @@ const SHADOW_RADIUS: Record<string, [number, number]> = {
   loiteringMunitionEC: [1.30, 1.10],
 };
 
+// The infected stand on their own footprints; the 1.4 default is a vehicle's.
+Object.assign(SHADOW_RADIUS, {
+  zombieShambler: [0.32, 0.26],
+  zombieRunner: [0.34, 0.24],
+  zombieBrute: [0.52, 0.46],
+  zombieBloater: [0.46, 0.5],
+  zombieCrawler: [0.42, 0.24],
+  zombieFlyer: [0.95, 0.9],
+} as Record<string, [number, number]>);
+
 export function unitShadowRadius(id: string): [number, number] {
   return SHADOW_RADIUS[id] ?? [1.4, 1.4];
 }
@@ -3225,6 +3235,16 @@ const BANNER_HEIGHT: Record<string, number> = {
   loiteringMunition: 1.55,
   loiteringMunitionEC: 1.55,
 };
+
+// Health bars sit on the body, not five units above it.
+Object.assign(BANNER_HEIGHT, {
+  zombieShambler: 1.4,
+  zombieRunner: 1.4,
+  zombieBrute: 1.8,
+  zombieBloater: 1.5,
+  zombieCrawler: 0.7,
+  zombieFlyer: 2.2,
+} as Record<string, number>);
 
 export function unitBannerHeight(id: string): number {
   return BANNER_HEIGHT[id] ?? 5;
@@ -4098,8 +4118,388 @@ const STYLES: Record<string, EntityStyle> = {
  * alliance or national platform that shared a family mesh would be unreadable at
  * battle zoom, because ownership is the only difference a player could see.
  */
+/*
+ * The infected. They are bodies, not platforms: no turret, no rotor, no crew
+ * compartment, and a silhouette built to be named at battle zoom — a stooped
+ * walker, a lean sprinter, a wall of shoulders, a swollen belly, a shape that
+ * hugs the ground. Team colour is held to a light wash so the horde reads as
+ * one hostile mass without erasing the differences between the archetypes.
+ */
+// Battle-zoom palette. A rifleman's tell is his team-coloured helmet over an
+// olive uniform; at twenty pixels tall the horde needs the opposite one, so the
+// flesh is a pale corpse tone well above the uniform's value, the rags fall to
+// near-black, and any blood is bright enough to survive the dusk grade.
+const INFECTED_SKIN: Color = [0.72, 0.74, 0.62];
+const INFECTED_RAGS: Color = [0.24, 0.23, 0.2];
+const INFECTED_CLOTH: Color = [0.18, 0.17, 0.15];
+const INFECTED_WOUND: Color = [0.55, 0.14, 0.12];
+const INFECTED_BONE: Color = [0.8, 0.77, 0.64];
+const INFECTED_HAIR: Color = [0.15, 0.13, 0.12];
+
+/**
+ * A torn strip of cloth. The horde's uniforms are wrecked, and a handful of
+ * angled strips is what tells a player these were soldiers once rather than
+ * statues of mud: the same trick the trooper's webbing plays, worn the other
+ * way round.
+ */
+function addRag(
+  b: MeshBuilder,
+  x: number,
+  y: number,
+  z: number,
+  sx: number,
+  sy: number,
+  sz: number,
+  yaw = 0,
+): void {
+  if (yaw === 0) b.box(x, y, z, sx, sy, sz, INFECTED_RAGS);
+  else b.boxRot(x, y, z, sx, sy, sz, yaw, INFECTED_RAGS);
+}
+
+/**
+ * A head with the parts that read at battle zoom: crown, hanging jaw, two dark
+ * sockets and a scalp. Authored at the same 1:1 scale as a rifleman's helmet
+ * so the horde is the same species on the same field.
+ */
+function addInfectedHead(
+  b: MeshBuilder,
+  cx: number,
+  cy: number,
+  cz: number,
+  r: number,
+  scalp = 0.92,
+): void {
+  b.sphere(cx, cy, cz, r, 3, 7, INFECTED_SKIN);
+  // The jaw hangs: a slack mouth is the one facial feature a battle camera can
+  // still resolve, so it is a slab and a dark gap, not painted detail.
+  b.box(cx + r * 0.5, cy - r * 0.6, cz, r * 0.85, r * 0.4, r * 1.05, INFECTED_SKIN);
+  b.box(cx + r * 0.62, cy - r * 0.42, cz, r * 0.32, r * 0.18, r * 0.72, INFECTED_WOUND);
+  b.box(cx + r * 0.72, cy + r * 0.2, cz + r * 0.36, r * 0.2, r * 0.2, r * 0.26, INFECTED_WOUND);
+  b.box(cx + r * 0.72, cy + r * 0.2, cz - r * 0.36, r * 0.2, r * 0.2, r * 0.26, INFECTED_WOUND);
+  b.sphere(cx - r * 0.2, cy + r * 0.34, cz, r * scalp, 2, 6, INFECTED_HAIR);
+  // Neck, always a little too long on a body that no longer stands up straight.
+  b.box(cx - r * 0.55, cy - r * 1.05, cz, r * 0.7, r * 0.62, r * 0.78, INFECTED_SKIN);
+}
+
+/**
+ * A wasted arm: upper arm, forearm, splayed hand and a ragged sleeve at the
+ * elbow. Built from beams so the joints stay round where the limb bends.
+ */
+function addInfectedArm(
+  b: MeshBuilder,
+  shoulder: Vec3,
+  elbow: Vec3,
+  hand: Vec3,
+  radius: number,
+): void {
+  beam(b, shoulder, elbow, radius, radius * 0.86, INFECTED_SKIN);
+  beam(b, elbow, hand, radius * 0.86, radius * 0.72, INFECTED_SKIN);
+  // The joint shows through torn sleeve; the hand is what reaches for the wire.
+  b.box(elbow[0], elbow[1], elbow[2], radius * 1.15, radius * 1.15, radius * 1.15, INFECTED_BONE);
+  b.box(hand[0], hand[1], hand[2], radius * 1.5, radius * 1.15, radius * 1.4, INFECTED_SKIN);
+  b.box(hand[0] + radius * 0.95, hand[1] - radius * 0.4, hand[2], radius * 1.25, radius * 0.42, radius * 1.0, INFECTED_BONE);
+}
+
+function buildShamblerBody(): MeshBuffers {
+  const b = new MeshBuilder();
+  // Hips and a rope belt holding up what is left of the trousers.
+  b.box(0, 0.55, 0, 0.17, 0.15, 0.24, INFECTED_RAGS);
+  b.box(0, 0.63, 0, 0.178, 0.03, 0.248, INFECTED_CLOTH);
+  // Sunken waist, then a ribcage that leans over the hips: the stoop is built
+  // into the body, so the gait only has to rock it, never reshape it.
+  b.box(0.02, 0.72, 0, 0.19, 0.15, 0.23, INFECTED_SKIN);
+  b.box(0.05, 0.86, 0, 0.22, 0.18, 0.29, INFECTED_RAGS);
+  // Shirt: a bloodied tear down the front and three strips hanging free.
+  b.box(0.105, 0.84, 0.085, 0.02, 0.10, 0.10, INFECTED_WOUND);
+  b.box(0.095, 0.78, -0.055, 0.016, 0.13, 0.15, INFECTED_WOUND);
+  addRag(b, 0.02, 0.66, 0.105, 0.05, 0.13, 0.09, 0.18);
+  addRag(b, 0.0, 0.64, -0.09, 0.05, 0.17, 0.08, -0.24);
+  addRag(b, -0.02, 0.68, 0.0, 0.06, 0.10, 0.12, 0.5);
+  // Shoulder caps, collar bones and the joints the shirt has rotted off.
+  b.box(0.06, 0.95, 0.15, 0.16, 0.10, 0.11, INFECTED_SKIN, 0.9);
+  b.box(0.06, 0.95, -0.15, 0.16, 0.10, 0.11, INFECTED_SKIN, 0.9);
+  b.box(0.13, 0.985, 0, 0.09, 0.04, 0.19, INFECTED_BONE);
+  b.sphere(0.07, 0.97, 0.165, 0.072, 2, 5, INFECTED_RAGS);
+  b.sphere(0.07, 0.97, -0.165, 0.072, 2, 5, INFECTED_RAGS);
+  addInfectedHead(b, 0.11, 1.06, 0, 0.097);
+  // One arm reaches, the other hangs dead: the uneven gait is the silhouette.
+  addInfectedArm(b, [0.06, 0.93, 0.17], [0.20, 0.88, 0.215], [0.33, 0.84, 0.16], 0.045);
+  addInfectedArm(b, [0.06, 0.93, -0.17], [0.02, 0.74, -0.20], [0.07, 0.55, -0.17], 0.045);
+  return b.build();
+}
+
+/** One leg on the roster's hip-pivot rig: sole on the ground, hip at 0.61. */
+function buildShamblerLeg(): MeshBuffers {
+  const b = new MeshBuilder();
+  // A knee that never quite straightens, with the shin trailing the thigh.
+  b.box(0, -0.16, 0, 0.16, 0.32, 0.14, INFECTED_RAGS, 0.2);
+  b.box(-0.02, -0.42, 0, 0.15, 0.22, 0.13, INFECTED_SKIN, 0.2);
+  // Torn trouser cuff, bare knee and a wrapped ankle: the same three reads a
+  // rifleman's leg carries, worn out rather than webbed up.
+  b.box(-0.01, -0.34, 0, 0.155, 0.05, 0.135, INFECTED_CLOTH, 0.2);
+  b.box(0.045, -0.305, 0.005, 0.06, 0.05, 0.10, INFECTED_BONE, 0.2);
+  b.box(-0.02, -0.48, 0, 0.145, 0.035, 0.125, INFECTED_CLOTH, 0.2);
+  // Bare foot, then the boot it is still half wearing.
+  b.box(0.06, -0.555, 0, 0.13, 0.05, 0.12, INFECTED_SKIN, 0.2);
+  b.box(0.04, -0.58, 0, 0.12, 0.06, 0.13, INFECTED_RAGS, 0.2);
+  b.box(0.13, -0.58, 0, 0.06, 0.05, 0.11, INFECTED_CLOTH, 0.2);
+  return b.build();
+}
+
+function buildRunnerBody(): MeshBuffers {
+  const b = new MeshBuilder();
+  // Long, narrow and pitched forward: everything about this body says speed.
+  b.box(-0.02, 0.56, 0, 0.16, 0.14, 0.21, INFECTED_RAGS);
+  b.box(0.0, 0.64, 0, 0.165, 0.04, 0.215, INFECTED_CLOTH);
+  b.box(0.04, 0.74, 0, 0.20, 0.18, 0.22, INFECTED_SKIN);
+  b.box(0.09, 0.9, 0, 0.24, 0.18, 0.27, INFECTED_RAGS);
+  // Ribs showing through the shirt, and a harness strap still clipped shut.
+  b.box(0.16, 0.74, 0.0, 0.02, 0.16, 0.17, INFECTED_WOUND);
+  b.box(0.17, 0.76, 0.0, 0.012, 0.03, 0.15, INFECTED_BONE);
+  b.box(0.17, 0.72, 0.0, 0.012, 0.03, 0.15, INFECTED_BONE);
+  b.box(0.13, 0.9, 0.10, 0.03, 0.16, 0.05, INFECTED_CLOTH);
+  b.box(0.13, 0.9, -0.10, 0.03, 0.16, 0.05, INFECTED_CLOTH);
+  // A torn sleeve trails off the leading shoulder.
+  addRag(b, 0.06, 0.82, 0.19, 0.06, 0.18, 0.05, 0.35);
+  // Shoulders, neck and a head thrust out ahead of the chest.
+  b.sphere(0.10, 0.98, 0.155, 0.078, 2, 5, INFECTED_SKIN);
+  b.sphere(0.10, 0.98, -0.155, 0.078, 2, 5, INFECTED_SKIN);
+  addInfectedHead(b, 0.19, 1.04, 0, 0.094, 0.7);
+  // Both arms pumping; the elbows stay high, which is what reads as a sprint.
+  addInfectedArm(b, [0.10, 0.96, 0.16], [0.27, 0.93, 0.21], [0.38, 0.99, 0.16], 0.042);
+  addInfectedArm(b, [0.10, 0.96, -0.16], [0.24, 0.85, -0.21], [0.14, 0.78, -0.16], 0.042);
+  return b.build();
+}
+
+/** Long thin leg for the sprinter, hip at 0.69. */
+function buildRunnerLeg(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.box(0, -0.18, 0, 0.18, 0.36, 0.12, INFECTED_RAGS, 0.2);
+  b.box(-0.03, -0.47, 0, 0.15, 0.26, 0.11, INFECTED_SKIN, 0.2);
+  // Shorts ending above the knee, a knee joint and a bare ankle.
+  b.box(0, -0.33, 0, 0.175, 0.06, 0.118, INFECTED_CLOTH, 0.2);
+  b.box(0.02, -0.35, 0.0, 0.09, 0.06, 0.10, INFECTED_BONE, 0.2);
+  b.box(-0.02, -0.58, 0, 0.135, 0.035, 0.105, INFECTED_CLOTH, 0.2);
+  b.box(0.04, -0.64, 0, 0.15, 0.05, 0.11, INFECTED_SKIN, 0.2);
+  b.box(0.05, -0.66, 0, 0.16, 0.06, 0.12, INFECTED_RAGS, 0.2);
+  b.box(0.14, -0.665, 0, 0.07, 0.05, 0.10, INFECTED_CLOTH, 0.2);
+  return b.build();
+}
+
+function buildBruteBody(): MeshBuffers {
+  const b = new MeshBuilder();
+  // A slab of a trunk with a hunched back: the widest silhouette on the field.
+  b.box(0, 0.6, 0, 0.36, 0.2, 0.5, INFECTED_RAGS);
+  b.box(0.01, 0.76, 0, 0.44, 0.24, 0.6, INFECTED_SKIN);
+  b.box(0.03, 0.98, 0, 0.5, 0.26, 0.68, INFECTED_RAGS);
+  b.sphere(-0.06, 1.06, 0, 0.26, 3, 7, INFECTED_SKIN);
+  // Shoulder boulders and the straps of a harness that no longer fits.
+  b.sphere(0.04, 1.06, 0.3, 0.17, 2, 6, INFECTED_SKIN);
+  b.sphere(0.04, 1.06, -0.3, 0.17, 2, 6, INFECTED_SKIN);
+  b.box(0.16, 0.96, 0.16, 0.03, 0.3, 0.06, INFECTED_CLOTH);
+  b.box(0.16, 0.96, -0.16, 0.03, 0.3, 0.06, INFECTED_CLOTH);
+  b.box(0.17, 0.9, 0, 0.02, 0.12, 0.3, INFECTED_WOUND);
+  b.box(0.175, 0.93, 0, 0.012, 0.035, 0.26, INFECTED_BONE);
+  b.box(0.175, 0.87, 0, 0.012, 0.035, 0.26, INFECTED_BONE);
+  // Rag skirt over the hips.
+  addRag(b, 0.0, 0.5, 0.16, 0.09, 0.2, 0.05, 0.12);
+  addRag(b, 0.0, 0.48, -0.16, 0.09, 0.24, 0.05, -0.16);
+  addInfectedHead(b, 0.2, 1.16, 0, 0.098, 0.85);
+  // Arms like tree limbs, hanging heavy at the sides.
+  addInfectedArm(b, [0.04, 1.04, 0.32], [0.18, 0.84, 0.36], [0.24, 0.6, 0.3], 0.078);
+  addInfectedArm(b, [0.04, 1.04, -0.32], [0.2, 0.84, -0.36], [0.26, 0.58, -0.3], 0.078);
+  return b.build();
+}
+
+/** A column of a leg under the slab of shoulders, hip at 0.67. */
+function buildBruteLeg(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.box(0, -0.17, 0, 0.28, 0.34, 0.26, INFECTED_RAGS, 0.2);
+  b.box(-0.03, -0.47, 0, 0.24, 0.28, 0.22, INFECTED_SKIN, 0.2);
+  // A ruined trouser leg, a knee the size of a fist and a boot sole.
+  b.box(-0.02, -0.36, 0, 0.26, 0.07, 0.24, INFECTED_CLOTH, 0.2);
+  b.box(0.03, -0.37, 0.0, 0.16, 0.08, 0.16, INFECTED_BONE, 0.2);
+  b.box(-0.04, -0.58, 0, 0.23, 0.05, 0.21, INFECTED_CLOTH, 0.2);
+  b.box(0.05, -0.64, 0, 0.26, 0.06, 0.24, INFECTED_RAGS, 0.2);
+  b.box(0.19, -0.64, 0, 0.09, 0.05, 0.2, INFECTED_CLOTH, 0.2);
+  return b.build();
+}
+
+function buildBloaterBody(): MeshBuffers {
+  const b = new MeshBuilder();
+  // Swollen mass, tiny head, stubby limbs: it should read as a bomb about to
+  // go off, so the belly is a sphere and everything else is small beside it.
+  b.box(0, 0.44, 0, 0.32, 0.24, 0.42, INFECTED_RAGS);
+  b.sphere(0.02, 0.68, 0, 0.36, 5, 9, INFECTED_SKIN);
+  b.box(0.02, 0.7, 0, 0.42, 0.5, 0.5, INFECTED_SKIN, 0.3);
+  // The shirt has split down the middle and over both shoulders.
+  b.box(0.2, 0.74, 0.0, 0.02, 0.42, 0.28, INFECTED_WOUND);
+  addRag(b, 0.08, 0.94, 0.2, 0.14, 0.1, 0.2, 0.2);
+  addRag(b, 0.08, 0.92, -0.2, 0.14, 0.12, 0.2, -0.2);
+  // Pustules and the taut veins that make the swelling legible close up.
+  b.sphere(0.16, 0.72, 0.24, 0.06, 2, 5, INFECTED_WOUND);
+  b.sphere(0.16, 0.62, -0.22, 0.05, 2, 5, INFECTED_WOUND);
+  b.sphere(0.24, 0.78, 0.04, 0.045, 2, 5, INFECTED_BONE);
+  b.box(0.05, 0.98, 0, 0.3, 0.14, 0.34, INFECTED_RAGS);
+  addInfectedHead(b, 0.1, 1.14, 0, 0.082, 0.6);
+  // Short arms held out from the belly because they cannot reach past it.
+  addInfectedArm(b, [0.06, 0.98, 0.24], [0.2, 0.86, 0.34], [0.3, 0.8, 0.3], 0.052);
+  addInfectedArm(b, [0.06, 0.98, -0.24], [0.2, 0.86, -0.34], [0.3, 0.8, -0.3], 0.052);
+  return b.build();
+}
+
+/** Stubby leg for the swollen body, hip at 0.48. */
+function buildBloaterLeg(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.box(0, -0.15, 0, 0.16, 0.3, 0.16, INFECTED_RAGS, 0.2);
+  // A knee roll of fat, a bare shin and a bare foot already through the boot.
+  b.box(0, -0.27, 0, 0.175, 0.07, 0.175, INFECTED_SKIN, 0.2);
+  b.box(0.02, -0.38, 0, 0.17, 0.12, 0.16, INFECTED_SKIN, 0.2);
+  b.box(0.04, -0.45, 0, 0.18, 0.06, 0.17, INFECTED_SKIN, 0.2);
+  b.box(0.12, -0.45, 0, 0.1, 0.05, 0.16, INFECTED_CLOTH, 0.2);
+  return b.build();
+}
+
+/**
+ * The winged one.
+ *
+ * It is still a body: a curled trunk held between two swept membranes, ribs
+ * showing through, legs trailing instead of standing. The read at battle zoom is
+ * "something in the air that is not an aircraft" — no fuselage, no panel lines,
+ * just wet wings and a head craned forward looking for the ground.
+ */
+/** Uniformly scale a finished mesh; a uniform scale leaves normals alone. */
+function scaleMesh(mesh: MeshBuffers, factor: number): MeshBuffers {
+  for (let i = 0; i < mesh.positions.length; i++) mesh.positions[i] *= factor;
+  return mesh;
+}
+
+function buildFlyerBody(): MeshBuffers {
+  const b = new MeshBuilder();
+  // Hunched trunk, slung forward of the hips the way a diving body hangs.
+  b.box(0.02, 0.34, 0, 0.24, 0.18, 0.2, INFECTED_RAGS);
+  b.box(0.06, 0.42, 0, 0.28, 0.16, 0.24, INFECTED_SKIN);
+  b.box(0.1, 0.46, 0, 0.2, 0.1, 0.3, INFECTED_RAGS);
+  // Wings: two long swept slabs with a bone spar along the leading edge and
+  // torn tips, held above the body so they clear the shoulders.
+  for (const side of [1, -1]) {
+    b.box(0.02, 0.48, side * 0.42, 0.42, 0.035, 0.72, INFECTED_SKIN, side * 0.36);
+    b.box(-0.02, 0.49, side * 0.5, 0.34, 0.03, 0.5, INFECTED_HAIR, side * 0.36);
+    b.box(0.16, 0.49, side * 0.66, 0.3, 0.045, 0.055, INFECTED_BONE, side * 0.36);
+    b.box(-0.14, 0.48, side * 0.78, 0.18, 0.03, 0.05, INFECTED_BONE, side * 0.36);
+    // A wrist hook and the claw that goes with it.
+    b.box(0.2, 0.5, side * 0.2, 0.1, 0.07, 0.07, INFECTED_BONE);
+    // The wound the wings grew out of, still open.
+    b.box(0.02, 0.5, side * 0.1, 0.14, 0.05, 0.08, INFECTED_WOUND);
+  }
+  // Spine, scalp and a head craned out over the beak of the body.
+  b.box(-0.06, 0.5, 0, 0.4, 0.04, 0.07, INFECTED_BONE);
+  addInfectedHead(b, 0.3, 0.47, 0, 0.09, 0.6);
+  // Legs trail behind, bent at the knee, because it does not walk anywhere.
+  for (const side of [1, -1]) {
+    b.box(-0.18, 0.3, side * 0.1, 0.34, 0.08, 0.08, INFECTED_SKIN, side * 0.12);
+    b.box(-0.36, 0.26, side * 0.12, 0.22, 0.07, 0.07, INFECTED_RAGS, side * 0.12);
+    b.box(-0.48, 0.25, side * 0.12, 0.07, 0.06, 0.06, INFECTED_BONE);
+  }
+  addRag(b, -0.12, 0.36, 0.06, 0.1, 0.16, 0.05, 0.3);
+  // Wingspan is the silhouette: at battle zoom a body-sized flyer over a base
+  // reads as a speck, so the whole thing is drawn larger than a man. It is the
+  // only model here scaled after authoring, because what has to be legible is
+  // the shape *against the ground*, not its size next to a rifleman.
+  return scaleMesh(b.build(), 1.8);
+}
+
+function buildCrawlerBody(): MeshBuffers {
+  const b = new MeshBuilder();
+  // Belly on the ground, head and shoulders forward: hard to pick out in cover.
+  b.box(-0.28, 0.14, 0, 0.26, 0.2, 0.36, INFECTED_RAGS);
+  b.box(-0.1, 0.16, 0, 0.34, 0.24, 0.4, INFECTED_SKIN);
+  b.box(0.14, 0.18, 0, 0.3, 0.22, 0.36, INFECTED_RAGS);
+  // A spine of vertebrae and ribs standing proud of the back.
+  b.box(-0.06, 0.3, 0, 0.5, 0.05, 0.09, INFECTED_BONE);
+  b.box(-0.12, 0.285, 0.13, 0.07, 0.04, 0.1, INFECTED_BONE);
+  b.box(-0.02, 0.285, -0.13, 0.07, 0.04, 0.1, INFECTED_BONE);
+  b.box(0.06, 0.285, 0.12, 0.07, 0.04, 0.09, INFECTED_BONE);
+  // Torn shirt hanging off the hips, and the drag-marks a body this low leaves.
+  addRag(b, -0.34, 0.14, 0.12, 0.18, 0.06, 0.1, 0.3);
+  addRag(b, -0.36, 0.12, -0.1, 0.2, 0.05, 0.08, -0.35);
+  b.box(0.2, 0.13, 0.0, 0.22, 0.02, 0.3, INFECTED_CLOTH);
+  // Shoulders, elbows planted on the ground and a head held just off it.
+  b.box(0.24, 0.26, 0.17, 0.16, 0.14, 0.12, INFECTED_SKIN, 0.9);
+  b.box(0.24, 0.26, -0.17, 0.16, 0.14, 0.12, INFECTED_SKIN, 0.9);
+  b.box(0.06, 0.2, 0.2, 0.5, 0.1, 0.08, INFECTED_SKIN);
+  b.box(0.06, 0.2, -0.2, 0.5, 0.1, 0.08, INFECTED_SKIN);
+  // Shoulder wounds, a bare hip joint and the trail it drags behind it.
+  b.box(0.3, 0.3, 0.14, 0.07, 0.06, 0.07, INFECTED_WOUND);
+  b.box(0.3, 0.3, -0.14, 0.07, 0.06, 0.07, INFECTED_WOUND);
+  b.box(-0.2, 0.26, 0, 0.12, 0.1, 0.2, INFECTED_BONE);
+  b.box(-0.42, 0.1, 0, 0.1, 0.03, 0.08, INFECTED_WOUND);
+  addRag(b, -0.18, 0.2, -0.14, 0.12, 0.08, 0.06, -0.4);
+  addInfectedHead(b, 0.42, 0.28, 0, 0.086, 0.7);
+  return b.build();
+}
+
+/**
+ * A dragging forelimb rather than a leg: the crawler pulls itself forward on
+ * these, so they ride the same hip pivot and swing on the same phase.
+ */
+function buildCrawlerArm(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.box(0, -0.07, 0, 0.3, 0.14, 0.12, INFECTED_RAGS, 0.22);
+  // Bare forearm, a bandage and a hand that is mostly fingers now.
+  b.box(0.06, -0.1, 0, 0.22, 0.1, 0.1, INFECTED_SKIN, 0.24);
+  b.box(0.0, -0.1, 0, 0.05, 0.12, 0.115, INFECTED_CLOTH, 0.22);
+  b.box(0.12, -0.12, 0, 0.1, 0.1, 0.11, INFECTED_SKIN, 0.24);
+  b.box(0.18, -0.14, 0.0, 0.06, 0.05, 0.1, INFECTED_BONE, 0.2);
+  b.box(0.19, -0.115, 0.055, 0.05, 0.03, 0.03, INFECTED_BONE, 0.2);
+  b.box(0.19, -0.115, -0.055, 0.05, 0.03, 0.03, INFECTED_BONE, 0.2);
+  return b.build();
+}
+
+/*
+ * Every infected body is authored from the pelvis up and walks on a separate
+ * limb mesh on the roster's hip-pivot rig. That is the whole leg animation: the
+ * same limb swing, drawn twice out of phase, that gives a rifleman his stride.
+ * Their gait profiles (`infectedGait.ts`) tune the cadence and the body rock
+ * that goes with it, so the horde lurches, sprints, stomps, waddles and drags
+ * without a second animation system anywhere in the engine.
+ */
+const INFECTED_STYLES: Record<string, EntityStyle> = {
+  zombieShambler: {
+    body: buildShamblerBody(),
+    turretOffset: [0, 0, 0],
+    infantry: { leg: buildShamblerLeg(), hip: [0.02, 0.61, 0.14], hipOffset: 0.61 },
+  },
+  zombieRunner: {
+    body: buildRunnerBody(),
+    turretOffset: [0, 0, 0],
+    infantry: { leg: buildRunnerLeg(), hip: [0.06, 0.69, 0.12], hipOffset: 0.69 },
+  },
+  zombieBrute: {
+    body: buildBruteBody(),
+    turretOffset: [0, 0, 0],
+    infantry: { leg: buildBruteLeg(), hip: [0.02, 0.67, 0.28], hipOffset: 0.67 },
+  },
+  zombieBloater: {
+    body: buildBloaterBody(),
+    turretOffset: [0, 0, 0],
+    infantry: { leg: buildBloaterLeg(), hip: [0, 0.48, 0.18], hipOffset: 0.48 },
+  },
+  zombieCrawler: {
+    body: buildCrawlerBody(),
+    turretOffset: [0, 0, 0],
+    infantry: { leg: buildCrawlerArm(), hip: [0.28, 0.21, 0.26], hipOffset: 0.21 },
+  },
+  // A flyer has no leg rig: nothing on the ground needs to swing.
+  zombieFlyer: {
+    body: buildFlyerBody(),
+    turretOffset: [0, 0, 0],
+  },
+};
+
 Object.assign(
   STYLES,
+  INFECTED_STYLES,
   CANONICAL_HULL_STYLES,
   VARIANT_HULL_STYLES,
   ALLIANCE_GROUND_STYLES,

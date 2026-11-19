@@ -1,6 +1,8 @@
 import { identitySnapshot, type IdentitySnapshot } from '../accounts/identity';
 import { matchIdFor } from '../accounts/matchCareer';
 import { defaultScenarioId } from '../data/scenarioCatalog';
+import { OUTBREAK_DIFFICULTY_ORDER } from '../outbreak/config';
+import type { OutbreakDifficulty } from '../sim/scenario';
 import { Game } from '../sim/game';
 import {
   RoomMatch,
@@ -20,7 +22,7 @@ import {
   validateLobbyConfig,
   type LobbyConfigV1,
 } from './lobbyConfig';
-import { ROOM_PROTOCOL_VERSION, type RoomPhase } from './protocol';
+import { ROOM_PROTOCOL_VERSION, type RoomGameMode, type RoomPhase } from './protocol';
 import {
   CapacityClient,
   ReservationLease,
@@ -127,7 +129,8 @@ interface CareerDelivery {
 interface PersistedMeta {
   version: 1;
   roomId: string;
-  mode: '1v1';
+  /** What the room hosts. Capacity is two seats either way. */
+  mode: RoomGameMode;
   seats: RoomSeatDefinition[];
   reservation: ReservationRecord;
   createdAt: number;
@@ -176,6 +179,8 @@ interface CreateBody {
   roomId?: unknown;
   mode?: unknown;
   matchDurationMs?: unknown;
+  /** A co-op room's difficulty; ignored by a 1v1 room. */
+  difficulty?: unknown;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -200,7 +205,7 @@ function isInteger(value: unknown): value is number {
 export function validatePersistedMeta(meta: unknown, roomId: string): string | null {
   if (!isRecord(meta)) return 'metadata is not an object';
   if (meta.version !== 1 || meta.roomId !== roomId) return 'metadata identity is invalid';
-  if (meta.mode !== '1v1') return 'metadata mode is invalid';
+  if (meta.mode !== '1v1' && meta.mode !== 'outbreak') return 'metadata mode is invalid';
   if (!isInteger(meta.createdAt) || meta.createdAt < 0) return 'metadata creation time is invalid';
   if (
     !isInteger(meta.matchDurationMs) ||
@@ -225,6 +230,9 @@ export function validatePersistedMeta(meta: unknown, roomId: string): string | n
   }
   const seatIds = new Set<number>();
   const playerIds = new Set<number>();
+  // A co-op room seats both commanders on the one defending player, so the
+  // player ids are deliberately not unique there; a 1v1 room still requires it.
+  const coop = meta.mode === 'outbreak';
   for (const seat of meta.seats) {
     if (!isRecord(seat)) return 'metadata seat entry is invalid';
     if (
@@ -234,8 +242,9 @@ export function validatePersistedMeta(meta: unknown, roomId: string): string | n
       !isInteger(seat.playerId) ||
       seat.playerId < 0 ||
       seat.playerId > 7 ||
-      playerIds.has(seat.playerId) ||
+      (coop ? seat.playerId !== 0 : playerIds.has(seat.playerId)) ||
       (seat.team !== 0 && seat.team !== 1) ||
+      (coop && seat.team !== 0) ||
       typeof seat.token !== 'string' ||
       seat.token.length < 16 ||
       seat.token.length > 128
@@ -539,6 +548,7 @@ export class MatchRoomDurableObject {
       const restoredAtMs = Date.now();
       this.match = restoreRoomMatch({
         roomId: meta.roomId,
+        mode: meta.mode,
         seats: meta.seats,
         matchDurationMs: meta.matchDurationMs,
         matchDeadlineAt: meta.matchDeadlineAt ?? meta.reservation.hardDeadlineAt,
@@ -821,7 +831,16 @@ export class MatchRoomDurableObject {
     ) {
       return failure('invalid-duration', 'Match duration is outside the allowed range.', 400);
     }
-    if (body.mode !== '1v1') return failure('mode-unavailable', 'Only 1v1 rooms are available.', 400);
+    const gameMode: RoomGameMode | null =
+      body.mode === 'outbreak' ? 'outbreak' : body.mode === '1v1' || body.mode === undefined ? '1v1' : null;
+    if (!gameMode) return failure('mode-unavailable', 'Only 1v1 and Outbreak rooms are available.', 400);
+    // The host's chosen survival difficulty travels with the room, so the guest
+    // joins the run the deck advertised rather than a default nobody picked.
+    const difficulty: OutbreakDifficulty = OUTBREAK_DIFFICULTY_ORDER.includes(
+      body.difficulty as OutbreakDifficulty,
+    )
+      ? (body.difficulty as OutbreakDifficulty)
+      : 'normal';
 
     const now = Date.now();
     const requestId = `mp2a:${roomId}`;
@@ -845,6 +864,9 @@ export class MatchRoomDurableObject {
         },
         async (activeLease) => {
           lease = activeLease;
+          // A co-op room seats two commanders on one army: both seats speak for
+          // player 0, so the command gate's ownership rules stay untouched. A
+          // 1v1 room keeps its two distinct players.
           const seats: RoomSeatDefinition[] = [
             {
               seatId: 0,
@@ -854,12 +876,24 @@ export class MatchRoomDurableObject {
               accountId: this.verifiedAccount(request),
               identity: this.verifiedIdentity(request),
             },
-            { seatId: 1, playerId: 1, team: 1, token: this.seatToken(), accountId: null },
+            {
+              seatId: 1,
+              playerId: gameMode === 'outbreak' ? 0 : 1,
+              team: 0,
+              token: this.seatToken(),
+              accountId: null,
+            },
           ];
+          if (gameMode === '1v1') seats[1].team = 1;
           // Creation makes a lobby, not a match: no scenario, no Game and no
           // snapshot. The authoritative world is built only by an accepted
           // start, which keeps a waiting room cheap and restorable.
-          const config = defaultLobbyConfig(defaultScenarioId('multiplayer'), matchDurationMs);
+          const config = defaultLobbyConfig(
+            defaultScenarioId('multiplayer'),
+            matchDurationMs,
+            gameMode,
+            difficulty,
+          );
           const lobby = new RoomLobby({
             roomId,
             seats,
@@ -871,7 +905,7 @@ export class MatchRoomDurableObject {
           createdMeta = {
             version: 1,
             roomId,
-            mode: '1v1',
+            mode: gameMode,
             seats,
             reservation: activeLease.reservation,
             createdAt: now,
@@ -919,7 +953,7 @@ export class MatchRoomDurableObject {
   }
 
   private async readCreateBody(request: Request): Promise<
-    | { ok: true; mode: unknown; matchDurationMs: unknown }
+    | { ok: true; mode: unknown; matchDurationMs: unknown; difficulty: unknown }
     | { ok: false; code: string; message: string }
   > {
     let text: string;
@@ -944,7 +978,12 @@ export class MatchRoomDurableObject {
     if (body.roomId !== undefined && body.roomId !== this.roomId) {
       return { ok: false, code: 'room-mismatch', message: 'Room id does not match the route.' };
     }
-    return { ok: true, mode: body.mode, matchDurationMs: body.matchDurationMs };
+    return {
+      ok: true,
+      mode: body.mode,
+      matchDurationMs: body.matchDurationMs,
+      difficulty: body.difficulty,
+    };
   }
 
   private roomInfo(already: boolean): Record<string, unknown> {
@@ -1187,7 +1226,7 @@ export class MatchRoomDurableObject {
       game.state.eventSeq = 1;
       match = new RoomMatch({
         roomId: meta.roomId,
-        mode: '1v1',
+        mode: meta.mode,
         seats: meta.seats,
         matchDurationMs: config.matchDurationMs,
         matchDeadlineAt,

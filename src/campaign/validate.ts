@@ -13,7 +13,9 @@
  */
 import { ALLIANCES, NATIONS } from '../data/factions';
 import { UNITS } from '../data/units';
+import { MUSIC_TRACKS_BY_ID } from '../ui/musicCatalogue';
 import { isMissionId, validateMission } from '../mission/validate';
+import type { MissionCinematicStep } from '../mission/types';
 import type { CampaignDef, CampaignMission } from '../data/campaign';
 import { normaliseCommanderIdentity } from './identity';
 import { isCampaignPhase, isKnownUnitDef } from './state';
@@ -26,6 +28,34 @@ import type {
 export interface CampaignDefinitionContext {
   /** Built-in theatre ids, when the catalogue is available. */
   knownMapIds?: ReadonlySet<string>;
+}
+
+function cinematicStepSeconds(step: MissionCinematicStep): number {
+  if (step.kind === 'camera') return step.durationSeconds + (step.holdSeconds ?? 0);
+  if (step.kind === 'line') return step.durationSeconds + (step.pauseSeconds ?? 0);
+  if (step.kind === 'sound') return step.durationSeconds ?? 0;
+  if (step.kind === 'card' || step.kind === 'music') return step.durationSeconds ?? 0;
+  if (step.kind === 'actor') return step.durationSeconds;
+  return step.durationSeconds ?? 2.5;
+}
+
+/**
+ * Authored media must stay inside the project, with no scheme or traversal.
+ *
+ * Campaign scenes are authored against no particular theatre, so entity and
+ * position bounds are checked when the scene plays; media paths are not, because
+ * a bad one would be requested immediately.
+ */
+function safeCinematicAsset(value: string): boolean {
+  return /^(?!\/\/)(?!.*\.\.)[A-Za-z0-9._~!$&'()+,;=:@%/-]+$/.test(value);
+}
+
+function finitePosition(x: number, z: number): boolean {
+  return Number.isFinite(x) && Number.isFinite(z);
+}
+
+function cinematicEaseValid(ease: string | undefined): boolean {
+  return ease === undefined || ease === 'smooth' || ease === 'linear' || ease === 'cut';
 }
 
 function issue(
@@ -436,6 +466,265 @@ export function validateCampaignDefinition(
         'mission-no-veterans',
         `Operation "${mission.id}" carries no named personnel.`,
         `${base}.veterans`,
+      );
+    }
+  });
+
+  /* ---------------------------------------------------------------- */
+  /* Campaign-level framing scenes                                     */
+  /* ---------------------------------------------------------------- */
+
+  const campaignCinematicIds = new Set<string>();
+  (def.cinematics ?? []).forEach((cinematic, i) => {
+    const base = `cinematics[${i}]`;
+    if (!isMissionId(cinematic.id)) {
+      issue(issues, 'error', 'campaign-cinematic-id', 'Campaign cinematic id is invalid.', `${base}.id`);
+    }
+    if (campaignCinematicIds.has(cinematic.id)) {
+      issue(
+        issues,
+        'error',
+        'campaign-cinematic-duplicate',
+        `Campaign cinematic "${cinematic.id}" is authored twice.`,
+        `${base}.id`,
+      );
+    }
+    campaignCinematicIds.add(cinematic.id);
+    if (!['campaignIntro', 'intermission', 'campaignFinale'].includes(cinematic.kind)) {
+      issue(
+        issues,
+        'error',
+        'campaign-cinematic-context',
+        `Campaign cinematic "${cinematic.id}" uses unsupported context "${cinematic.kind}".`,
+        `${base}.kind`,
+      );
+    }
+    if (cinematic.steps.length === 0) {
+      issue(
+        issues,
+        'error',
+        'campaign-cinematic-empty',
+        `Campaign cinematic "${cinematic.id}" has no timeline steps.`,
+        `${base}.steps`,
+      );
+    }
+    let total = 0;
+    cinematic.steps.forEach((step, s) => {
+      const path = `${base}.steps[${s}]`;
+      total += cinematicStepSeconds(step);
+      if (step.kind === 'camera') {
+        if (!Number.isFinite(step.durationSeconds) || step.durationSeconds < 0) {
+          issue(issues, 'error', 'campaign-cinematic-duration', 'Camera move duration must be zero or more.', `${path}.durationSeconds`);
+        }
+        if (step.holdSeconds !== undefined && (!Number.isFinite(step.holdSeconds) || step.holdSeconds < 0)) {
+          issue(issues, 'error', 'campaign-cinematic-duration', 'Camera hold must be zero or more.', `${path}.holdSeconds`);
+        }
+        if (step.zoom !== undefined && (!Number.isFinite(step.zoom) || step.zoom <= 0 || step.zoom > 110)) {
+          issue(issues, 'error', 'campaign-cinematic-zoom', 'Camera zoom must be above 0 and at most 110.', `${path}.zoom`);
+        }
+        if (
+          step.rotationDegrees !== undefined &&
+          (!Number.isFinite(step.rotationDegrees) ||
+            step.rotationDegrees < -360 ||
+            step.rotationDegrees > 360)
+        ) {
+          issue(issues, 'error', 'campaign-cinematic-rotation', 'Camera rotation must be between -360 and 360 degrees.', `${path}.rotationDegrees`);
+        }
+        if (step.shake !== undefined && (!Number.isFinite(step.shake) || step.shake < 0 || step.shake > 1)) {
+          issue(issues, 'error', 'campaign-cinematic-shake', 'Camera shake must be between 0 and 1.', `${path}.shake`);
+        }
+        if (!cinematicEaseValid(step.ease)) {
+          issue(issues, 'error', 'campaign-cinematic-ease', 'Camera ease must be smooth, linear or cut.', `${path}.ease`);
+        }
+        if (step.track && step.target.kind !== 'entity') {
+          issue(
+            issues,
+            'warning',
+            'campaign-cinematic-track-no-entity',
+            'Camera tracking needs an entity target; this beat holds a fixed framing.',
+            `${path}.track`,
+          );
+        }
+        if (step.target.kind === 'position' && !finitePosition(step.target.x, step.target.z)) {
+          issue(issues, 'error', 'campaign-cinematic-target', 'Camera position must be finite.', `${path}.target`);
+        } else if (step.target.kind === 'entity' && step.target.entity.trim().length === 0) {
+          issue(issues, 'error', 'campaign-cinematic-target', 'Camera focus entity is empty.', `${path}.target.entity`);
+        }
+      } else if (step.kind === 'line') {
+        if (step.text.trim().length === 0) {
+          issue(issues, 'error', 'campaign-cinematic-line', 'Dialogue beat has no text.', `${path}.text`);
+        }
+        if (step.speaker.trim().length === 0) {
+          issue(issues, 'warning', 'campaign-cinematic-speaker', 'Dialogue beat has no speaker.', `${path}.speaker`);
+        }
+        if (!Number.isFinite(step.durationSeconds) || step.durationSeconds <= 0) {
+          issue(issues, 'error', 'campaign-cinematic-duration', 'Dialogue beat needs a positive duration.', `${path}.durationSeconds`);
+        }
+        if (step.pauseSeconds !== undefined && (!Number.isFinite(step.pauseSeconds) || step.pauseSeconds < 0)) {
+          issue(issues, 'error', 'campaign-cinematic-duration', 'Dialogue pause must be zero or more.', `${path}.pauseSeconds`);
+        }
+        if (step.portrait !== undefined && !safeCinematicAsset(step.portrait)) {
+          issue(issues, 'error', 'campaign-cinematic-asset', 'Portrait path must be a project-relative asset.', `${path}.portrait`);
+        }
+        if (step.voice !== undefined && !safeCinematicAsset(step.voice)) {
+          issue(issues, 'error', 'campaign-cinematic-asset', 'Voice path must be a project-relative asset.', `${path}.voice`);
+        }
+      } else if (step.kind === 'notify') {
+        if (step.text.trim().length === 0) {
+          issue(issues, 'error', 'campaign-cinematic-notice', 'Notice beat has no text.', `${path}.text`);
+        }
+        if (step.durationSeconds !== undefined && (!Number.isFinite(step.durationSeconds) || step.durationSeconds <= 0)) {
+          issue(issues, 'error', 'campaign-cinematic-duration', 'Notice beat needs a positive duration.', `${path}.durationSeconds`);
+        }
+        if (step.heading !== undefined && step.heading.trim().length === 0) {
+          issue(issues, 'error', 'campaign-cinematic-notice', 'Notice heading has no text.', `${path}.heading`);
+        }
+      } else if (step.kind === 'effect') {
+        if (!['explosion', 'smoke', 'dust', 'muzzle'].includes(step.effect)) {
+          issue(issues, 'error', 'campaign-cinematic-effect', `Unsupported effect "${String(step.effect)}".`, `${path}.effect`);
+        }
+        if (step.scale !== undefined && (!Number.isFinite(step.scale) || step.scale <= 0)) {
+          issue(issues, 'error', 'campaign-cinematic-effect', 'Effect scale must be above zero.', `${path}.scale`);
+        }
+        if (step.durationSeconds !== undefined && (!Number.isFinite(step.durationSeconds) || step.durationSeconds <= 0)) {
+          issue(issues, 'error', 'campaign-cinematic-duration', 'Effect beat needs a positive duration.', `${path}.durationSeconds`);
+        }
+        if (step.target.kind === 'position' && !finitePosition(step.target.x, step.target.z)) {
+          issue(issues, 'error', 'campaign-cinematic-target', 'Effect position must be finite.', `${path}.target`);
+        } else if (step.target.kind === 'entity' && step.target.entity.trim().length === 0) {
+          issue(issues, 'error', 'campaign-cinematic-target', 'Effect target entity is empty.', `${path}.target.entity`);
+        }
+      } else if (step.kind === 'actor') {
+        if (step.entity.trim().length === 0) {
+          issue(issues, 'error', 'campaign-cinematic-actor', 'Actor beat names no entity.', `${path}.entity`);
+        }
+        if (!Number.isFinite(step.durationSeconds) || step.durationSeconds < 0) {
+          issue(issues, 'error', 'campaign-cinematic-duration', 'Actor beat timing must be zero or more.', `${path}.durationSeconds`);
+        }
+        if (step.action === 'move') {
+          if (!finitePosition(step.x, step.z)) {
+            issue(issues, 'error', 'campaign-cinematic-target', 'Actor destination must be finite.', path);
+          }
+          if (!cinematicEaseValid(step.ease)) {
+            issue(issues, 'error', 'campaign-cinematic-ease', 'Actor ease must be smooth, linear or cut.', `${path}.ease`);
+          }
+        } else if (step.action === 'turn') {
+          if (!Number.isFinite(step.facingDegrees)) {
+            issue(issues, 'error', 'campaign-cinematic-turn', 'Actor facing must be a finite number of degrees.', `${path}.facingDegrees`);
+          }
+          if (!cinematicEaseValid(step.ease)) {
+            issue(issues, 'error', 'campaign-cinematic-ease', 'Actor ease must be smooth, linear or cut.', `${path}.ease`);
+          }
+        } else if (step.action === 'animate') {
+          if (step.pose !== 'idle' && step.pose !== 'walk') {
+            issue(
+              issues,
+              'error',
+              'campaign-cinematic-pose',
+              `Unsupported actor pose "${String(step.pose)}"; the renderer has idle and walk only.`,
+              `${path}.pose`,
+            );
+          }
+          if (!(step.durationSeconds > 0)) {
+            issue(issues, 'error', 'campaign-cinematic-duration', 'Animation beat needs a positive duration.', `${path}.durationSeconds`);
+          }
+        } else if (step.action === 'fire') {
+          if (step.scale !== undefined && (!Number.isFinite(step.scale) || step.scale <= 0)) {
+            issue(issues, 'error', 'campaign-cinematic-effect', 'Fire beat scale must be above zero.', `${path}.scale`);
+          }
+          if (step.target.kind === 'restore') {
+            issue(issues, 'error', 'campaign-cinematic-target', 'Fire needs a world position or entity target.', `${path}.target`);
+          } else if (step.target.kind === 'position' && !finitePosition(step.target.x, step.target.z)) {
+            issue(issues, 'error', 'campaign-cinematic-target', 'Fire target must be finite.', `${path}.target`);
+          } else if (step.target.kind === 'entity' && step.target.entity.trim().length === 0) {
+            issue(issues, 'error', 'campaign-cinematic-target', 'Fire target entity is empty.', `${path}.target.entity`);
+          }
+        } else if (step.action === 'enter' || step.action === 'leave') {
+          if (step.structure.trim().length === 0) {
+            issue(issues, 'error', 'campaign-cinematic-structure', 'Actor structure is empty.', `${path}.structure`);
+          }
+          if (step.structure === step.entity) {
+            issue(issues, 'error', 'campaign-cinematic-structure', 'An actor cannot enter or leave itself.', `${path}.structure`);
+          }
+          if (step.action === 'leave' && !finitePosition(step.x, step.z)) {
+            issue(issues, 'error', 'campaign-cinematic-target', 'Actor exit destination must be finite.', path);
+          }
+        }
+      } else if (step.kind === 'card') {
+        if (step.heading.trim().length === 0) {
+          issue(issues, 'error', 'campaign-cinematic-card', 'Chapter card has no heading.', `${path}.heading`);
+        }
+        if (!Number.isFinite(step.durationSeconds) || step.durationSeconds <= 0) {
+          issue(issues, 'error', 'campaign-cinematic-duration', 'Chapter card needs a positive duration.', `${path}.durationSeconds`);
+        }
+      } else if (step.kind === 'music') {
+        if (!MUSIC_TRACKS_BY_ID.has(step.track)) {
+          issue(
+            issues,
+            'error',
+            'campaign-cinematic-music',
+            `Music beat names "${step.track}", which is not an authored soundtrack track.`,
+            `${path}.track`,
+          );
+        }
+        if (
+          step.durationSeconds !== undefined &&
+          (!Number.isFinite(step.durationSeconds) || step.durationSeconds < 0)
+        ) {
+          issue(issues, 'error', 'campaign-cinematic-duration', 'Music beat timing must be zero or more.', `${path}.durationSeconds`);
+        }
+      } else if (step.kind === 'sound') {
+        if (step.cue.trim().length === 0) {
+          issue(issues, 'error', 'campaign-cinematic-sound', 'Sound beat has no cue name.', `${path}.cue`);
+        }
+        if (step.gain !== undefined && (!Number.isFinite(step.gain) || step.gain < 0 || step.gain > 1)) {
+          issue(issues, 'error', 'campaign-cinematic-sound', 'Sound gain must be between 0 and 1.', `${path}.gain`);
+        }
+        if (step.durationSeconds !== undefined && (!Number.isFinite(step.durationSeconds) || step.durationSeconds < 0)) {
+          issue(issues, 'error', 'campaign-cinematic-duration', 'Sound beat timing must be zero or more.', `${path}.durationSeconds`);
+        }
+      }
+    });
+    // Edge transitions are presentation only; the checks are structural so a
+    // typo cannot silently become a cut in a scene the author wanted to dip.
+    (['in', 'out'] as const).forEach((edge) => {
+      const transition = cinematic.transition?.[edge];
+      if (!transition) return;
+      const edgePath = `${base}.transition.${edge}`;
+      if (transition.kind !== 'cut' && transition.kind !== 'fade') {
+        issue(
+          issues,
+          'error',
+          'campaign-cinematic-transition',
+          'Transition kind must be cut or fade.',
+          `${edgePath}.kind`,
+        );
+      }
+      if (!Number.isFinite(transition.durationSeconds) || transition.durationSeconds < 0) {
+        issue(
+          issues,
+          'error',
+          'campaign-cinematic-transition',
+          'Transition duration must be zero or more.',
+          `${edgePath}.durationSeconds`,
+        );
+      } else if (transition.kind === 'fade' && transition.durationSeconds === 0) {
+        issue(
+          issues,
+          'warning',
+          'campaign-cinematic-transition',
+          'A zero-second fade is a cut; this transition has no effect.',
+          `${edgePath}.durationSeconds`,
+        );
+      }
+    });
+    if (!(total > 0)) {
+      issue(
+        issues,
+        'warning',
+        'campaign-cinematic-zero-duration',
+        `Campaign cinematic "${cinematic.id}" would finish on its first frame.`,
+        `${base}.steps`,
       );
     }
   });

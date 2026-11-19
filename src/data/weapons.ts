@@ -1,6 +1,11 @@
 import type { WeaponDef } from '../sim/types';
+import { ZOMBIE_WEAPONS } from './zombies';
 
 export const WEAPONS: Record<string, WeaponDef> = {
+  // Infected close-range attacks. Registered beside the conventional catalogue
+  // so armour multipliers, suppression and splash travel the same code path as
+  // every rifle and shell in the game.
+  ...ZOMBIE_WEAPONS,
   rifle: {
     id: 'rifle',
     name: '5.56mm rifles',

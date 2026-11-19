@@ -246,6 +246,23 @@ export function buildTerrainGeometry(scenario: Scenario): TerrainGeometry {
     return pos.length / 3 - 1;
   };
 
+  const smooth = (t: number): number => t * t * (3 - 2 * t);
+  const bilerp = (a: number, b: number, c: number, d: number, u: number, v: number): number =>
+    (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v;
+  const waterAt = (x: number, z: number): boolean => {
+    if (x < 0 || z < 0 || x >= W || z >= H) return false;
+    return TERRAIN[scenario.tiles[tileIndex(W, x, z)].t as TerrainId].water;
+  };
+  /** A land tile with water touching any of its eight neighbours. */
+  const coastalTile = (x: number, z: number): boolean => {
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (waterAt(x + dx, z + dz)) return true;
+      }
+    }
+    return false;
+  };
+
   for (let z = 0; z < H; z++) {
     for (let x = 0; x < W; x++) {
       const tile = scenario.tiles[tileIndex(W, x, z)];
@@ -255,10 +272,10 @@ export function buildTerrainGeometry(scenario: Scenario): TerrainGeometry {
       const x1 = x0 + TILE_SIZE;
       const z0 = z * TILE_SIZE;
       const z1 = z0 + TILE_SIZE;
-      const n00 = normalAt(x, z);
-      const n10 = normalAt(x + 1, z);
-      const n01 = normalAt(x, z + 1);
-      const n11 = normalAt(x + 1, z + 1);
+      const h00 = cornerAt(x, z);
+      const h10 = cornerAt(x + 1, z);
+      const h01 = cornerAt(x, z + 1);
+      const h11 = cornerAt(x + 1, z + 1);
       const c00 = cornerColorAt(x, z);
       const c10 = cornerColorAt(x + 1, z);
       const c01 = cornerColorAt(x, z + 1);
@@ -271,11 +288,84 @@ export function buildTerrainGeometry(scenario: Scenario): TerrainGeometry {
       const r10 = reliefAt(x + 1, z);
       const r01 = reliefAt(x, z + 1);
       const r11 = reliefAt(x + 1, z + 1);
-      const i0 = addVertex(x0, cornerAt(x, z), z0, n00[0], n00[1], n00[2], [c00[0] * r00, c00[1] * r00, c00[2] * r00], g00, x0 / worldW, z0 / worldH);
-      const i1 = addVertex(x0, cornerAt(x, z + 1), z1, n01[0], n01[1], n01[2], [c01[0] * r01, c01[1] * r01, c01[2] * r01], g01, x0 / worldW, z1 / worldH);
-      const i2 = addVertex(x1, cornerAt(x + 1, z + 1), z1, n11[0], n11[1], n11[2], [c11[0] * r11, c11[1] * r11, c11[2] * r11], g11, x1 / worldW, z1 / worldH);
-      const i3 = addVertex(x1, cornerAt(x + 1, z), z0, n10[0], n10[1], n10[2], [c10[0] * r10, c10[1] * r10, c10[2] * r10], g10, x1 / worldW, z0 / worldH);
-      idx.push(i0, i2, i1, i0, i3, i2);
+
+      if (!coastalTile(x, z)) {
+        const n00 = normalAt(x, z);
+        const n10 = normalAt(x + 1, z);
+        const n01 = normalAt(x, z + 1);
+        const n11 = normalAt(x + 1, z + 1);
+        const i0 = addVertex(x0, h00, z0, n00[0], n00[1], n00[2], [c00[0] * r00, c00[1] * r00, c00[2] * r00], g00, x0 / worldW, z0 / worldH);
+        const i1 = addVertex(x0, h01, z1, n01[0], n01[1], n01[2], [c01[0] * r01, c01[1] * r01, c01[2] * r01], g01, x0 / worldW, z1 / worldH);
+        const i2 = addVertex(x1, h11, z1, n11[0], n11[1], n11[2], [c11[0] * r11, c11[1] * r11, c11[2] * r11], g11, x1 / worldW, z1 / worldH);
+        const i3 = addVertex(x1, h10, z0, n10[0], n10[1], n10[2], [c10[0] * r10, c10[1] * r10, c10[2] * r10], g10, x1 / worldW, z0 / worldH);
+        idx.push(i0, i2, i1, i0, i3, i2);
+        continue;
+      }
+
+      // Coastal tiles get more vertices so the waterline can bend instead of
+      // following the square tile edge. Boundary vertices keep the old linear
+      // corner interpolation, which matches the neighbouring tile exactly;
+      // only the tile interior uses the smooth height curve.
+      const SUB = 4;
+      const heightAtLocal = (u: number, v: number): number => {
+        // Smoothing is an interior effect only. A vertex on any tile edge has
+        // to keep the linear corner interpolation: the tile across that edge
+        // draws it as a straight line, so smoothing one side would open a seam
+        // between the two, and the picked surface is bilinear there as well.
+        const interior = u > 0 && u < 1 && v > 0 && v < 1;
+        const su = interior ? smooth(u) : u;
+        const sv = interior ? smooth(v) : v;
+        return bilerp(h00, h10, h01, h11, su, sv);
+      };
+      const colorAtLocal = (u: number, v: number): [number, number, number] => [
+        bilerp(c00[0], c10[0], c01[0], c11[0], u, v),
+        bilerp(c00[1], c10[1], c01[1], c11[1], u, v),
+        bilerp(c00[2], c10[2], c01[2], c11[2], u, v),
+      ];
+      const groundAtLocal = (u: number, v: number): [number, number, number, number] => [
+        bilerp(g00[0], g10[0], g01[0], g11[0], u, v),
+        bilerp(g00[1], g10[1], g01[1], g11[1], u, v),
+        bilerp(g00[2], g10[2], g01[2], g11[2], u, v),
+        bilerp(g00[3], g10[3], g01[3], g11[3], u, v),
+      ];
+      const reliefAtLocal = (u: number, v: number): number =>
+        bilerp(r00, r10, r01, r11, u, v);
+      const vertexAt = (u: number, v: number): number => {
+        const wx = x0 + u * TILE_SIZE;
+        const wz = z0 + v * TILE_SIZE;
+        const eps = 0.25 / SUB;
+        const u0 = Math.max(0, u - eps);
+        const u1 = Math.min(1, u + eps);
+        const v0 = Math.max(0, v - eps);
+        const v1 = Math.min(1, v + eps);
+        const dhdx = (heightAtLocal(u1, v) - heightAtLocal(u0, v)) / Math.max(1e-4, (u1 - u0) * TILE_SIZE);
+        const dhdz = (heightAtLocal(u, v1) - heightAtLocal(u, v0)) / Math.max(1e-4, (v1 - v0) * TILE_SIZE);
+        const len = Math.hypot(dhdx, 1, dhdz) || 1;
+        const col = colorAtLocal(u, v);
+        const relief = reliefAtLocal(u, v);
+        return addVertex(
+          wx, heightAtLocal(u, v), wz,
+          -dhdx / len, 1 / len, -dhdz / len,
+          [col[0] * relief, col[1] * relief, col[2] * relief],
+          groundAtLocal(u, v),
+          wx / worldW, wz / worldH,
+        );
+      };
+      const verts: number[][] = [];
+      for (let j = 0; j <= SUB; j++) {
+        const row: number[] = [];
+        for (let i = 0; i <= SUB; i++) row.push(vertexAt(i / SUB, j / SUB));
+        verts.push(row);
+      }
+      for (let j = 0; j < SUB; j++) {
+        for (let i = 0; i < SUB; i++) {
+          const i0 = verts[j][i];
+          const i1 = verts[j + 1][i];
+          const i2 = verts[j + 1][i + 1];
+          const i3 = verts[j][i + 1];
+          idx.push(i0, i2, i1, i0, i3, i2);
+        }
+      }
     }
   }
 

@@ -7,6 +7,7 @@ import type {
   TeamSnapshot,
 } from './projection';
 import type { ContactRecord, SimEvent, SmokeCloud } from '../sim/types';
+import type { OutbreakHudPickup, OutbreakHudState } from '../outbreak/types';
 import type { DeltaMessage, SyncMessage } from './protocol';
 
 /**
@@ -501,6 +502,131 @@ function validateResult(value: unknown): ProjectedMatchResult {
   return value as unknown as ProjectedMatchResult;
 }
 
+const OUTBREAK_PHASES: readonly string[] = ['preparation', 'warning', 'assault', 'cleanup', 'complete'];
+const OUTBREAK_DIFFICULTIES: readonly string[] = ['easy', 'normal', 'hard', 'nightmare'];
+const OUTBREAK_DROP_KINDS: readonly string[] = ['mats', 'req', 'veterancy', 'speed'];
+const ZOMBIE_KIND_IDS: readonly string[] = [
+  'shambler',
+  'runner',
+  'brute',
+  'bloater',
+  'crawler',
+  'flyer',
+];
+
+/** The survival readout an Outbreak room publishes. Presentation only. */
+function validateOutbreak(value: unknown): OutbreakHudState {
+  assert(isRecord(value), 'Outbreak state must be an object.');
+  checkKeys(
+    value,
+    [
+      'wave',
+      'phase',
+      'secondsToAssault',
+      'unspawned',
+      'aliveInfected',
+      'prepSeconds',
+      'wavesCompleted',
+      'zombiesKilled',
+      'killsByKind',
+      'structuresLost',
+      'unitsLost',
+      'matsGathered',
+      'durationSeconds',
+      'difficulty',
+      'mode',
+      'players',
+      'nations',
+      'pickups',
+    ],
+    'Outbreak state',
+  );
+  assert(isInt(value.wave, 0, 1_000_000), 'Outbreak wave is invalid.');
+  assert(
+    typeof value.phase === 'string' && OUTBREAK_PHASES.includes(value.phase),
+    'Outbreak phase is invalid.',
+  );
+  assert(isInt(value.secondsToAssault, 0, 86_400), 'Outbreak assault clock is invalid.');
+  assert(isInt(value.unspawned, 0, 1_000_000), 'Outbreak unspawned count is invalid.');
+  assert(isInt(value.aliveInfected, 0, 1_000_000), 'Outbreak hostile count is invalid.');
+  assert(isInt(value.prepSeconds, 0, 86_400), 'Outbreak prep window is invalid.');
+  assert(isInt(value.wavesCompleted, 0, 1_000_000), 'Outbreak held-wave count is invalid.');
+  assert(isInt(value.zombiesKilled, 0, 10_000_000), 'Outbreak kill count is invalid.');
+  assert(isRecord(value.killsByKind), 'Outbreak kill breakdown is invalid.');
+  checkKeys(value.killsByKind, ZOMBIE_KIND_IDS, 'Outbreak kill breakdown');
+  for (const kind of ZOMBIE_KIND_IDS) {
+    assert(isInt(value.killsByKind[kind], 0, 10_000_000), 'Outbreak kill breakdown is invalid.');
+  }
+  assert(isInt(value.structuresLost, 0, 1_000_000), 'Outbreak structure losses are invalid.');
+  assert(isInt(value.unitsLost, 0, 1_000_000), 'Outbreak unit losses are invalid.');
+  assert(isInt(value.matsGathered, 0, 10_000_000), 'Outbreak gathered resources are invalid.');
+  assert(isInt(value.durationSeconds, 0, 86_400_000), 'Outbreak duration is invalid.');
+  assert(
+    typeof value.difficulty === 'string' && OUTBREAK_DIFFICULTIES.includes(value.difficulty),
+    'Outbreak difficulty is invalid.',
+  );
+  assert(value.mode === 'solo' || value.mode === 'coop', 'Outbreak mode is invalid.');
+  assert(isInt(value.players, 1, 4), 'Outbreak commander count is invalid.');
+  assert(Array.isArray(value.nations) && value.nations.length <= 4, 'Outbreak nations are invalid.');
+  for (const nation of value.nations) assert(optionalText(nation, 32), 'Outbreak nation is invalid.');
+  const kinds = value.killsByKind as Record<string, number>;
+  // Drops are optional on the wire: a skirmish projection never carries the
+  // block, and a room built before drops existed publishes none either. When
+  // they are present every coordinate and kind is checked, because a client
+  // draws crates from this list and nothing else.
+  let pickups: OutbreakHudPickup[] | undefined;
+  if (value.pickups !== undefined) {
+    assert(Array.isArray(value.pickups) && value.pickups.length <= 64, 'Outbreak drops are invalid.');
+    pickups = value.pickups.map((entry) => {
+      assert(isRecord(entry), 'Outbreak drop must be an object.');
+      checkKeys(entry, ['id', 'kind', 'x', 'z'], 'Outbreak drop');
+      assert(isInt(entry.id, 1, 1_000_000_000), 'Outbreak drop id is invalid.');
+      assert(
+        typeof entry.kind === 'string' && OUTBREAK_DROP_KINDS.includes(entry.kind),
+        'Outbreak drop kind is invalid.',
+      );
+      assert(isNum(entry.x) && isNum(entry.z), 'Outbreak drop position is invalid.');
+      return {
+        id: entry.id as number,
+        kind: entry.kind as OutbreakHudPickup['kind'],
+        x: entry.x as number,
+        z: entry.z as number,
+      };
+    });
+    assert(
+      new Set(pickups.map((pickup) => pickup.id)).size === pickups.length,
+      'Outbreak drops repeat an id.',
+    );
+  }
+  return {
+    wave: value.wave as number,
+    phase: value.phase as OutbreakHudState['phase'],
+    secondsToAssault: value.secondsToAssault as number,
+    unspawned: value.unspawned as number,
+    aliveInfected: value.aliveInfected as number,
+    prepSeconds: value.prepSeconds as number,
+    wavesCompleted: value.wavesCompleted as number,
+    zombiesKilled: value.zombiesKilled as number,
+    killsByKind: {
+      shambler: kinds.shambler,
+      runner: kinds.runner,
+      brute: kinds.brute,
+      bloater: kinds.bloater,
+      crawler: kinds.crawler,
+      flyer: kinds.flyer,
+    },
+    structuresLost: value.structuresLost as number,
+    unitsLost: value.unitsLost as number,
+    matsGathered: value.matsGathered as number,
+    durationSeconds: value.durationSeconds as number,
+    difficulty: value.difficulty as OutbreakHudState['difficulty'],
+    mode: value.mode as OutbreakHudState['mode'],
+    players: value.players as number,
+    nations: (value.nations as unknown[]).slice() as string[],
+    ...(pickups ? { pickups } : {}),
+  };
+}
+
 function validateFogSet(value: unknown, tiles: number): Array<[number, number]> {
   assert(isRecord(value), 'Fog delta must be an object.');
   checkKeys(value, ['set'], 'Fog delta');
@@ -602,7 +728,7 @@ export class SnapshotAssembler {
       state,
       [
         'type', 'v', 'protocol', 'tick', 'team', 'map', 'fog', 'contacts', 'charted',
-        'smoke', 'players', 'entities', 'projectiles', 'events', 'result',
+        'smoke', 'players', 'entities', 'projectiles', 'events', 'result', 'outbreak',
       ],
       'Sync state',
     );
@@ -644,6 +770,7 @@ export class SnapshotAssembler {
     assert(Array.isArray(state.events) && state.events.length <= MAX_EVENTS, 'Sync events are invalid.');
     const events = state.events.map((event) => validateEvent(event));
     const result = validateResult(state.result);
+    const outbreak = state.outbreak === undefined ? undefined : validateOutbreak(state.outbreak);
 
     const next: TeamSnapshot = {
       type: 'snapshot',
@@ -661,6 +788,7 @@ export class SnapshotAssembler {
       projectiles,
       events,
       result,
+      ...(outbreak ? { outbreak } : {}),
     };
     this.current = next;
     this.currentEpoch = message.epoch;
@@ -699,7 +827,7 @@ export class SnapshotAssembler {
     assert(isRecord(changes), 'Delta changes must be an object.');
     checkKeys(
       changes,
-      ['fog', 'contacts', 'charted', 'smoke', 'players', 'entities', 'projectiles', 'events', 'result'],
+      ['fog', 'contacts', 'charted', 'smoke', 'players', 'entities', 'projectiles', 'events', 'result', 'outbreak'],
       'Delta changes',
     );
 
@@ -784,6 +912,7 @@ export class SnapshotAssembler {
       events = changes.events.map((event) => validateEvent(event));
     }
     const result = changes.result === undefined ? null : validateResult(changes.result);
+    const outbreak = changes.outbreak === undefined ? null : validateOutbreak(changes.outbreak);
 
     // Validation passed; apply atomically.
     if (fogSet) {
@@ -815,6 +944,7 @@ export class SnapshotAssembler {
     }
     if (events && events.length > 0) current.events = [...current.events, ...events].slice(-MAX_EVENTS);
     if (result) current.result = result;
+    if (outbreak) current.outbreak = outbreak;
     current.tick = message.tick;
     // The result tick moves with the authoritative tick even when the result
     // identity did not change, exactly as a full projection would report it.

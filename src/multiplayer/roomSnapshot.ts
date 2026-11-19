@@ -1,5 +1,5 @@
 import { BUILDINGS } from '../data/buildings';
-import { UNITS } from '../data/units';
+import { ALL_UNITS } from '../data/units';
 import { MAX_QUEUED_ORDERS, SAVE_FORMAT, SAVE_FORMAT_VERSION, TILE_SIZE } from '../sim/constants';
 import { Game } from '../sim/game';
 import { parseScenario, type Scenario } from '../sim/scenario';
@@ -410,7 +410,7 @@ function validateEntities(
       fail('invalid-entities', 'Saved entity id is malformed or duplicated.');
     }
     if (raw.kind !== 'unit' && raw.kind !== 'building') fail('invalid-entities', 'Saved entity kind is invalid.');
-    if (typeof raw.defId !== 'string' || (!UNITS[raw.defId] && !BUILDINGS[raw.defId])) {
+    if (typeof raw.defId !== 'string' || (!ALL_UNITS[raw.defId] && !BUILDINGS[raw.defId])) {
       fail('invalid-entities', 'Saved entity definition is not installed.');
     }
     if (!integer(raw.owner) || (raw.owner >= 0 && !playerIds.has(raw.owner)) || raw.owner < -1) {

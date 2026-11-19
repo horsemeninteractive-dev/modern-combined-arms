@@ -1,6 +1,7 @@
 import { SAVE_FORMAT, SAVE_FORMAT_VERSION } from './constants';
 import type { Scenario } from './scenario';
 import type { MissionRuntimeState } from '../mission';
+import type { OutbreakSaveState } from '../outbreak/match';
 import type {
   AIControlState,
   ChartedStructure,
@@ -59,6 +60,12 @@ export interface SerializedGameState {
    * than a fabricated one.
    */
   mission?: MissionRuntimeState | null;
+  /**
+   * Outbreak run state. Optional: a skirmish save has no field, and every file
+   * written before the mode existed loads as an ordinary battle rather than a
+   * fabricated survival run.
+   */
+  outbreak?: OutbreakSaveState | null;
 }
 
 /**

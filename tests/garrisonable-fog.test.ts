@@ -45,11 +45,13 @@ describe('garrisonable buildings in the fog', () => {
       rendererSource.indexOf('private drawBattleEntities'),
       rendererSource.indexOf('private drawEntityMesh'),
     );
-    // The gate itself: hidden is skipped outright.
-    expect(battle).toContain("if (vision === 'hidden') continue;");
+    // The gate itself: hidden is skipped unless a cinematic explicitly staged
+    // that actor. Ordinary fogged buildings still never draw.
+    expect(battle).toContain("if (vision === 'hidden' && !staged) continue;");
+    expect(battle).toContain('const remembered = !staged && vision === \'remembered\';');
     // And the memory treatment: dimmer than a seen building, and desaturated,
     // so a tenement cannot pass for something the team currently has eyes on.
-    expect(battle).toContain('const alpha = remembered ? 0.46 : liveAlpha;');
+    expect(battle).toContain('const alpha = (remembered ? 0.46 : liveAlpha) * (staged?.alpha ?? 1);');
     // Visible structures take the battle-damage tint, so only the remembered
     // branch is a fixed cold colour.
     expect(battle).toContain('remembered ? 0.52 : char[0]');

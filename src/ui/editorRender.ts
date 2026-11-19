@@ -229,11 +229,19 @@ export function drawEditorOverlay(editor: Editor): void {
     if (editor.tool === 'structure' && editor.structureDef) {
       const def = BUILDINGS[editor.structureDef];
       if (def) {
-        const tx = hx - Math.floor(def.footprint.w / 2);
-        const tz = hz - Math.floor(def.footprint.h / 2);
-        for (let dz = 0; dz < def.footprint.h; dz++) {
-          for (let dx = 0; dx < def.footprint.w; dx++) {
-            drawCell(ctx, scenario, project, tx + dx, tz + dz, 'rgba(82,197,230,0.28)', 'rgba(166,232,248,0.8)');
+        if (def.wall && editor.wallStart) {
+          // Preview the complete authored run, not just the tile under the
+          // cursor; this is the same stepped line the battle tool will lay.
+          for (const tile of editor.wallLineTiles(hx, hz)) {
+            drawCell(ctx, scenario, project, tile.x, tile.z, 'rgba(82,197,230,0.28)', 'rgba(166,232,248,0.8)');
+          }
+        } else {
+          const tx = hx - Math.floor(def.footprint.w / 2);
+          const tz = hz - Math.floor(def.footprint.h / 2);
+          for (let dz = 0; dz < def.footprint.h; dz++) {
+            for (let dx = 0; dx < def.footprint.w; dx++) {
+              drawCell(ctx, scenario, project, tx + dx, tz + dz, 'rgba(82,197,230,0.28)', 'rgba(166,232,248,0.8)');
+            }
           }
         }
       }

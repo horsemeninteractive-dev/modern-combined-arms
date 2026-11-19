@@ -15,6 +15,9 @@ export const PALETTE = {
   rubber: [0.06, 0.065, 0.06] as Color,
   concrete: [0.4, 0.39, 0.35] as Color,
   concreteDark: [0.26, 0.26, 0.24] as Color,
+  brick: [0.47, 0.29, 0.23] as Color,
+  brickDark: [0.35, 0.22, 0.18] as Color,
+  plaster: [0.63, 0.59, 0.5] as Color,
   canvas: [0.35, 0.36, 0.28] as Color,
   sandbag: [0.44, 0.42, 0.33] as Color,
   olive: [0.27, 0.32, 0.2] as Color,
@@ -26,8 +29,18 @@ export const PALETTE = {
   red: [0.7, 0.15, 0.12] as Color,
 };
 
+/**
+ * A restrained albedo variation, not a baked light.
+ *
+ * Faces used to be pre-shaded from 0.70 to 0.94 and then lit again by the
+ * fragment shader, which double-counted every surface and left flat panels
+ * looking grey and unlit. The face normal already carries direction; this keeps
+ * only a few percent of tone variation so adjacent boxes do not read as one
+ * extruded colour.
+ */
 export function shade(c: Color, f: number): Color {
-  return [Math.min(1, c[0] * f), Math.min(1, c[1] * f), Math.min(1, c[2] * f)];
+  const tone = 0.92 + 0.08 * Math.max(0, Math.min(1, f));
+  return [Math.min(1, c[0] * tone), Math.min(1, c[1] * tone), Math.min(1, c[2] * tone)];
 }
 
 /**
@@ -54,6 +67,9 @@ const MATERIAL_ANCHORS: ReadonlyArray<readonly [number, Color]> = [
   [MATERIAL.bareMetal, PALETTE.darkMetal],
   [MATERIAL.concrete, PALETTE.concrete],
   [MATERIAL.concrete, PALETTE.concreteDark],
+  [MATERIAL.brick, PALETTE.brick],
+  [MATERIAL.brick, PALETTE.brickDark],
+  [MATERIAL.plaster, PALETTE.plaster],
   [MATERIAL.glass, PALETTE.glass],
   [MATERIAL.glass, PALETTE.glassDark],
   [MATERIAL.canvas, PALETTE.canvas],
@@ -117,17 +133,28 @@ export class MeshBuilder {
     d: Vec3,
     color: Color,
     team = 0,
+    /** Explicit face normal for a degenerate quad such as a sphere pole. */
+    normal?: Vec3,
   ): void {
     const base = this.positions.length / 3;
-    const ux = b[0] - a[0];
-    const uy = b[1] - a[1];
-    const uz = b[2] - a[2];
-    const vx = d[0] - a[0];
-    const vy = d[1] - a[1];
-    const vz = d[2] - a[2];
-    let nx = uy * vz - uz * vy;
-    let ny = uz * vx - ux * vz;
-    let nz = ux * vy - uy * vx;
+    let nx: number;
+    let ny: number;
+    let nz: number;
+    if (normal) {
+      nx = normal[0];
+      ny = normal[1];
+      nz = normal[2];
+    } else {
+      const ux = b[0] - a[0];
+      const uy = b[1] - a[1];
+      const uz = b[2] - a[2];
+      const vx = d[0] - a[0];
+      const vy = d[1] - a[1];
+      const vz = d[2] - a[2];
+      nx = uy * vz - uz * vy;
+      ny = uz * vx - ux * vz;
+      nz = ux * vy - uy * vx;
+    }
     const len = Math.hypot(nx, ny, nz) || 1;
     nx /= len;
     ny /= len;
@@ -216,11 +243,16 @@ export class MeshBuilder {
     const y1 = cy + sy / 2;
     const top = corners.map(([x, z]) => [cx + x, y1, cz + z] as Vec3);
     const bottom = corners.map(([x, z]) => [cx + x, y0, cz + z] as Vec3);
-    this.addQuad(top[0], top[1], top[2], top[3], color, team);
-    this.addQuad(bottom[0], bottom[3], bottom[2], bottom[1], shade(color, 0.7), team);
+    // Corner order above runs clockwise seen from +Y, so the top face needs
+    // reversing to face up and the bottom needs the forward order to face down.
+    // The old winding sent every rotated face's normal inward, which left flat
+    // rotated slabs (roof plates, collapsed floors, rubble) lit as if they faced
+    // the ground.
+    this.addQuad(top[3], top[2], top[1], top[0], color, team);
+    this.addQuad(bottom[0], bottom[1], bottom[2], bottom[3], shade(color, 0.7), team);
     for (let i = 0; i < 4; i++) {
       const j = (i + 1) % 4;
-      this.addQuad(bottom[i], bottom[j], top[j], top[i], shade(color, 0.85), team);
+      this.addQuad(bottom[j], bottom[i], top[i], top[j], shade(color, 0.85), team);
     }
   }
 
@@ -353,7 +385,17 @@ export class MeshBuilder {
         const b = p(phi0, theta1);
         const c = p(phi1, theta1);
         const d = p(phi1, theta0);
-        this.addQuad(a, b, c, d, shade(color, 0.82 + 0.16 * (lon % 2)), team);
+        // At a pole the first two points coincide, so the geometric cross
+        // product is zero and the whole cap used to render black. Use the
+        // sphere's own outward direction there instead.
+        const midPhi = (phi0 + phi1) * 0.5;
+        const midTheta = (theta0 + theta1) * 0.5;
+        const normal: Vec3 = [
+          Math.sin(midPhi) * Math.cos(midTheta),
+          Math.cos(midPhi),
+          Math.sin(midPhi) * Math.sin(midTheta),
+        ];
+        this.addQuad(a, b, c, d, shade(color, 0.82 + 0.16 * (lon % 2)), team, normal);
       }
     }
   }
@@ -464,6 +506,43 @@ export function buildRockMesh(): MeshBuffers {
   addAngularStone(b, 0, 0, 1.42, 1.55, 7, 0.35, [0.38, 0.37, 0.34]);
   addAngularStone(b, 1.0, 0.36, 0.78, 0.95, 5, 1.6, [0.31, 0.31, 0.29]);
   addAngularStone(b, -0.92, -0.42, 0.62, 0.7, 5, 2.9, [0.43, 0.41, 0.37]);
+  return b.build();
+}
+
+/**
+ * A horde drop, as a crate rather than a patch of coloured ground.
+ *
+ * The beacon above a drop is what carries its kind colour and finds it from
+ * across the map; this is what stands there when the camera comes in close. It
+ * is authored at roughly a quarter of a tile — tall enough to break the ground
+ * line at battle zoom, short enough never to be mistaken for a structure — with
+ * a banded body, a proud lid and iron corner posts. The band is painted
+ * near-white on purpose: the renderer tints each instance toward its drop's
+ * colour, so the stripe takes the colour outright while the timber only warms.
+ */
+export function buildPickupCrateMesh(): MeshBuffers {
+  const b = new MeshBuilder();
+  const timber: Color = [0.5, 0.43, 0.29];
+  const lid: Color = [0.38, 0.33, 0.22];
+  const band: Color = [0.93, 0.93, 0.9];
+  const iron: Color = [0.2, 0.21, 0.2];
+  b.material = MATERIAL.painted;
+  // Skid base, body and an overhanging lid: three horizontal lines to catch
+  // light, so the silhouette is a crate and not a cube.
+  b.box(0, 0.04, 0, 1.0, 0.08, 0.76, iron);
+  b.box(0, 0.32, 0, 0.92, 0.5, 0.68, timber);
+  b.box(0, 0.61, 0, 0.98, 0.1, 0.74, lid);
+  // A painted stripe proud of the boards on all four sides. Its middle faces
+  // sit inside the body, so only the band itself shows.
+  b.box(0, 0.36, 0, 0.94, 0.16, 0.7, band);
+  // Iron corner posts bound the body and hold the lid on.
+  b.material = MATERIAL.bareMetal;
+  for (const x of [-0.38, 0.38]) {
+    for (const z of [-0.3, 0.3]) {
+      b.box(x, 0.34, z, 0.1, 0.58, 0.09, iron);
+    }
+  }
+  b.box(0, 0.68, 0, 0.34, 0.05, 0.11, iron);
   return b.build();
 }
 

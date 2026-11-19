@@ -419,6 +419,9 @@ export class RoomLobby {
         matchDurationMs: this.config.matchDurationMs,
         startHour: this.config.startHour,
         weather: this.config.weather,
+        // A co-op room's difficulty is part of the shared configuration: the
+        // guest must read the same run the host is about to start.
+        ...(this.config.outbreak ? { outbreak: { ...this.config.outbreak } } : {}),
         seats: this.config.seats.map((seat, index) => ({
           nation: seat.nation,
           color: seat.color,

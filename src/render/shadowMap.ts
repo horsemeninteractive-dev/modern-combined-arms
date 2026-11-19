@@ -1,7 +1,15 @@
-import { lookAt, multiply, orthographic, type Vec3 } from './math';
+import { cross, dot, lookAt, multiply, normalize, orthographic, type Vec3 } from './math';
 
-/** Depth-map size for the detailed shadow pass. */
-export const SHADOW_MAP_SIZE = 2048;
+/**
+ * Depth-map size for the detailed shadow pass.
+ *
+ * The box is fitted to the camera every frame, so this number is the whole
+ * budget for every shadow on screen: at battle framing a 2048 map spread over
+ * a two-hundred-unit box is a decimetre per texel, which is where the stair-
+ * stepped edges under vehicles came from. 3072 is 2.25x the texels for 37 MB,
+ * still inside the texture limit of every WebGL2 target the game ships to.
+ */
+export const SHADOW_MAP_SIZE = 3072;
 
 /**
  * Light-space box fitted around the camera's visible ground footprint.
@@ -25,17 +33,38 @@ export function shadowLightMatrix(
   centerZ: number,
   radius: number,
   sceneY = 4,
+  texels = 0,
 ): ShadowVolume {
-  const center: Vec3 = [centerX, sceneY, centerZ];
   const distance = radius * 2 + 160;
+  const sunDir = normalize(sun);
   // A sun near the zenith would make `up` parallel to the view direction and
   // collapse the basis. The authored elevation never gets there, but a guard
   // keeps the matrix well-defined for a hand-written light.
-  const up: Vec3 = Math.abs(sun[1]) > 0.995 ? [0, 0, 1] : [0, 1, 0];
+  const up: Vec3 = Math.abs(sunDir[1]) > 0.995 ? [0, 0, 1] : [0, 1, 0];
+  // Snap the fitted box to whole shadow-map texels in light space. The box
+  // follows the camera, so without this its projection slides continuously and
+  // every shadow edge crawls as the camera pans — especially visible under the
+  // slow loading-screen drift. Snapping keeps texel centres fixed on the world
+  // until the camera has moved a full texel.
+  let center: Vec3 = [centerX, sceneY, centerZ];
+  if (texels > 1) {
+    const lightX = normalize(cross(up, sunDir));
+    const lightY = cross(sunDir, lightX);
+    const texel = (radius * 2) / texels;
+    const px = dot(center, lightX);
+    const py = dot(center, lightY);
+    const sx = Math.round(px / texel) * texel - px;
+    const sy = Math.round(py / texel) * texel - py;
+    center = [
+      center[0] + lightX[0] * sx + lightY[0] * sy,
+      center[1] + lightX[1] * sx + lightY[1] * sy,
+      center[2] + lightX[2] * sx + lightY[2] * sy,
+    ];
+  }
   const eye: Vec3 = [
-    center[0] + sun[0] * distance,
-    center[1] + sun[1] * distance,
-    center[2] + sun[2] * distance,
+    center[0] + sunDir[0] * distance,
+    center[1] + sunDir[1] * distance,
+    center[2] + sunDir[2] * distance,
   ];
   const view = lookAt(eye, center, up);
   const projection = orthographic(-radius, radius, -radius, radius, 1, distance * 2 + 320);

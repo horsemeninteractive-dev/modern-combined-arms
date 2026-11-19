@@ -21,7 +21,8 @@ import type { MoveClass } from './types';
 import { BUILDINGS } from '../data/buildings';
 import { PROPS, isPropKind, type PropKind } from '../data/props';
 import { dist2 } from '../core/math';
-import { UNITS, unitFamily } from '../data/units';
+import { unitFamily, ALL_UNITS } from '../data/units';
+import { INFECTED_FACTION_ID } from '../data/zombies';
 import { TECHS } from '../data/research';
 import { identityLabel, isKnownFactionId, tryIdentityDef } from '../data/factions';
 import {
@@ -34,6 +35,7 @@ import {
 import { isWeatherKind, type WeatherKind } from './weather';
 import { MissionFormatError, parseMission, validateMission, isMissionId } from '../mission';
 import type { MissionDoc } from '../mission';
+import type { OutbreakEntryRegion, OutbreakScenarioConfig } from '../outbreak/types';
 
 export interface ScenarioTile {
   /** Base terrain id. */
@@ -161,6 +163,9 @@ export interface ScenarioProp {
 
 export type VictoryType = 'destroyHQ' | 'annihilation';
 
+/** Difficulty of an Outbreak run; the tuning table lives in `outbreak/config`. */
+export type OutbreakDifficulty = 'easy' | 'normal' | 'hard' | 'nightmare';
+
 export interface ScenarioSettings {
   seed: number;
   startingMats: number;
@@ -215,6 +220,13 @@ export interface Scenario {
     author: string;
     created: string;
     targetSize: 'small' | 'medium' | 'large';
+    /**
+     * Present only on an Outbreak battlefield. Its presence is what makes the
+     * simulation run a wave director for this match instead of looking for a
+     * conventional opponent; skirmish, campaign and multiplayer maps leave it
+     * undefined and behave exactly as they did before.
+     */
+    outbreak?: OutbreakScenarioConfig;
     /**
      * Set only on a scenario launched from the campaign deck. It lets a saved
      * campaign battle unlock the next operation after a reload; ordinary
@@ -281,6 +293,53 @@ export function defaultSettings(): ScenarioSettings {
     timeOfDay: 'day',
     startHour: PHASE_START_HOURS.day,
     dayLengthMinutes: DEFAULT_DAY_LENGTH_MINUTES,
+  };
+}
+
+/**
+ * The authored Outbreak block, or undefined for every other scenario.
+ *
+ * Parsed strictly enough that a malformed block is refused rather than half
+ * understood: the director reads entry regions and difficulty from it, and a
+ * "difficulty: 'insane'" silently falling back to Normal would hide an authored
+ * error behind a playable match.
+ */
+function parseOutbreakMeta(raw: unknown): OutbreakScenarioConfig | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== 'object' || Array.isArray(raw)) fail('meta.outbreak', 'object');
+  const block = raw as Record<string, unknown>;
+  const difficulty = asString(block.difficulty, 'meta.outbreak.difficulty');
+  if (!['easy', 'normal', 'hard', 'nightmare'].includes(difficulty)) {
+    fail('meta.outbreak.difficulty', 'easy | normal | hard | nightmare');
+  }
+  const mode = block.mode === undefined ? 'solo' : asString(block.mode, 'meta.outbreak.mode');
+  if (mode !== 'solo' && mode !== 'coop') fail('meta.outbreak.mode', 'solo | coop');
+  const regionsRaw = block.entryRegions;
+  if (!Array.isArray(regionsRaw) || regionsRaw.length === 0) {
+    fail('meta.outbreak.entryRegions', 'non-empty array');
+  }
+  const entryRegions: OutbreakEntryRegion[] = regionsRaw.map((value, index) => {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      fail(`meta.outbreak.entryRegions[${index}]`, 'object');
+    }
+    const region = value as Record<string, unknown>;
+    return {
+      id: asString(region.id, `meta.outbreak.entryRegions[${index}].id`),
+      name: asString(region.name ?? region.id, `meta.outbreak.entryRegions[${index}].name`),
+      x: asNumber(region.x, `meta.outbreak.entryRegions[${index}].x`, 0, 4096),
+      z: asNumber(region.z, `meta.outbreak.entryRegions[${index}].z`, 0, 4096),
+      radius: asNumber(region.radius ?? 4, `meta.outbreak.entryRegions[${index}].radius`, 1, 64),
+    };
+  });
+  const startWave =
+    block.startWave === undefined
+      ? undefined
+      : asNumber(block.startWave, 'meta.outbreak.startWave', 1, 10_000);
+  return {
+    difficulty: difficulty as OutbreakScenarioConfig['difficulty'],
+    mode,
+    entryRegions,
+    ...(startWave !== undefined ? { startWave } : {}),
   };
 }
 
@@ -373,6 +432,7 @@ export function parseScenario(
     return overlay > 0 ? { t: terrain, e, o, v: overlay } : { t: terrain, e, o };
   });
   const metaRaw = (r.meta ?? {}) as Record<string, unknown>;
+  const outbreak = parseOutbreakMeta(metaRaw.outbreak);
   // Campaign provenance is optional metadata, not a second scenario format.
   // Preserving it here means a campaign battle saved mid-operation still
   // knows which operation it belongs to when it is loaded again.
@@ -433,7 +493,7 @@ export function parseScenario(
         }
         return ids.length > 0 ? ids : undefined;
       };
-      const units = list('units', (id) => Boolean(UNITS[id]));
+      const units = list('units', (id) => Boolean(ALL_UNITS[id]));
       const buildings = list('buildings', (id) => Boolean(BUILDINGS[id]));
       const technologies = list('technologies', (id) => Boolean(TECHS[id]));
       if (units || buildings || technologies) {
@@ -479,7 +539,7 @@ export function parseScenario(
   const units: ScenarioUnit[] = (Array.isArray(r.units) ? r.units : []).map((u, i) => {
     const ur = u as Record<string, unknown>;
     const defId = asString(ur.defId, `units[${i}].defId`);
-    if (!UNITS[defId]) fail(`units[${i}].defId`, 'known unit');
+    if (!ALL_UNITS[defId]) fail(`units[${i}].defId`, 'known unit');
     return {
       defId,
       owner: asNumber(ur.owner, `units[${i}].owner`, -1, 7),
@@ -602,6 +662,7 @@ export function parseScenario(
       created: asString(metaRaw.created ?? '', 'meta.created'),
       targetSize: (metaRaw.targetSize as Scenario['meta']['targetSize']) ?? 'medium',
       ...(campaign ? { campaign } : {}),
+      ...(outbreak ? { outbreak } : {}),
     },
     width,
     height,
@@ -833,6 +894,12 @@ export function validateScenario(scenario: Scenario): ValidationIssue[] {
   if (scenario.players.length < 2) {
     add('error', 'players-missing', 'Add at least two players so the battle has an opponent.');
   }
+  // An Outbreak battlefield has one defended Command Post and a hostile side
+  // that owns none by design. The conventional headquarters rules below would
+  // refuse the mode's own map, so they are scoped to non-infected players here.
+  const outbreak = Boolean(scenario.meta.outbreak);
+  const isInfected = (player: ScenarioPlayer): boolean =>
+    outbreak && player.factionId === INFECTED_FACTION_ID;
   const teams = new Set(scenario.players.map((p) => p.team));
   if (scenario.players.length >= 2 && teams.size < 2) {
     add('error', 'teams-conflict', 'Both players are on the same team; no valid opponent exists.');
@@ -915,14 +982,14 @@ export function validateScenario(scenario: Scenario): ValidationIssue[] {
       );
     }
     const hq = scenario.structures.some((s) => s.owner === p.id && BUILDINGS[s.defId]?.commandPost);
-    if (!hq) {
+    if (!hq && !isInfected(p)) {
       add(
         'error',
         'hq-missing',
         `${p.name} has no Command Post. The destroy-HQ victory condition would end instantly.`,
       );
     }
-    if (!scenario.units.some((u) => u.owner === p.id)) {
+    if (!isInfected(p) && !scenario.units.some((u) => u.owner === p.id)) {
       add('warning', 'force-empty', `${p.name} has no starting units.`, p.startX, p.startZ);
     }
     const identity = tryIdentityDef(p.factionId);
@@ -984,7 +1051,7 @@ export function validateScenario(scenario: Scenario): ValidationIssue[] {
         add(
           'warning',
           'restriction-placed-unit',
-          `${p.name} starts with ${UNITS[unit.defId]?.name ?? unit.defId}, which the operation restricts.`,
+          `${p.name} starts with ${ALL_UNITS[unit.defId]?.name ?? unit.defId}, which the operation restricts.`,
           unit.x,
           unit.z,
         );
@@ -1159,7 +1226,7 @@ export function validateScenario(scenario: Scenario): ValidationIssue[] {
   // Units
   const unitTiles = new Map<number, number>();
   scenario.units.forEach((u, ui) => {
-    const def = UNITS[u.defId];
+    const def = ALL_UNITS[u.defId];
     if (!def) {
       add('error', 'unknown-unit', `Unknown unit "${u.defId}".`, u.x, u.z);
       return;
@@ -1194,6 +1261,7 @@ export function validateScenario(scenario: Scenario): ValidationIssue[] {
 
   // Victory feasibility
   for (const p of scenario.players) {
+    if (isInfected(p)) continue;
     const hq = scenario.structures.filter(
       (s) => s.owner === p.id && BUILDINGS[s.defId]?.commandPost,
     );
@@ -1215,6 +1283,9 @@ export function validateScenario(scenario: Scenario): ValidationIssue[] {
         .map((s) => scenario.players.find((p) => p.id === s.owner)!.team),
     );
     for (const team of teams) {
+      // The infected are not trying to win and cannot be won against.
+      const teamPlayers = scenario.players.filter((p) => p.team === team);
+      if (teamPlayers.length > 0 && teamPlayers.every(isInfected)) continue;
       if (!teamsWithHq.has(team)) {
         add('error', 'victory-impossible', `Team ${team} cannot win: no destructible Command Post.`);
       }

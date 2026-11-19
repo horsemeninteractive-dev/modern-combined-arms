@@ -70,6 +70,20 @@ describe('graphics presets', () => {
     expect(high.shadowDetail).toBe('detailed');
     expect(low.waterDetail).toBe(false);
     expect(high.waterDetail).toBe(true);
+    // The low preset drops post effects; medium keeps grounding but not the
+    // expensive water reflection; high is the authored mix.
+    expect(low.ambientOcclusion).toBe(false);
+    expect(low.bloom).toBe(false);
+    expect(low.screenSpaceReflections).toBe(false);
+    expect(low.contactShadows).toBe(false);
+    expect(medium.ambientOcclusion).toBe(true);
+    expect(medium.bloom).toBe(true);
+    expect(medium.screenSpaceReflections).toBe(false);
+    expect(medium.contactShadows).toBe(true);
+    expect(high.ambientOcclusion).toBe(true);
+    expect(high.bloom).toBe(true);
+    expect(high.screenSpaceReflections).toBe(true);
+    expect(high.contactShadows).toBe(true);
   });
 
   it('normalises the three shadow levels and rejects unknown ones', () => {
@@ -78,6 +92,11 @@ describe('graphics presets', () => {
     expect(normaliseShadowDetail('detailed')).toBe('detailed');
     expect(normaliseShadowDetail('raytraced')).toBe('detailed');
     expect(normaliseShadowDetail(undefined)).toBe('detailed');
+  });
+
+  it('accepts the custom preset alongside low, medium and high', () => {
+    expect(normaliseGraphicsQuality('custom')).toBe('custom');
+    expect(normaliseGraphicsQuality('ultra')).toBe('high');
   });
 
   it('clamps the explicit render scale to half..full device density', () => {
@@ -210,8 +229,14 @@ describe('settings tabs', () => {
     const groups = settingsGroups();
     expect(keys(groups.display)).toEqual(
       [
+        'ambientOcclusion',
+        'bloom',
+        'cinematicBattle',
+        'cinematicBriefing',
+        'cinematicCampaign',
         'cinematics',
         'colorVision',
+        'contactShadows',
         'effects',
         'fogVisual',
         'fpsReadout',
@@ -220,10 +245,12 @@ describe('settings tabs', () => {
         'lightBloom',
         'nightLights',
         'renderScale',
+        'screenSpaceReflections',
         'shadowDetail',
         'shake',
         'silhouettes',
         'uiScale',
+        'waterDetail',
       ].sort(),
     );
     expect(keys(groups.input)).toEqual(

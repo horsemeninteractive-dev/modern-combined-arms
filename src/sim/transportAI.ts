@@ -1,4 +1,4 @@
-import { UNITS } from '../data/units';
+import { ALL_UNITS } from '../data/units';
 import { TILE_SIZE } from './constants';
 import { TERRAIN, canStandOn, tileIndex, type TerrainId } from './terrain';
 import type { Entity, RuntimeMap } from './types';
@@ -17,7 +17,7 @@ export type TransportKind = 'land' | 'air' | 'naval';
 
 /** Which arm a mobile container belongs to, or null for every other unit. */
 export function transportKindOf(defId: string): TransportKind | null {
-  const def = UNITS[defId];
+  const def = ALL_UNITS[defId];
   if (!def?.transport) return null;
   if (def.domain === 'naval') return 'naval';
   if (def.domain === 'air') return 'air';

@@ -230,6 +230,8 @@ function garrisonDressing(
     roofY: number;
     roofHalfX: number;
     roofHalfZ: number;
+    /** Draw the shared front sandbag line; off when the building authors its own. */
+    entranceBarricade?: boolean;
   },
 ): void {
   const { halfX, halfZ, groundY, roofY, roofHalfX, roofHalfZ } = opts;
@@ -282,8 +284,11 @@ function garrisonDressing(
   sandbagWall(b, -roofHalfX + 0.35, 0.9, roofHalfZ * 1.2, false, roofY + 0.18);
   sandbagWall(b, roofHalfX - 0.35, 0.9, roofHalfZ * 1.2, false, roofY + 0.18);
 
-  // Ground-level sandbags covering the entrance approach.
-  sandbagWall(b, 0, halfZ + 1.1, halfX * 1.4, true, groundY + 0.3);
+  // Ground-level sandbags covering the entrance approach. Buildings with an
+  // authored frontage barricade opt out so they do not duplicate this line.
+  if (opts.entranceBarricade !== false) {
+    sandbagWall(b, 0, halfZ + 1.1, halfX * 1.4, true, groundY + 0.3);
+  }
 }
 
 function buildCommandPost(): MeshBuffers {
@@ -1610,8 +1615,8 @@ function buildTenement(): MeshBuffers {
   const b = new MeshBuilder();
   b.box(0, 0.3, 0, 15.4, 0.6, 15.4, PALETTE.concreteDark);
   b.box(0, 0.75, 0, 14.6, 0.5, 14.6, PALETTE.concrete);
-  // Three-storey apartment block with a recessed entrance.
-  b.box(-0.6, 4.0, 0, 11.6, 7.2, 9.6, PALETTE.canvas);
+  // Three-storey brick apartment block with a recessed entrance.
+  b.box(-0.6, 4.0, 0, 11.6, 7.2, 9.6, PALETTE.brick);
   b.box(-0.6, 7.85, 0, 12.4, 0.5, 10.4, PALETTE.oliveDark);
   b.box(-0.6, 2.3, 4.85, 3.2, 2.8, 0.35, PALETTE.hullDark);
   b.box(-0.6, 1.2, 5.0, 3.0, 1.8, 0.2, PALETTE.glassDark);
@@ -1824,7 +1829,7 @@ function buildWarehouse(): MeshBuffers {
   b.box(0, 0.72, 0, 15.6, 0.45, 12.2, PALETTE.concrete);
   // A long brick goods store: low walls, a shallow sawtooth roof and a loading
   // dock along the street face.
-  b.box(-0.4, 3.4, -0.6, 13.6, 5.4, 9.4, PALETTE.canvas);
+  b.box(-0.4, 3.4, -0.6, 13.6, 5.4, 9.4, PALETTE.brick);
   b.box(-0.4, 6.35, -0.6, 14.2, 0.4, 10.0, PALETTE.oliveDark);
   for (let i = 0; i < 3; i++) {
     b.box(-4.4 + i * 4.0, 6.75, -0.6, 3.0, 0.7, 8.6, PALETTE.olive);
@@ -2034,8 +2039,8 @@ function buildFoundryWorks(): MeshBuffers {
   const b = new MeshBuilder();
   b.box(0, 0.3, 0, 16.4, 0.6, 12.6, PALETTE.concreteDark);
   b.box(0, 0.72, 0, 15.6, 0.45, 11.8, PALETTE.concrete);
-  // The long casting bay under a steep sawtooth roof.
-  b.box(-0.4, 3.9, -0.6, 14.0, 6.4, 9.0, PALETTE.canvas);
+  // The long brick casting bay under a steep sawtooth roof.
+  b.box(-0.4, 3.9, -0.6, 14.0, 6.4, 9.0, PALETTE.brick);
   b.box(-0.4, 7.35, -0.6, 14.6, 0.4, 9.6, PALETTE.oliveDark);
   for (let i = 0; i < 4; i++) {
     const x = -5.6 + i * 3.4;
@@ -2411,6 +2416,96 @@ function buildRadarStationDish(): MeshBuffers {
   return b.build();
 }
 
+/** One tile of sandbag line: bags stacked into a low parapet. */
+function buildSandbagWallSegment(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.box(0, 0.16, 0, 3.9, 0.32, 1.05, PALETTE.concreteDark);
+  for (const x of [-1.45, -0.48, 0.48, 1.45]) {
+    b.box(x, 0.46, 0.12, 0.96, 0.38, 0.9, PALETTE.oliveDark);
+    b.box(x, 0.78, 0.1, 0.9, 0.28, 0.78, PALETTE.olive);
+  }
+  for (const x of [-0.96, 0, 0.96]) {
+    b.box(x, 0.94, -0.08, 0.86, 0.25, 0.68, PALETTE.oliveDark);
+  }
+  b.box(0, 1.06, -0.12, 0.5, 0.08, 0.5, PALETTE.canvas);
+  ownershipPanel(b, 0, 1.1, 0, 2.1, 0.55);
+  return b.build();
+}
+
+/** Square sandbag redoubt that fills a bend or junction in a wall run. */
+function buildSandbagWallCorner(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.box(0, 0.16, 0, 3.96, 0.32, 3.96, PALETTE.concreteDark);
+  for (const x of [-1.45, -0.48, 0.48, 1.45]) {
+    for (const z of [-1.45, -0.48, 0.48, 1.45]) {
+      b.box(x, 0.46, z, 0.96, 0.38, 0.9, PALETTE.oliveDark);
+      b.box(x, 0.78, z, 0.9, 0.28, 0.78, PALETTE.olive);
+    }
+  }
+  for (const z of [-1.45, -0.48, 0.48, 1.45]) {
+    b.box(0, 0.94, z, 0.86, 0.25, 0.68, PALETTE.oliveDark);
+  }
+  ownershipPanel(b, 0, 1.1, 0, 2.1, 2.1);
+  return b.build();
+}
+
+/** One tile of concrete barrier: a heavy pre-cast panel on a footing. */
+function buildConcreteWallSegment(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.box(0, 0.18, 0, 4.0, 0.36, 1.15, PALETTE.concreteDark);
+  b.box(0, 1.18, 0, 3.94, 2.0, 0.78, PALETTE.concrete);
+  b.box(0, 2.22, 0, 4.08, 0.18, 0.92, PALETTE.concreteDark);
+  // Panel joints and the lifting eyes read as pre-cast sections from above.
+  for (const x of [-1.3, 0, 1.3]) {
+    b.box(x, 1.18, 0.4, 0.05, 1.94, 0.05, PALETTE.concreteDark);
+  }
+  for (const x of [-1.65, 1.65]) {
+    b.box(x, 2.38, 0, 0.16, 0.18, 0.16, PALETTE.metal);
+  }
+  b.box(0, 0.44, 0.44, 3.7, 0.22, 0.12, PALETTE.warning);
+  ownershipPanel(b, 0, 2.38, 0, 2.4, 0.62);
+  return b.build();
+}
+
+/** Short sandbag bridge that joins two diagonally adjacent wall tiles. */
+function buildSandbagWallJoint(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.box(0, 0.16, 0, 2.24, 0.32, 0.78, PALETTE.concreteDark);
+  for (const x of [-0.75, 0, 0.75]) {
+    b.box(x, 0.46, 0.1, 0.7, 0.38, 0.9, PALETTE.oliveDark);
+    b.box(x, 0.78, 0.08, 0.66, 0.28, 0.78, PALETTE.olive);
+  }
+  b.box(0, 1.06, -0.1, 0.45, 0.08, 0.5, PALETTE.canvas);
+  return b.build();
+}
+
+/** Short concrete bridge that joins two diagonally adjacent wall tiles. */
+function buildConcreteWallJoint(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.box(0, 0.18, 0, 2.24, 0.36, 0.78, PALETTE.concreteDark);
+  b.box(0, 1.18, 0, 2.24, 2.0, 0.78, PALETTE.concrete);
+  b.box(0, 2.22, 0, 2.32, 0.18, 0.92, PALETTE.concreteDark);
+  b.box(0, 0.44, 0.44, 2.1, 0.22, 0.12, PALETTE.warning);
+  return b.build();
+}
+
+/** Heavy concrete bastion that closes the corner between two wall arms. */
+function buildConcreteWallCorner(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.box(0, 0.18, 0, 4.04, 0.36, 4.04, PALETTE.concreteDark);
+  b.box(0, 1.18, 0, 3.94, 2.0, 3.94, PALETTE.concrete);
+  b.box(0, 2.22, 0, 4.08, 0.18, 4.08, PALETTE.concreteDark);
+  for (const x of [-1.3, 0, 1.3]) {
+    b.box(x, 1.18, 1.98, 0.05, 1.94, 0.05, PALETTE.concreteDark);
+    b.box(1.98, 1.18, x, 0.05, 1.94, 0.05, PALETTE.concreteDark);
+  }
+  for (const [x, z] of [[-1.65, -1.65], [1.65, -1.65], [-1.65, 1.65], [1.65, 1.65]] as const) {
+    b.box(x, 2.38, z, 0.16, 0.18, 0.16, PALETTE.metal);
+  }
+  ownershipPanel(b, 0, 2.38, 0, 2.4, 2.4);
+  return b.build();
+}
+
 export interface BuildingStyle {
   body: MeshBuffers;
   /**
@@ -2427,6 +2522,10 @@ export interface BuildingStyle {
    * are inside, so an empty shelter reads as empty at a glance.
    */
   garrisoned?: MeshBuffers;
+  /** Extra junction cap for a wall tile with both wall axes occupied. */
+  corner?: MeshBuffers;
+  /** Short connector between diagonally adjacent wall tiles. */
+  diagonal?: MeshBuffers;
   /**
    * What a structure looks like once it has been knocked out but has not been
    * cleared from the map. Only walkable spans use it: everything else is
@@ -2490,8 +2589,10 @@ function buildFarmhouse(): MeshBuffers {
   const b = new MeshBuilder();
   b.box(0, 0.28, 0, 11.5, 0.56, 11.5, PALETTE.concreteDark);
   b.box(0, 0.68, 0, 10.8, 0.28, 10.8, PALETTE.concrete);
-  // House: two storeys under a shallow hipped roof.
-  b.box(-1.4, 3.2, 0.4, 6.8, 5.2, 6.6, PALETTE.canvas);
+  // House: two storeys of rendered stone under a shallow hipped roof.
+  b.material = MATERIAL.plaster;
+  b.box(-1.4, 3.2, 0.4, 6.8, 5.2, 6.6, PALETTE.plaster);
+  b.material = null;
   b.box(-1.4, 6.05, 0.4, 7.4, 0.5, 7.2, PALETTE.concrete);
   b.box(-1.4, 6.5, 0.4, 5.6, 0.4, 5.2, PALETTE.oliveDark);
   b.box(-3.4, 7.1, 2.6, 0.7, 2.4, 0.7, PALETTE.concreteDark);
@@ -2634,7 +2735,7 @@ function buildConstabulary(): MeshBuffers {
   const b = new MeshBuilder();
   b.box(0, 0.26, 0, 15.4, 0.52, 11.4, PALETTE.concreteDark);
   b.box(0, 0.64, 0, 14.8, 0.24, 10.8, PALETTE.concrete);
-  b.box(-1.4, 3.5, 0.2, 10.8, 6.4, 8.4, PALETTE.canvas);
+  b.box(-1.4, 3.5, 0.2, 10.8, 6.4, 8.4, PALETTE.brick);
   b.box(-1.4, 7.0, 0.2, 11.2, 0.45, 8.8, PALETTE.concrete);
   // Parapet wall around the roof deck.
   b.box(-1.4, 7.6, 4.4, 11.2, 0.7, 0.25, PALETTE.concreteDark);
@@ -3136,16 +3237,12 @@ function buildForwardPost(): MeshBuffers {
   return b.build();
 }
 
-/** Applied research centre: a laboratory hall, an instrument annex and a sensor mast. */
 /**
- * Applied Research Centre: a laboratory campus for a 4x3 footprint.
- *
- * The hall, annex, mast and apron are sized to the ground the building really
- * occupies (16 x 12 world units). The first version was drawn at roughly half
- * that and read as a two-by-two shed dropped in the middle of its own footprint,
- * which also left the selection outline and the banner floating around it.
+ * Strategic operations: a hardened signals hall, an instrument annex and a
+ * mast farm for a 4x3 footprint. This is the compact, olive, military model;
+ * the research campus below is deliberately a different building.
  */
-function buildResearchCentre(): MeshBuffers {
+function buildStrategicOps(): MeshBuffers {
   const b = new MeshBuilder();
   // Paved apron out to the footprint edge.
   b.box(0, 0.16, 0, 15.5, 0.32, 11.4, PALETTE.concreteDark);
@@ -3195,6 +3292,137 @@ function buildResearchCentre(): MeshBuffers {
   b.boxRot(-6.85, 4.6, -4.85, 2.3, 0.04, 0.04, 0.9, PALETTE.darkMetal);
   b.boxRot(-5.95, 4.6, -4.85, 2.4, 0.04, 0.04, -0.9, PALETTE.darkMetal);
   ownershipPanel(b, -2.6, 4.92, -0.4, 4.6, 3.0);
+  return b.build();
+}
+
+/**
+ * Applied Research Centre: a laboratory campus with a round containment hall.
+ *
+ * The silhouette is the identity: a pale rendered laboratory wing, a lower
+ * workshop with a solar roof, and a glazed cylindrical clean room under a
+ * faceted instrument dome. Strategic Operations keeps the squat olive hall and
+ * mast farm, so the two research-adjacent structures no longer read as the
+ * same building with different roof clutter.
+ *
+ * Everything is laid out inside 16 x 12 world units (4 x 3 tiles).
+ */
+function buildResearchCentre(): MeshBuffers {
+  const b = new MeshBuilder();
+  // Paved campus, with a darker working apron at the front.
+  b.material = MATERIAL.concrete;
+  b.box(0, 0.16, 0, 15.5, 0.32, 11.4, PALETTE.concreteDark);
+  b.box(0, 0.4, 0, 14.9, 0.2, 10.8, PALETTE.concrete);
+
+  // Laboratory wing across the rear: pale render, a deep concrete parapet and
+  // a continuous strip of glazing under it.
+  b.material = MATERIAL.plaster;
+  b.box(-1.4, 2.55, -3.05, 10.8, 4.4, 4.5, PALETTE.plaster);
+  b.material = MATERIAL.concrete;
+  b.box(-1.4, 4.84, -3.05, 11.2, 0.22, 4.9, PALETTE.concrete);
+  b.box(-1.4, 5.02, -3.05, 10.6, 0.14, 4.3, PALETTE.concreteDark);
+  b.material = MATERIAL.glass;
+  b.box(-1.4, 3.45, -0.76, 9.7, 0.92, 0.08, PALETTE.glass);
+  b.material = MATERIAL.painted;
+  b.box(-1.4, 2.74, -0.7, 10.1, 0.12, 0.12, PALETTE.white);
+  b.box(-1.4, 4.05, -0.7, 10.1, 0.1, 0.1, PALETTE.white);
+  // A second, taller glazed bay marks the clean-room entrance.
+  b.material = MATERIAL.glass;
+  b.box(-5.3, 2.1, 0.0, 0.08, 2.3, 2.7, PALETTE.glass);
+  b.material = MATERIAL.painted;
+  b.box(-5.36, 2.1, 0.0, 0.18, 2.5, 0.18, PALETTE.concreteDark);
+
+  // Low workshop on the west side, with a solar array on its flat roof.
+  b.material = MATERIAL.plaster;
+  b.box(-5.4, 1.55, 2.2, 3.9, 2.7, 4.6, PALETTE.plaster);
+  b.material = MATERIAL.bareMetal;
+  b.box(-5.4, 3.02, 2.2, 4.2, 0.12, 4.9, PALETTE.metal);
+  for (const x of [-6.3, -4.6]) {
+    for (const z of [1.15, 3.25]) {
+      // A photovoltaic panel is glass over a frame, not a metal plate: the
+      // glass material is what gives the array its specular sheen, and it keeps
+      // every blue-green surface on the glass path the building audit checks.
+      b.material = MATERIAL.glass;
+      b.box(x, 3.17, z, 1.3, 0.08, 1.7, PALETTE.glassDark);
+      b.box(x, 3.23, z, 1.1, 0.04, 1.5, PALETTE.glass);
+    }
+  }
+
+  // The containment hall: a concrete drum with a ring of glazing on the lab
+  // floor and a faceted instrument dome above it.
+  b.material = MATERIAL.concrete;
+  b.cylinder(3.35, 2.55, 1.3, 2.95, 5.1, 18, PALETTE.concrete);
+  b.cylinder(3.35, 5.12, 1.3, 3.1, 0.26, 18, PALETTE.concreteDark);
+  b.cylinder(3.35, 5.28, 1.3, 2.65, 0.22, 18, PALETTE.metal);
+  for (let i = 0; i < 16; i++) {
+    const angle = (i / 16) * Math.PI * 2;
+    const px = 3.35 + Math.sin(angle) * 2.96;
+    const pz = 1.3 + Math.cos(angle) * 2.96;
+    b.material = MATERIAL.glass;
+    b.boxRot(px, 3.5, pz, 1.12, 1.02, 0.1, -angle, PALETTE.glass);
+    b.material = MATERIAL.painted;
+    b.boxRot(px, 4.03, pz, 1.2, 0.1, 0.16, -angle, PALETTE.white);
+    b.boxRot(px, 2.98, pz, 1.2, 0.1, 0.16, -angle, PALETTE.white);
+  }
+  b.material = MATERIAL.concrete;
+  b.cylinder(3.35, 5.62, 1.3, 1.95, 0.5, 12, PALETTE.hullLight);
+  b.cylinder(3.35, 5.96, 1.3, 1.45, 0.44, 12, PALETTE.metal);
+  b.cone(3.35, 6.18, 1.3, 1.85, 1.2, 8, PALETTE.hullLight);
+  b.material = MATERIAL.bareMetal;
+  b.cylinder(3.35, 7.5, 1.3, 0.07, 1.5, 6, PALETTE.metal);
+  b.box(3.35, 8.2, 1.3, 1.0, 0.08, 0.08, PALETTE.metal);
+  b.box(3.35, 8.2, 1.3, 0.08, 0.08, 0.8, PALETTE.metal);
+  b.box(3.35, 8.34, 1.3, 0.16, 0.2, 0.16, PALETTE.warning);
+  // A fixed sensor head on the dome, aimed out over the apron.
+  b.boxRot(5.0, 6.82, 2.0, 1.2, 0.34, 0.34, -0.7, PALETTE.hullDark);
+  // The lens is glass, not a painted plate on a metal head.
+  b.material = MATERIAL.glass;
+  b.boxRot(5.55, 6.96, 2.38, 0.46, 0.12, 0.52, -0.7, PALETTE.glass);
+
+  // Glazed atrium links the drum to the rear laboratory wing.
+  b.material = MATERIAL.glass;
+  b.box(1.9, 1.75, -0.45, 3.4, 3.0, 1.6, PALETTE.glassDark);
+  b.material = MATERIAL.painted;
+  b.box(1.9, 3.28, -0.45, 3.7, 0.16, 1.9, PALETTE.concreteDark);
+  for (const x of [0.4, 1.9, 3.4]) {
+    b.box(x, 1.85, -0.45, 0.12, 3.0, 1.72, PALETTE.concrete);
+  }
+
+  // Entrance canopy and the steps up to the clean room, held inside the
+  // southern tile edge rather than overhanging the footprint.
+  b.material = MATERIAL.concrete;
+  b.box(3.35, 1.62, 4.8, 4.0, 0.2, 1.7, PALETTE.concrete);
+  for (const x of [1.75, 4.95]) b.box(x, 0.92, 5.35, 0.14, 1.4, 0.14, PALETTE.concreteDark);
+  for (let i = 0; i < 3; i++) {
+    b.box(3.35, 0.58 + i * 0.18, 5.42 + i * 0.18, 3.4, 0.18, 0.45, PALETTE.concreteDark);
+  }
+  b.material = MATERIAL.glass;
+  b.box(3.35, 1.65, 4.2, 2.2, 2.4, 0.1, PALETTE.glassDark);
+  b.material = MATERIAL.painted;
+  b.box(3.35, 2.92, 4.25, 2.5, 0.16, 0.16, PALETTE.hull);
+
+  // Rooftop plant on the laboratory wing and service runs down the apron.
+  b.material = null;
+  roofPlant(b, -4.3, 5.1, -4.1, 1.8, 1.4);
+  roofPlant(b, -0.8, 5.1, -4.3, 1.6, 1.2);
+  ductRun(b, -1.4, 2.2, -0.72, 8.4, 'x');
+  b.material = MATERIAL.concrete;
+  b.box(0.2, 0.58, 4.9, 5.4, 0.16, 0.34, PALETTE.concreteDark);
+  for (let i = 0; i < 4; i++) {
+    b.box(-5.2 + i * 2.0, 0.82, 5.55, 0.3, 0.46, 0.3, PALETTE.concrete);
+    b.box(-5.2 + i * 2.0, 1.07, 5.55, 0.34, 0.08, 0.34, PALETTE.white);
+  }
+  // Instrument cabinets, cable reels and a service bollard at the west edge.
+  for (const z of [-1.1, -0.45]) {
+    b.box(-7.0, 0.96, z, 0.7, 0.72, 0.46, PALETTE.hullDark);
+    b.box(-7.0, 1.35, z, 0.78, 0.08, 0.54, PALETTE.olive);
+  }
+  b.cylinderX(-6.3, 0.76, 4.1, 0.4, 0.5, 8, PALETTE.darkMetal);
+  // Ownership bands on both long roof edges, with the panel between them. The
+  // campus has a high vertex count, so the bands are what keep the team colour
+  // readable at battle zoom instead of letting the plate disappear.
+  b.box(-1.4, 5.16, -0.78, 10.2, 0.12, 0.12, PALETTE.hull, 1);
+  b.box(-1.4, 5.16, -5.28, 10.2, 0.12, 0.12, PALETTE.hull, 1);
+  ownershipPanel(b, -1.4, 5.24, -3.05, 5.4, 2.5);
   return b.build();
 }
 
@@ -3451,10 +3679,11 @@ function buildSchoolhouse(): MeshBuffers {
   const b = new MeshBuilder();
   b.material = MATERIAL.concrete;
   b.box(0, 0.25, 0, 15.4, 0.5, 15.4, PALETTE.concreteDark);
-  b.material = MATERIAL.painted;
-  b.box(0, 3.4, 0, 14.2, 5.8, 14.2, [0.46, 0.36, 0.29]);
-  b.box(0, 1.9, 0, 14.4, 0.14, 14.4, [0.38, 0.3, 0.25]);
-  b.box(0, 4.6, 0, 14.4, 0.12, 14.4, [0.38, 0.3, 0.25]);
+  b.material = MATERIAL.brick;
+  b.box(0, 3.4, 0, 14.2, 5.8, 14.2, PALETTE.brick);
+  b.material = MATERIAL.concrete;
+  b.box(0, 1.9, 0, 14.4, 0.14, 14.4, PALETTE.concrete);
+  b.box(0, 4.6, 0, 14.4, 0.12, 14.4, PALETTE.concrete);
   b.box(0, 6.36, 0, 14.4, 0.12, 14.4, PALETTE.concrete);
   for (const [x, z, w, d] of [
     [0, 7.1, 14.6, 0.4],
@@ -3465,7 +3694,9 @@ function buildSchoolhouse(): MeshBuffers {
     b.box(x, 6.62, z, w, 0.4, d, PALETTE.concreteDark);
   }
   // Bell cupola, set back from the flag deck.
-  b.box(3.8, 7.0, -3.8, 2.0, 1.2, 2.0, [0.44, 0.34, 0.27]);
+  b.material = MATERIAL.plaster;
+  b.box(3.8, 7.0, -3.8, 2.0, 1.2, 2.0, PALETTE.plaster);
+  b.material = MATERIAL.concrete;
   b.box(3.8, 7.66, -3.8, 2.2, 0.16, 2.2, PALETTE.concreteDark);
   b.material = MATERIAL.bareMetal;
   b.box(3.8, 7.9, -3.8, 0.3, 0.34, 0.3, PALETTE.metal);
@@ -3794,6 +4025,259 @@ function buildTownhouseTerrace(): MeshBuffers {
   return b.build();
 }
 
+/**
+ * Fire station (4x4): two deep apparatus bays under a brick drill hall, a hose
+ * tower and a marked forecourt. The tower and the paired bay mouths are the
+ * silhouette; it shares no roofline with the garage or the freight shed.
+ */
+function buildFireStation(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.concrete;
+  b.box(0, 0.26, 0, 15.4, 0.52, 15.4, PALETTE.concreteDark);
+  b.box(0, 0.58, 0, 14.6, 0.18, 14.6, PALETTE.concrete);
+  // Drill hall.
+  b.material = MATERIAL.brick;
+  b.box(0, 2.95, -1.7, 13.8, 5.2, 10.0, PALETTE.brick);
+  b.material = MATERIAL.concrete;
+  b.box(0, 5.62, -1.7, 14.2, 0.3, 10.4, PALETTE.concrete);
+  for (const [x, z, w, d] of [
+    [0, 3.3, 14.2, 0.28],
+    [0, -6.7, 14.2, 0.28],
+    [6.96, -1.7, 0.28, 10.1],
+    [-6.96, -1.7, 0.28, 10.1],
+  ] as const) {
+    b.box(x, 5.95, z, w, 0.42, d, PALETTE.concreteDark);
+  }
+  // Hose tower on the rear corner: tall, narrow and unmistakable from the air.
+  b.material = MATERIAL.brick;
+  b.box(-5.5, 4.7, -4.7, 3.0, 8.8, 3.0, PALETTE.brick);
+  b.material = MATERIAL.concrete;
+  b.box(-5.5, 9.18, -4.7, 3.4, 0.3, 3.4, PALETTE.concrete);
+  b.box(-5.5, 9.44, -4.7, 2.6, 0.2, 2.6, PALETTE.concreteDark);
+  b.material = MATERIAL.glass;
+  b.box(-5.5, 7.9, -3.18, 1.4, 1.4, 0.08, PALETTE.glassDark);
+  b.box(-5.5, 6.2, -3.18, 1.2, 1.0, 0.08, PALETTE.glassDark);
+  b.box(-3.98, 7.9, -4.7, 0.08, 1.4, 1.4, PALETTE.glassDark);
+  // Two apparatus bays with dark reveals and red sectional doors.
+  for (const x of [-3.1, 2.5]) {
+    b.material = MATERIAL.bareMetal;
+    b.box(x, 2.18, 3.52, 4.9, 3.8, 0.16, PALETTE.darkMetal);
+    b.material = MATERIAL.painted;
+    b.box(x, 2.18, 3.63, 4.5, 3.55, 0.1, PALETTE.red);
+    for (let i = 0; i < 7; i++) {
+      b.box(x, 0.65 + i * 0.47, 3.7, 4.4, 0.05, 0.04, PALETTE.darkMetal);
+    }
+    b.box(x, 4.04, 3.72, 4.6, 0.2, 0.1, PALETTE.white);
+    b.material = MATERIAL.concrete;
+    b.box(x, 4.18, 3.48, 5.0, 0.24, 0.34, PALETTE.concrete);
+    // Drilled window over each bay.
+    b.material = MATERIAL.glass;
+    b.box(x, 4.86, 3.52, 3.4, 0.62, 0.08, PALETTE.glassDark);
+  }
+  // A short drill mast and roof plant keep the tower company.
+  b.material = MATERIAL.bareMetal;
+  b.cylinder(4.7, 7.2, -4.5, 0.1, 3.2, 6, PALETTE.metal);
+  b.box(4.7, 8.76, -4.5, 1.2, 0.1, 0.1, PALETTE.metal);
+  b.box(4.7, 8.84, -4.5, 0.14, 0.18, 0.14, PALETTE.warning);
+  b.material = null;
+  roofPlant(b, 3.2, 5.77, -3.2, 2.0, 1.5);
+  roofPlant(b, -1.2, 5.77, -2.0, 1.4, 1.2);
+  // Forecourt: painted bay lines, a hydrant and a hose reel.
+  for (const x of [-1.0, 4.6]) {
+    b.box(x, 0.69, 6.2, 0.14, 0.04, 3.2, PALETTE.warning);
+  }
+  b.box(0.2, 0.69, 7.7, 10.4, 0.04, 0.14, PALETTE.white);
+  b.cylinder(6.4, 0.92, 5.4, 0.22, 0.7, 8, PALETTE.red);
+  b.box(6.4, 1.3, 5.4, 0.5, 0.14, 0.14, PALETTE.red);
+  b.cylinderX(-6.6, 0.84, 4.7, 0.34, 0.42, 8, PALETTE.darkMetal);
+  for (let i = 0; i < 4; i++) b.box(-1.8 + i * 1.8, 0.7, 4.35, 0.16, 0.06, 0.5, PALETTE.white);
+  ownershipPanel(b, 1.0, 6.02, -1.7, 3.6, 1.8);
+  return b.build();
+}
+
+/**
+ * Clinic (3x3): a rendered two-storey block, a glazed stair tower, and an
+ * ambulance canopy over the entrance. White plaster instead of brick and a
+ * teal glass corner identify it at street level.
+ */
+function buildClinic(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.concrete;
+  b.box(0, 0.24, 0, 11.6, 0.48, 11.6, PALETTE.concreteDark);
+  b.box(0, 0.52, 0, 10.9, 0.16, 10.9, PALETTE.concrete);
+  // Main ward block.
+  b.material = MATERIAL.plaster;
+  b.box(-1.0, 3.55, -1.1, 8.8, 6.4, 7.8, PALETTE.plaster);
+  b.material = MATERIAL.concrete;
+  b.box(-1.0, 6.9, -1.1, 9.2, 0.24, 8.2, PALETTE.concrete);
+  for (const [x, z, w, d] of [
+    [0, 2.9, 9.2, 0.28],
+    [0, -5.1, 9.2, 0.28],
+    [3.56, -1.1, 0.28, 8.2],
+    [-5.56, -1.1, 0.28, 8.2],
+  ] as const) {
+    b.box(x, 7.2, z, w, 0.38, d, PALETTE.concreteDark);
+  }
+  // Stair and lift tower, glazed on both street faces.
+  b.material = MATERIAL.painted;
+  b.box(3.1, 3.9, -2.5, 3.0, 7.1, 3.0, PALETTE.hullLight);
+  b.material = MATERIAL.glass;
+  b.box(4.62, 4.1, -2.5, 0.08, 5.8, 2.2, PALETTE.glass);
+  b.box(3.1, 4.1, -0.98, 2.2, 5.8, 0.08, PALETTE.glass);
+  b.material = MATERIAL.concrete;
+  b.box(3.1, 7.5, -2.5, 3.3, 0.24, 3.3, PALETTE.concreteDark);
+  b.box(3.1, 8.9, -2.5, 0.16, 2.6, 0.16, PALETTE.metal);
+  b.box(3.1, 10.12, -2.5, 1.0, 0.08, 0.08, PALETTE.metal);
+  // Ward windows: two floors of paired openings on the front face.
+  b.material = MATERIAL.glass;
+  for (const y of [2.0, 4.7]) {
+    for (const x of [-4.2, -1.6, 1.0]) {
+      b.box(x, y, 2.86, 1.7, 1.3, 0.08, PALETTE.glassDark);
+    }
+    b.box(-5.58, y, -1.1, 0.08, 1.3, 3.2, PALETTE.glassDark);
+  }
+  // Entrance, canopy, ambulance lane and a red cross sign.
+  b.material = MATERIAL.concrete;
+  b.box(-1.0, 2.5, 3.45, 4.4, 0.22, 2.0, PALETTE.concrete);
+  for (const x of [-2.9, 0.9]) b.box(x, 1.5, 4.1, 0.14, 2.1, 0.14, PALETTE.metal);
+  b.material = MATERIAL.glass;
+  b.box(-1.0, 1.4, 2.98, 2.6, 2.2, 0.08, PALETTE.glassDark);
+  b.material = MATERIAL.painted;
+  b.box(-1.0, 3.45, 2.92, 1.0, 1.8, 0.1, PALETTE.white);
+  b.box(-1.0, 3.45, 2.85, 0.3, 1.2, 0.06, PALETTE.red);
+  b.box(-1.0, 3.45, 2.85, 1.0, 0.3, 0.06, PALETTE.red);
+  b.material = null;
+  // Ambulance bay markings and a pair of oxygen bottles. The lane stops short
+  // of the tile edge so the painted apron stays inside the 3x3 footprint.
+  b.box(2.1, 0.67, 4.6, 4.6, 0.04, 1.5, PALETTE.white);
+  b.box(2.1, 0.7, 4.6, 0.18, 0.04, 1.3, PALETTE.red);
+  for (const z of [-0.6, 0.0]) b.cylinder(5.0, 0.88, z, 0.2, 0.8, 8, PALETTE.metal);
+  roofPlant(b, -3.8, 7.02, -3.4, 1.5, 1.2);
+  // A roof skylight, so it belongs on the glass path rather than reading as a
+  // dark metal plate.
+  b.material = MATERIAL.glass;
+  b.box(-0.8, 7.15, 1.4, 1.8, 0.1, 1.3, PALETTE.glassDark);
+  ownershipPanel(b, -1.0, 7.28, -1.1, 2.8, 1.5);
+  return b.build();
+}
+
+/**
+ * Market hall (4x3): a brick arcade under a glazed lantern roof, with stalls
+ * and striped awnings spilling onto the front apron. A civic hall, not a
+ * warehouse: the shops are in the elevation, not painted on.
+ */
+function buildMarketHall(): MeshBuffers {
+  const b = new MeshBuilder();
+  b.material = MATERIAL.concrete;
+  b.box(0, 0.24, 0, 15.2, 0.48, 11.2, PALETTE.concreteDark);
+  b.box(0, 0.52, 0, 14.4, 0.16, 10.4, PALETTE.concrete);
+  // Brick market shell with a stone plinth and pilasters.
+  b.material = MATERIAL.brick;
+  b.box(0, 2.75, -1.0, 13.2, 4.4, 8.2, PALETTE.brick);
+  b.material = MATERIAL.concrete;
+  b.box(0, 4.86, -1.0, 13.8, 0.26, 8.8, PALETTE.concrete);
+  b.box(0, 5.08, -1.0, 13.0, 0.18, 8.0, PALETTE.concreteDark);
+  for (const x of [-6.3, -3.2, -0.1, 3.0, 6.1]) {
+    b.box(x, 2.55, 3.14, 0.42, 4.2, 0.3, PALETTE.concrete);
+    b.box(x, 4.76, 3.2, 0.66, 0.2, 0.46, PALETTE.concrete);
+  }
+  // Arcade openings along the front, with glazing and awning valances.
+  for (const x of [-4.7, -1.6, 1.5, 4.6]) {
+    b.material = MATERIAL.glass;
+    b.box(x, 2.0, 3.16, 2.2, 2.8, 0.1, PALETTE.glassDark);
+    b.material = MATERIAL.painted;
+    b.box(x, 3.5, 3.4, 2.5, 0.34, 0.9, PALETTE.red);
+    b.box(x, 3.5, 3.83, 2.1, 0.25, 0.5, PALETTE.white);
+  }
+  // Roof lantern: a continuous glazed ridge that lights the market floor.
+  b.material = MATERIAL.painted;
+  b.box(0, 5.25, -1.0, 9.8, 0.3, 2.8, PALETTE.hullDark);
+  b.material = MATERIAL.glass;
+  b.box(0, 6.05, -1.0, 9.4, 1.25, 2.2, PALETTE.glass);
+  b.material = MATERIAL.painted;
+  for (const x of [-4.7, -2.8, -0.9, 1.0, 2.9, 4.7]) {
+    b.box(x, 6.05, -1.0, 0.14, 1.35, 2.35, PALETTE.hullDark);
+  }
+  b.box(0, 6.72, -1.0, 10.0, 0.22, 2.6, PALETTE.hullDark);
+  b.box(0, 6.92, -1.0, 9.0, 0.16, 1.7, PALETTE.metal);
+  for (const x of [-4.0, 4.0]) b.box(x, 6.7, -1.0, 0.2, 0.18, 2.8, PALETTE.metal);
+  // Street stalls under canvas awnings, clear of the doorway line and the
+  // front tile edge.
+  for (const [x, z] of [
+    [-5.0, 4.8],
+    [-1.8, 5.1],
+    [4.1, 4.9],
+  ] as const) {
+    b.material = MATERIAL.bareMetal;
+    b.box(x, 0.9, z, 2.0, 0.14, 1.1, PALETTE.metal);
+    for (const dx of [-0.8, 0.8]) b.box(x + dx, 0.68, z, 0.08, 0.6, 0.08, PALETTE.darkMetal);
+    b.material = MATERIAL.canvas;
+    b.box(x, 2.05, z, 2.3, 0.08, 1.5, PALETTE.sandbag);
+    b.material = MATERIAL.painted;
+    b.box(x, 1.08, z + 0.35, 1.4, 0.2, 0.35, PALETTE.red);
+    b.box(x - 0.5, 1.2, z - 0.1, 0.5, 0.45, 0.5, PALETTE.oliveDark);
+  }
+  // Clock bracket over the main entrance and roof vents at the rear.
+  b.material = MATERIAL.bareMetal;
+  b.box(0, 4.1, 3.5, 0.14, 0.14, 0.8, PALETTE.darkMetal);
+  b.cylinder(0, 4.32, 3.9, 0.42, 0.14, 12, PALETTE.white);
+  b.box(0, 4.32, 3.98, 0.1, 0.44, 0.04, PALETTE.darkMetal);
+  b.box(0, 4.32, 3.98, 0.3, 0.08, 0.04, PALETTE.darkMetal);
+  b.material = null;
+  roofPlant(b, 4.3, 5.19, -3.6, 1.4, 1.2);
+  ownershipPanel(b, 0, 5.34, -1.0, 3.0, 1.4);
+  return b.build();
+}
+
+/** Wire and a held fire station forecourt. */
+function fireStationDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  garrisonDressing(b, {
+    halfX: 7.15,
+    halfZ: 7.15,
+    groundY: 0,
+    roofY: 5.96,
+    roofHalfX: 6.3,
+    roofHalfZ: 4.6,
+    entranceBarricade: false,
+  });
+  sandbagWall(b, 0, 7.2, 5.0, true, 0.9);
+  return b.build();
+}
+
+/** Wire and a sandbagged ambulance bay for an occupied clinic. */
+function clinicDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  garrisonDressing(b, {
+    halfX: 5.15,
+    halfZ: 5.15,
+    groundY: 0,
+    roofY: 7.06,
+    roofHalfX: 4.3,
+    roofHalfZ: 3.8,
+    entranceBarricade: false,
+  });
+  sandbagWall(b, 1.4, 5.55, 4.0, true, 0.9);
+  return b.build();
+}
+
+/** Wire and a held arcade for an occupied market hall. */
+function marketHallDressing(): MeshBuffers {
+  const b = new MeshBuilder();
+  garrisonDressing(b, {
+    halfX: 7.15,
+    halfZ: 5.15,
+    groundY: 0,
+    roofY: 5.22,
+    roofHalfX: 6.0,
+    roofHalfZ: 3.6,
+    entranceBarricade: false,
+  });
+  // Sandbags block the central arcade opening, between the outer stalls.
+  sandbagWall(b, 1.15, 5.6, 2.4, true, 0.9);
+  return b.build();
+}
+
 /** Wire and a held schoolyard for an occupied schoolhouse. */
 function schoolhouseDressing(): MeshBuffers {
   const b = new MeshBuilder();
@@ -3889,7 +4373,7 @@ const STYLES: Record<string, BuildingStyle> = {
   shipyard: { body: buildShipyard() },
   researchCentre: { body: buildResearchCentre() },
   strategicOps: {
-    body: mergeMeshes(buildResearchCentre(), strategicOpsDressing()),
+    body: mergeMeshes(buildStrategicOps(), strategicOpsDressing()),
     rotor: { mesh: buildRadarStationDish(), offset: [0.6, 8.15, -3.2], rate: 0.55 },
   },
   // The shipyard has no shutter: its corvettes launch from the open slipway
@@ -3903,6 +4387,16 @@ const STYLES: Record<string, BuildingStyle> = {
     body: buildMgNestBody(),
     turret: buildMgNestTurret(),
     turretOffset: [0, 1.55, 0],
+  },
+  sandbagWall: {
+    body: buildSandbagWallSegment(),
+    corner: buildSandbagWallCorner(),
+    diagonal: buildSandbagWallJoint(),
+  },
+  concreteWall: {
+    body: buildConcreteWallSegment(),
+    corner: buildConcreteWallCorner(),
+    diagonal: buildConcreteWallJoint(),
   },
   bunker: {
     body: buildBunkerBody(),
@@ -4049,6 +4543,18 @@ const STYLES: Record<string, BuildingStyle> = {
   townhouseTerrace: {
     body: buildTownhouseTerrace(),
     garrisoned: mergeMeshes(buildTownhouseTerrace(), townhouseTerraceDressing()),
+  },
+  fireStation: {
+    body: buildFireStation(),
+    garrisoned: mergeMeshes(buildFireStation(), fireStationDressing()),
+  },
+  clinic: {
+    body: buildClinic(),
+    garrisoned: mergeMeshes(buildClinic(), clinicDressing()),
+  },
+  marketHall: {
+    body: buildMarketHall(),
+    garrisoned: mergeMeshes(buildMarketHall(), marketHallDressing()),
   },
 };
 

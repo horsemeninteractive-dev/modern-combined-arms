@@ -130,9 +130,9 @@ export const BUILDING_FLAG_ANCHORS: Record<string, FlagAnchor> = {
   powerPlant: { x: -1.4, y: 4.25, z: -1.0 },
   // On the hall's clerestory cap: the building was enlarged to fill its 4x3
   // footprint, so the pole must start on the new roof, not inside it.
-  researchCentre: { x: 1.6, y: 4.8, z: -0.4 },
-  // Same hall as the research centre, so the pole uses the same clerestory
-  // cap; the mast farm and signals annex own the corners of this roof.
+  researchCentre: { x: -4.2, y: 5.16, z: -3.05 },
+  // The old research hall is now only used by Strategic Operations; the mast
+  // farm and signals annex own the corners of this roof.
   strategicOps: { x: 1.6, y: 4.8, z: -0.4 },
   radar: { x: -2.6, y: 3.12, z: 1.2 },
   // The launcher trains now, so the pole stands on the rear pad corner where
@@ -183,7 +183,15 @@ export const BUILDING_FLAG_ANCHORS: Record<string, FlagAnchor> = {
   autoGarage: { x: 0, y: 5.24, z: -1.6 },
   coldStore: { x: 0, y: 9.02, z: 2.0 },
   townhouseTerrace: { x: 0, y: 8.26, z: 0 },
+  fireStation: { x: -5.5, y: 9.56, z: -4.7 },
+  // Off the aerial mast on the stair tower: the clinic's new radio mast rises
+  // through the centre of that roof, and a flag pole sharing the spot would
+  // spear it.
+  clinic: { x: 1.9, y: 7.64, z: -3.6 },
+  marketHall: { x: 0, y: 5.24, z: -4.0 },
   bridge: { x: 6.9, y: 1.19, z: 0 },
+  sandbagWall: { x: 0, y: 1.18, z: 0 },
+  concreteWall: { x: 0, y: 2.5, z: 0 },
 };
 
 export function flagAnchorFor(defId: string | undefined): FlagAnchor | undefined {

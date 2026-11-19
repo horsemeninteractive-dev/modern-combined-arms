@@ -27,6 +27,7 @@ import {
   type MissionCinematicDoc,
   type MissionCinematicStep,
   type MissionCinematicTarget,
+  type MissionCinematicTransition,
   type MissionCondition,
   type MissionDebriefCopy,
   type MissionConsequenceDoc,
@@ -108,7 +109,16 @@ const OBJECTIVE_INITIAL = ['active', 'hidden'] as const;
 const AI_TASKS = ['attack', 'defend', 'patrol', 'reinforce'] as const;
 const AI_GROUP_INITIAL_STATES = ['active', 'dormant'] as const;
 /** `in-mission` is accepted as authored prose; the model uses `inMission`. */
-const CINEMATIC_KINDS = ['opening', 'inMission', 'intermission', 'ending'] as const;
+const CINEMATIC_KINDS = [
+  'campaignIntro',
+  'opening',
+  'briefing',
+  'inMission',
+  'debrief',
+  'intermission',
+  'ending',
+  'campaignFinale',
+] as const;
 /** A legacy dialogue line becomes this many seconds of subtitle. */
 export const LEGACY_LINE_SECONDS = 4.5;
 const ENTITY_ROLES = ['veteran', 'asset', 'protected', 'objective'] as const;
@@ -295,6 +305,11 @@ function parseAction(value: unknown, path: string): MissionAction {
         kind: 'spawnReinforcement',
         reinforcement: asNonEmpty(raw.reinforcement, `${path}.reinforcement`),
       };
+    case 'startCinematic':
+      return {
+        kind: 'startCinematic',
+        cinematic: asNonEmpty(raw.cinematic, `${path}.cinematic`),
+      };
     case 'endMission':
       return { kind: 'endMission', outcome: oneOf(raw.outcome, `${path}.outcome`, ['victory', 'defeat']) };
     default:
@@ -389,7 +404,16 @@ function parseCinematicTarget(value: unknown, path: string): MissionCinematicTar
   if (kind === 'entity') {
     return { kind: 'entity', entity: asNonEmpty(raw.entity, `${path}.entity`) };
   }
-  return fail(`${path}.kind`, `"position" or "entity" (found "${kind}")`) as never;
+  if (kind === 'restore') return { kind: 'restore' };
+  return fail(`${path}.kind`, `"position", "entity" or "restore" (found "${kind}")`) as never;
+}
+
+function parseCinematicTransition(value: unknown, path: string): MissionCinematicTransition {
+  const raw = asRecord(value, path);
+  return {
+    kind: oneOf(raw.kind, `${path}.kind`, ['cut', 'fade'] as const),
+    durationSeconds: asNumber(raw.durationSeconds, `${path}.durationSeconds`),
+  };
 }
 
 function parseCinematicStep(value: unknown, path: string): MissionCinematicStep {
@@ -399,40 +423,191 @@ function parseCinematicStep(value: unknown, path: string): MissionCinematicStep 
     case 'camera': {
       const target = parseCinematicTarget(raw.target, `${path}.target`);
       const zoom = raw.zoom === undefined ? undefined : asNumber(raw.zoom, `${path}.zoom`);
+      const rotationDegrees =
+        raw.rotationDegrees === undefined
+          ? undefined
+          : asNumber(raw.rotationDegrees, `${path}.rotationDegrees`);
       const durationSeconds = asNumber(raw.durationSeconds, `${path}.durationSeconds`);
       const holdSeconds =
         raw.holdSeconds === undefined ? undefined : asNumber(raw.holdSeconds, `${path}.holdSeconds`);
+      const shake = raw.shake === undefined ? undefined : asNumber(raw.shake, `${path}.shake`);
+      const track = raw.track === undefined ? undefined : asBool(raw.track, `${path}.track`);
+      const ease =
+        raw.ease === undefined
+          ? undefined
+          : oneOf(raw.ease, `${path}.ease`, ['smooth', 'linear', 'cut'] as const);
       return {
         kind: 'camera',
         target,
         ...(zoom !== undefined ? { zoom } : {}),
+        ...(rotationDegrees !== undefined ? { rotationDegrees } : {}),
         durationSeconds,
         ...(holdSeconds !== undefined ? { holdSeconds } : {}),
+        ...(track !== undefined ? { track } : {}),
+        ...(shake !== undefined ? { shake } : {}),
+        ...(ease !== undefined ? { ease } : {}),
       };
     }
     case 'line': {
       const durationSeconds = asNumber(raw.durationSeconds, `${path}.durationSeconds`);
       const pauseSeconds =
         raw.pauseSeconds === undefined ? undefined : asNumber(raw.pauseSeconds, `${path}.pauseSeconds`);
+      const portrait =
+        raw.portrait === undefined ? undefined : asNonEmpty(raw.portrait, `${path}.portrait`);
+      const voice = raw.voice === undefined ? undefined : asNonEmpty(raw.voice, `${path}.voice`);
+      const radio = raw.radio === undefined ? undefined : asBool(raw.radio, `${path}.radio`);
       return {
         kind: 'line',
         speaker: asString(raw.speaker, `${path}.speaker`),
         text: asNonEmpty(raw.text, `${path}.text`),
         durationSeconds,
         ...(pauseSeconds !== undefined ? { pauseSeconds } : {}),
+        ...(portrait !== undefined ? { portrait } : {}),
+        ...(voice !== undefined ? { voice } : {}),
+        ...(radio !== undefined ? { radio } : {}),
       };
     }
     case 'notify': {
       const durationSeconds =
         raw.durationSeconds === undefined ? undefined : asNumber(raw.durationSeconds, `${path}.durationSeconds`);
+      const heading =
+        raw.heading === undefined ? undefined : asNonEmpty(raw.heading, `${path}.heading`);
       return {
         kind: 'notify',
         text: asNonEmpty(raw.text, `${path}.text`),
         ...(durationSeconds !== undefined ? { durationSeconds } : {}),
+        ...(heading !== undefined ? { heading } : {}),
+      };
+    }
+    case 'effect': {
+      const scale = raw.scale === undefined ? undefined : asNumber(raw.scale, `${path}.scale`);
+      const durationSeconds =
+        raw.durationSeconds === undefined ? undefined : asNumber(raw.durationSeconds, `${path}.durationSeconds`);
+      return {
+        kind: 'effect',
+        effect: oneOf(raw.effect, `${path}.effect`, ['explosion', 'smoke', 'dust', 'muzzle'] as const),
+        target: parseCinematicTarget(raw.target, `${path}.target`),
+        ...(scale !== undefined ? { scale } : {}),
+        ...(durationSeconds !== undefined ? { durationSeconds } : {}),
+      };
+    }
+    case 'actor': {
+      const action = oneOf(raw.action, `${path}.action`, [
+        'move',
+        'turn',
+        'animate',
+        'fire',
+        'enter',
+        'leave',
+        'appear',
+        'disappear',
+      ] as const);
+      const entity = asNonEmpty(raw.entity, `${path}.entity`);
+      const durationSeconds = asNumber(raw.durationSeconds, `${path}.durationSeconds`);
+      const ease =
+        raw.ease === undefined
+          ? undefined
+          : oneOf(raw.ease, `${path}.ease`, ['smooth', 'linear', 'cut'] as const);
+      if (action === 'move') {
+        return {
+          kind: 'actor',
+          action,
+          entity,
+          x: asNumber(raw.x, `${path}.x`),
+          z: asNumber(raw.z, `${path}.z`),
+          durationSeconds,
+          ...(ease !== undefined ? { ease } : {}),
+        };
+      }
+      if (action === 'turn') {
+        return {
+          kind: 'actor',
+          action,
+          entity,
+          facingDegrees: asNumber(raw.facingDegrees, `${path}.facingDegrees`),
+          durationSeconds,
+          ...(ease !== undefined ? { ease } : {}),
+        };
+      }
+      if (action === 'animate') {
+        return {
+          kind: 'actor',
+          action,
+          entity,
+          pose: oneOf(raw.pose, `${path}.pose`, ['idle', 'walk'] as const),
+          durationSeconds,
+        };
+      }
+      if (action === 'fire') {
+        const scale = raw.scale === undefined ? undefined : asNumber(raw.scale, `${path}.scale`);
+        return {
+          kind: 'actor',
+          action,
+          entity,
+          target: parseCinematicTarget(raw.target, `${path}.target`),
+          ...(scale !== undefined ? { scale } : {}),
+          durationSeconds,
+        };
+      }
+      if (action === 'enter') {
+        return {
+          kind: 'actor',
+          action,
+          entity,
+          structure: asNonEmpty(raw.structure, `${path}.structure`),
+          durationSeconds,
+        };
+      }
+      if (action === 'leave') {
+        return {
+          kind: 'actor',
+          action,
+          entity,
+          structure: asNonEmpty(raw.structure, `${path}.structure`),
+          x: asNumber(raw.x, `${path}.x`),
+          z: asNumber(raw.z, `${path}.z`),
+          durationSeconds,
+        };
+      }
+      return { kind: 'actor', action, entity, durationSeconds };
+    }
+    case 'sound': {
+      const gain = raw.gain === undefined ? undefined : asNumber(raw.gain, `${path}.gain`);
+      const durationSeconds =
+        raw.durationSeconds === undefined ? undefined : asNumber(raw.durationSeconds, `${path}.durationSeconds`);
+      return {
+        kind: 'sound',
+        cue: asNonEmpty(raw.cue, `${path}.cue`),
+        ...(gain !== undefined ? { gain } : {}),
+        ...(durationSeconds !== undefined ? { durationSeconds } : {}),
+      };
+    }
+    case 'card': {
+      const subheading =
+        raw.subheading === undefined ? undefined : asString(raw.subheading, `${path}.subheading`);
+      const body = raw.body === undefined ? undefined : asString(raw.body, `${path}.body`);
+      return {
+        kind: 'card',
+        heading: asNonEmpty(raw.heading, `${path}.heading`),
+        ...(subheading !== undefined ? { subheading } : {}),
+        ...(body !== undefined ? { body } : {}),
+        durationSeconds: asNumber(raw.durationSeconds, `${path}.durationSeconds`),
+      };
+    }
+    case 'music': {
+      const durationSeconds =
+        raw.durationSeconds === undefined ? undefined : asNumber(raw.durationSeconds, `${path}.durationSeconds`);
+      return {
+        kind: 'music',
+        track: asNonEmpty(raw.track, `${path}.track`),
+        ...(durationSeconds !== undefined ? { durationSeconds } : {}),
       };
     }
     default:
-      return fail(`${path}.kind`, `"camera", "line" or "notify" (found "${kind}")`) as never;
+      return fail(
+        `${path}.kind`,
+        `"camera", "line", "notify", "effect", "actor", "sound", "card" or "music" (found "${kind}")`,
+      ) as never;
   }
 }
 
@@ -443,6 +618,16 @@ function parseCinematic(value: unknown, path: string): MissionCinematicDoc {
     authoredKind === 'in-mission' ? 'inMission' : (oneOf(authoredKind, `${path}.kind`, CINEMATIC_KINDS) as MissionCinematicContext);
   const atSeconds =
     raw.atSeconds === undefined ? undefined : asNumber(raw.atSeconds, `${path}.atSeconds`);
+  const authoredTransition =
+    raw.transition === undefined ? undefined : asRecord(raw.transition, `${path}.transition`);
+  const transitionIn =
+    authoredTransition?.in === undefined
+      ? undefined
+      : parseCinematicTransition(authoredTransition.in, `${path}.transition.in`);
+  const transitionOut =
+    authoredTransition?.out === undefined
+      ? undefined
+      : parseCinematicTransition(authoredTransition.out, `${path}.transition.out`);
   const authoredDialogue = asArray(raw.dialogue, `${path}.dialogue`).map((entry, i) => {
     const line = asRecord(entry, `${path}.dialogue[${i}]`);
     return {
@@ -474,6 +659,14 @@ function parseCinematic(value: unknown, path: string): MissionCinematicDoc {
     kind,
     skippable: asBool(raw.skippable ?? true, `${path}.skippable`),
     ...(atSeconds !== undefined ? { atSeconds } : {}),
+    ...(transitionIn || transitionOut
+      ? {
+          transition: {
+            ...(transitionIn ? { in: transitionIn } : {}),
+            ...(transitionOut ? { out: transitionOut } : {}),
+          },
+        }
+      : {}),
     steps,
     dialogue,
   };

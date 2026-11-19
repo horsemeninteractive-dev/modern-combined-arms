@@ -1,5 +1,5 @@
 import { BUILDINGS, isIndestructibleStructure } from '../data/buildings';
-import { UNITS } from '../data/units';
+import { ALL_UNITS } from '../data/units';
 import { containerAcceptsPassenger, containerSpec } from '../sim/containers';
 import { entityWeapons, usesPrimaryAmmo, weaponCanHurt } from '../sim/combat';
 import { MAX_QUEUED_ORDERS, TILE_SIZE } from '../sim/constants';
@@ -121,7 +121,7 @@ const ALLOWED_FIELDS: Record<CommandType, readonly string[]> = {
   produce: ['type', 'buildingId', 'defId'],
   cancelProduction: ['type', 'buildingId', 'index'],
   reorderProduction: ['type', 'buildingId', 'defId', 'beforeDefId'],
-  placeBuilding: ['type', 'builderId', 'defId', 'tileX', 'tileZ'],
+  placeBuilding: ['type', 'builderId', 'defId', 'tileX', 'tileZ', 'facing'],
   sellBuilding: ['type', 'buildingId'],
   setRally: ['type', 'buildingId', 'x', 'z'],
   research: ['type', 'buildingId', 'techId'],
@@ -395,8 +395,8 @@ export class CommandGate {
           !selected.entities.some(
             (entity) =>
               !!entity.aircraft &&
-              !!UNITS[entity.defId]?.transport &&
-              UNITS[entity.defId]?.domain === 'air',
+              !!ALL_UNITS[entity.defId]?.transport &&
+              ALL_UNITS[entity.defId]?.domain === 'air',
           )
         ) {
           return reject('wrong-entity-type', 'No selected unit can land on open ground.');
@@ -493,8 +493,8 @@ export class CommandGate {
         const capable = selected.entities.some(
           (entity) =>
             entity.harvester ||
-            UNITS[entity.defId]?.domain === 'air' ||
-            UNITS[entity.defId]?.domain === 'naval',
+            ALL_UNITS[entity.defId]?.domain === 'air' ||
+            ALL_UNITS[entity.defId]?.domain === 'naval',
         );
         if (!capable) return reject('no-return-capable', 'No selected unit can return to base.');
         return { ok: true, command: { type: 'return', team: seat.team, ids } };
@@ -506,7 +506,7 @@ export class CommandGate {
         if (raw.dive !== true && raw.dive !== false) {
           return reject('malformed-command', 'dive must be a boolean.');
         }
-        if (selected.entities.some((entity) => !entity.submarine || !UNITS[entity.defId]?.submarine)) {
+        if (selected.entities.some((entity) => !entity.submarine || !ALL_UNITS[entity.defId]?.submarine)) {
           return reject('not-submarine', 'Only submarines can dive.');
         }
         if (
@@ -527,7 +527,7 @@ export class CommandGate {
           return reject('entity-garrisoned', 'Garrisoned infantry cannot capture.');
         }
         if (
-          !selected.entities.some((entity) => !!UNITS[entity.defId]?.canCapture)
+          !selected.entities.some((entity) => !!ALL_UNITS[entity.defId]?.canCapture)
         ) {
           return reject('wrong-entity-type', 'Select a unit that can capture.');
         }
@@ -556,7 +556,7 @@ export class CommandGate {
       case 'repair': {
         const selected = this.requireOwned(ids, seat, 'unit');
         if (!selected.ok) return selected;
-        if (!selected.entities.some((entity) => !!UNITS[entity.defId]?.canBuild)) {
+        if (!selected.entities.some((entity) => !!ALL_UNITS[entity.defId]?.canBuild)) {
           return reject('wrong-entity-type', 'Select a unit that can repair.');
         }
         const targetId = this.readTargetId(raw.targetId);
@@ -593,7 +593,7 @@ export class CommandGate {
           (entity) =>
             entity.kind === 'unit' &&
             !entity.garrisonId &&
-            !!UNITS[entity.defId]?.canGarrison &&
+            !!ALL_UNITS[entity.defId]?.canGarrison &&
             containerAcceptsPassenger(target, entity),
         );
         if (eligible.length === 0) {
@@ -657,11 +657,11 @@ export class CommandGate {
             // passenger. The same order unloads either kind of container. A
             // mobile carrier's owner may unload everyone aboard; a passenger
             // owner may unload only their own infantry from a ground carrier.
-            const air = entity.kind === 'unit' && UNITS[entity.defId]?.domain === 'air';
+            const air = entity.kind === 'unit' && ALL_UNITS[entity.defId]?.domain === 'air';
             const naval =
               entity.kind === 'unit' &&
-              UNITS[entity.defId]?.domain === 'naval' &&
-              !!UNITS[entity.defId]?.transport;
+              ALL_UNITS[entity.defId]?.domain === 'naval' &&
+              !!ALL_UNITS[entity.defId]?.transport;
             const ownsCarrier = entity.owner === seat.playerId;
             if ((air || naval) && !ownsCarrier) {
               return reject(
@@ -874,7 +874,7 @@ export class CommandGate {
     if (defId === null) return reject('invalid-definition', 'Unit definition is not valid.');
 
     if (type === 'produce') {
-      if (!UNITS[defId]) return reject('invalid-definition', 'Unit definition is not valid.');
+      if (!ALL_UNITS[defId]) return reject('invalid-definition', 'Unit definition is not valid.');
       const status = this.game.productionStatus(seat.playerId, buildingId, defId);
       if (!status.ok) {
         return reject('production-unavailable', 'Facility cannot produce that unit.', status.reason);
@@ -922,6 +922,14 @@ export class CommandGate {
       return reject('out-of-bounds', 'Build site is outside the map.');
     }
 
+    let facing: number | undefined;
+    if (raw.facing !== undefined) {
+      if (typeof raw.facing !== 'number' || !Number.isFinite(raw.facing)) {
+        return reject('invalid-coordinate', 'Build facing is not valid.');
+      }
+      facing = raw.facing;
+    }
+
     let builderId: number | undefined;
     if (raw.builderId !== undefined) {
       if (!isPositiveInt(raw.builderId)) return reject('invalid-building', 'Builder is not valid.');
@@ -931,7 +939,7 @@ export class CommandGate {
         builder.hp <= 0 ||
         builder.owner !== seat.playerId ||
         builder.kind !== 'unit' ||
-        !UNITS[builder.defId]?.canBuild
+        !ALL_UNITS[builder.defId]?.canBuild
       ) {
         return reject('not-your-entity', 'That builder does not belong to this player.');
       }
@@ -942,7 +950,7 @@ export class CommandGate {
           entity.kind === 'unit' &&
           entity.hp > 0 &&
           entity.owner === seat.playerId &&
-          !!UNITS[entity.defId]?.canBuild,
+          !!ALL_UNITS[entity.defId]?.canBuild,
       );
       if (!hasBuilder) return reject('no-builder', 'No builder is available.');
     }
@@ -951,6 +959,7 @@ export class CommandGate {
     if (!status.ok) return reject('placement-invalid', 'That site cannot be built on.', status.code);
     const command: Command = { type: 'placeBuilding', team: seat.team, defId, tileX, tileZ };
     if (builderId !== undefined) command.builderId = builderId;
+    if (facing !== undefined) command.facing = facing;
     return { ok: true, command };
   }
 

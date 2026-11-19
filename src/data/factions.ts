@@ -1,6 +1,7 @@
 import type { AllianceDef, FactionDef, FactionIdentity, NationDef, RosterDef } from '../sim/types';
 import { BUILDING_LIST } from './buildings';
 import { UNIT_LIST } from './units';
+import { ZOMBIE_UNIT_IDS } from './zombies';
 
 /**
  * Canonical unit slot → Eurasian Pact platform.
@@ -325,8 +326,34 @@ export const FACTIONS: Readonly<Record<string, FactionDef>> = Object.freeze({
   }),
 });
 
+
+/**
+ * Factions that are not offered to a player.
+ *
+ * The horde is an owner id only: ownership, colours and fog resolve through the
+ * same identity path as a nation, but it fields no roster, no production and no
+ * technology, and no menu may offer it. Keeping it out of `FACTIONS` keeps that
+ * registry exactly what its name says — the two playable-legacy presets.
+ */
+export const HORDE_FACTIONS: Readonly<Record<string, FactionDef>> = Object.freeze({
+  infected: Object.freeze({
+    id: 'infected',
+    name: 'The Infected',
+    shortName: 'INFECTED',
+    color: '#8fae4a',
+    accent: '#d6f08a',
+    blurb:
+      'The horde. It builds nothing, researches nothing and negotiates nothing: it walks at the base from every road the map offers.',
+    allianceId: 'defender',
+    horde: true,
+    units: ZOMBIE_UNIT_IDS,
+    buildings: Object.freeze([]),
+  }),
+});
+
 /** Country/coalition display identity for a legacy preset. */
 export function factionDef(id: string): FactionDef {
+  if (Object.hasOwn(HORDE_FACTIONS, id)) return HORDE_FACTIONS[id];
   return Object.hasOwn(FACTIONS, id) ? FACTIONS[id] : FACTIONS.baltic;
 }
 
@@ -376,6 +403,8 @@ export function tryIdentityDef(id: string): IdentityDef | undefined {
       legacy: false,
       doctrine: nation.doctrine,
     });
+  } else if (Object.hasOwn(HORDE_FACTIONS, id)) {
+    identity = Object.freeze({ ...HORDE_FACTIONS[id], playable: false, legacy: false });
   } else if (Object.hasOwn(FACTIONS, id)) {
     identity = Object.freeze({ ...FACTIONS[id], playable: false, legacy: true });
   }
@@ -459,5 +488,5 @@ export function resolveOpponentNation(nationOrPresetId: string, chosenId?: strin
  * `Object.hasOwn` keeps prototype keys such as `toString` out of the registry.
  */
 export function isKnownFactionId(id: string): boolean {
-  return Object.hasOwn(NATIONS, id) || Object.hasOwn(FACTIONS, id);
+  return Object.hasOwn(NATIONS, id) || Object.hasOwn(FACTIONS, id) || Object.hasOwn(HORDE_FACTIONS, id);
 }

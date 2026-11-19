@@ -15,11 +15,13 @@ export const MATERIAL = {
   glass: 5,
   canvas: 6,
   track: 7,
+  brick: 8,
+  plaster: 9,
 } as const;
 
 export type MaterialId = (typeof MATERIAL)[keyof typeof MATERIAL];
 
-export const MATERIAL_COUNT = 8;
+export const MATERIAL_COUNT = 10;
 
 export interface MaterialDef {
   id: MaterialId;
@@ -48,11 +50,13 @@ export const MATERIAL_DEFS: readonly MaterialDef[] = [
   { id: MATERIAL.glass, name: 'glass', roughness: 0.14, metalness: 0.28, detail: 0.04, specular: 1.0 },
   { id: MATERIAL.canvas, name: 'canvas and foliage', roughness: 0.94, metalness: 0.0, detail: 0.3, specular: 0.05 },
   { id: MATERIAL.track, name: 'track and rubber', roughness: 0.86, metalness: 0.16, detail: 0.36, specular: 0.12 },
+  { id: MATERIAL.brick, name: 'brickwork', roughness: 0.93, metalness: 0.0, detail: 0.78, specular: 0.05 },
+  { id: MATERIAL.plaster, name: 'rendered plaster', roughness: 0.88, metalness: 0.0, detail: 0.48, specular: 0.07 },
 ];
 
 /**
  * One row per material: roughness, metalness, detail and specular, encoded as
- * bytes. A 8x1 texture is cheaper to bind than four uniform arrays and keeps
+ * bytes. A 10x1 texture is cheaper to bind than four uniform arrays and keeps
  * the shader's material lookup data-driven.
  */
 export function materialLut(): Uint8Array {

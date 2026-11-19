@@ -46,6 +46,15 @@ describe('detailed shadows', () => {
     expect(Math.abs(inside.y / inside.w)).toBeLessThanOrEqual(1);
   });
 
+  it('snaps the fitted shadow box to light-space texels', () => {
+    const sun: Vec3 = [0.4, 0.8, -0.3];
+    // A sub-texel camera move must leave the matrix unchanged; otherwise every
+    // shadow edge slides a fraction of a texel per frame as the camera pans.
+    const a = shadowLightMatrix(sun, 120, 80, 90, 4, 2048);
+    const b = shadowLightMatrix(sun, 120.001, 80.001, 90, 4, 2048);
+    a.matrix.forEach((value, i) => expect(b.matrix[i]).toBeCloseTo(value, 5));
+  });
+
   it('rasterises casters with the light matrix, including instanced props', () => {
     expect(SHADOW_DEPTH_VS).toContain('uLightVP');
     expect(SHADOW_DEPTH_VS).toContain('uModel');
@@ -82,7 +91,9 @@ describe('detailed shadows', () => {
     );
     // Terrain, props, structures and hulls all cast, and the map is fitted to
     // the visible ground rather than the whole map.
-    expect(renderer).toContain('shadowLightMatrix(this.sun, cx, cz, radius)');
+    expect(renderer).toContain(
+      'shadowLightMatrix(this.sun, cx, cz, radius, 4, this.shadowMap.size)',
+    );
     expect(renderer).toContain('gl.drawElements(gl.TRIANGLES, this.terrainGpu.count');
     expect(renderer).toContain('style.body.draw()');
     // A vehicle's turret is part of its silhouette; casting only the hull lost

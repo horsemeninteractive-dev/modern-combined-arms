@@ -18,6 +18,7 @@ import {
 } from '../src/render/gl';
 import { readFileSync } from 'node:fs';
 import { buildLightView } from '../src/render/lightView';
+import { MeshBuilder } from '../src/render/geometry';
 import { dayNightAt } from '../src/sim/dayNight';
 
 const styleCss = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
@@ -29,6 +30,20 @@ function emptyScenario(size = 16): Scenario {
 function setRoad(s: Scenario, x: number, z: number): void {
   s.tiles[tileIndex(s.width, x, z)].t = Terrain.Road;
 }
+
+describe('sphere normals', () => {
+  it('keeps a unit normal at both poles', () => {
+    const b = new MeshBuilder();
+    b.sphere(0, 0, 0, 1, 3, 7, [1, 1, 1]);
+    const mesh = b.build();
+    // A pole ring's first two vertices coincide, so the geometric face
+    // normal is zero. Lighting normalizes it and a zero vector renders black.
+    for (let i = 0; i < mesh.normals.length; i += 3) {
+      const length = Math.hypot(mesh.normals[i], mesh.normals[i + 1], mesh.normals[i + 2]);
+      expect(length).toBeCloseTo(1, 5);
+    }
+  });
+});
 
 describe('road network', () => {
   it('joins two diagonal road tiles with one centre-line segment', () => {

@@ -32,7 +32,7 @@ import {
   buildingRequirements,
   isIndestructibleStructure,
 } from '../data/buildings';
-import { UNITS, unitFamily } from '../data/units';
+import { unitFamily, ALL_UNITS } from '../data/units';
 import {
   containerAcceptsPassenger,
   containerBoardingRange,
@@ -179,6 +179,8 @@ import {
   type SuperweaponStatus,
 } from './superweapons';
 import { AIController, initialAIState } from './ai';
+import { OutbreakMatch, type OutbreakSaveState } from '../outbreak/match';
+import { INFECTED_FACTION_ID } from '../data/zombies';
 import { structureBenefit } from './infrastructure';
 import {
   SAVE_FORMAT,
@@ -311,6 +313,14 @@ const MEDIC_HEAL_RANGE = 5 * TILE_SIZE;
 const MEDIC_HEAL_RATE = 4;
 const BUILD_RADIUS = 11;
 /**
+ * Accuracy a shooter loses against a low-profile body at full range. The
+ * penalty fades to nothing inside a tile: a crawler at your feet is an ordinary
+ * target, and closing to it is the answer to one that is not.
+ */
+const LOW_PROFILE_ACCURACY = 0.18;
+/** Tiles over which that penalty reaches its full value. */
+const LOW_PROFILE_RAMP_TILES = 6;
+/**
  * Below this fraction of its maximum integrity a shelter is no longer tenable:
  * the occupants are driven out and nobody may re-enter until it is repaired.
  */
@@ -351,16 +361,34 @@ export class Game {
   state: GameState;
   rng: Rng;
   blocked: Uint8Array;
+  /** Sandbag obstacles: infantry and wheeled vehicles are blocked, tracked vehicles cross and crush. */
+  footBlocked: Uint8Array;
   /** Entity ids visible to each player id (rebuilt during vision refresh). */
   visible: Set<number>[];
   localPlayerId: number;
   pending: Command[] = [];
   ai: AIController | null = null;
   /**
+   * Outbreak's wave director and horde controller, or null in every other mode.
+   *
+   * It is created only when the scenario carries `meta.outbreak`, runs inside
+   * the fixed tick, and owns no state the simulation does not already have:
+   * zombies are ordinary entities of the infected owner.
+   */
+  outbreak: OutbreakMatch | null = null;
+  /**
    * Mission runtime for a mission-bearing scenario; null for skirmish and
    * multiplayer. It is inert in this stage: it owns state, not behaviour.
    */
   mission: MissionRuntime | null = null;
+  /**
+   * Presentation requests raised by mission triggers this tick.
+   *
+   * Deliberately outside `MissionRuntime`: a cinematic request is not mission
+   * state, cannot change a save or a state hash, and a dropped request costs a
+   * scene rather than a battle outcome.
+   */
+  private cinematicRequests: string[] = [];
   private byId = new Map<number, Entity>();
   /** Fast lookup over `state.charted`, keyed "team:entityId". */
   private chartedIndex = new Set<string>();
@@ -446,10 +474,16 @@ export class Game {
     }
     this.rng = new Rng(this.state.seed);
     this.blocked = new Uint8Array(scenario.width * scenario.height);
+    this.footBlocked = new Uint8Array(scenario.width * scenario.height);
     this.visible = [[], []].map(() => new Set<number>());
     this.state.fog = [0, 1].map(() => new Uint8Array(scenario.width * scenario.height));
     if (!opts.skipInit) this.initialize();
     if (opts.enableAI !== false) this.ai = new AIController();
+    // The wave director is part of the mode, not of opponent strength: it runs
+    // whether or not a skirmish AI is enabled, and only for an Outbreak map.
+    if (scenario.meta.outbreak) {
+      this.outbreak = new OutbreakMatch(this, scenario.meta.outbreak, this.state.seed);
+    }
   }
 
   private createAIState(
@@ -539,13 +573,21 @@ export class Game {
     this.applyMissionGroupDormancy();
     this.grantScenarioResearch();
     this.blocked.fill(0);
+    this.footBlocked.fill(0);
     for (const e of this.state.entities) {
       if (e.kind === 'building') {
         const def = BUILDINGS[e.defId];
         const tx = Math.round(e.x / TILE_SIZE - def.footprint.w / 2);
         const tz = Math.round(e.z / TILE_SIZE - def.footprint.h / 2);
         // A deck is crossed, not walked around: only a dropped span blocks.
-        stampFootprint(this.blocked, this.state.map, e.defId, tx, tz, def.walkable && e.hp > 0 ? 0 : 1);
+        const blocksAll = !def.wall || def.wall.blocksVehicles;
+        const blockedValue = def.walkable && !def.wall
+          ? (e.hp > 0 ? 0 : 1)
+          : (blocksAll ? 1 : 0);
+        stampFootprint(this.blocked, this.state.map, e.defId, tx, tz, blockedValue);
+        if (def.wall?.blocksFoot) {
+          stampFootprint(this.footBlocked, this.state.map, e.defId, tx, tz, e.hp > 0 ? 1 : 0);
+        }
       }
     }
     this.deckDirty = true;
@@ -660,7 +702,7 @@ export class Game {
         refineId: 0,
       };
     }
-    if (def.domain === 'air') {
+    if (def.domain === 'air' && !def.flier) {
       // A home must offer a position of this hull's kind: an airfield's single
       // helicopter pad is not a berth for a fighter, and a heliport has no
       // flight line at all.
@@ -863,8 +905,14 @@ export class Game {
     e.guardX = center.x;
     e.guardZ = center.z;
     this.addEntity(e);
-    stampFootprint(this.blocked, this.state.map, s.defId, s.x, s.z, def.walkable ? 0 : 1);
-    if (!def.walkable) this.releaseBoxedCrew(s.owner, s.x, s.z, s.defId);
+    const blocksAll = def.walkable && !def.wall
+      ? false
+      : !def.wall || def.wall.blocksVehicles;
+    stampFootprint(this.blocked, this.state.map, s.defId, s.x, s.z, blocksAll ? 1 : 0);
+    if (def.wall?.blocksFoot) {
+      stampFootprint(this.footBlocked, this.state.map, s.defId, s.x, s.z, 1);
+    }
+    if (!def.walkable && !def.wall) this.releaseBoxedCrew(s.owner, s.x, s.z, s.defId);
     // Anything standing here takes the ground with it, deposit included: an
     // authored map was swept when it was assembled, but a structure spawned
     // during play — a mission objective, a forward base — has to sweep its own.
@@ -879,6 +927,66 @@ export class Game {
       e.aiRole = def.id === 'relay' ? 'relay' : 'objective';
     }
     return e;
+  }
+
+  /**
+   * Place one infected at a world point.
+   *
+   * The wave director decides what and where; the simulation decides whether the
+   * ground will take it. The first free tile nearest the requested point wins,
+   * searching outward in rings, so a wave whose entry point is inside a stand of
+   * trees still arrives instead of silently vanishing. Returns null when the
+   * area is genuinely full, which the director treats as "wait and try again".
+   *
+   * Spawned units are ordinary entities: same movement, same weapons, same
+   * damage rules, same snapshot and same save as every other unit.
+   */
+  spawnInfected(defId: string, x: number, z: number, owner: number): Entity | null {
+    const def = ALL_UNITS[defId];
+    if (!def) return null;
+    if (!this.player(owner)) return null;
+    const map = this.state.map;
+    if (def.domain === 'air') {
+      // A flier is placed where the horde asked for it: there is no ground to
+      // stand on and no footprint to block, so the walking search below would
+      // only drag it away from the approach it was meant to come in on.
+      const entity = this.spawnUnit(
+        owner,
+        defId,
+        clamp(x, TILE_SIZE * 0.5, (map.width - 0.5) * TILE_SIZE),
+        clamp(z, TILE_SIZE * 0.5, (map.height - 0.5) * TILE_SIZE),
+        { free: true },
+      );
+      entity.state = 'idle';
+      entity.order = null;
+      entity.stance = 'aggressive';
+      return entity;
+    }
+    const tileX = clamp(Math.floor(x / TILE_SIZE), 0, map.width - 1);
+    const tileZ = clamp(Math.floor(z / TILE_SIZE), 0, map.height - 1);
+    for (let radius = 0; radius <= 7; radius++) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dz)) !== radius) continue;
+          const cx = tileX + dx;
+          const cz = tileZ + dz;
+          if (cx < 0 || cz < 0 || cx >= map.width || cz >= map.height) continue;
+          const index = cz * map.width + cx;
+          if (this.blocked[index] || this.footBlocked[index]) continue;
+          if (!canStandOn(map.width, map.height, map.terrain, index, 'foot')) continue;
+          const entity = this.spawnUnit(owner, defId, (cx + 0.5) * TILE_SIZE, (cz + 0.5) * TILE_SIZE, {
+            free: true,
+          });
+          // A fresh body stands where it arrived until the director gives it a
+          // destination on its next reconsideration.
+          entity.state = 'idle';
+          entity.order = null;
+          entity.stance = 'aggressive';
+          return entity;
+        }
+      }
+    }
+    return null;
   }
 
   /**
@@ -1766,6 +1874,11 @@ export class Game {
    * of facing an invulnerable bunker.
    */
   private isAttackable(attackerOwner: number, target: Entity): boolean {
+    // A capturable objective cannot be destroyed: it changes hands only when an
+    // engineer takes it. Left in the target lists it is a wall a horde can beat
+    // on for the whole run, so no weapon is laid on it and no unit is asked to
+    // attack it. Capture is an order, not a target.
+    if (target.kind === 'building' && BUILDINGS[target.defId]?.capturable) return false;
     if (this.isHostile(attackerOwner, target.owner)) return true;
     if (target.owner !== -1 || target.kind !== 'building') return false;
     // A neutral span is a shared crossing rather than a protected objective:
@@ -1847,7 +1960,14 @@ export class Game {
           this.commandReorderProduction(cmd.team, cmd.buildingId, cmd.defId, cmd.beforeDefId);
           break;
         case 'placeBuilding':
-          this.commandPlaceBuilding(cmd.team, cmd.builderId, cmd.defId, cmd.tileX, cmd.tileZ);
+          this.commandPlaceBuilding(
+            cmd.team,
+            cmd.builderId,
+            cmd.defId,
+            cmd.tileX,
+            cmd.tileZ,
+            cmd.facing,
+          );
           break;
         case 'sellBuilding':
           this.commandSellBuilding(cmd.team, cmd.buildingId);
@@ -1925,8 +2045,8 @@ export class Game {
       (e) =>
         e.kind === 'unit' &&
         !!e.aircraft &&
-        !!UNITS[e.defId]?.transport &&
-        UNITS[e.defId]?.domain === 'air',
+        !!ALL_UNITS[e.defId]?.transport &&
+        ALL_UNITS[e.defId]?.domain === 'air',
     );
     if (transports.length === 0) {
       this.emit('orderFailed', {
@@ -2586,7 +2706,7 @@ export class Game {
       }
       e.path = [];
       e.pathIndex = 0;
-      if (UNITS[e.defId]?.domain === 'air' && e.aircraft) {
+      if (ALL_UNITS[e.defId]?.domain === 'air' && e.aircraft) {
         this.launchAircraft(e);
       }
     }
@@ -3004,7 +3124,7 @@ export class Game {
       if (!container || !spec || container.hp <= 0 || passenger.hp <= 0) {
         throw new Error(`Container integrity: passenger ${passenger.id} has no live container.`);
       }
-      const def = UNITS[passenger.defId];
+      const def = ALL_UNITS[passenger.defId];
       if (!def || def.armour !== 'infantry' || !def.canGarrison) {
         throw new Error(`Container integrity: ${passenger.defId} cannot be a passenger.`);
       }
@@ -3109,8 +3229,8 @@ export class Game {
       return;
     }
     const mobile = spec.mobile;
-    const air = mobile && UNITS[target.defId]?.domain === 'air';
-    const naval = mobile && UNITS[target.defId]?.domain === 'naval';
+    const air = mobile && ALL_UNITS[target.defId]?.domain === 'air';
+    const naval = mobile && ALL_UNITS[target.defId]?.domain === 'naval';
     const label = mobile ? entityName(target) : buildingDef(target.defId).name;
     if (mobile) {
       if (!this.isFriendlyOwner(owner, target.owner)) {
@@ -3344,8 +3464,8 @@ export class Game {
     return (
       !!entity &&
       entity.kind === 'unit' &&
-      UNITS[entity.defId]?.domain === 'naval' &&
-      !!UNITS[entity.defId]?.transport
+      ALL_UNITS[entity.defId]?.domain === 'naval' &&
+      !!ALL_UNITS[entity.defId]?.transport
     );
   }
 
@@ -3849,7 +3969,7 @@ export class Game {
         // passenger owner may still unload only their own infantry from an APC;
         // air and naval transports are different because their owner controls
         // the landing or beaching, so a non-owner cannot command the unload.
-        const air = e.kind === 'unit' && UNITS[e.defId]?.domain === 'air';
+        const air = e.kind === 'unit' && ALL_UNITS[e.defId]?.domain === 'air';
         const naval = this.isNavalTransport(e);
         if (spec.mobile) {
           if ((air || naval) && e.owner !== owner) continue;
@@ -3868,7 +3988,7 @@ export class Game {
           container &&
           !(
             container.kind === 'unit' &&
-            (UNITS[container.defId]?.domain === 'air' ||
+            (ALL_UNITS[container.defId]?.domain === 'air' ||
               this.isNavalTransport(container)) &&
             container.owner !== owner
           )
@@ -3889,7 +4009,7 @@ export class Game {
       return;
     }
     for (const container of [...containers].sort((a, b) => a.id - b.id)) {
-      const isAir = container.kind === 'unit' && UNITS[container.defId]?.domain === 'air';
+      const isAir = container.kind === 'unit' && ALL_UNITS[container.defId]?.domain === 'air';
       const isNaval = this.isNavalTransport(container);
       if (isAir && !containerBoardingReady(container)) {
         // The unload command is not refused or silently queued: the transport
@@ -5072,6 +5192,19 @@ export class Game {
    * that stopped at the bare weapon range used to park just outside what they
    * could engage at in fog or at night, fire nothing, and never close further.
    */
+  /**
+   * Half the longer side of a structure's footprint, in world units.
+   *
+   * A contact weapon's effective distance stops at this wall, not at the centre
+   * of the roof. Non-buildings have no span.
+   */
+  private footprintSpan(target: Entity): number {
+    if (target.kind !== 'building') return 0;
+    const footprint = BUILDINGS[target.defId]?.footprint;
+    if (!footprint) return 0;
+    return (Math.max(footprint.w, footprint.h) / 2) * TILE_SIZE;
+  }
+
   private engagementReach(e: Entity, weapon: WeaponDef): number {
     const reach = weapon.indirect
       ? weapon.range
@@ -5104,7 +5237,7 @@ export class Game {
       if (source.kind !== 'unit' || source.hp <= 0 || source.owner < 0) continue;
       if (source.owner === e.owner || !this.isHostile(source.owner, e.owner)) continue;
       if (source.garrisonId || this.isMobilePassenger(source)) continue;
-      const ew = UNITS[source.defId]?.electronicWarfare;
+      const ew = ALL_UNITS[source.defId]?.electronicWarfare;
       if (!ew) continue;
       if (dist(source.x, source.z, e.x, e.z) > ew.radius * TILE_SIZE) continue;
       factor *= ew[field];
@@ -5230,7 +5363,7 @@ export class Game {
   productionStatus(owner: number, buildingId: number, defId: string): { ok: boolean; reason: string } {
     const p = this.player(owner);
     const b = this.getEntity(buildingId);
-    const def = UNITS[defId];
+    const def = ALL_UNITS[defId];
     if (!p) return { ok: false, reason: 'Unknown player.' };
     if (!b || b.kind !== 'building' || b.owner !== owner || b.hp <= 0) {
       return { ok: false, reason: 'Facility unavailable.' };
@@ -5337,7 +5470,7 @@ export class Game {
 
   /** Which kind of position an aircraft occupies. */
   private aircraftSlotKind(defId: string): 'fixedWing' | 'helo' {
-    return UNITS[defId]?.rotary ? 'helo' : 'fixedWing';
+    return ALL_UNITS[defId]?.rotary ? 'helo' : 'fixedWing';
   }
 
   private slotCapacity(buildingDefId: string, aircraftDefId: string): number {
@@ -6025,6 +6158,9 @@ export class Game {
       return { ok: false, code: 'req', reason: 'Insufficient requisition.' };
     }
     const occupied = blockedSnapshot(this.blocked);
+    for (let i = 0; i < this.footBlocked.length; i++) {
+      if (this.footBlocked[i]) occupied[i] = 1;
+    }
     // The runtime ore field, not the authored tiles: a worked-out deposit is
     // ordinary ground again.
     const check = checkPlacement(
@@ -6163,6 +6299,7 @@ export class Game {
     const tx = Math.round(site.x / TILE_SIZE - def.footprint.w / 2);
     const tz = Math.round(site.z / TILE_SIZE - def.footprint.h / 2);
     stampFootprint(this.blocked, this.state.map, site.defId, tx, tz, 0);
+    stampFootprint(this.footBlocked, this.state.map, site.defId, tx, tz, 0);
     this.state.entities = this.state.entities.filter((e) => e !== site);
     this.byId.delete(site.id);
     const p = this.player(owner);
@@ -6189,6 +6326,7 @@ export class Game {
     defId: string,
     tileX: number,
     tileZ: number,
+    facing?: number,
   ): void {
     const builder = this.resolveBuilder(owner, builderId, tileX, tileZ);
     // A site can be sited while every engineer is committed: it waits for the
@@ -6223,7 +6361,7 @@ export class Game {
     const def = buildingDef(defId);
     p.mats -= def.cost.mats;
     p.req -= def.cost.req;
-    const building = this.spawnStructure({ defId, owner, x: tileX, z: tileZ }, true);
+    const building = this.spawnStructure({ defId, owner, x: tileX, z: tileZ, facing }, true);
     this.emit('buildingPlaced', {
       team: owner,
       x: building.x,
@@ -6476,8 +6614,11 @@ export class Game {
     // is refreshed, so an expired cloud cannot hide a unit for one extra beat.
     this.updateSmoke();
     // The controller schedules itself: its reaction time is a property of the
-    // commander level, not of this loop.
-    this.ai?.update(this);
+    // commander level, not of this loop. An Outbreak match has no skirmish
+    // opponent to run: the wave director is the opposition, so it replaces the
+    // AI update rather than competing with it.
+    if (this.outbreak) this.outbreak.update(dt);
+    else this.ai?.update(this);
     this.updateUnits(dt);
     this.updateGarrisons(dt);
     this.updateProjectiles(dt);
@@ -6634,12 +6775,21 @@ export class Game {
           },
           groupActivated: (group) => this.releaseMissionGroup(group),
           waveSpawned: (wave) => this.spawnMissionWave(wave),
+          cinematicRequested: (cinematic) => this.cinematicRequests.push(cinematic),
           missionEnded: (outcome) => this.endMissionByScript(outcome),
         },
       );
     } finally {
       mission.endActionBatch();
     }
+  }
+
+  /** Hand the presentation layer the scenes triggers requested, once. */
+  consumeCinematicRequests(): string[] {
+    if (this.cinematicRequests.length === 0) return [];
+    const requests = this.cinematicRequests;
+    this.cinematicRequests = [];
+    return requests;
   }
 
   private announceMissionMessage(text: string): void {
@@ -7412,7 +7562,7 @@ export class Game {
         // A hull adds its own penalty: in a real sea state the watch is looking
         // through spray from a deck that will not hold still, so a ship sees
         // less far than a vehicle on the shore in the same weather.
-        const seaReach = UNITS[e.defId]?.domain === 'naval' ? this.weather.navalVision : 1;
+        const seaReach = ALL_UNITS[e.defId]?.domain === 'naval' ? this.weather.navalVision : 1;
         const vision =
           (entityVision(e) + this.moduleVision(e)) *
           this.abilityVisionFactor(e) *
@@ -7423,7 +7573,7 @@ export class Game {
           ewVisionFactor(
             this.player(e.owner)?.superweapon,
             this.state.tick,
-            UNITS[e.defId]?.domain,
+            ALL_UNITS[e.defId]?.domain,
             EW_EFFECT,
             e.kind === 'building',
           );
@@ -7491,7 +7641,7 @@ export class Game {
         ewVisionFactor(
           this.player(source.owner)?.superweapon,
           this.state.tick,
-          UNITS[source.defId]?.domain,
+          ALL_UNITS[source.defId]?.domain,
           EW_EFFECT,
           source.kind === 'building',
         );
@@ -7553,7 +7703,7 @@ export class Game {
     for (const e of this.state.entities) {
       if (e.hp <= 0 || e.kind !== 'unit' || e.garrisonId) continue;
       if (e.owner < 0 || this.teamOf(e.owner) !== team) continue;
-      const sonar = UNITS[e.defId]?.sonar ?? 0;
+      const sonar = ALL_UNITS[e.defId]?.sonar ?? 0;
       if (sonar > 0) sonars.push({ x: e.x, z: e.z, radius: sonar, owner: e.owner });
     }
     for (const e of this.state.entities) {
@@ -7608,7 +7758,7 @@ export class Game {
       // Aircraft are large, noisy and above the canopy: forest concealment
       // applies to ground units, not to any airframe. A dived boat is under
       // the water, so the canopy is irrelevant to it as well.
-      if (!radar && !dived && e.kind === 'unit' && UNITS[e.defId]?.domain !== 'air') {
+      if (!radar && !dived && e.kind === 'unit' && ALL_UNITS[e.defId]?.domain !== 'air') {
         const terrain = this.state.map.terrain[idx] as TerrainId;
         // Concealment stacks the base terrain with whatever surface cover the
         // tile carries, so crops, reeds and scrub hide a unit the way canopy
@@ -7639,7 +7789,7 @@ export class Game {
       // A dived boat is invisible outside periscope range and an escort's
       // sonar. A launch datum or a depth-charge hit bypasses both.
       if (dived && !datum && !sonar) {
-        const def = UNITS[e.defId]?.submarine;
+        const def = ALL_UNITS[e.defId]?.submarine;
         let close = false;
         for (const source of this.state.entities) {
           if (source.hp <= 0 || source.owner < 0 || this.teamOf(source.owner) !== team) continue;
@@ -7723,7 +7873,7 @@ export class Game {
   /** Coarse class for a sighting; the exact definition is withheld afterwards. */
   private contactBand(e: Entity): ContactBand {
     if (e.kind === 'building') return 'structure';
-    const def = UNITS[e.defId];
+    const def = ALL_UNITS[e.defId];
     if (!def) return 'armour';
     if (def.domain === 'air') return 'air';
     if (def.domain === 'naval') return 'naval';
@@ -8033,7 +8183,10 @@ export class Game {
       else e.blockedTicks = 0;
       const def = unitDef(e.defId);
       if (this.updateGarrisonOrder(e)) continue;
-      if (def.domain === 'air') {
+      // A flier belongs to the air domain for targeting only: it has no berth,
+      // no fuel clock and no recovery cycle, so it runs the ordinary ground
+      // update (targeting, path, weapons) while the renderer keeps it aloft.
+      if (def.domain === 'air' && !def.flier) {
         this.updateAircraft(e, def, dt);
         continue;
       }
@@ -8094,7 +8247,7 @@ export class Game {
           team: e.owner,
           x: e.x,
           z: e.z,
-          text: `${UNITS[e.defId]?.name ?? 'Submarine'} battery exhausted — surfacing`,
+          text: `${ALL_UNITS[e.defId]?.name ?? 'Submarine'} battery exhausted — surfacing`,
           entityId: e.id,
           level: 'warning',
           sound: 'alert',
@@ -8166,7 +8319,7 @@ export class Game {
             team: e.owner,
             x: e.x,
             z: e.z,
-            text: `${UNITS[e.defId]?.name ?? 'Vessel'} reloaded (${e.ammo}/${e.maxAmmo})`,
+            text: `${ALL_UNITS[e.defId]?.name ?? 'Vessel'} reloaded (${e.ammo}/${e.maxAmmo})`,
             level: 'info',
           });
         }
@@ -8179,7 +8332,7 @@ export class Game {
           team: e.owner,
           x: e.x,
           z: e.z,
-          text: `${UNITS[e.defId]?.name ?? 'Vessel'} out of missiles — returning to shipyard`,
+          text: `${ALL_UNITS[e.defId]?.name ?? 'Vessel'} out of missiles — returning to shipyard`,
           level: 'warning',
           entityId: e.id,
           sound: 'alert',
@@ -8543,7 +8696,7 @@ export class Game {
       ac.climb = 1;
       return;
     }
-    if (UNITS[e.defId]?.rotary) {
+    if (ALL_UNITS[e.defId]?.rotary) {
       // Rotors first: the crew holds the pad while the disc comes up to speed
       // and only then lifts, which is what makes the spool-up a countdown the
       // player can read rather than an animation that plays over the departure.
@@ -8743,7 +8896,7 @@ export class Game {
     }
     // Airborne fuel burn and auto-recovery.
     e.fuel = Math.max(0, e.fuel - dt);
-    const oneWay = !!UNITS[e.defId]?.oneWay;
+    const oneWay = !!ALL_UNITS[e.defId]?.oneWay;
     if (oneWay && e.fuel <= 0) {
       this.expendOneWay(e, entityWeapons(e)[0]);
       return;
@@ -8796,7 +8949,7 @@ export class Game {
   private orderAircraftReturn(e: Entity): void {
     // A one-way airframe has no recovery cycle. A recall is a decision to spend
     // it where it stands rather than fly it back to a berth it cannot use.
-    if (UNITS[e.defId]?.oneWay) {
+    if (ALL_UNITS[e.defId]?.oneWay) {
       this.expendOneWay(e, entityWeapons(e)[0]);
       return;
     }
@@ -9529,9 +9682,10 @@ export class Game {
     options: { mustFire?: boolean } = {},
   ): WeaponDef | null {
     const armour = entityArmour(target);
-    const d = dist(e.x, e.z, target.x, target.z);
+    const span = weapons.some((weapon) => weapon.melee) ? this.footprintSpan(target) : 0;
+    const d = Math.max(0, dist(e.x, e.z, target.x, target.z) - span);
     const crew = rankOf(e);
-    const shooterDef = UNITS[e.defId];
+    const shooterDef = ALL_UNITS[e.defId];
     const candidates: WeaponCandidate[] = [];
     for (const weapon of weapons) {
       if (!canWeaponTarget(weapon, target)) continue;
@@ -9544,6 +9698,7 @@ export class Game {
         if (d > this.engagementReach(e, weapon) + 4) continue;
         if (
           !weapon.indirect &&
+          span === 0 &&
           e.kind !== 'building' &&
           shooterDef?.domain !== 'air' &&
           !hasLineOfSight(this.state.map, e.x, e.z, target.x, target.z)
@@ -9569,6 +9724,11 @@ export class Game {
     const team = this.teamOf(owner);
     let best: Entity | null = null;
     let bestScore = Infinity;
+    // A contact weapon stands against a wall: its reach is measured to the wall,
+    // not to the centre of the roof, and it does not need a sight line into the
+    // building it is holding. Without this a brute at the foot of a 4x4 Command
+    // Post would be permanently "out of range" of the only thing it can touch.
+    const contact = weapons.some((weapon) => weapon.melee);
     for (const target of this.state.entities) {
       if (target.hp <= 0) continue;
       if (!this.isAttackable(owner, target)) continue;
@@ -9580,7 +9740,9 @@ export class Game {
       // bridge it may need to cross on the strength of a stray sighting. An
       // explicit attack order can still bring one down.
       if (target.kind === 'building' && BUILDINGS[target.defId]?.walkable) continue;
-      const d = dist(e.x, e.z, target.x, target.z);
+      const centreDistance = dist(e.x, e.z, target.x, target.z);
+      const span = contact ? this.footprintSpan(target) : 0;
+      const d = Math.max(0, centreDistance - span);
       let usable = false;
       let weaponRange = 0;
       let ignoresCover = false;
@@ -9598,9 +9760,10 @@ export class Game {
       }
       if (!usable) continue;
       if (d > weaponRange * TILE_SIZE + 4) continue;
-      const shooterDef = UNITS[e.defId];
+      const shooterDef = ALL_UNITS[e.defId];
       if (
         shooterDef?.domain !== 'air' &&
+        span === 0 &&
         !ignoresCover &&
         !hasLineOfSight(this.state.map, e.x, e.z, target.x, target.z)
       ) {
@@ -9665,8 +9828,12 @@ export class Game {
   private updateAutoEngagement(e: Entity, dt: number, weapons: WeaponDef[]): void {
     void dt;
     if (e.cooldown > 0) return;
-    if (e.kind === 'unit' && UNITS[e.defId]?.domain === 'air') {
-      const oneWay = !!UNITS[e.defId]?.oneWay;
+    // Aircraft only engage under an explicit attack order, which is what stops
+    // a fighter from flying itself into a SAM site on its own initiative. A
+    // flier is not an airframe: it is a body that hunts on its own, so it
+    // fights like anything else on the field.
+    if (e.kind === 'unit' && ALL_UNITS[e.defId]?.domain === 'air' && !ALL_UNITS[e.defId]?.flier) {
+      const oneWay = !!ALL_UNITS[e.defId]?.oneWay;
       // A one-way munition may acquire on its approach; a normal aircraft only
       // auto-engages under an explicit attack order, which prevents suicide runs.
       if (!oneWay && e.order?.type !== 'attack') return;
@@ -9680,7 +9847,8 @@ export class Game {
     const best = acquired.target;
     const w = acquired.weapon;
     if (e.kind === 'unit' && (e.order?.type === 'move' || e.order?.type === 'attackMove')) {
-      if (dist(e.x, e.z, best.x, best.z) > this.engagementReach(e, w) + 3) return;
+      const gap = Math.max(0, dist(e.x, e.z, best.x, best.z) - (w.melee ? this.footprintSpan(best) : 0));
+      if (gap > this.engagementReach(e, w) + 3) return;
     }
     // Each emplacement's weapon target classes already exclude the domains it
     // cannot engage (SAMs vs ground, ground guns vs air), so a building fires
@@ -9690,8 +9858,9 @@ export class Game {
 
   private tryFire(e: Entity, target: Entity, weapon: WeaponDef, weapons: WeaponDef[]): void {
     if (e.cooldown > 0) return;
-    const shooterDef = UNITS[e.defId];
-    const d = dist(e.x, e.z, target.x, target.z);
+    const shooterDef = ALL_UNITS[e.defId];
+    const span = weapon.melee ? this.footprintSpan(target) : 0;
+    const d = Math.max(0, dist(e.x, e.z, target.x, target.z) - span);
     const dayNight = this.dayNight;
     const profile = sensorFor(e);
     // The gun keeps its physical range; what shrinks at night is how far the
@@ -9708,6 +9877,7 @@ export class Game {
     if (!weapon.indirect && this.smokeScreens(e.x, e.z, target.x, target.z)) return;
     if (
       !weapon.indirect &&
+      span === 0 &&
       e.kind !== 'building' &&
       shooterDef?.domain !== 'air' &&
       !hasLineOfSight(this.state.map, e.x, e.z, target.x, target.z)
@@ -9744,18 +9914,25 @@ export class Game {
     e.turretFacing = angleTo(e.x, e.z, target.x, target.z);
     e.aimTargetId = target.id;
     const accuracyPenalty = e.suppression * 0.32;
-    const firingDef = UNITS[e.defId];
+    const firingDef = ALL_UNITS[e.defId];
     const movingPenalty = firingDef?.domain === 'land' && e.state === 'moving' ? 0.12 : 0;
     // Poor optics also cost a little precision, capped so night fighting is
     // degraded, never useless.
     const nightAccuracy = weapon.indirect ? 1 : accuracyFactor(profile, dayNight);
+    // A low body is a harder shape to put a burst into, and the further away it
+    // is the less of it there is above the ground to aim at.
+    const lowProfile = ALL_UNITS[target.defId]?.lowProfile
+      ? LOW_PROFILE_ACCURACY *
+        Math.min(1, Math.max(0, d / TILE_SIZE - 1) / LOW_PROFILE_RAMP_TILES)
+      : 0;
     const hit =
       this.rng.next() <
       clamp(
         weapon.accuracy * nightAccuracy * this.weather.accuracy +
           crew.accuracy -
           accuracyPenalty -
-          movingPenalty,
+          movingPenalty -
+          lowProfile,
         0.05,
         1,
       );
@@ -9837,7 +10014,7 @@ export class Game {
    */
   private expendOneWay(e: Entity, weapon?: WeaponDef): void {
     if (e.hp <= 0) return;
-    const def = UNITS[e.defId];
+    const def = ALL_UNITS[e.defId];
     e.hp = 0;
     e.state = 'dead';
     e.order = null;
@@ -9868,7 +10045,7 @@ export class Game {
    * Buildings keep their existing centre-of-mass origin.
    */
   private muzzlePoint(e: Entity): { x: number; y: number; z: number } {
-    const def = UNITS[e.defId];
+    const def = ALL_UNITS[e.defId];
     if (e.kind === 'building') {
       return { x: e.x, y: this.heightAt(e.x, e.z) + 3.5, z: e.z };
     }
@@ -10157,6 +10334,29 @@ export class Game {
       return [{ x: tx, z: tz }];
     }
     const nav = this.navFor(e, navBatch);
+    const routed = this.searchPath(e, def, nav, tx, tz);
+    if (routed || !nav.avoid) return routed;
+    // The avoidance overlay is a preference about where to drive, not a veto.
+    // A hull fully enclosed by its own sandbag ring (a leaguer dug in around
+    // it, a line laid after it parked) has no route at all while the bags are
+    // walls, and refusing the order strands it there for the rest of the
+    // battle. Search again without the overlay: the bags become ground the
+    // hull may cross, and the crush pass still spares friendly walls, so the
+    // line is driven over but never destroyed.
+    return this.searchPath(e, def, { ...nav, avoid: undefined }, tx, tz);
+  }
+
+  /**
+   * One routing search on a prepared grid: resolve the aim to a walkable tile,
+   * walk out of a footprint the hull is standing in, then run A*.
+   */
+  private searchPath(
+    e: Entity,
+    def: UnitDef,
+    nav: NavGrid,
+    tx: number,
+    tz: number,
+  ): import('./types').PathPoint[] | null {
     const startX = Math.floor(e.x / TILE_SIZE);
     const startZ = Math.floor(e.z / TILE_SIZE);
     let goalX = worldToTile(tx);
@@ -10383,7 +10583,16 @@ export class Game {
       overlay: this.state.map.overlay,
       moveClass: def.moveClass,
       occupied: this.blocked,
+      footBlocked: this.footBlocked,
     };
+    // A tracked crew does not drive over its own sandbag line. Those bags are
+    // the position its infantry are holding, so a friendly line is planned
+    // around like any other wall, while an enemy line is still ground the hull
+    // may grind through.
+    if (def.moveClass === 'tracked') {
+      const ownBags = this.friendlySandbagTiles(e.owner);
+      if (ownBags) nav.avoid = ownBags;
+    }
     if (def.domain !== 'air') {
       const batchSoft = batch?.softFor(def.domain);
       if (batchSoft) {
@@ -10407,6 +10616,31 @@ export class Game {
       }
     }
     return nav;
+  }
+
+  /**
+   * Tiles covered by sandbag lines belonging to this owner's side, or null when
+   * the side has none. Built on demand and only for tracked routing, which is
+   * the one mover that would otherwise treat every bag line as open ground.
+   */
+  private friendlySandbagTiles(owner: number): Uint8Array | null {
+    let grid: Uint8Array | null = null;
+    for (const wall of this.state.entities) {
+      if (wall.kind !== 'building' || wall.hp <= 0) continue;
+      const def = BUILDINGS[wall.defId];
+      if (!def?.wall || def.wall.blocksVehicles) continue;
+      if (!this.isFriendlyOwner(owner, wall.owner)) continue;
+      grid ??= new Uint8Array(this.state.map.width * this.state.map.height);
+      stampFootprint(
+        grid,
+        this.state.map,
+        wall.defId,
+        Math.floor(wall.x / TILE_SIZE),
+        Math.floor(wall.z / TILE_SIZE),
+        1,
+      );
+    }
+    return grid;
   }
 
   /** True when the hull is standing on ground a structure has claimed. */
@@ -10436,10 +10670,36 @@ export class Game {
     return true;
   }
 
+  /**
+   * A tracked hull does not stop at a sandbag line: it grinds over the bags
+   * and leaves the line open. Wheeled and foot movers are still filtered out
+   * by the navigation grid, so this only runs for tracked vehicles.
+   */
+  private crushSandbagsUnder(e: Entity): void {
+    const tile = this.tileAt(e.x, e.z);
+    if (tile === null) return;
+    const map = this.state.map;
+    for (const wall of this.state.entities) {
+      if (wall.kind !== 'building' || wall.hp <= 0) continue;
+      const def = BUILDINGS[wall.defId];
+      if (!def?.wall || def.wall.blocksVehicles) continue;
+      // Own bags are not scratch cover to be flattened: they are the line the
+      // infantry are meant to hold. A hull that still ends up on one — shoved
+      // there, or dropping onto a line raised around it — leaves it standing.
+      if (this.isFriendlyOwner(e.owner, wall.owner)) continue;
+      const tx = Math.floor(wall.x / TILE_SIZE);
+      const tz = Math.floor(wall.z / TILE_SIZE);
+      if (tileIndex(map.width, tx, tz) !== tile) continue;
+      this.damageEntity(wall, wall.hp, e.owner, e.id);
+      return;
+    }
+  }
+
   private moveAlongPath(e: Entity, def: UnitDef, dt: number): void {
     if (e.order?.type === 'return' && def.domain === 'air') {
       // handled by aircraft update / path
     }
+    if (def.moveClass === 'tracked') this.crushSandbagsUnder(e);
     if (e.path.length === 0) {
       if (e.state === 'moving') this.arrive(e);
       return;
@@ -11112,6 +11372,17 @@ export class Game {
     const curTz = Math.floor(e.z / TILE_SIZE);
     const curIdx = tileIndex(this.state.map.width, curTx, curTz);
     const trapped = this.blocked[curIdx] === 1;
+    // Sandbags are passable for tracked hulls only. Route planning already
+    // filters them, but a route planned before a wall was raised must not let
+    // infantry or wheeled traffic drive through the new bag line. A unit that
+    // is already standing on the bag tile may still step off it.
+    if (
+      (def.moveClass === 'foot' || def.moveClass === 'wheeled') &&
+      this.footBlocked[idx] === 1 &&
+      this.footBlocked[curIdx] === 0
+    ) {
+      return false;
+    }
     if (this.blocked[idx] && !trapped) return false;
     if (trapped && this.blocked[idx]) {
       // A hull caught inside a footprint may walk back out of it, but not
@@ -11417,7 +11688,7 @@ export class Game {
 
   private impactSurface(target: Entity): ImpactSurface {
     if (target.kind === 'building') return 'structure';
-    const def = UNITS[target.defId];
+    const def = ALL_UNITS[target.defId];
     if (def?.domain === 'air') return 'air';
     if (def && def.armour !== 'infantry') return 'armour';
     return 'ground';
@@ -11446,7 +11717,7 @@ export class Game {
     // do not benefit — their protection is their armour, which the damage model
     // already accounts for, so a tank duel is decided by guns and plating.
     if (damage > 0 && target.kind === 'unit') {
-      const def = UNITS[target.defId];
+      const def = ALL_UNITS[target.defId];
       if (def && def.domain !== 'air' && def.armour === 'infantry') {
         const cover = coverFactor(this.state.map, target.x, target.z, weaponId ? WEAPONS[weaponId] : undefined);
         if (cover > 0) damage = Math.max(0.1, Math.round(damage * (1 - 0.3 * cover) * 10) / 10);
@@ -11570,6 +11841,9 @@ export class Game {
       } else {
         stampFootprint(this.blocked, this.state.map, target.defId, tx, tz, 0);
       }
+      // Sandbag lines do not live in the all-ground grid, so clear the foot
+      // lane as well or a destroyed wall would keep funneling infantry.
+      stampFootprint(this.footBlocked, this.state.map, target.defId, tx, tz, 0);
     }
     if (shooter) shooter.kills++;
     target.path = [];
@@ -11666,6 +11940,7 @@ export class Game {
         // footprint here would reopen the crossing the enemy just closed.
         if (def.walkable) continue;
         stampFootprint(this.blocked, this.state.map, e.defId, tx, tz, 0);
+        stampFootprint(this.footBlocked, this.state.map, e.defId, tx, tz, 0);
       }
       this.byId.delete(e.id);
     }
@@ -11717,8 +11992,12 @@ export class Game {
   private evaluateVictory(): void {
     if (this.state.victory !== 'playing') return;
     const scenario = this.state.scenario;
+    const outbreak = Boolean(scenario.meta.outbreak);
     for (const p of this.state.players) {
       if (p.defeated) continue;
+      // The infected own no Command Post and never will: scoring them on the
+      // headquarters rule would declare the players victorious on tick one.
+      if (outbreak && p.factionId === INFECTED_FACTION_ID) continue;
       let defeated = false;
       if (scenario.settings.victory === 'destroyHQ') {
         const hasHq = this.state.entities.some(
@@ -11749,6 +12028,12 @@ export class Game {
     }
     const local = this.player(this.localPlayerId);
     if (!local) return;
+    // Outbreak has one ending: the Command Post falls. There is no opponent to
+    // annihilate, no clock to outlast and no victory state to reach.
+    if (outbreak) {
+      if (local.defeated) this.finish('defeat');
+      return;
+    }
     if (this.mission) {
       // Mission outcomes are decided by the objective tree. The existing
       // force-destruction rule still counts: losing the field is a defeat even
@@ -11964,6 +12249,9 @@ export class Game {
         nextSmokeId: rest.nextSmokeId,
         // The canonical runtime snapshot, so a save never aliases live state.
         mission: this.mission ? this.mission.snapshot() : null,
+        // An Outbreak run travels with the battle: its wave, its phase clock and
+        // its own RNG, so a reloaded defence resumes rather than restarting.
+        outbreak: this.outbreak ? this.outbreak.toSave() : null,
       },
       localPlayerId: this.localPlayerId,
     };
@@ -11997,7 +12285,7 @@ export class Game {
     if (!Array.isArray(state.entities) || !Array.isArray(state.players)) {
       throw new SaveFormatError('Save file state is corrupted.');
     }
-    if (state.entities.some((e) => !UNITS[e.defId] && !BUILDINGS[e.defId])) {
+    if (state.entities.some((e) => !ALL_UNITS[e.defId] && !BUILDINGS[e.defId])) {
       throw new SaveFormatError('Save file references content that is not installed.');
     }
     // A save stores the nation or preset by id; an unknown id must fail here
@@ -12083,6 +12371,7 @@ export class Game {
     game.rng = new Rng(game.state.seed);
     game.rng.setState(game.state.rngState);
     game.blocked = new Uint8Array(savedScenario.width * savedScenario.height);
+    game.footBlocked = new Uint8Array(savedScenario.width * savedScenario.height);
     game.byId = new Map();
     game.state.entities.sort((a, b) => a.id - b.id);
     for (const e of game.state.entities) {
@@ -12094,7 +12383,7 @@ export class Game {
       if (typeof e.authoredKey !== 'string' || e.authoredKey.length === 0) delete e.authoredKey;
       // Saves written before the submarine phase have no dive state. Rebuild it
       // rather than treating the boat as a permanent surface ship.
-      const subDef = UNITS[e.defId]?.submarine;
+      const subDef = ALL_UNITS[e.defId]?.submarine;
       if (subDef && !e.submarine) {
         e.submarine = {
           dived: false,
@@ -12123,7 +12412,18 @@ export class Game {
         const def = buildingDef(e.defId);
         const tx = Math.round(e.x / TILE_SIZE - def.footprint.w / 2);
         const tz = Math.round(e.z / TILE_SIZE - def.footprint.h / 2);
-        stampFootprint(game.blocked, game.state.map, e.defId, tx, tz, 1);
+        if (def.wall) {
+          // A restored sandbag line must keep the same split grid it had when
+          // it was placed: vehicles cross it, infantry do not.
+          if (def.wall.blocksVehicles) {
+            stampFootprint(game.blocked, game.state.map, e.defId, tx, tz, 1);
+          }
+          if (def.wall.blocksFoot) {
+            stampFootprint(game.footBlocked, game.state.map, e.defId, tx, tz, 1);
+          }
+        } else {
+          stampFootprint(game.blocked, game.state.map, e.defId, tx, tz, 1);
+        }
       }
     }
     // Occupancy is restored before the first tick: orphaned references are
@@ -12139,6 +12439,12 @@ export class Game {
     game.reconcileAircraftBerths();
     game.state.ready = true;
     game.refreshVision(false);
+    // Restore the wave rhythm last, once the battlefield it counts is in place.
+    // A save with no Outbreak block on an Outbreak map starts a fresh run in the
+    // wave the scenario was authored for, which is exactly what loading a
+    // hand-written or pre-mode save should do.
+    const outbreakState = (savedState as { outbreak?: OutbreakSaveState | null }).outbreak;
+    if (outbreakState && game.outbreak) game.outbreak.restore(outbreakState);
     game.lastMatsSample = game.state.players.map((p) => p.stats.matsGathered);
     game.ai = new AIController();
     if (opts.enableAI === false) game.ai = null;

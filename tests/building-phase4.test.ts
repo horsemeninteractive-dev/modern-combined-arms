@@ -257,7 +257,7 @@ describe('Phase 4 material id integrity', () => {
       expect(mesh.materials!.length, def.id).toBe(mesh.positions.length / 3);
       for (const id of mesh.materials!) {
         expect(id, def.id).toBeGreaterThanOrEqual(0);
-        expect(id, def.id).toBeLessThan(8);
+        expect(id, def.id).toBeLessThan(Object.keys(MATERIAL).length);
       }
     }
   });

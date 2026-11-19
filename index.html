@@ -253,6 +253,11 @@
                 <span class="menu-nav-text"><b>Skirmish</b><small>Deploy against the AI</small></span>
                 <span class="menu-nav-go" aria-hidden="true">›</span>
               </button>
+              <button type="button" class="menu-nav-item" data-menu-view="outbreak">
+                <span class="menu-nav-index">03B</span>
+                <span class="menu-nav-text"><b>Outbreak</b><small>Endless survival · solo or co-op</small></span>
+                <span class="menu-nav-go" aria-hidden="true">›</span>
+              </button>
               <button id="btn-load" type="button" class="menu-nav-item">
                 <span class="menu-nav-index">04</span>
                 <span class="menu-nav-text"><b>Load Battle</b><small>Saved deployments</small></span>
@@ -311,6 +316,14 @@
                 <button id="btn-campaign-deploy" class="btn btn-primary btn-large">
                   <span class="btn-kicker">DEPLOY</span>
                   <span id="campaign-deploy-label">Begin operation</span>
+                </button>
+                <button id="btn-campaign-replay" class="btn btn-ghost btn-large">
+                  <span class="btn-kicker">REPLAY</span>
+                  <span>Framing scenes</span>
+                </button>
+                <button id="btn-campaign-scenes" class="btn btn-ghost btn-large">
+                  <span class="btn-kicker">AUTHOR</span>
+                  <span>Campaign scenes</span>
                 </button>
               </div>
             </div>
@@ -454,6 +467,53 @@
               </div>
             </section>
 
+            <section class="menu-view outbreak-view" data-menu-panel="outbreak" aria-label="Outbreak">
+              <div class="menu-view-head">
+                <p class="eyebrow">OUTBREAK · ENDLESS SURVIVAL</p>
+                <h2>Relay Basin</h2>
+                <p class="lede">
+                  One Command Post at the centre of the basin, four roads in, and a horde that
+                  never stops coming. Build, hold, and see how many waves the line survives.
+                </p>
+              </div>
+              <div class="menu-columns outbreak-columns">
+                <div class="menu-column">
+                  <div class="side-card">
+                    <div class="side-card-head"><span>YOUR COMMAND</span><span class="side-card-mark blue" aria-hidden="true"></span></div>
+                    <label class="rail-row">
+                      <span class="rail-row-label" id="outbreak-nation-label">NATION</span>
+                      <span class="select-wrap">
+                        <select id="outbreak-nation" class="menu-select" aria-labelledby="outbreak-nation-label"></select>
+                      </span>
+                    </label>
+                  </div>
+                  <div class="side-card">
+                    <div class="side-card-head"><span>DIFFICULTY</span><span class="side-card-mark red" aria-hidden="true"></span></div>
+                    <div class="difficulty-options outbreak-difficulty" id="outbreak-difficulty" role="group" aria-label="Outbreak difficulty"></div>
+                    <p class="outbreak-difficulty-note" id="outbreak-difficulty-note"></p>
+                  </div>
+                </div>
+                <div class="menu-column">
+                  <div class="side-card">
+                    <div class="side-card-head"><span>DEPLOYMENT</span><span class="side-card-mark blue" aria-hidden="true"></span></div>
+                    <div class="difficulty-options" id="outbreak-mode" role="group" aria-label="Outbreak players">
+                      <button type="button" class="difficulty-btn" data-outbreak-mode="solo" aria-pressed="true">SOLO</button>
+                      <button type="button" class="difficulty-btn" data-outbreak-mode="coop" aria-pressed="false">CO-OP · 2 PLAYERS</button>
+                    </div>
+                    <p class="outbreak-brief" id="outbreak-brief">
+                      You command the whole defence. Wave one opens after the deployment timer.
+                    </p>
+                    <div class="menu-actions">
+                      <button id="btn-outbreak-deploy" class="btn btn-primary btn-large">
+                        <span class="btn-kicker">DEPLOY</span>
+                        <span>Hold the basin</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
             <section class="menu-view" data-menu-panel="campaign" aria-label="Campaign">
               <div class="menu-view-head">
                 <p class="eyebrow" id="campaign-eyebrow">CAMPAIGN · ATLANTIC ACCORD</p>
@@ -592,7 +652,7 @@
 
         <footer class="menu-footer">
           <span>© 2026 MCA PROJECT · HORSEMEN INTERACTIVE</span>
-          <span class="menu-footer-mid" id="menu-build">v0.9.0 BETA · BUILD 0 · IRONTIDE ENGINE</span>
+          <span class="menu-footer-mid" id="menu-build">v0.10.0 BETA · BUILD 0 · IRONTIDE ENGINE</span>
           <div class="menu-footer-links">
             <button id="btn-changelog" class="menu-footer-link" type="button">Changelog</button>
             <button id="btn-briefing" class="menu-footer-link" type="button">Briefing &amp; Controls</button>
@@ -624,6 +684,35 @@
           <p class="loading-hint" id="loading-hint">Building terrain mesh · plotting navigation · briefing AI commander</p>
         </div>
       </div>
+
+      <section id="outbreak-hud" class="outbreak-hud hidden" aria-live="polite" aria-label="Outbreak status">
+        <div class="outbreak-wave">
+          <span class="outbreak-kicker">WAVE</span>
+          <b id="outbreak-wave-number">1</b>
+        </div>
+        <div class="outbreak-center">
+          <b id="outbreak-phase">PREPARE</b>
+          <span id="outbreak-timer">00:00</span>
+          <div class="outbreak-meter"><i id="outbreak-meter-fill"></i></div>
+        </div>
+        <div class="outbreak-stats">
+          <div><span>HOSTILES</span><b id="outbreak-hostiles">0</b></div>
+          <div><span>KILLS</span><b id="outbreak-kills">0</b></div>
+        </div>
+      </section>
+
+      <section id="outbreak-results" class="outbreak-results hidden" role="dialog" aria-modal="true" aria-labelledby="outbreak-results-title">
+        <div class="outbreak-results-card">
+          <p class="eyebrow">OUTBREAK</p>
+          <h2 id="outbreak-results-title">The line broke</h2>
+          <p class="outbreak-results-lede" id="outbreak-results-lede">The Command Post has fallen.</p>
+          <div class="outbreak-results-grid" id="outbreak-results-grid"></div>
+          <div class="outbreak-results-actions">
+            <button id="btn-outbreak-retry" class="btn btn-primary" type="button">Redeploy</button>
+            <button id="btn-outbreak-menu" class="btn btn-ghost" type="button">Command deck</button>
+          </div>
+        </div>
+      </section>
 
       <div id="toast-root" class="toast-root" aria-live="polite"></div>
       <div id="modal-root" class="modal-root hidden"></div>

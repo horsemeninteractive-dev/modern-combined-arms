@@ -176,6 +176,25 @@ describe('sea state', () => {
     // Sea state reaches the shader from the profile, not from a constant.
     expect(rendererSource).toContain('this.weather.sea');
   });
+
+  it('tints foam and the waterline with the reflected shore and crest height', () => {
+    expect(WATER_FS).toContain('float crestWeight = smoothstep(0.35, 0.95, h0);');
+    expect(WATER_FS).toContain('float surfTint = shoreReflection');
+    expect(WATER_FS).toContain('vec3 foamColour = mix(');
+    expect(WATER_FS).toContain('vec3 waterlineColour = mix(');
+    // The surf pass must sample the reflection, not just the fixed foam tint.
+    expect(WATER_FS).toContain('reflection, surfTint');
+  });
+
+  it('leaves short reflected foam trails behind breaking crests', () => {
+    expect(WATER_FS).toContain('const vec2 TRAIL_DIR = vec2(0.78, -0.63);');
+    expect(WATER_FS).toContain('float seaLinger = smoothstep(0.12, 0.78, uSea);');
+    expect(WATER_FS).toContain('float trailLength = mix(0.35, 1.0, seaLinger) + 0.3 * crestWeight;');
+    expect(WATER_FS).toContain('float tapFade = mix(0.42, 0.08, seaLinger);');
+    expect(WATER_FS).toContain('float trailMask = trail');
+    expect(WATER_FS).toContain('float behindCrest = 1.0 - smoothstep(0.45, 0.9, h0);');
+    expect(WATER_FS).toContain('vec3 trailColour = mix(');
+  });
 });
 
 describe('air: haze and mist', () => {

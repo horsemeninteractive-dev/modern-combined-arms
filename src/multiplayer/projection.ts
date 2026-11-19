@@ -12,6 +12,8 @@ import type {
   SmokeCloud,
 } from '../sim/types';
 import { evaluateMatchResult, type NeutralMatchResult } from './matchResult';
+import type { OutbreakHudState } from '../outbreak/types';
+
 
 /**
  * Default-deny team projection for the room transport.
@@ -215,6 +217,12 @@ export interface ProjectedTeamState {
   projectiles: ProjectedProjectile[];
   events: SimEvent[];
   result: ProjectedMatchResult;
+  /**
+   * The room's survival readout. Present only on an Outbreak room: a networked
+   * seat runs no director of its own, so this is what its wave panel and
+   * survival card render. Optional so a skirmish room stays unchanged.
+   */
+  outbreak?: OutbreakHudState;
 }
 
 export interface TeamSnapshot extends ProjectedTeamState {
@@ -371,6 +379,10 @@ export function projectEvent(game: Game, team: number, event: SimEvent): SimEven
     projected = { ...projected };
     delete projected.targetId;
   }
+  // The simulation emits a few notices with the *local* player id, which on the
+  // authoritative room is -1. The wire is team-relative, so a server-wide notice
+  // is stamped with the recipient's team instead of being rejected downstream.
+  if (projected.team < 0) projected = { ...projected, team };
   return projected;
 }
 
@@ -504,6 +516,7 @@ export function createTeamState(
     projectiles,
     events,
     result: projectResult(result ?? evaluateMatchResult(game), team),
+    ...(game.outbreak ? { outbreak: game.outbreak.hudState() } : {}),
   };
 }
 

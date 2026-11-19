@@ -18,7 +18,7 @@ export const PRODUCTION_TABS: ReadonlyArray<{ id: ProductionTab; label: string; 
   { id: 'sea', label: 'SEA', icon: 'corvette' },
 ];
 
-/** Buildable structures with weapons are sited from DEFENCE; the rest from BASE. */
+/** Buildable structures that defend — weapons or walls — are sited from DEFENCE; the rest from BASE. */
 export function structureTab(hasWeapons: boolean): 'base' | 'defence' {
   return hasWeapons ? 'defence' : 'base';
 }

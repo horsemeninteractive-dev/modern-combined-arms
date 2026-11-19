@@ -24,6 +24,8 @@ import {
 } from '../src/multiplayer/reservation';
 import type { RoomMatch, RoomSeatDefinition, RoomSocket } from '../src/multiplayer/roomMatch';
 import { ROOM_PROTOCOL_VERSION } from '../src/multiplayer/protocol';
+import { OUTBREAK_MAP_ID } from '../src/outbreak/scenario';
+import { INFECTED_FACTION_ID } from '../src/data/zombies';
 
 const ADMIN_TOKEN = 'phase2b1-admin-token-0000000000';
 const HOST_TOKEN = 'host-seat-token-0000000000000';
@@ -235,6 +237,8 @@ async function createRoom(
 async function openPublicRoom(
   h: Harness,
   durationMs: number,
+  mode: '1v1' | 'outbreak' | string = '1v1',
+  difficulty?: string,
 ): Promise<{ status: number } & Record<string, unknown>> {
   const room = await open(h);
   return readJson(
@@ -242,7 +246,12 @@ async function openPublicRoom(
       new Request(url(h, 'open'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ roomId: h.roomId, mode: '1v1', matchDurationMs: durationMs }),
+        body: JSON.stringify({
+          roomId: h.roomId,
+          mode,
+          matchDurationMs: durationMs,
+          ...(difficulty ? { difficulty } : {}),
+        }),
       }),
     ),
   );
@@ -1232,5 +1241,67 @@ describe('Phase 2B.1 documented defaults', () => {
     expect(config.mapId).toBe('open-front');
     expect(config.matchDurationMs).toBe(DEFAULT_MATCH_DURATION_MS);
     expect(config.seats.map((seat) => seat.color)).toEqual([LOBBY_COLORS[0], LOBBY_COLORS[1]]);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Outbreak co-op rooms                                                */
+/* ------------------------------------------------------------------ */
+
+describe('Phase 2B.1 outbreak co-op rooms', () => {
+  it('seats both commanders on player 0 and pins the room to the basin', async () => {
+    const h = harness('coop-open-room');
+    const opened = await openPublicRoom(h, DURATION_MS, 'outbreak', 'hard');
+    expect(opened).toMatchObject({ status: 200, ok: true, mode: 'outbreak' });
+    const info = await status(h);
+    expect(info.mode).toBe('outbreak');
+    const seats = (h.storage.raw(ROOM_STORAGE_KEYS.meta) as { seats: RoomSeatDefinition[] }).seats;
+    expect(seats.map((seat) => [seat.playerId, seat.team])).toEqual([
+      [0, 0],
+      [0, 0],
+    ]);
+    const config = (info.lobby as unknown as { config: LobbyConfigV1 }).config;
+    expect(config.mapId).toBe(OUTBREAK_MAP_ID);
+    // The host's difficulty is part of the room, not a client-side preference.
+    expect(config.outbreak).toEqual({ difficulty: 'hard' });
+    // An unknown difficulty never becomes the run's difficulty.
+    const fallback = harness('coop-odd-difficulty');
+    await openPublicRoom(fallback, DURATION_MS, 'outbreak', 'impossible');
+    const fallbackConfig = (fallback.storage.raw(ROOM_STORAGE_KEYS.meta) as {
+      lobbyConfig: LobbyConfigV1;
+    }).lobbyConfig;
+    expect(fallbackConfig.outbreak).toEqual({ difficulty: 'normal' });
+  });
+
+  it('starts the co-op run against the horde and keeps the mode across eviction', async () => {
+    const h = harness('coop-start-room');
+    expect((await openPublicRoom(h, DURATION_MS, 'outbreak')).status).toBe(200);
+    joinBoth(h);
+    expect((await startMatch(h, 0)).status).toBe(200);
+    const match = matchOf(h.current!) as RoomMatch;
+    expect(match.mode).toBe('outbreak');
+    // Two players, one defence: the host's army and the horde it holds off.
+    expect(match.game.state.players).toHaveLength(2);
+    expect(match.game.player(0)?.team).toBe(0);
+    expect(match.game.player(1)?.factionId).toBe(INFECTED_FACTION_ID);
+    // Both seats are seated on the defending player, so the guest's commission
+    // is the host's army rather than an opposing one.
+    expect(
+      (h.storage.raw(ROOM_STORAGE_KEYS.meta) as { seats: RoomSeatDefinition[] }).seats.map(
+        (seat) => seat.playerId,
+      ),
+    ).toEqual([0, 0]);
+    evict(h);
+    const info = await status(h);
+    expect(info.mode).toBe('outbreak');
+    expect(validatePersistedMeta(h.storage.raw(ROOM_STORAGE_KEYS.meta), h.roomId)).toBeNull();
+  });
+
+  it('refuses a mode the room cannot host', async () => {
+    const h = harness('coop-bad-mode');
+    expect(await openPublicRoom(h, DURATION_MS, 'campaign')).toMatchObject({
+      status: 400,
+      code: 'mode-unavailable',
+    });
   });
 });

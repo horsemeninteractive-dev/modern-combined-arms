@@ -1,12 +1,14 @@
 import { rotateLocalOffset } from '../core/math';
 import {
   multiply,
+  rotationX,
   rotationY,
   rotationZ,
   scaling,
   translation,
   type Vec3,
 } from './math';
+import type { InfectedGaitPose } from './infectedGait';
 
 /**
  * Heading the body mesh is drawn on. A turreted hull keeps its own heading
@@ -43,6 +45,38 @@ export function unitDrawnBodyHeading(
 ): number {
   if (!isAirframe && moving && moveClass !== 'foot') return motion;
   return unitBodyHeading(hasTurret, isAirframe, facing, turretFacing);
+}
+
+/**
+ * Model matrix for an infected body in mid-stride.
+ *
+ * The origin of every unit mesh sits on the ground, so rotating about it rocks
+ * the body on its feet rather than swinging it around a waist it does not have.
+ * Local +X is forward: the wobble is a yaw sway, the roll turns the trunk about
+ * its own spine, and the stoop and lurch tip it about the lateral axis. Positive
+ * `lean`/`pitch` mean "leans forward", so the Z rotation is negated — a
+ * positive `rotationZ` raises +X toward +Y, which is leaning back.
+ *
+ * Presentation only: the renderer calls this for a unit whose style carries an
+ * infected gait, and the simulation never learns the body moved.
+ */
+export function gaitModelMatrix(
+  x: number,
+  y: number,
+  z: number,
+  facing: number,
+  uniform: number,
+  pose: InfectedGaitPose,
+): Float32Array {
+  const base = translation(x, y + pose.bob, z);
+  const stoop = rotationZ(-(pose.lean + pose.pitch));
+  return multiply(
+    base,
+    multiply(
+      rotationY(-facing + pose.sway),
+      multiply(rotationX(pose.roll), multiply(stoop, scaling(uniform, uniform, uniform))),
+    ),
+  );
 }
 
 /**

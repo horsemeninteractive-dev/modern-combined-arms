@@ -15,8 +15,10 @@ export {
   type MissionBriefing,
   type MissionCampaignRef,
   type MissionCarryoverDoc,
+  type MissionCinematicActorAction,
   type MissionCinematicContext,
   type MissionCinematicDoc,
+  type MissionCinematicEffectKind,
   type MissionCinematicStep,
   type MissionCinematicTarget,
   type MissionCondition,
@@ -44,6 +46,13 @@ export {
   type MissionVariableType,
 } from './types';
 export { parseMission } from './parse';
+export {
+  CAMPAIGN_CINEMATIC_CONTEXTS,
+  MISSION_CINEMATIC_CONTEXTS,
+  dueInMissionCinematics,
+  isTriggerableCinematic,
+  orderedCinematics,
+} from './cinematics';
 export { isMissionId, validateMission } from './validate';
 export {
   MissionRuntime,

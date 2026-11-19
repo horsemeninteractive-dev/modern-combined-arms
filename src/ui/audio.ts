@@ -1078,6 +1078,21 @@ export class AudioEngine {
   }
 
   /**
+   * Play an authored cinematic voice line through the existing voice channel.
+   *
+   * Shares the announcer's channel, volume and music ducking rather than
+   * creating a second audio path; a missing or undecodable file ends quietly.
+   */
+  playCinematicVoice(src: string): void {
+    this.playVoice(src, () => {});
+  }
+
+  /** Stop a cinematic line when its beat ends or the scene is skipped. */
+  stopCinematicVoice(): void {
+    this.stopVoice();
+  }
+
+  /**
    * Unit barks share one channel with the announcer but have their own volume.
    * They are presentation-only and never run while a command-level line is up.
    */

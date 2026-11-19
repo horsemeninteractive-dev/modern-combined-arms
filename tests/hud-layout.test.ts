@@ -76,7 +76,7 @@ describe('production categories', () => {
     expect(productionDomain('defence')).toBeNull();
   });
 
-  it('sites weapon structures under defence and everything else under base', () => {
+  it('sites defensive structures under defence and everything else under base', () => {
     expect(structureTab(true)).toBe('defence');
     expect(structureTab(false)).toBe('base');
   });

@@ -1,4 +1,4 @@
-import { MATERIAL } from './materials';
+import { MATERIAL, MATERIAL_COUNT } from './materials';
 
 const CAMERA = /* glsl */ `
 uniform vec3 uEye;
@@ -117,10 +117,27 @@ float shadowAt(vec3 world, vec3 normal) {
     return 1.0;
   }
   float bias = uShadowBias * (1.0 + 2.6 * (1.0 - clamp(dot(normal, sunDir), 0.0, 1.0)));
+  // Rotate the 3x3 tap grid per pixel. A fixed grid can only ever return nine
+  // values, so a penumbra drawn with it is a staircase of nine steps — the
+  // banded, blocky edge that reads as low resolution on prop and building
+  // shadows. Spin the taps by a per-pixel hash and those steps become a fine
+  // dither that the eye integrates into a smooth edge, at the same tap count
+  // and the same cost as before.
+  // The hash is keyed on the shadow-map texel the fragment lands in, not on the
+  // screen, so the dither is fixed to the ground and cannot crawl as the camera
+  // pans or swim while a unit walks over its own shadow.
+  float hash = fract(sin(dot(coord.xy / uShadowTexel, vec2(12.9898, 78.233))) * 43758.5453);
+  float spin = hash * 6.2831853;
+  float spinSin = sin(spin);
+  float spinCos = cos(spin);
+  mat2 spinMat = mat2(spinCos, -spinSin, spinSin, spinCos);
+  // Taps sit a little wider than one texel, so the penumbra covers the gap
+  // between the nine samples instead of leaving it as a hard step.
   float lit = 0.0;
   for (int y = -1; y <= 1; y++) {
     for (int x = -1; x <= 1; x++) {
-      float depth = texture(uShadowMap, coord.xy + vec2(float(x), float(y)) * uShadowTexel).r;
+      vec2 tap = spinMat * vec2(float(x), float(y)) * 1.5;
+      float depth = texture(uShadowMap, coord.xy + tap * uShadowTexel).r;
       lit += coord.z - bias <= depth ? 1.0 : 0.0;
     }
   }
@@ -134,13 +151,13 @@ float shadowAt(vec3 world, vec3 normal) {
  * A headlamp beam used to be a quad laid on the ground: a flat decal that buried
  * half of itself in a slope, drew through hills and banded where its pieces met.
  * Here the lamp is a cone in world space and the surface is the receiver, so the
- * light lands exactly on the fragments it reaches. A road deck is a mesh drawn
- * above the terrain, which is why the mesh stage evaluates the same field: a pool
- * painted only on the terrain would vanish underneath the road.
+ * light lands exactly on the fragments it reaches. A road deck, hull or wall is
+ * a mesh drawn above the terrain, which is why the mesh stage evaluates the same
+ * field: a pool painted only on the terrain would vanish underneath them.
  *
  * Arrays are packed as (xyz, w): origin/reach, aim/cos(outer edge),
- * colour/strength. `uSpotGate` lets a pass opt out — every mesh except the road
- * leaves it at 0 — so the loop costs nothing where there is no road to light.
+ * colour/strength. `uSpotGate` lets a pass opt in, so the loop costs nothing in
+ * stages that do not receive light.
  */
 const GROUND_SPOTS_GLSL = /* glsl */ `
 #define GROUND_SPOT_MAX 12
@@ -213,6 +230,60 @@ vec3 groundSpots(vec3 p, vec3 n) {
     sum += uSpotTint[i].rgb * (uSpotTint[i].w * cone * reach * visible * (0.2 + 0.8 * facing));
   }
   return sum;
+}
+`;
+
+/**
+ * GGX microfacet response and a procedural environment term.
+ *
+ * The old highlight was a Blinn-Phong lobe with an arbitrary exponent. It gave
+ * every material one hard dot and no sky response, which is why bare metal and
+ * glass read as tinted plastic. These functions keep the authored material LUT
+ * but give it a physically shaped distribution, a Fresnel response and a cheap
+ * sky/ground environment that needs no cubemap asset.
+ */
+const PBR_GLSL = /* glsl */ `
+const float MCA_PI = 3.14159265;
+
+float mcaDistributionGGX(float NoH, float a) {
+  float a2 = a * a;
+  float d = NoH * NoH * (a2 - 1.0) + 1.0;
+  return a2 / max(MCA_PI * d * d, 0.00001);
+}
+
+float mcaGeometrySmith(float NoV, float NoL, float roughness) {
+  float r = roughness + 1.0;
+  float k = (r * r) / 8.0;
+  float gv = NoV / (NoV * (1.0 - k) + k);
+  float gl = NoL / (NoL * (1.0 - k) + k);
+  return gv * gl;
+}
+
+vec3 mcaFresnelSchlick(float cosTheta, vec3 f0) {
+  return f0 + (1.0 - f0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+/**
+ * A tiny analytic environment: sky above, sea/ground bounce below, a soft sun
+ * lobe for the reflection. This is deliberately not a cubemap: it costs a few
+ * ALU ops, follows the time-of-day grade, and gives metal and glass something
+ * to reflect without adding an asset or a texture unit.
+ */
+vec3 mcaEnvironment(vec3 dir, vec3 sunDir, float roughness) {
+  float up = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
+  vec3 sky = max(uHazeColor, vec3(0.035)) * (0.55 + 0.85 * smoothstep(0.0, 0.8, up));
+  vec3 ground = vec3(0.10, 0.085, 0.065) * (0.6 + uAmbient);
+  vec3 env = mix(ground, sky, smoothstep(0.42, 0.58, up));
+  float sun = pow(max(dot(dir, sunDir), 0.0), mix(180.0, 24.0, roughness));
+  return env + vec3(1.0, 0.86, 0.68) * sun * mix(0.45, 1.5, 1.0 - roughness);
+}
+
+/** Diffuse sky/ground irradiance, with a floor so an overcast shadow is not black. */
+vec3 mcaIrradiance(vec3 n) {
+  float up = clamp(n.y * 0.5 + 0.5, 0.0, 1.0);
+  vec3 sky = max(uHazeColor, vec3(0.035));
+  vec3 ground = vec3(0.10, 0.085, 0.065);
+  return mix(ground, sky, up) * (1.4 + uAmbient * 0.9) + vec3(0.008);
 }
 `;
 
@@ -308,6 +379,7 @@ ${GROUND_SPOTS_GLSL}
 ${FOG_FIELD}
 ${HAZE_GLSL}
 ${SHADOW_SAMPLE_GLSL}
+${PBR_GLSL}
 out vec4 outColor;
 
 float hash21(vec2 p) {
@@ -368,7 +440,9 @@ float skinPitch(float id) {
   if (id < 0.5) return 1.45;
   if (id < 1.5) return 0.95;
   if (id < 2.5) return 2.70;
-  return 0.27;
+  if (id > 7.5 && id < 8.5) return 0.225;
+  if (id > 8.5 && id < 9.5) return 1.20;
+  return 0.60;
 }
 
 /**
@@ -383,9 +457,11 @@ float skinPitch(float id) {
  * painted    plate courses with staggered vertical joints and a rib line
  * bareMetal  finer plates, riveted at a 22 cm grid
  * concrete   shuttered formwork: lift and form joints, board marks, tie holes
- * canvas     coursed blockwork for walls, a soft weave for sandbags
+ * brick      modular brickwork, 65 mm courses on a running bond
+ * plaster    a smooth skim coat; weather, not a joint, carries its surface
+ * canvas     a soft weave for sandbags, tents and field structures
  */
-float skinJoints(vec2 c, float id, float aa, out float height) {
+float skinJoints(vec2 c, float id, float aa, float up, out float height) {
   height = 0.0;
   if (id < 0.5) {
     float pitch = 1.45;
@@ -418,17 +494,42 @@ float skinJoints(vec2 c, float id, float aa, out float height) {
     height = 0.034 * lift + 0.028 * form + 0.005 * board - 0.010 * tie;
     return max(max(lift, form), max(board * 0.4, tie * 0.7));
   }
-  // Canvas is the only family that carries masonry: it is what the walls,
-  // sandbags and field structures are coloured with. Asphalt, rock and glass
-  // sit in this id range too, and coursing a runway apron was reading as brick.
-  if (id > 5.5 && id < 6.5) {
-    float course = 0.27;
+  // Brick is its own family. A wall is laid from modular bricks, not 27 cm
+  // blocks: 65 mm courses on a 225 mm running bond read at human scale from
+  // the tactical camera and stay fine enough not to turn a facade into a grid.
+  // A horizontal face is never brickwork. It is the roof deck where the wall
+  // stops, so it switches to large membrane sheets and the albedo is cooled to
+  // roofing felt below. That one test is what stopped flat roofs from showing
+  // enormous brick courses.
+  if (id > 7.5 && id < 8.5) {
+    if (up > 0.5) {
+      float seam = max(
+        jointLine(c.x, 2.40, max(0.012, aa * 0.8)),
+        jointLine(c.y, 2.40, max(0.012, aa * 0.8))
+      );
+      height = 0.006 * seam;
+      return seam * 0.55;
+    }
+    float course = 0.075;
+    float brickLength = 0.225;
     float row = floor(c.y / course);
-    float stagger = mod(row, 2.0) > 0.5 ? 0.26 : 0.0;
-    float bed = jointLine(c.y, course, max(0.009, aa * 0.45));
-    float head = jointLine(c.x + stagger, 0.52, max(0.008, aa * 0.45));
-    height = 0.007 * bed + 0.005 * head;
+    float stagger = mod(row, 2.0) > 0.5 ? brickLength * 0.5 : 0.0;
+    float bed = jointLine(c.y, course, max(0.0032, aa * 0.42));
+    float head = jointLine(c.x + stagger, brickLength, max(0.0028, aa * 0.42));
+    // A soldier course every eighth bed gives the bond some hierarchy without
+    // making every wall identical.
+    float soldier = mod(row, 8.0) < 0.5 ? 0.35 : 0.0;
+    height = 0.011 * bed + 0.008 * head + 0.003 * soldier;
     return max(bed, head);
+  }
+  // Rendered walls are deliberately jointless. Their surface comes from the
+  // plaster albedo branch below and the broad normal bend, not from a grid.
+  if (id > 8.5 && id < 9.5) return 0.0;
+  // Canvas, sandbags and field structures carry a soft weave, not masonry.
+  if (id > 5.5 && id < 6.5) {
+    float weave = 0.5 + 0.5 * sin(c.x * 24.0) * sin(c.y * 24.0);
+    height = 0.0015 * weave;
+    return 0.0;
   }
   return 0.0;
 }
@@ -445,7 +546,7 @@ void main() {
   vec3 sunDir = normalize(uSun);
   float diffuse = max(dot(n, sunDir), 0.0);
   float hemi = 0.5 + 0.5 * n.y;
-  vec4 mat = texture(uMatLut, vec2((floor(vMaterial + 0.5) + 0.5) / 8.0, 0.5));
+  vec4 mat = texture(uMatLut, vec2((floor(vMaterial + 0.5) + 0.5) / ${MATERIAL_COUNT}.0, 0.5));
   float roughness = clamp(mat.r, 0.0, 1.0);
   float metalness = clamp(mat.g, 0.0, 1.0);
   float detail = clamp(mat.b, 0.0, 1.0);
@@ -467,6 +568,9 @@ void main() {
     float macro = triNoise(vWorld, n, 0.19);
     float meso = triNoise(vWorld, n, 0.62);
     float fine = triNoise(vWorld, n, 2.15);
+    // A roof is a different surface system from the wall below it. This gate
+    // is what keeps brickwork and plaster off every flat deck in the game.
+    float up = smoothstep(0.55, 0.82, n.y);
 
     if (id < 0.5) {
       // Painted military metal: restrained panel break-up and a little wear.
@@ -502,9 +606,41 @@ void main() {
     } else if (id < 6.5) {
       // Canvas, sandbags and foliage: a soft weave rather than hard patches.
       base *= mix(1.0, 0.9 + 0.14 * meso, detail);
-    } else {
+    } else if (id < 7.5) {
       // Tracks and rubber: fine grain only. Tracks must stay dark next to the
       // hull so running gear reads as running gear.
+      base *= mix(1.0, 0.86 + 0.16 * fine, detail);
+    } else if (id < 8.5) {
+      // Brickwork: every brick is fired a little differently, a few are dark
+      // headers, and lime mortar catches the light between them. The cell is
+      // the same one the joint field uses, so tone and groove always agree.
+      vec2 c = faceCoords(vWorld, n);
+      float course = 0.075;
+      float brickLength = 0.225;
+      float row = floor(c.y / course);
+      float stagger = mod(row, 2.0) > 0.5 ? brickLength * 0.5 : 0.0;
+      vec2 cell = floor(vec2((c.x + stagger) / brickLength, c.y / course));
+      float tone = hash21(cell + vec2(3.7, 8.1));
+      float header = step(0.94, hash21(cell + vec2(9.2, 2.4)));
+      base *= mix(1.0, 0.80 + 0.34 * tone, detail);
+      base = mix(base, base * vec3(0.68, 0.62, 0.58), header * 0.55 * detail);
+      // Repaired patches and rising damp break the field up at wall scale.
+      float repair = smoothstep(0.63, 0.88, macro);
+      base = mix(base, base * vec3(1.08, 1.03, 0.94), repair * 0.22 * detail);
+      base *= mix(0.82, 1.0, smoothstep(0.0, 1.8, vLocal.y));
+      // An upward face is the roof deck, not the wall: cool it to roofing felt
+      // so a parapet or a box top can never read as a brick plane.
+      base = mix(base, vec3(0.165, 0.17, 0.165), up * 0.90);
+    } else if (id < 9.5) {
+      // Rendered plaster: broad trowel drift, damp staining and hairline cracks.
+      base *= mix(1.0, 0.90 + 0.13 * meso + 0.05 * fine, detail);
+      float stain = smoothstep(0.52, 0.82, macro);
+      base = mix(base, base * vec3(0.78, 0.78, 0.74), stain * 0.34 * detail);
+      float crack = 1.0 - smoothstep(0.0, 0.018, abs(fine - 0.5) * 0.2);
+      base = mix(base, base * 0.72, crack * 0.18 * detail);
+      base = mix(base, vec3(0.18, 0.185, 0.18), up * 0.88);
+    } else {
+      // Reserved families keep the weathered rubber response.
       base *= mix(1.0, 0.86 + 0.16 * fine, detail);
     }
 
@@ -519,7 +655,7 @@ void main() {
     float aa = pixel * 0.85;
     vec2 face = faceCoords(vWorld, n);
     float skinH = 0.0;
-    float joint = skinJoints(face, id, aa, skinH);
+    float joint = skinJoints(face, id, aa, up, skinH);
     base *= mix(1.0, 1.0 - 0.26 * joint, detail);
     // Each plate is rolled, cast or painted a little differently. The tone
     // spread is what turns a repeated seam grid into built structure rather
@@ -527,7 +663,7 @@ void main() {
     float plate = hash21(floor(face / skinPitch(id)) + vec2(id * 13.0, id * 7.0));
     base *= mix(1.0, 0.94 + 0.12 * plate, detail * 0.7);
 
-    if (materialId < 3.5 || (materialId > 5.5 && materialId < 6.5)) {
+    if (materialId < 3.5 || (materialId > 5.5 && materialId < 6.5) || (materialId > 7.5 && materialId < 8.5)) {
       // In-plane gradient of that same field. Sampling along two tangents
       // rather than the world axes keeps the bend inside the face, so a corner
       // shows a groove on both walls instead of a fold across the edge.
@@ -537,10 +673,10 @@ void main() {
       float e = max(0.05, pixel * 1.4);
       float hu = 0.0;
       float hv = 0.0;
-      skinJoints(faceCoords(vWorld + tu * e, n), id, aa, hu);
-      skinJoints(faceCoords(vWorld + tv * e, n), id, aa, hv);
+      skinJoints(faceCoords(vWorld + tu * e, n), id, aa, up, hu);
+      skinJoints(faceCoords(vWorld + tv * e, n), id, aa, up, hv);
       vec3 grad = (tu * (hu - skinH) + tv * (hv - skinH)) / e;
-      float relief = id < 0.5 ? 1.1 : id < 1.5 ? 1.3 : id < 2.5 ? 1.2 : 1.8;
+      float relief = id < 0.5 ? 1.1 : id < 1.5 ? 1.3 : id < 2.5 ? 1.2 : (id > 7.5 && id < 8.5) ? 2.0 : 1.8;
       n = normalize(n - (grad - n * dot(grad, n)) * relief * detail);
       diffuse = max(dot(n, sunDir), 0.0);
       hemi = 0.5 + 0.5 * n.y;
@@ -572,24 +708,45 @@ void main() {
   // reach the ground, which is what keeps a shadow blue-grey rather than black.
   float shadowed = isFlag ? 1.0 : shadowAt(vWorld, n);
   float direct = mix(1.0, shadowed, uShadowStrength);
-  float shade = uAmbient + (1.0 - uAmbient) * diffuse * 0.9 * direct + 0.11 * hemi + fill * 0.18;
-  // Cloth faces the fixed tactical camera, which is often away from the sun.
-  // Keep both flags readable without letting them glow like emissive panels.
-  shade = mix(shade, max(shade, 0.78), step(0.001, vWind));
-  vec3 lit = base * shade;
-  // Lamp light reaches every surface standing over the ground; in practice that
-  // is the road deck, which otherwise covers the pool the terrain already carries.
-  lit += base * groundSpots(vWorld, vNormal);
+  vec3 lit;
 
-  if (!isFlag) {
+  if (isFlag) {
+    float shade = uAmbient + (1.0 - uAmbient) * diffuse * 0.9 * direct + 0.11 * hemi + fill * 0.18;
+    // Cloth faces the fixed tactical camera, which is often away from the sun.
+    // Keep both flags readable without letting them glow like emissive panels.
+    shade = mix(shade, max(shade, 0.78), step(0.001, vWind));
+    lit = base * shade;
+  } else {
+    // GGX response. The material LUT already carries the roughness/metalness
+    // split; this is the first place the shader actually uses it as a physical
+    // lobe instead of a single Phong exponent.
     vec3 viewDir = normalize(uEye - vWorld);
+    float NoV = max(dot(n, viewDir), 0.0001);
+    float NoL = max(dot(n, sunDir), 0.0);
     vec3 halfDir = normalize(sunDir + viewDir);
-    float gloss = 1.0 - roughness;
-    float highlight = pow(max(dot(n, halfDir), 0.0), mix(6.0, 110.0, gloss));
-    lit += mix(vec3(1.0), base, 0.5) * highlight * specular * (0.08 + metalness * 0.55) * (0.3 + diffuse * 0.7) * mix(0.2, 1.0, direct);
-    float fresnel = pow(1.0 - max(dot(n, viewDir), 0.0), 4.0);
-    lit += vec3(0.2, 0.28, 0.3) * fresnel * (0.05 + gloss * 0.16) * (1.0 - metalness * 0.6);
+    float NoH = max(dot(n, halfDir), 0.0);
+    float VoH = max(dot(viewDir, halfDir), 0.0);
+    float a = max(roughness * roughness, 0.002);
+    float D = mcaDistributionGGX(NoH, a);
+    float G = mcaGeometrySmith(NoV, NoL, roughness);
+    vec3 F0 = mix(vec3(0.04), base, metalness);
+    vec3 F = mcaFresnelSchlick(VoH, F0);
+    vec3 specularBrdf = min((D * G * F) / max(4.0 * NoV * NoL, 0.001), vec3(8.0));
+    vec3 kD = (1.0 - F) * (1.0 - metalness);
+    vec3 sunColor = vec3(1.05, 1.0, 0.92);
+    // The analytic environment has a fixed floor so overcast shadows never
+    // collapse. At night that floor is too much for foliage and hulls, so the
+    // ambient term alone is cut while the sun/lamp response stays intact.
+    float nightAmbient = mix(0.58, 1.0, smoothstep(0.12, 0.42, uAmbient));
+    vec3 ambient = base * mcaIrradiance(n) * nightAmbient;
+    vec3 directLight = (kD * base + specularBrdf) * sunColor * NoL * direct * 1.12;
+    vec3 reflected = mcaEnvironment(reflect(-viewDir, n), sunDir, roughness);
+    lit = ambient + directLight + reflected * mix(0.025, 0.50, metalness) * (1.0 - roughness * 0.55) + base * fill * 0.10;
   }
+
+  // Local lamps reach every lit surface, not only the road deck. A headlamp
+  // that leaves the wall beside it dark reads as a painted pool, not a light.
+  lit += base * groundSpots(vWorld, n);
 
   lit *= uTone;
   lit += vec3(1.0, 0.86, 0.66) * uFlash;
@@ -868,6 +1025,7 @@ ${GROUND_SPOTS_GLSL}
 ${FOG_FIELD}
 ${HAZE_GLSL}
 ${SHADOW_SAMPLE_GLSL}
+${PBR_GLSL}
 out vec4 outColor;
 
 float hash21(vec2 p) {
@@ -1116,13 +1274,16 @@ precision highp float;
 in vec3 vWorld;
 in vec2 vUv;
 uniform vec3 uSun;
-uniform vec3 uEye;
 uniform float uTime;
 uniform float uAmbient;
 uniform vec3 uTone;
 uniform sampler2D uShoreTex;
+uniform sampler2D uReflection;
+uniform sampler2D uReflectionDepth;
+uniform float uReflectionStrength;
 uniform float uUseFog;
 uniform float uSea;
+${CAMERA}
 ${FOG_FIELD}
 ${HAZE_GLSL}
 ${SEA_GLSL}
@@ -1142,6 +1303,99 @@ float noise2(vec2 p) {
   float c = hash21(i + vec2(0.0, 1.0));
   float d = hash21(i + vec2(1.0, 1.0));
   return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+/** Reconstruct a world position from the reflection copy's camera and depth. */
+vec3 reflectedWorldAt(vec2 uv, float depth) {
+  float x = uv.x * 2.0 - 1.0;
+  float y = uv.y * 2.0 - 1.0;
+  float viewZ = uNear + depth * (uFar - uNear);
+  return uEye + uRight * (x * uHalf.x) + uUp * (y * uHalf.y) + uForward * viewZ;
+}
+
+/**
+ * One reflection ray sample. Returns true when the ray point has crossed the
+ * visible surface at its projected pixel; uv and sceneDepth describe that
+ * surface so the caller can test whether it is open water.
+ */
+bool reflectedHit(vec3 origin, vec3 dir, float t, out vec2 uv, out float sceneDepth) {
+  vec3 p = origin + dir * t;
+  vec4 clip = projectWorld(p);
+  uv = clip.xy * 0.5 + 0.5;
+  if (uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0) return false;
+  float rayDepth = clip.z * 0.5 + 0.5;
+  sceneDepth = texture(uReflectionDepth, uv).r;
+  if (sceneDepth >= 0.9999) return false;
+  float gap = rayDepth - sceneDepth;
+  return gap >= 0.0 && gap < 0.010;
+}
+
+/**
+ * March a reflected ray through the previous frame's depth and colour.
+ *
+ * The sea is the only surface that needs this, so the source is a single
+ * resolved-scene copy rather than a second render of the battlefield. Six
+ * unevenly spaced taps cover the near bank and the structures/tree line behind
+ * it; when a tap crosses a surface, three bisection steps pull the hit onto the
+ * silhouette instead of leaving a several-metre smear. Hits at or below the
+ * water surface is rejected: the reflection copy contains the sea itself, and
+ * a ray that lands on it would paint water with its own cyan instead of the
+ * shore or sky. A hull or vehicle above that surface is kept, even when the
+ * underlying tile is open water. Rays that leave the view or hit nothing fall
+ * back to the sky tint.
+ *
+ * Coastal water keeps the long reach so banks and structures are reflected
+ * across the shelf. Open water passes a shorter reach: a distant tree line has
+ * no business washing over a hull, and near-field reflections are what keep a
+ * ship readable against the sea.
+ */
+vec4 screenReflection(vec3 origin, vec3 dir, float maxDistance) {
+  const int STEPS = 6;
+  const int REFINE_STEPS = 3;
+  float jitter = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+  float stride = max(1.5, (maxDistance - 4.0) / float(STEPS));
+  float previousT = 0.0;
+  for (int i = 0; i < STEPS; i++) {
+    float t = 4.0 + (float(i) + jitter) * stride;
+    vec2 uv;
+    float sceneDepth;
+    if (!reflectedHit(origin, dir, t, uv, sceneDepth)) {
+      // A ray that leaves the screen cannot re-enter it later in the march;
+      // keep the remaining taps for the near field instead of wasting them.
+      if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) break;
+      previousT = t;
+      continue;
+    }
+
+    // Refine the crossing between the last miss and this hit. The depth copy is
+    // discrete, so this is the difference between a reflection that sticks to a
+    // trunk or wall and one that floats a few metres in front of it.
+    float lo = previousT;
+    float hi = t;
+    for (int j = 0; j < REFINE_STEPS; j++) {
+      float mid = (lo + hi) * 0.5;
+      vec2 midUv;
+      float midDepth;
+      if (reflectedHit(origin, dir, mid, midUv, midDepth)) hi = mid;
+      else lo = mid;
+    }
+    vec3 p = origin + dir * hi;
+    vec4 clip = projectWorld(p);
+    vec2 hitUv = clip.xy * 0.5 + 0.5;
+    float hitDepth = texture(uReflectionDepth, hitUv).r;
+    if (hitDepth < 0.9999) {
+      vec3 surface = reflectedWorldAt(hitUv, hitDepth);
+      vec4 hitShore = texture(uShoreTex, surface.xz / uWorldSize);
+      float openWater = hitShore.a * (1.0 - smoothstep(0.3, 0.86, hitShore.r));
+      float seaHeight = seaSurface(surface.xz, uTime, uSea) * openWater * (0.16 + 0.52 * uSea);
+      float aboveWater = surface.y - seaHeight;
+      if (openWater <= 0.1 || aboveWater > 0.25) {
+        return vec4(texture(uReflection, hitUv).rgb, 1.0);
+      }
+    }
+    previousT = hi;
+  }
+  return vec4(0.0);
 }
 
 void main() {
@@ -1190,26 +1444,15 @@ void main() {
   col += vec3(0.014, 0.026, 0.028) * chop * (1.0 + 2.4 * uSea * openSea);
   float crest = smoothstep(0.5, 0.9, h0);
   col = mix(col, vec3(0.3, 0.44, 0.46), crest * (0.1 + 0.3 * uSea * openSea));
-  // Whitecaps. They are not foam on a beach: they break wherever the surface is
-  // steep and the sea is running, which is why they are keyed on the height
-  // field rather than on the coast channel.
-  float caps = smoothstep(0.58, 0.95, uSea * (0.45 + 0.55 * openSea));
-  if (caps > 0.001) {
-    float breakUp = 0.5 + 0.5 * sin(t * 2.1 + p.x * 0.9 - p.y * 0.75)
-                  * (0.6 + 0.4 * noise2(p * 1.3 - t * 0.07));
-    float crestline = smoothstep(0.62, 0.92, h0 * 0.7 + 0.3);
-    float whitecap = caps * crestline * smoothstep(0.35, 0.8, breakUp);
-    col = mix(col, vec3(0.68, 0.75, 0.76), whitecap * 0.42);
-  }
   // Spray haze: in a gale the sea reads through a film of its own water, which
   // is the visual half of the naval detection penalty.
   col = mix(col, vec3(0.36, 0.45, 0.47), uSea * uSea * 0.12);
   float fleck = smoothstep(0.76, 0.94, noise2(p * 2.1 + vec2(t * 0.08, t * 0.05)));
   col = mix(col, vec3(0.44, 0.56, 0.56), fleck * smoothstep(0.15, 0.55, h0) * 0.08);
-  // A restrained sky term, not a planar reflection: the tactical camera is
-  // steep enough that a constant horizon tint reads better than a mirror.
+  // The screen-space reflection carries the shore, structures and sky that
+  // actually stand in the reflected direction; the flat horizon tint is only
+  // the fallback where the ray leaves the frame.
   float fresnel = pow(1.0 - max(dot(n, viewDir), 0.0), 2.0);
-  col = mix(col, vec3(0.2, 0.28, 0.32), fresnel * 0.48);
 
   float spec = pow(max(dot(reflect(-sunDir, n), viewDir), 0.0), 160.0);
   col += vec3(1.0, 0.88, 0.7) * spec * 1.35;
@@ -1217,21 +1460,109 @@ void main() {
   col += vec3(1.0, 0.95, 0.86) * glint * 1.5;
   col *= 0.76 + uAmbient * 0.5;
 
+  col = mix(col, vec3(0.22, 0.38, 0.4), (1.0 - depth) * 0.1);
+  col *= uTone;
+
+  // Every water pixel gets the cheap sky response as a fallback. The whole sea
+  // also marches the resolved scene, so open water reflects the same shore,
+  // structures and sky as the coastal band instead of flattening to a tint.
+  // Open water gets a shorter ray and a lighter blend: long-range shoreline
+  // colour is for the shelf, not for a hull trying to read its own silhouette.
+  vec3 skyReflection = vec3(0.2, 0.28, 0.32) * uTone;
+  vec4 ssr = vec4(0.0);
+  vec3 reflection = skyReflection;
+  if (uReflectionStrength > 0.001) {
+    vec3 reflectedDir = reflect(-viewDir, n);
+    float reflectionReach = mix(52.0, 14.0, smoothstep(0.0, 0.8, openSea));
+    float reflectionWeight = clamp(fresnel * uReflectionStrength, 0.0, 0.8)
+                          * mix(1.0, 0.3, smoothstep(0.15, 0.8, openSea));
+    ssr = screenReflection(vWorld + n * 0.12, reflectedDir, reflectionReach);
+    reflection = mix(skyReflection, ssr.rgb, ssr.a);
+    col = mix(col, reflection, reflectionWeight);
+  }
+
+  // The surf is not a separate white layer pasted on top of the sea. It picks
+  // up the shore colour that the reflection found, and the height of the swell
+  // decides how far that colour reaches into the foam and waterline. A flat
+  // shelf stays pale; a breaking crest carries the reflected bank with it.
+  float foamLine = smoothstep(0.66, 0.96, coast);
+  float crestWeight = smoothstep(0.35, 0.95, h0);
+  float shoreReflection = clamp(uReflectionStrength, 0.0, 1.0)
+                        * clamp(ssr.a * 0.75 + 0.25, 0.0, 1.0);
+  float surfTint = shoreReflection
+                 * (0.22 + 0.48 * crestWeight * (0.55 + 0.45 * foamLine));
+
   // A broken, moving surf line. The B channel spreads the band over the first
   // few tiles, so the foam follows the actual shoreline rather than filling
   // every shallow-water tile with the same painted rim.
-  float foamLine = smoothstep(0.66, 0.96, coast);
   // A surf break is metres wide, not tens of metres. The higher spatial
   // frequency and two competing terms keep the band broken along the shore.
   float foamNoise = 0.5 + 0.5 * sin(t * 1.7 + p.x * 1.45 + p.y * 1.2)
                   * (0.65 + 0.35 * noise2(p * 1.6 + t * 0.12));
-  col = mix(col, vec3(0.56, 0.67, 0.65), foamLine * smoothstep(0.22, 0.9, foamNoise) * 0.28);
+  vec3 foamColour = mix(vec3(0.56, 0.67, 0.65) * uTone, reflection, surfTint);
+  col = mix(col, foamColour, foamLine * smoothstep(0.22, 0.9, foamNoise) * (0.28 + 0.12 * crestWeight));
+
+  // Whitecaps. They are not foam on a beach: they break wherever the surface is
+  // steep and the sea is running, which is why they are keyed on the height
+  // field rather than on the coast channel. The reflected colour rides the
+  // crest with the foam so a breaking top belongs to the scene behind it.
+  float caps = smoothstep(0.58, 0.95, uSea * (0.45 + 0.55 * openSea));
+  if (caps > 0.001) {
+    float breakUp = 0.5 + 0.5 * sin(t * 2.1 + p.x * 0.9 - p.y * 0.75)
+                  * (0.6 + 0.4 * noise2(p * 1.3 - t * 0.07));
+    float crestline = smoothstep(0.62, 0.92, h0 * 0.7 + 0.3);
+    float whitecap = caps * crestline * smoothstep(0.35, 0.8, breakUp);
+    vec3 capColour = mix(vec3(0.68, 0.75, 0.76) * uTone, reflection, surfTint * 0.85);
+    col = mix(col, capColour, whitecap * (0.42 + 0.1 * crestWeight));
+  }
+
   // The last few centimetres of contact get a restrained waterline rather than
   // the old uniform cyan glow along the whole coast.
   float waterline = smoothstep(0.93, 1.0, coast) * (0.4 + 0.6 * noise2(p * 2.1 + t * 0.1));
-  col = mix(col, vec3(0.6, 0.69, 0.65), waterline * 0.2);
-  col = mix(col, vec3(0.22, 0.38, 0.4), (1.0 - depth) * 0.1);
-  col *= uTone;
+  vec3 waterlineColour = mix(vec3(0.6, 0.69, 0.65) * uTone, reflection, surfTint);
+  col = mix(col, waterlineColour, waterline * (0.2 + 0.14 * crestWeight));
+
+  // A breaking crest leaves a short wake on the water it has already passed.
+  // The dominant swell travels toward (-x, +y), so sampling the height field
+  // back along that direction finds the crest that just moved through this
+  // pixel. Three taps keep the trail short and make the foam carry the same
+  // reflected bank colour as the crest that produced it.
+  const vec2 TRAIL_DIR = vec2(0.78, -0.63);
+  // Calm water drops wakes almost immediately; a running sea keeps them in the
+  // surface long enough to read as a trail instead of a second whitecap.
+  float seaLinger = smoothstep(0.12, 0.78, uSea);
+  float trail = 0.0;
+  if (uSea > 0.08 && (crestWeight > 0.04 || caps > 0.001 || foamLine > 0.01)) {
+    float trailLength = mix(0.35, 1.0, seaLinger) + 0.3 * crestWeight;
+    float tapFade = mix(0.42, 0.08, seaLinger);
+    for (int i = 0; i < 3; i++) {
+      float d = trailLength * (float(i) + 1.0) / 3.0;
+      float age = (0.16 + d * 0.09) * mix(0.75, 1.4, seaLinger);
+      float hTrail = seaSurface(p - TRAIL_DIR * d, t - age, uSea);
+      trail = max(trail, smoothstep(0.55, 0.95, hTrail) * (1.0 - tapFade * float(i)));
+    }
+    // Keep the wake tied to the height samples. A separate cross-trail noise
+    // field made broad bands in a running sea instead of short wakes.
+  }
+  // A trail belongs to the water the crest has already passed, not to the
+  // crest itself. Fading it where h0 is still high keeps the cap and its wake
+  // from collapsing into the same white blob.
+  float behindCrest = 1.0 - smoothstep(0.45, 0.9, h0);
+  float trailMask = trail
+                  * smoothstep(0.18, 0.75, crestWeight * 0.45 + caps * 0.35 + foamLine * 0.45)
+                  * (0.35 + 0.65 * behindCrest)
+                  * mix(0.15, 1.0, seaLinger);
+  // A wake is still foam, so it keeps a bright base and only takes a share of
+  // the reflected shore tint; otherwise a dark bank turns the trail into a
+  // hole in the water instead of white water carrying the bank's colour.
+  vec3 trailBase = vec3(0.62, 0.72, 0.72) * uTone;
+  vec3 trailColour = mix(trailBase, reflection, clamp(surfTint * 0.55, 0.0, 0.42));
+  col = mix(col, trailColour, trailMask * (0.12 + 0.1 * crestWeight) * mix(0.4, 1.0, seaLinger));
+
+  // Water otherwise keeps its daytime sky response after dark and reads as a
+  // glowing sheet. The night cut applies to the whole water result, including
+  // foam and reflection, but leaves lamps and unit lights untouched.
+  col *= mix(0.62, 1.0, smoothstep(0.12, 0.42, uAmbient));
 
   float fog = uUseFog > 0.5 ? fogField(vUv) : 1.0;
   col = applyHaze(col, vWorld);
@@ -1305,6 +1636,7 @@ uniform float uUseFog;
 ${FOG_FIELD}
 ${HAZE_GLSL}
 ${SHADOW_SAMPLE_GLSL}
+${PBR_GLSL}
 out vec4 outColor;
 
 float hash21(vec2 p) {
@@ -1333,7 +1665,7 @@ void main() {
   vec3 n = normalize(vNormal);
   vec3 sunDir = normalize(uSun);
   float diffuse = max(dot(n, sunDir), 0.0);
-  vec4 mat = texture(uMatLut, vec2((floor(vMaterial + 0.5) + 0.5) / 8.0, 0.5));
+  vec4 mat = texture(uMatLut, vec2((floor(vMaterial + 0.5) + 0.5) / ${MATERIAL_COUNT}.0, 0.5));
   float roughness = clamp(mat.r, 0.0, 1.0);
   float metalness = clamp(mat.g, 0.0, 1.0);
   float detail = clamp(mat.b, 0.0, 1.0);
@@ -1359,12 +1691,23 @@ void main() {
   }
 
   float direct = mix(1.0, shadowAt(vWorld, n), uShadowStrength);
-  col *= uAmbient + (1.0 - uAmbient) * diffuse * 0.82 * direct + 0.08 * n.y;
   vec3 viewDir = normalize(uEye - vWorld);
+  float NoV = max(dot(n, viewDir), 0.0001);
+  float NoL = max(dot(n, sunDir), 0.0);
   vec3 halfDir = normalize(sunDir + viewDir);
-  float gloss = 1.0 - roughness;
-  float highlight = pow(max(dot(n, halfDir), 0.0), mix(6.0, 100.0, gloss));
-  col += mix(vec3(1.0), col, 0.5) * highlight * specular * (0.08 + metalness * 0.5) * mix(0.2, 1.0, direct);
+  float NoH = max(dot(n, halfDir), 0.0);
+  float VoH = max(dot(viewDir, halfDir), 0.0);
+  float a = max(roughness * roughness, 0.002);
+  float D = mcaDistributionGGX(NoH, a);
+  float G = mcaGeometrySmith(NoV, NoL, roughness);
+  vec3 F0 = mix(vec3(0.04), col, metalness);
+  vec3 F = mcaFresnelSchlick(VoH, F0);
+  vec3 specularBrdf = min((D * G * F) / max(4.0 * NoV * NoL, 0.001), vec3(8.0));
+  vec3 kD = (1.0 - F) * (1.0 - metalness);
+  vec3 ambient = col * mcaIrradiance(n);
+  vec3 directLight = (kD * col + specularBrdf) * vec3(1.05, 1.0, 0.92) * NoL * direct * 1.12;
+  vec3 reflected = mcaEnvironment(reflect(-viewDir, n), sunDir, roughness);
+  col = ambient + directLight + reflected * mix(0.02, 0.42, metalness) * (1.0 - roughness * 0.55);
   // uGlow is the self-lit colour a prop adds after the light grade: the crystal
   // seams use it to burn cyan once the sun is down. Scaling it by the facet's
   // own brightness keeps the cut faces readable instead of flooding the shard

@@ -154,6 +154,8 @@ export class Editor {
   brush = 1;
   owner = 0;
   structureDef = 'barracks';
+  /** First tile of an authored wall run, waiting for the end tile. */
+  wallStart: { x: number; z: number } | null = null;
   unitDef = 'rifle';
   /** Which set-dressing piece the placement tool stamps. */
   propKind: PropKind = 'bush';
@@ -219,6 +221,12 @@ export class Editor {
   private panStamp = 0;
   private painting = false;
   private lastPaint = '';
+  /** Snapshots of the document before authoring changes, oldest first. */
+  private history: Scenario[] = [];
+  /** Snapshots restored by undo, available to redo until a new edit branches off. */
+  private redoHistory: Scenario[] = [];
+  /** Snapshot captured at the start of a map stroke, committed on pointerup. */
+  private strokeSnapshot: Scenario | null = null;
   /** Set by any prop edit; the next frame restages the scenery. */
   private propsDirty = false;
   private terrainDirty = false;
@@ -328,8 +336,108 @@ export class Editor {
     this.ctx.clearRect(0, 0, this.overlayWidth, this.overlayHeight);
   }
 
-  private load(scenario: Scenario, refresh = true): void {
+  /** Record a snapshot before a discrete authoring action. */
+  private checkpoint(): void {
+    this.history.push(cloneScenario(this.scenario));
+    this.redoHistory = [];
+    this.trimHistory();
+  }
+
+  /** Capture the document only once per pointer stroke. */
+  private beginStroke(): void {
+    if (!this.strokeSnapshot) this.strokeSnapshot = cloneScenario(this.scenario);
+  }
+
+  /** Commit a stroke only when it actually changed the document. */
+  private finishStroke(): void {
+    const before = this.strokeSnapshot;
+    this.strokeSnapshot = null;
+    if (!before) return;
+    if (scenarioToJson(before) === scenarioToJson(this.scenario)) return;
+    this.history.push(before);
+    this.redoHistory = [];
+    this.trimHistory();
+  }
+
+  private trimHistory(): void {
+    while (this.history.length > 40) this.history.shift();
+    while (this.redoHistory.length > 40) this.redoHistory.shift();
+    this.syncHistoryButtons();
+  }
+
+  private syncHistoryButtons(): void {
+    const undo = this.root?.querySelector<HTMLButtonElement>('#ed-undo');
+    if (undo) {
+      undo.disabled = this.history.length === 0;
+      undo.title = this.history.length
+        ? `Undo the last authoring change (${this.history.length})`
+        : 'Nothing to undo';
+    }
+    const redo = this.root?.querySelector<HTMLButtonElement>('#ed-redo');
+    if (redo) {
+      redo.disabled = this.redoHistory.length === 0;
+      redo.title = this.redoHistory.length
+        ? `Redo the last undone change (${this.redoHistory.length})`
+        : 'Nothing to redo';
+    }
+  }
+
+  /** Restore the document as it stood before the last authoring change. */
+  undo(): void {
+    const before = this.history.pop();
+    if (!before) {
+      this.app.notify('Nothing to undo.', 'info');
+      return;
+    }
+    this.redoHistory.push(cloneScenario(this.scenario));
+    while (this.redoHistory.length > 40) this.redoHistory.shift();
+    this.strokeSnapshot = null;
+    this.propSelection = [];
+    this.load(before, true, { keepHistory: true, preserveView: true });
+    this.propsDirty = true;
+    this.workbench?.reload();
+    this.renderTools();
+    this.syncHistoryButtons();
+    this.scheduleAutosave();
+    this.setHint();
+    this.app.audio.play('ui');
+    this.app.notify('Undid the last authoring change.', 'info');
+  }
+
+  /** Restore the document that the last undo removed. */
+  redo(): void {
+    const next = this.redoHistory.pop();
+    if (!next) {
+      this.app.notify('Nothing to redo.', 'info');
+      return;
+    }
+    this.strokeSnapshot = null;
+    this.propSelection = [];
+    this.history.push(cloneScenario(this.scenario));
+    while (this.history.length > 40) this.history.shift();
+    this.load(next, true, { keepHistory: true, preserveView: true });
+    this.propsDirty = true;
+    this.workbench?.reload();
+    this.renderTools();
+    this.syncHistoryButtons();
+    this.scheduleAutosave();
+    this.setHint();
+    this.app.audio.play('ui');
+    this.app.notify('Redid the last authoring change.', 'info');
+  }
+
+  private load(
+    scenario: Scenario,
+    refresh = true,
+    options: { keepHistory?: boolean; preserveView?: boolean } = {},
+  ): void {
     this.scenario = scenario;
+    if (!options.keepHistory) {
+      this.history = [];
+      this.redoHistory = [];
+      this.strokeSnapshot = null;
+      this.syncHistoryButtons();
+    }
     // A yard authored without a facing is turned by the battle from its coast;
     // resolve that here too so the forge previews the slipway it will deploy.
     for (const s of scenario.structures) {
@@ -340,6 +448,7 @@ export class Editor {
     this.issues = [];
     this.reach = null;
     this.hover = null;
+    this.wallStart = null;
     this.terrainDirty = false;
     this.lastPaint = '';
     // A loaded document is a different set of regions: a stale selection or
@@ -349,8 +458,10 @@ export class Editor {
     if (refresh && this.active) {
       this.app.renderer.settings.showFog = false;
       this.app.renderer.setScenario(this.scenario);
-      this.app.renderer.camera.setZoom(Math.max(58, this.scenario.width * 0.5));
-      this.app.renderer.camera.centerOn((this.scenario.width * TILE_SIZE) / 2, (this.scenario.height * TILE_SIZE) / 2);
+      if (!options.preserveView) {
+        this.app.renderer.camera.setZoom(Math.max(58, this.scenario.width * 0.5));
+        this.app.renderer.camera.centerOn((this.scenario.width * TILE_SIZE) / 2, (this.scenario.height * TILE_SIZE) / 2);
+      }
       this.renderInspector();
       this.refreshValidation();
     }
@@ -372,6 +483,8 @@ export class Editor {
         <div class="actions">
           <button class="btn btn-ghost editor-tools-btn" data-ed="tools" aria-label="Authoring tools" aria-expanded="false">${icon('build')} <span class="btn-label">TOOLS</span></button>
           <button class="btn btn-ghost" data-ed="menu" aria-label="Scenario menu">${icon('menu')} <span class="btn-label">MENU</span></button>
+          <button class="btn btn-ghost" id="ed-undo" data-ed="undo" aria-label="Undo last authoring change" ${this.history.length === 0 ? 'disabled' : ''}>${icon('undo')} <span class="btn-label">UNDO</span></button>
+          <button class="btn btn-ghost" id="ed-redo" data-ed="redo" aria-label="Redo last undone authoring change" ${this.redoHistory.length === 0 ? 'disabled' : ''}>${icon('redo')} <span class="btn-label">REDO</span></button>
           <button class="btn btn-ghost" data-ed="new" aria-label="New scenario">${icon('box')} <span class="btn-label">NEW</span></button>
           <button class="btn btn-ghost" data-ed="open" aria-label="Open scenario">${icon('folder')} <span class="btn-label">OPEN</span></button>
           <button class="btn btn-ghost" data-ed="library" aria-label="Mission library">${icon('folder')} <span class="btn-label">LIBRARY</span></button>
@@ -399,7 +512,7 @@ export class Editor {
         <div class="editor-inspector" id="ed-inspector"></div>
       </aside>
       <div class="editor-backdrop" data-ed="backdrop"></div>
-      <div class="editor-hint" id="ed-hint">Left click paint · Right/middle drag pan · Wheel zoom · Drag the panel rails to slide them away</div>
+      <div class="editor-hint" id="ed-hint">Left click paint · Right/middle drag pan · Wheel zoom · Ctrl+Z undo · Ctrl+Shift+Z redo · Drag the panel rails to slide them away</div>
       <div class="editor-toolbar-overlay">
         <button class="btn btn-ghost" data-ed="pan" aria-label="Pan map" aria-pressed="false">${icon('move')} <span class="btn-label">PAN</span></button>
         <button class="btn btn-ghost" data-ed="reach" aria-label="Reachability preview">${icon('terrain')} <span class="btn-label">REACH</span></button>
@@ -425,6 +538,12 @@ export class Editor {
 
   private action(action: string): void {
     switch (action) {
+      case 'undo':
+        this.undo();
+        break;
+      case 'redo':
+        this.redo();
+        break;
       case 'menu':
         this.app.closeEditor();
         break;
@@ -912,6 +1031,7 @@ export class Editor {
   }
 
   private forceTools(): string {
+    const wallSelected = this.tool === 'structure' && !!BUILDINGS[this.structureDef]?.wall;
     const owners = this.scenario.players.map((p) => `<option value="${p.id}" ${this.owner === p.id ? 'selected' : ''}>${escapeHtml(p.name)}${p.isAI ? ' (AI)' : ''}</option>`).join('');
     const buildings = Object.values(BUILDINGS).map((b) => {
       const selected = this.tool === 'structure' && this.structureDef === b.id;
@@ -935,7 +1055,7 @@ export class Editor {
       <div class="tool-section"><h4>STRUCTURES</h4><div class="tool-grid">${buildings}</div></div>
       <div class="tool-section">${units}</div>
       <div class="tool-section">${this.toolBtn('erase', 'erase', 'REMOVE')}</div>
-      <p class="tool-note">Click to place the selected asset. Left click with REMOVE deletes a unit or structure under the cursor. Shipyards require a buildable coast with navigable water alongside.</p>`;
+      <p class="tool-note">${wallSelected ? 'Walls are laid as a run: click a start tile, then the end tile. Angled runs, corner caps and flags match battle placement.' : 'Click to place the selected asset.'} Left click with REMOVE deletes a unit or structure under the cursor. Shipyards require a buildable coast with navigable water alongside.</p>`;
   }
 
   private missionTools(): string {
@@ -985,6 +1105,7 @@ export class Editor {
     this.root.querySelectorAll<HTMLElement>('[data-tool]').forEach((btn) => {
       btn.addEventListener('click', () => {
         this.tool = btn.dataset.tool as EditorTool;
+        this.wallStart = null;
         this.panMode = false;
         this.syncPanButton();
         this.renderTools();
@@ -1101,6 +1222,7 @@ export class Editor {
     this.root.querySelectorAll<HTMLElement>('[data-building]').forEach((btn) => {
       btn.addEventListener('click', () => {
         this.structureDef = btn.dataset.building ?? 'barracks';
+        this.wallStart = null;
         this.tool = 'structure';
         this.panMode = false;
         this.syncPanButton();
@@ -1112,6 +1234,7 @@ export class Editor {
     this.root.querySelectorAll<HTMLElement>('[data-unit]').forEach((btn) => {
       btn.addEventListener('click', () => {
         this.unitDef = btn.dataset.unit ?? 'rifle';
+        this.wallStart = null;
         this.tool = 'unit';
         this.panMode = false;
         this.syncPanButton();
@@ -1156,6 +1279,7 @@ export class Editor {
     });
     const objectives = this.root.querySelector<HTMLTextAreaElement>('#ed-objectives');
     objectives?.addEventListener('change', () => {
+      this.checkpoint();
       this.scenario.objectives = objectives.value.split('\n').map((s) => s.trim()).filter(Boolean);
       this.app.notify('Objectives updated.', 'info');
       this.scheduleAutosave();
@@ -1563,6 +1687,7 @@ export class Editor {
     if (drag.mode !== 'draw' && sameRect(drag.origin, draft)) return;
     const mission = this.scenario.mission;
     if (!mission) return;
+    this.checkpoint();
     if (drag.mode === 'draw') {
       const id = this.uniqueRegionId(mission.regions.map((entry) => entry.id));
       mission.regions.push({ id, x: draft.x, z: draft.z, width: draft.width, height: draft.height });
@@ -1605,6 +1730,21 @@ export class Editor {
 
   private onKeyDown = (event: KeyboardEvent): void => {
     if (!this.active) return;
+    const target = event.target as HTMLElement | null;
+    const editing = !!target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable);
+    if (!editing && (event.ctrlKey || event.metaKey)) {
+      const key = event.key.toLowerCase();
+      if ((event.shiftKey && key === 'z') || (!event.shiftKey && key === 'y')) {
+        event.preventDefault();
+        this.redo();
+        return;
+      }
+      if (!event.shiftKey && key === 'z') {
+        event.preventDefault();
+        this.undo();
+        return;
+      }
+    }
     if (event.key !== 'Escape' && this.propKeys(event)) {
       event.preventDefault();
       return;
@@ -1921,6 +2061,7 @@ export class Editor {
     const bind = (id: string, fn: (value: string) => void) => {
       const input = this.root?.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(`#${id}`);
       input?.addEventListener('change', () => {
+        this.checkpoint();
         fn(input.value);
         this.refreshValidation();
         this.scheduleAutosave();
@@ -1954,7 +2095,10 @@ export class Editor {
       const note = this.root?.querySelector('#ed-sky-note');
       if (note) note.textContent = this.skyNote();
     };
-    // Sliding previews live, releasing commits the edit.
+    // Sliding previews live, releasing commits the edit. Capture the moment
+    // the control is grabbed so undo can return to the previous hour.
+    tod?.addEventListener('pointerdown', () => this.checkpoint());
+    tod?.addEventListener('keydown', () => this.checkpoint());
     tod?.addEventListener('input', () => applyHour(tod.value));
     tod?.addEventListener('change', () => {
       applyHour(tod.value);
@@ -2066,6 +2210,9 @@ export class Editor {
       return;
     }
     if (event.button !== 0) return;
+    // A lost pointerup must not leave an old snapshot to be committed by the
+    // next unrelated click.
+    this.strokeSnapshot = null;
     // Mission-authoring modes own the left button completely: no brush stroke,
     // placement or erase can run while a rectangle is being drawn or an entity
     // is being picked.
@@ -2091,6 +2238,7 @@ export class Editor {
       return;
     }
     this.painting = true;
+    this.strokeSnapshot = null;
     this.lastPaint = '';
     this.paintAtScreen(event.clientX, event.clientY);
   };
@@ -2145,6 +2293,7 @@ export class Editor {
   private onPointerUp = (): void => {
     this.painting = false;
     this.pan = null;
+    this.finishStroke();
     if (this.propMarquee) {
       const box = propBox(
         this.propMarquee.x0,
@@ -2225,6 +2374,10 @@ export class Editor {
       if (!def) return;
       if (this.tool === 'structure') {
         const bdef = BUILDINGS[this.structureDef];
+        if (bdef.wall) {
+          this.paintWallAt(this.hover.x, this.hover.z);
+          return;
+        }
         const tx = this.hover.x - Math.floor(bdef.footprint.w / 2);
         const tz = this.hover.z - Math.floor(bdef.footprint.h / 2);
         const occupied = this.occupancy();
@@ -2281,6 +2434,7 @@ export class Editor {
         // berth and the preview pointing the same way in battle.
         const placed: ScenarioStructure = { defId: this.structureDef, owner: this.owner, x: tx, z: tz };
         if (bdef.requiresWater) placed.facing = waterFacingFor(this.scenario, placed);
+        this.beginStroke();
         this.scenario.structures.push(placed, ...accepted);
         // A mission cannot refer to a placement without a key. Keying happens
         // only for mission-aware scenarios, so an ordinary skirmish map's
@@ -2340,6 +2494,7 @@ export class Editor {
             this.scenario.height,
           );
           const unit = { defId: this.unitDef, owner, x: slot.x, z: slot.z };
+          this.beginStroke();
           this.scenario.units.push(unit);
           if (this.scenario.mission) ensureEntityKey(this.scenario, unit);
         }
@@ -2364,6 +2519,7 @@ export class Editor {
     if (this.tool === 'start') {
       const player = this.scenario.players.find((p) => p.id === this.startPlayerId);
       if (player) {
+        this.beginStroke();
         player.startX = this.hover.x;
         player.startZ = this.hover.z;
         // Deployment markers follow the symmetry too, so a mirrored or rotated
@@ -2393,7 +2549,124 @@ export class Editor {
     this.paintTiles(this.hover.x, this.hover.z);
   }
 
+  /**
+   * Tiles covered by the authored wall run from the stored start to `x`,`z`.
+   * This is the same stepped line the battle placement tool lays, so a run
+   * authored in the forge has the same neighbours and joins on the map.
+   */
+  wallLineTiles(x: number, z: number): Array<{ x: number; z: number }> {
+    const start = this.wallStart;
+    if (!start) return [];
+    const dx = x - start.x;
+    const dz = z - start.z;
+    const steps = Math.max(Math.abs(dx), Math.abs(dz));
+    if (steps === 0) return [{ x: start.x, z: start.z }];
+    const tiles: Array<{ x: number; z: number }> = [];
+    for (let i = 0; i <= steps; i++) {
+      const tx = Math.round(start.x + (dx * i) / steps);
+      const tz = Math.round(start.z + (dz * i) / steps);
+      const prev = tiles[tiles.length - 1];
+      if (!prev || prev.x !== tx || prev.z !== tz) tiles.push({ x: tx, z: tz });
+    }
+    return tiles;
+  }
+
+  /** Lay an authored wall run with the same start/end gesture as a match. */
+  private paintWallAt(x: number, z: number): void {
+    const def = BUILDINGS[this.structureDef];
+    if (!def?.wall) return;
+    if (!this.wallStart) {
+      const check = checkPlacement(this.scenario, this.structureDef, x, z, this.occupancy());
+      if (!check.ok) {
+        this.app.notify(check.reason, 'warning');
+        this.app.audio.play('denied');
+        return;
+      }
+      if (this.scenario.units.some((u) => u.x === x && u.z === z)) {
+        this.app.notify('A starting unit is standing on the wall tile.', 'warning');
+        this.app.audio.play('denied');
+        return;
+      }
+      this.wallStart = { x, z };
+      this.app.audio.play('ui');
+      this.app.notify(`${def.name} start set — click the end tile to lay the run.`, 'info');
+      this.draw();
+      return;
+    }
+
+    const tiles = this.wallLineTiles(x, z);
+    if (tiles.length > 32) {
+      this.app.notify('Wall run is too long — lay it in shorter sections.', 'warning');
+      this.app.audio.play('denied');
+      return;
+    }
+    const occupied = this.occupancy();
+    const accepted: ScenarioStructure[] = [];
+    for (const tile of tiles) {
+      const check = checkPlacement(this.scenario, this.structureDef, tile.x, tile.z, occupied);
+      if (!check.ok) {
+        this.app.notify(`Wall cannot run there: ${check.reason}`, 'warning');
+        this.app.audio.play('denied');
+        return;
+      }
+      if (this.scenario.units.some((u) => u.x === tile.x && u.z === tile.z)) {
+        this.app.notify('A starting unit is standing on the wall run.', 'warning');
+        this.app.audio.play('denied');
+        return;
+      }
+      this.markFootprint(occupied, tile.x, tile.z, 1, 1);
+      accepted.push({ defId: this.structureDef, owner: this.owner, x: tile.x, z: tile.z });
+    }
+    for (const tile of tiles) {
+      for (const rect of symmetryRects(
+        this.symmetry,
+        this.scenario.width,
+        this.scenario.height,
+        tile.x,
+        tile.z,
+        1,
+        1,
+      )) {
+        const check = checkPlacement(this.scenario, this.structureDef, rect.x, rect.z, occupied);
+        if (!check.ok) {
+          this.app.notify(`Symmetric wall site blocked: ${check.reason}`, 'warning');
+          this.app.audio.play('denied');
+          return;
+        }
+        const twinOwner = symmetryOwner(
+          this.symmetry,
+          this.owner,
+          this.scenario.players.length,
+          rect.x,
+          rect.z,
+          this.scenario.width,
+          this.scenario.height,
+        );
+        this.markFootprint(occupied, rect.x, rect.z, 1, 1);
+        accepted.push({ defId: this.structureDef, owner: twinOwner, x: rect.x, z: rect.z });
+      }
+    }
+    const first = tiles[0];
+    const last = tiles[tiles.length - 1];
+    const facing = Math.atan2(last.z - first.z, last.x - first.x);
+    for (const structure of accepted) structure.facing = facing;
+    this.beginStroke();
+    this.scenario.structures.push(...accepted);
+    if (this.scenario.mission) {
+      for (const structure of accepted) ensureEntityKey(this.scenario, structure);
+    }
+    this.wallStart = null;
+    this.app.audio.play('build');
+    this.app.notify(
+      `${def.name} run placed — ${tiles.length} segment${tiles.length === 1 ? '' : 's'}.`,
+      'success',
+    );
+    this.refreshValidation();
+    this.draw();
+  }
+
   private paintTiles(cx: number, cz: number): void {
+    this.beginStroke();
     const radius = this.brush;
     let changed = false;
     for (let dz = -radius; dz <= radius; dz++) {
@@ -2531,6 +2804,7 @@ export class Editor {
       }
     }
     const props = (this.scenario.props ??= []);
+    this.checkpoint();
     const radians = (this.propRotation * Math.PI) / 180;
     for (const target of targets) {
       props.push({
@@ -2622,6 +2896,7 @@ export class Editor {
       this.app.audio.play('denied');
       return;
     }
+    this.checkpoint();
     props.push(...copies);
     this.propSelection = copies;
     this.app.audio.play('build');
@@ -2638,6 +2913,8 @@ export class Editor {
    * stale reference would leave the marquee highlighting props that are gone.
    */
   private transformSelectedProps(change: (prop: ScenarioProp) => ScenarioProp): void {
+    if (this.propSelection.length === 0) return;
+    this.checkpoint();
     const props = this.scenario.props ?? [];
     this.propSelection = this.propSelection.map((prop) => {
       const next = change(prop);
@@ -2675,6 +2952,7 @@ export class Editor {
       return;
     }
     const removed = this.propSelection.length;
+    this.checkpoint();
     this.scenario.props = deleteProps(this.scenario.props ?? [], this.propSelection);
     this.propSelection = [];
     this.propsDirty = true;
@@ -2885,6 +3163,7 @@ export class Editor {
   }
 
   private quickAction(kind: string): void {
+    this.checkpoint();
     if (kind === 'hq') {
       const occupied = this.occupancy();
       for (const p of this.scenario.players) {

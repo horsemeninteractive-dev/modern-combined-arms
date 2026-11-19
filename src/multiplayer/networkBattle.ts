@@ -19,7 +19,7 @@
  */
 import { BUILDINGS } from '../data/buildings';
 import { TILE_SIZE } from '../sim/constants';
-import { UNITS } from '../data/units';
+import { ALL_UNITS } from '../data/units';
 import type { Game } from '../sim/game';
 import type {
   Command,
@@ -75,7 +75,7 @@ function victoryFor(result: ProjectedMatchResult, team: number): VictoryState {
 }
 
 function maxHpFor(entity: ProjectedEntity): number {
-  if (entity.kind === 'unit') return UNITS[entity.defId]?.hp ?? entity.maxHp ?? 100;
+  if (entity.kind === 'unit') return ALL_UNITS[entity.defId]?.hp ?? entity.maxHp ?? 100;
   return BUILDINGS[entity.defId]?.hp ?? entity.maxHp ?? 1000;
 }
 
@@ -92,7 +92,7 @@ function createEntity(projected: ProjectedEntity, x: number, z: number): Entity 
   const maxHp = projected.maxHp ?? maxHpFor(projected);
   const state = entityState(projected.state);
   // Only units have a domain: a structure never flies and never dives.
-  const def = projected.kind === 'unit' ? UNITS[projected.defId] : undefined;
+  const def = projected.kind === 'unit' ? ALL_UNITS[projected.defId] : undefined;
   const domain = def?.domain;
   const remembered = projected.remembered === true;
   // A remembered structure is a silhouette: it carries no live integrity, so

@@ -7,8 +7,46 @@
  * unrecognised value falls back to the documented default rather than throwing.
  */
 
-export type GraphicsQuality = 'low' | 'medium' | 'high';
+export type GraphicsQuality = 'low' | 'medium' | 'high' | 'custom';
 export type EscBehavior = 'pause' | 'menu';
+
+/**
+ * Authored-scene groups a player can switch on their own.
+ *
+ * The master `cinematics` switch still suppresses everything; these only split
+ * the contexts so a player can keep the mission brief while turning the opening
+ * framing off. Nothing here is read by the simulation.
+ */
+export type CinematicScope = 'campaign' | 'briefing' | 'battle';
+export interface CinematicScopes {
+  campaign: boolean;
+  briefing: boolean;
+  battle: boolean;
+}
+export const CINEMATIC_SCOPE_DEFAULT: CinematicScopes = {
+  campaign: true,
+  briefing: true,
+  battle: true,
+};
+
+/** Map a cinematic context onto the group that owns it. */
+export function cinematicScopeFor(kind: string): CinematicScope {
+  if (kind === 'campaignIntro' || kind === 'intermission' || kind === 'campaignFinale') {
+    return 'campaign';
+  }
+  if (kind === 'briefing') return 'briefing';
+  return 'battle';
+}
+
+/** A stale or malformed settings blob keeps every group on. */
+export function normaliseCinematicScopes(value: unknown): CinematicScopes {
+  const raw = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  return {
+    campaign: raw.campaign !== false,
+    briefing: raw.briefing !== false,
+    battle: raw.battle !== false,
+  };
+}
 
 /**
  * Shadow fidelity. Basic is the long-standing projected-quad pass; detailed
@@ -22,6 +60,7 @@ export const SHADOW_DETAIL_LABELS: Record<ShadowDetail, string> = {
   basic: 'Basic',
   detailed: 'Detailed',
 };
+
 
 /** Interface scale is a multiplier, not a percentage, throughout the code. */
 export const UI_SCALE_MIN = 0.8;
@@ -57,6 +96,14 @@ export interface GraphicsPreset {
   maxParticles: number;
   /** Shadow fidelity: none, the flat projected pass, or a real shadow map. */
   shadowDetail: ShadowDetail;
+  /** Ground-contact occlusion; the main post effect for object grounding. */
+  ambientOcclusion: boolean;
+  /** HDR bloom around lamps, glints and explosions. */
+  bloom: boolean;
+  /** Water screen-space reflections; only worth its cost on High/Custom. */
+  screenSpaceReflections: boolean;
+  /** Short directional sun shadows that ground units on the road. */
+  contactShadows: boolean;
   /** Animated water normals; off keeps the sea surface but freezes ripples. */
   waterDetail: boolean;
 }
@@ -66,12 +113,51 @@ export interface GraphicsPreset {
  * low are for integrated GPUs and phones, where fill rate is the bottleneck.
  */
 export const GRAPHICS_PRESETS: Record<GraphicsQuality, GraphicsPreset> = {
-  low: { renderScale: 0.7, maxParticles: 900, shadowDetail: 'off', waterDetail: false },
-  medium: { renderScale: 0.85, maxParticles: 1800, shadowDetail: 'basic', waterDetail: false },
-  high: { renderScale: 1, maxParticles: 2800, shadowDetail: 'detailed', waterDetail: true },
+  low: {
+    renderScale: 0.7,
+    maxParticles: 900,
+    shadowDetail: 'off',
+    ambientOcclusion: false,
+    bloom: false,
+    screenSpaceReflections: false,
+    contactShadows: false,
+    waterDetail: false,
+  },
+  medium: {
+    renderScale: 0.85,
+    maxParticles: 1800,
+    shadowDetail: 'basic',
+    ambientOcclusion: true,
+    bloom: true,
+    screenSpaceReflections: false,
+    contactShadows: true,
+    waterDetail: false,
+  },
+  high: {
+    renderScale: 1,
+    maxParticles: 2800,
+    shadowDetail: 'detailed',
+    ambientOcclusion: true,
+    bloom: true,
+    screenSpaceReflections: true,
+    contactShadows: true,
+    waterDetail: true,
+  },
+  // Custom starts from the authored look; selecting it preserves the player's
+  // explicit effect switches instead of reapplying a preset.
+  custom: {
+    renderScale: 1,
+    maxParticles: 2800,
+    shadowDetail: 'detailed',
+    ambientOcclusion: true,
+    bloom: true,
+    screenSpaceReflections: true,
+    contactShadows: true,
+    waterDetail: true,
+  },
 };
 
-export const GRAPHICS_QUALITIES: GraphicsQuality[] = ['low', 'medium', 'high'];
+export const GRAPHICS_QUALITIES: GraphicsQuality[] = ['low', 'medium', 'high', 'custom'];
 
 export function normaliseUiScale(value: unknown): number {
   // `null` and `''` coerce to 0, which would silently read as a deliberate
@@ -129,6 +215,7 @@ export function normaliseEscBehavior(value: unknown): EscBehavior {
 export function normaliseShadowDetail(value: unknown): ShadowDetail {
   return SHADOW_DETAILS.includes(value as ShadowDetail) ? (value as ShadowDetail) : 'detailed';
 }
+
 
 /**
  * Additive light intensity. Presentation only: no gameplay rule reads this, so

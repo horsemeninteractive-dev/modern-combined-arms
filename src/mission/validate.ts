@@ -14,8 +14,10 @@
  * surfaces warnings and information alongside its own findings.
  */
 import { UNITS } from '../data/units';
+import { MUSIC_TRACKS_BY_ID } from '../ui/musicCatalogue';
 import type {
   MissionAction,
+  MissionCinematicStep,
   MissionCondition,
   MissionDoc,
   MissionIssue,
@@ -39,6 +41,21 @@ function valueMatches(type: MissionVariableType, value: MissionValue): boolean {
 
 function secondsLabel(seconds: number): string {
   return Number.isFinite(seconds) ? `${seconds}s` : 'an invalid duration';
+}
+
+/** Elapsed time of one beat, matching the presentation clock. */
+function cinematicStepDuration(step: MissionCinematicStep): number {
+  if (step.kind === 'camera') return step.durationSeconds + (step.holdSeconds ?? 0);
+  if (step.kind === 'line') return step.durationSeconds + (step.pauseSeconds ?? 0);
+  if (step.kind === 'sound') return step.durationSeconds ?? 0;
+  if (step.kind === 'card' || step.kind === 'music') return step.durationSeconds ?? 0;
+  if (step.kind === 'actor') return step.durationSeconds;
+  return step.durationSeconds ?? 2.5;
+}
+
+/** Authored media must stay inside the project, with no scheme or traversal. */
+function safeCinematicAsset(value: string): boolean {
+  return /^(?!\/\/)(?!.*\.\.)[A-Za-z0-9._~!$&'()+,;=:@%/-]+$/.test(value);
 }
 
 export function validateMission(
@@ -552,6 +569,25 @@ export function validateMission(
           );
         }
         break;
+      case 'startCinematic': {
+        const sequence = doc.cinematics.find((entry) => entry.id === action.cinematic);
+        if (!sequence) {
+          add(
+            'error',
+            'action-cinematic-missing',
+            `Action starts unknown cinematic "${action.cinematic}".`,
+            `${path}.cinematic`,
+          );
+        } else if (sequence.kind !== 'inMission') {
+          add(
+            'error',
+            'action-cinematic-context',
+            `Trigger-started cinematic "${action.cinematic}" must use the in-mission context; it is ${sequence.kind}.`,
+            `${path}.cinematic`,
+          );
+        }
+        break;
+      }
       case 'endMission':
         // The verdict is one of two literals, so there is nothing to check here.
         break;
@@ -732,8 +768,17 @@ export function validateMission(
   }
   for (const cinematic of doc.cinematics) {
     for (const step of cinematic.steps) {
-      if (step.kind === 'camera' && step.target.kind === 'entity') {
+      if ((step.kind === 'camera' || step.kind === 'effect') && step.target.kind === 'entity') {
         referencedEntities.add(step.target.entity);
+      }
+      if (step.kind === 'actor') {
+        referencedEntities.add(step.entity);
+        if ((step.action === 'enter' || step.action === 'leave') && step.structure) {
+          referencedEntities.add(step.structure);
+        }
+        if (step.action === 'fire' && step.target.kind === 'entity') {
+          referencedEntities.add(step.target.entity);
+        }
       }
     }
   }
@@ -744,7 +789,7 @@ export function validateMission(
     add(
       'info',
       'entity-unreferenced',
-      `Authored entity "${entity.key}" is declared but no objective, condition, camera or carryover refers to it.`,
+      `Authored entity "${entity.key}" is declared but no objective, condition, camera, actor or carryover refers to it.`,
       `entities[${i}]`,
     );
   });
@@ -870,10 +915,28 @@ export function validateMission(
   /* Cinematics, consequences, carryover                               */
   /* ---------------------------------------------------------------- */
 
+  const checkCinematicAsset = (value: string, path: string) => {
+    if (!safeCinematicAsset(value)) {
+      add(
+        'error',
+        'cinematic-asset-path',
+        `Media reference "${value}" must be a project-relative path without a scheme or "..".`,
+        path,
+      );
+    }
+  };
   const cinematicContexts = new Map<string, number>();
   doc.cinematics.forEach((cinematic, i) => {
     const base = `cinematics[${i}]`;
     cinematicContexts.set(cinematic.kind, (cinematicContexts.get(cinematic.kind) ?? 0) + 1);
+    if (cinematic.kind === 'campaignIntro' || cinematic.kind === 'campaignFinale') {
+      add(
+        'error',
+        'cinematic-context-misplaced',
+        `Cinematic "${cinematic.id}" uses the campaign context "${cinematic.kind}". Author it on the campaign definition, not in a mission document.`,
+        `${base}.kind`,
+      );
+    }
     if (cinematic.steps.length === 0) {
       add(
         'error',
@@ -899,6 +962,36 @@ export function validateMission(
         `${base}.atSeconds`,
       );
     }
+    // An edge transition is presentation only, but a fade authored with no
+    // duration is a silent cut the author did not ask for.
+    (['in', 'out'] as const).forEach((edge) => {
+      const transition = cinematic.transition?.[edge];
+      if (!transition) return;
+      const edgePath = `${base}.transition.${edge}`;
+      if (transition.kind !== 'cut' && transition.kind !== 'fade') {
+        add(
+          'error',
+          'cinematic-transition-invalid',
+          'Transition kind must be cut or fade.',
+          `${edgePath}.kind`,
+        );
+      }
+      if (!Number.isFinite(transition.durationSeconds) || transition.durationSeconds < 0) {
+        add(
+          'error',
+          'cinematic-transition-invalid',
+          'Transition duration must be zero or more.',
+          `${edgePath}.durationSeconds`,
+        );
+      } else if (transition.kind === 'fade' && transition.durationSeconds === 0) {
+        add(
+          'warning',
+          'cinematic-transition-zero',
+          'A zero-second fade is a cut; this transition has no effect.',
+          `${edgePath}.durationSeconds`,
+        );
+      }
+    });
     cinematic.dialogue.forEach((entry, d) => {
       if (entry.line.trim().length === 0) {
         add(
@@ -923,6 +1016,33 @@ export function validateMission(
         if (step.zoom !== undefined && (!Number.isFinite(step.zoom) || step.zoom <= 0 || step.zoom > 110)) {
           add('error', 'cinematic-zoom-invalid', 'Camera zoom must be above 0 and at most 110.', `${path}.zoom`);
         }
+        if (
+          step.rotationDegrees !== undefined &&
+          (!Number.isFinite(step.rotationDegrees) ||
+            step.rotationDegrees < -360 ||
+            step.rotationDegrees > 360)
+        ) {
+          add(
+            'error',
+            'cinematic-rotation-invalid',
+            'Camera rotation must be between -360 and 360 degrees.',
+            `${path}.rotationDegrees`,
+          );
+        }
+        if (step.shake !== undefined && (!Number.isFinite(step.shake) || step.shake < 0 || step.shake > 1)) {
+          add('error', 'cinematic-shake-invalid', 'Camera shake must be between 0 and 1.', `${path}.shake`);
+        }
+        if (step.track && step.target.kind !== 'entity') {
+          add(
+            'warning',
+            'cinematic-track-no-entity',
+            'Camera tracking needs an entity target; this beat holds a fixed framing.',
+            `${path}.track`,
+          );
+        }
+        if (step.ease !== undefined && !['smooth', 'linear', 'cut'].includes(step.ease)) {
+          add('error', 'cinematic-ease-invalid', 'Camera ease must be smooth, linear or cut.', `${path}.ease`);
+        }
         const target = step.target;
         if (target.kind === 'position') {
           if (!Number.isFinite(target.x) || !Number.isFinite(target.z)) {
@@ -935,7 +1055,7 @@ export function validateMission(
               add('error', 'cinematic-target-outside', 'Camera position is outside the map height.', `${path}.target.z`);
             }
           }
-        } else {
+        } else if (target.kind === 'entity') {
           checkEntityRef(target.entity, `${path}.target.entity`, 'Cinematic camera');
         }
       } else if (step.kind === 'line') {
@@ -952,12 +1072,164 @@ export function validateMission(
         if (step.pauseSeconds !== undefined && (!Number.isFinite(step.pauseSeconds) || step.pauseSeconds < 0)) {
           add('error', 'cinematic-pause-invalid', 'Dialogue pause must be zero or more.', `${path}.pauseSeconds`);
         }
-      } else {
+        if (step.portrait !== undefined) checkCinematicAsset(step.portrait, `${path}.portrait`);
+        if (step.voice !== undefined) checkCinematicAsset(step.voice, `${path}.voice`);
+      } else if (step.kind === 'notify') {
         if (step.text.trim().length === 0) {
           add('error', 'cinematic-notice-empty', 'Notice beat has no text.', `${path}.text`);
         }
         if (step.durationSeconds !== undefined && (!Number.isFinite(step.durationSeconds) || step.durationSeconds <= 0)) {
           add('error', 'cinematic-duration-invalid', 'Notice beat needs a positive duration.', `${path}.durationSeconds`);
+        }
+        if (step.heading !== undefined && step.heading.trim().length === 0) {
+          add('error', 'cinematic-notice-heading-empty', 'Notice heading has no text.', `${path}.heading`);
+        }
+      } else if (step.kind === 'actor') {
+        checkEntityRef(step.entity, `${path}.entity`, 'Cinematic actor');
+        if (!Number.isFinite(step.durationSeconds) || step.durationSeconds < 0) {
+          add(
+            'error',
+            'cinematic-duration-invalid',
+            'Actor beat timing must be zero or more.',
+            `${path}.durationSeconds`,
+          );
+        }
+        if (step.action === 'move') {
+          if (!Number.isFinite(step.x) || !Number.isFinite(step.z)) {
+            add('error', 'cinematic-target-invalid', 'Actor destination must be finite.', `${path}`);
+          } else {
+            if (context.width !== undefined && (step.x < 0 || step.x > context.width)) {
+              add('error', 'cinematic-target-outside', 'Actor destination is outside the map width.', `${path}.x`);
+            }
+            if (context.height !== undefined && (step.z < 0 || step.z > context.height)) {
+              add('error', 'cinematic-target-outside', 'Actor destination is outside the map height.', `${path}.z`);
+            }
+          }
+          if (step.ease !== undefined && !['smooth', 'linear', 'cut'].includes(step.ease)) {
+            add('error', 'cinematic-ease-invalid', 'Actor ease must be smooth, linear or cut.', `${path}.ease`);
+          }
+        } else if (step.action === 'turn') {
+          if (!Number.isFinite(step.facingDegrees)) {
+            add('error', 'cinematic-turn-invalid', 'Actor facing must be a finite number of degrees.', `${path}.facingDegrees`);
+          }
+          if (step.ease !== undefined && !['smooth', 'linear', 'cut'].includes(step.ease)) {
+            add('error', 'cinematic-ease-invalid', 'Actor ease must be smooth, linear or cut.', `${path}.ease`);
+          }
+        } else if (step.action === 'animate') {
+          if (step.pose !== 'idle' && step.pose !== 'walk') {
+            add(
+              'error',
+              'cinematic-pose-unsupported',
+              `Unsupported actor pose "${String(step.pose)}"; the renderer has idle and walk only.`,
+              `${path}.pose`,
+            );
+          }
+          if (!(step.durationSeconds > 0)) {
+            add('error', 'cinematic-duration-invalid', 'Animation beat needs a positive duration.', `${path}.durationSeconds`);
+          }
+        } else if (step.action === 'fire') {
+          if (step.scale !== undefined && (!Number.isFinite(step.scale) || step.scale <= 0)) {
+            add('error', 'cinematic-effect-scale', 'Fire beat scale must be above zero.', `${path}.scale`);
+          }
+          if (step.target.kind === 'restore') {
+            add('error', 'cinematic-target-invalid', 'Fire needs a world position or entity target.', `${path}.target`);
+          } else if (step.target.kind === 'position') {
+            if (!Number.isFinite(step.target.x) || !Number.isFinite(step.target.z)) {
+              add('error', 'cinematic-target-invalid', 'Fire target must be finite.', `${path}.target`);
+            } else {
+              if (context.width !== undefined && (step.target.x < 0 || step.target.x > context.width)) {
+                add('error', 'cinematic-target-outside', 'Fire target is outside the map width.', `${path}.target.x`);
+              }
+              if (context.height !== undefined && (step.target.z < 0 || step.target.z > context.height)) {
+                add('error', 'cinematic-target-outside', 'Fire target is outside the map height.', `${path}.target.z`);
+              }
+            }
+          } else {
+            checkEntityRef(step.target.entity, `${path}.target.entity`, 'Cinematic fire target');
+          }
+        } else if (step.action === 'enter' || step.action === 'leave') {
+          checkEntityRef(step.structure, `${path}.structure`, 'Cinematic structure');
+          if (step.structure === step.entity) {
+            add('error', 'cinematic-structure-self', 'An actor cannot enter or leave itself.', `${path}.structure`);
+          }
+          if (step.action === 'leave') {
+            if (!Number.isFinite(step.x) || !Number.isFinite(step.z)) {
+              add('error', 'cinematic-target-invalid', 'Actor exit destination must be finite.', `${path}`);
+            } else {
+              if (context.width !== undefined && (step.x < 0 || step.x > context.width)) {
+                add('error', 'cinematic-target-outside', 'Actor exit is outside the map width.', `${path}.x`);
+              }
+              if (context.height !== undefined && (step.z < 0 || step.z > context.height)) {
+                add('error', 'cinematic-target-outside', 'Actor exit is outside the map height.', `${path}.z`);
+              }
+            }
+          }
+        }
+      } else if (step.kind === 'card') {
+        if (step.heading.trim().length === 0) {
+          add('error', 'cinematic-card-heading', 'Chapter card has no heading.', `${path}.heading`);
+        }
+        if (!Number.isFinite(step.durationSeconds) || step.durationSeconds <= 0) {
+          add('error', 'cinematic-duration-invalid', 'Chapter card needs a positive duration.', `${path}.durationSeconds`);
+        }
+        if (step.body !== undefined && step.body.trim().length === 0 && step.subheading === undefined) {
+          add('warning', 'cinematic-card-body-empty', 'Chapter card authors an empty body.', `${path}.body`);
+        }
+      } else if (step.kind === 'music') {
+        if (!MUSIC_TRACKS_BY_ID.has(step.track)) {
+          add(
+            'error',
+            'cinematic-music-track',
+            `Music beat names "${step.track}", which is not an authored soundtrack track.`,
+            `${path}.track`,
+          );
+        }
+        if (
+          step.durationSeconds !== undefined &&
+          (!Number.isFinite(step.durationSeconds) || step.durationSeconds < 0)
+        ) {
+          add('error', 'cinematic-duration-invalid', 'Music beat timing must be zero or more.', `${path}.durationSeconds`);
+        }
+      } else if (step.kind === 'sound') {
+        if (step.cue.trim().length === 0) {
+          add('error', 'cinematic-sound-cue', 'Sound beat has no cue name.', `${path}.cue`);
+        }
+        if (step.gain !== undefined && (!Number.isFinite(step.gain) || step.gain < 0 || step.gain > 1)) {
+          add('error', 'cinematic-sound-gain', 'Sound gain must be between 0 and 1.', `${path}.gain`);
+        }
+        if (
+          step.durationSeconds !== undefined &&
+          (!Number.isFinite(step.durationSeconds) || step.durationSeconds < 0)
+        ) {
+          add('error', 'cinematic-duration-invalid', 'Sound beat timing must be zero or more.', `${path}.durationSeconds`);
+        }
+      } else {
+        if (!['explosion', 'smoke', 'dust', 'muzzle'].includes(step.effect)) {
+          add('error', 'cinematic-effect-unknown', `Unsupported effect "${String(step.effect)}".`, `${path}.effect`);
+        }
+        if (step.scale !== undefined && (!Number.isFinite(step.scale) || step.scale <= 0)) {
+          add('error', 'cinematic-effect-scale', 'Effect scale must be above zero.', `${path}.scale`);
+        }
+        if (
+          step.durationSeconds !== undefined &&
+          (!Number.isFinite(step.durationSeconds) || step.durationSeconds <= 0)
+        ) {
+          add('error', 'cinematic-duration-invalid', 'Effect beat needs a positive duration.', `${path}.durationSeconds`);
+        }
+        const target = step.target;
+        if (target.kind === 'position') {
+          if (!Number.isFinite(target.x) || !Number.isFinite(target.z)) {
+            add('error', 'cinematic-target-invalid', 'Effect position must be finite.', `${path}.target`);
+          } else {
+            if (context.width !== undefined && (target.x < 0 || target.x > context.width)) {
+              add('error', 'cinematic-target-outside', 'Effect position is outside the map width.', `${path}.target.x`);
+            }
+            if (context.height !== undefined && (target.z < 0 || target.z > context.height)) {
+              add('error', 'cinematic-target-outside', 'Effect position is outside the map height.', `${path}.target.z`);
+            }
+          }
+        } else if (target.kind === 'entity') {
+          checkEntityRef(target.entity, `${path}.target.entity`, 'Cinematic effect');
         }
       }
     });
@@ -969,13 +1241,25 @@ export function validateMission(
         `${base}.steps`,
       );
     }
-  });
-  for (const [kind, count] of cinematicContexts) {
-    if (count > 1 && kind !== 'inMission') {
+    const total = cinematic.steps.reduce(
+      (seconds, step) => seconds + cinematicStepDuration(step),
+      0,
+    );
+    if (!(total > 0)) {
       add(
         'warning',
-        'cinematic-context-duplicate',
-        `More than one ${kind} cinematic is authored; the first is played.`,
+        'cinematic-zero-duration',
+        `Cinematic "${cinematic.id}" has no elapsed time; it would finish on its first frame.`,
+        `${base}.steps`,
+      );
+    }
+  });
+  for (const [kind, count] of cinematicContexts) {
+    if (count > 1) {
+      add(
+        'info',
+        'cinematic-context-multiple',
+        `${count} ${kind} sequences are authored; they play in document order.`,
         'cinematics',
       );
     }

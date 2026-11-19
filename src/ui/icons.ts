@@ -35,6 +35,8 @@ const PATHS: Record<string, string> = {
   tenement: `<path d="M5 21V5h14v16M3 21h18"/><path d="M8 8h2v2H8zM14 8h2v2h-2zM8 12h2v2H8zM14 12h2v2h-2zM8 16h2v2H8z"/><path d="M14 16h2v5h-2z"/>`,
   ruin: `<path d="M4 21V11l4-4 3 3 3-5 6 5v11M2 21h20"/><path d="M8 13v3M12 12v4M17 15v2"/><path d="M14 6l1 2M6 9l1-2"/>`,
   bridge: `<path d="M2 14h20M2 17h20"/><path d="M5 14V8h14v6"/><path d="M5 8l3-4M19 8l-3-4"/><path d="M9 14v3M15 14v3"/><path d="M2 21c2-1 3 1 5 0s3 1 5 0 3 1 5 0 3 1 5 0"/>`,
+  sandbag: `<path d="M3 19h18M4 19v-4h16v4"/><path d="M6 15v-3h5v3M13 15v-3h5v3M9 12V9h5v3"/><path d="M2 21h20"/>`,
+  wall: `<path d="M3 20h18M5 20V6h14v14M5 11h14M5 16h14M9 6v5M14 11v5M9 16v4M14 6v5"/><path d="M2 21h20"/>`,
   chapel: `<path d="M4 21V12h9v9M2 21h13"/><path d="M6 8h5M8.5 4v12"/><path d="M15 21v-9l5-3v12"/><path d="M17 13v2M19 12v2"/>`,
   farmhouse: `<path d="M3 21v-7l5-4 5 4v7"/><path d="M1 21h14M6 21v-4h4v4"/><path d="M13 21V9l6-3v15"/><path d="M15 12h2M15 16h2"/>`,
   constabulary: `<path d="M4 21V7h13v14M2 21h17"/><path d="M8 11h5v3H8z"/><path d="M12 2l5 2v4l-5 3-5-3V4z"/><path d="M10 6h4"/>`,
@@ -76,6 +78,8 @@ const PATHS: Record<string, string> = {
   elevation: `<path d="M3 20h18M5 20l5-9 4 5 3-4 3 8"/><path d="M10 11V6M8 8l2-2 2 2"/>`,
   erase: `<path d="M4 17l8-12 8 8-6 7H7z"/><path d="M4 17h13M9 21h11"/>`,
   save: `<path d="M4 4h13l3 3v13H4z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/>`,
+  undo: `<path d="M9 7H4v5"/><path d="M4.5 11.5A8 8 0 1 1 12 20"/><path d="M4.5 11.5L9 16"/>`,
+  redo: `<path d="M15 7h5v5"/><path d="M19.5 11.5A8 8 0 1 0 12 20"/><path d="M19.5 11.5L15 16"/>`,
   folder: `<path d="M3 6h6l2 2h10v11H3z"/>`,
   play: `<path d="M7 4l13 8-13 8z"/>`,
   chevron: `<path d="M8 5l7 7-7 7"/>`,
@@ -103,6 +107,9 @@ const PATHS: Record<string, string> = {
   garage: `<path d="M3 21V10h18v11M2 21h20"/><path d="M6 21v-5h5v5M14 21v-5h4v5"/><path d="M7 13h10"/>`,
   coldstore: `<path d="M3 21V6h18v15M2 21h20"/><path d="M6 9h12M6 12h12"/><path d="M9 21v-5h6v5"/><path d="M12 3V1M10 2h4"/>`,
   terrace: `<path d="M2 21V11l3-4 3 4v10M12 21V7l3-3 3 3v14M20 21V13l2-2"/><path d="M1 21h22"/><path d="M4 14v2M14 12v2"/>`,
+  firestation: `<path d="M3 21V8h18v13M2 21h20"/><path d="M9 8V3h6v5"/><path d="M6 21v-7h4v7M14 21v-7h4v7"/><path d="M7 12h2M15 12h2M11 5h2"/>`,
+  clinic: `<path d="M4 21V7h16v14M2 21h20"/><path d="M8 7V4h8v3"/><path d="M9 21v-5h6v5"/><path d="M12 10v5M9.5 12.5h5"/>`,
+  markethall: `<path d="M2 21h20M4 21V11h16v10"/><path d="M6 11V7h12v4"/><path d="M8 11v6M12 11v6M16 11v6"/><path d="M6 7l2-3h8l2 3"/><path d="M10 4V2h4v2"/>`,
 };
 
 export function icon(name: string, cls = ''): string {

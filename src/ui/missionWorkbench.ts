@@ -9,10 +9,12 @@ import type { App } from '../app';
 import type { Editor } from './editor';
 import { openModal, closeModal, escapeHtml } from './modal';
 import {
+  MISSION_CINEMATIC_CONTEXTS,
   MISSION_FORMAT_VERSION,
   type ImportPreview,
   type LibraryStorage,
   type MissionAction,
+  type MissionCinematicActorAction,
   type MissionCinematicContext,
   type MissionCinematicDoc,
   type MissionCinematicStep,
@@ -73,8 +75,15 @@ import {
 import { missionBriefingMarkup } from './missionBriefing';
 import { missionDebriefMarkup } from './missionDebrief';
 import { copyText, downloadJson, readFileText } from './jsonFile';
-import { CAMPAIGNS } from '../data/campaign';
+import { CAMPAIGNS, type CampaignDef } from '../data/campaign';
+import { validateCampaignDefinition } from '../campaign';
+import {
+  CAMPAIGN_CINEMATIC_CONTEXTS,
+  campaignCinematicsFor,
+  saveCampaignCinematics,
+} from '../campaign/cinematics';
 import { UNITS } from '../data/units';
+import { MUSIC_TRACKS } from './musicCatalogue';
 import { parseScenario, scenarioToJson } from '../sim/scenario';
 
 const SECTIONS: Array<{ id: MissionSection; label: string; note: string }> = [
@@ -93,12 +102,17 @@ const SECTIONS: Array<{ id: MissionSection; label: string; note: string }> = [
 
 const OBJECTIVE_KINDS: MissionObjectiveKind[] = ['primary', 'secondary', 'bonus'];
 const OBJECTIVE_STATES: MissionObjectiveState[] = ['hidden', 'active', 'complete', 'failed'];
-const CINEMATIC_KINDS: MissionCinematicContext[] = [
-  'opening',
-  'inMission',
-  'intermission',
-  'ending',
-];
+const CINEMATIC_KINDS: MissionCinematicContext[] = [...MISSION_CINEMATIC_CONTEXTS];
+const CINEMATIC_KIND_LABEL: Record<MissionCinematicContext, string> = {
+  campaignIntro: 'Campaign introduction (campaign definition)',
+  opening: 'Mission opening',
+  briefing: 'Mission briefing',
+  inMission: 'In-mission',
+  debrief: 'Mission debrief',
+  intermission: 'Campaign intermission',
+  ending: 'Mission ending',
+  campaignFinale: 'Campaign finale (campaign definition)',
+};
 const VARIABLE_TYPES: MissionVariableType[] = ['number', 'boolean', 'string'];
 const COMPARE_OPS = ['eq', 'ne', 'lt', 'lte', 'gt', 'gte'] as const;
 const CONDITION_KINDS: MissionCondition['kind'][] = [
@@ -110,17 +124,82 @@ const CONDITION_KINDS: MissionCondition['kind'][] = [
   'regionOccupied',
 ];
 const AI_TASKS = ['attack', 'defend', 'patrol', 'reinforce'] as const;
+const SOUND_CUES = [
+  'rifle',
+  'cannon',
+  'missile',
+  'sam',
+  'explosion',
+  'impact',
+  'alert',
+  'build',
+  'complete',
+  'capture',
+  'land',
+] as const;
+const ACTOR_ACTIONS: MissionCinematicActorAction[] = [
+  'move',
+  'turn',
+  'animate',
+  'fire',
+  'enter',
+  'leave',
+  'appear',
+  'disappear',
+];
+const ACTOR_POSES = ['idle', 'walk'] as const;
 const ACTION_KINDS: MissionAction['kind'][] = [
   'setObjective',
   'setVariable',
   'message',
   'activateAiGroup',
   'spawnReinforcement',
+  'startCinematic',
   'endMission',
 ];
 
 function unitDefName(defId: string): string {
   return UNITS[defId as keyof typeof UNITS]?.name ?? defId;
+}
+
+/** A complete actor beat for a newly selected action, with safe defaults. */
+function defaultActorStep(
+  action: MissionCinematicActorAction,
+  entity: string,
+  width: number,
+  height: number,
+  focus: string | null | undefined,
+): MissionCinematicStep {
+  const x = width / 2;
+  const z = height / 2;
+  const structure = focus && focus !== entity ? focus : '';
+  switch (action) {
+    case 'move':
+      return { kind: 'actor', action, entity, x, z, durationSeconds: 1.5 };
+    case 'turn':
+      return { kind: 'actor', action, entity, facingDegrees: 0, durationSeconds: 1 };
+    case 'animate':
+      return { kind: 'actor', action, entity, pose: 'walk', durationSeconds: 2 };
+    case 'fire':
+      return {
+        kind: 'actor',
+        action,
+        entity,
+        target: focus && focus !== entity
+          ? { kind: 'entity', entity: focus }
+          : { kind: 'position', x, z },
+        durationSeconds: 1,
+      };
+    case 'enter':
+      return { kind: 'actor', action, entity, structure, durationSeconds: 1 };
+    case 'leave':
+      return { kind: 'actor', action, entity, structure, x, z, durationSeconds: 1 };
+    case 'appear':
+    case 'disappear':
+      return { kind: 'actor', action, entity, durationSeconds: 0.6 };
+    default:
+      throw new Error(`Unsupported actor action: ${String(action)}`);
+  }
 }
 
 function num(value: string, fallback = 0): number {
@@ -158,6 +237,10 @@ export class MissionWorkbench {
   private focusKey: string | null = null;
   /** Authored placement ringed on the map by a reference row. */
   private highlightKey: string | null = null;
+  /** Campaign framing scenes edited as a separate overlay from the mission. */
+  private campaignDrafts = new Map<string, MissionCinematicDoc[]>();
+  /** Persisted baseline for each open campaign draft, used for UNSAVED. */
+  private campaignBaselines = new Map<string, string>();
 
   constructor(
     private readonly app: App,
@@ -180,6 +263,8 @@ export class MissionWorkbench {
 
   open(section?: MissionSection): void {
     if (section) this.section = section;
+    this.campaignDrafts.clear();
+    this.campaignBaselines.clear();
     this.editor.onRegionEdited = () => {
       // A map gesture wrote the document; the panel re-reads it rather than
       // keeping its own copy of the selected rectangle.
@@ -210,10 +295,10 @@ export class MissionWorkbench {
 
   close(force = false): void {
     if (!this.root) return;
-    if (!force && this.dirty) {
+    if (!force && (this.dirty || this.hasUnsavedCampaignCinematics())) {
       openModal({
         title: 'Discard workbench changes?',
-        body: `<p>This mission has edits that are not in the library. The Scenario Forge autosave still holds them, but closing the workbench discards the library comparison.</p>`,
+        body: `<p>${this.dirty ? 'This mission has edits that are not in the library.' : ''}${this.dirty && this.hasUnsavedCampaignCinematics() ? ' ' : ''}${this.hasUnsavedCampaignCinematics() ? 'The campaign framing scenes have edits that have not been saved to the campaign scene store.' : ''} The Scenario Forge autosave still holds mission edits, but closing the workbench discards these comparisons.</p>`,
         actions: [
           { label: 'Keep editing' },
           {
@@ -334,6 +419,64 @@ export class MissionWorkbench {
     return this.editor.scenario.mission ?? null;
   }
 
+  /** Campaign whose framing scenes belong to the open mission, if any. */
+  private editorCampaignId(): string | null {
+    const mission = this.mission();
+    if (!mission) return null;
+    const linked = mission.campaign?.campaignId;
+    if (linked && CAMPAIGNS.some((campaign) => campaign.id === linked)) return linked;
+    return (
+      CAMPAIGNS.find((campaign) =>
+        campaign.missions.some((entry) => entry.id === mission.id || entry.mission.id === mission.id),
+      )?.id ?? null
+    );
+  }
+
+  private editorCampaign(): CampaignDef | null {
+    const id = this.editorCampaignId();
+    return id ? (CAMPAIGNS.find((campaign) => campaign.id === id) ?? null) : null;
+  }
+
+  /** Load a campaign's scenes once; later edits stay in this draft. */
+  private campaignDraft(campaignId: string): MissionCinematicDoc[] {
+    const existing = this.campaignDrafts.get(campaignId);
+    if (existing) return existing;
+    const def = CAMPAIGNS.find((campaign) => campaign.id === campaignId);
+    const docs = def ? campaignCinematicsFor(def, this.storage) : [];
+    this.campaignDrafts.set(campaignId, docs);
+    this.campaignBaselines.set(campaignId, JSON.stringify(docs));
+    return docs;
+  }
+
+  private campaignDirty(campaignId: string): boolean {
+    return JSON.stringify(this.campaignDraft(campaignId)) !== this.campaignBaselines.get(campaignId);
+  }
+
+  private campaignDirtyCount(): number {
+    const id = this.editorCampaignId();
+    return id && this.campaignDirty(id) ? 1 : 0;
+  }
+
+  private campaignIssues(campaignId: string) {
+    const def = CAMPAIGNS.find((campaign) => campaign.id === campaignId);
+    if (!def) return [];
+    try {
+      return validateCampaignDefinition({
+        ...def,
+        cinematics: this.campaignDraft(campaignId),
+      }).filter(
+        (issue) =>
+          issue.code.startsWith('campaign-cinematic') || issue.path.startsWith('cinematics['),
+      );
+    } catch {
+      return [];
+    }
+  }
+
+  private hasUnsavedCampaignCinematics(): boolean {
+    return [...this.campaignDrafts.keys()].some((id) => this.campaignDirty(id));
+  }
+
   private campaignLocked(): boolean {
     const entry = this.entries().find((item) => item.id === this.entryId);
     return Boolean(entry?.campaignId) || (this.mission() ? officialCampaignMission(this.mission()!) : false);
@@ -432,7 +575,8 @@ export class MissionWorkbench {
           </div>
           <div class="wb-state">
             ${locked ? '<span class="wb-badge locked">CAMPAIGN COPY · READ ONLY</span>' : ''}
-            ${this.dirty || !this.entryId ? '<span class="wb-badge dirty">UNSAVED EDITS</span>' : '<span class="wb-badge ok">IN LIBRARY</span>'}
+            ${this.dirty || !this.entryId || this.campaignDirtyCount() ? '<span class="wb-badge dirty">UNSAVED EDITS</span>' : '<span class="wb-badge ok">IN LIBRARY</span>'}
+            ${this.campaignDirtyCount() ? '<span class="wb-badge dirty">CAMPAIGN SCENES UNSAVED</span>' : ''}
             ${mission ? `<span class="wb-badge ${errors ? 'bad' : warnings ? 'warn' : 'ok'}">${errors} ERR · ${warnings} WARN</span>` : ''}
             ${this.storageError ? '<span class="wb-badge bad">STORAGE ERROR</span>' : ''}
             ${this.recoveryCount() ? '<span class="wb-badge warn">RECOVERY</span>' : ''}
@@ -1087,6 +1231,17 @@ export class MissionWorkbench {
         );
         break;
       }
+      case 'startCinematic': {
+        const sequences = doc.cinematics.filter((entry) => entry.kind === 'inMission');
+        fields = field(
+          'In-mission sequence',
+          `<select data-scope="action" data-trigger="${ti}" data-index="${ai}" data-field="cinematic">${sequences.map((entry) => option(entry.id, `${entry.id} (${entry.atSeconds ?? 0}s)`, action.cinematic)).join('')}</select>`,
+          sequences.length > 0
+            ? 'Queued once the current scene, if any, finishes. The scene cannot change mission state.'
+            : 'Author a time-gated in-mission sequence before referencing it.',
+        );
+        break;
+      }
       case 'endMission':
         fields = field(
           'Outcome',
@@ -1265,29 +1420,33 @@ export class MissionWorkbench {
       <section class="wb-section">
         ${this.toolbar()}
         <div class="wb-section-head">
-          <div><h3>Cinematic timelines</h3><p>The runtime plays the first authored sequence of each context. A second opening/intermission/ending is validated with a warning and ignored; an in-mission sequence also needs a time gate.</p></div>
-          <button class="btn btn-ghost" data-act="add-cinematic">ADD SEQUENCE</button>
+          <div><h3>Cinematic timelines</h3><p>Every authored sequence in a context plays, in document order. In-mission sequences additionally need a time gate and play in time order, with document order breaking ties. Campaign framing scenes are saved separately from the operation.</p></div>
+          <button class="btn btn-ghost" data-act="add-cinematic">ADD MISSION SEQUENCE</button>
         </div>
+        ${this.campaignCinematicsSection()}
         ${doc.cinematics
           .map((cinematic, index) => {
             const duplicate = (counts.get(cinematic.kind) ?? 0) > 1;
-            const hasCamera = cinematic.steps.some((step) => step.kind === 'camera');
             return `<article class="wb-card cinematic" data-focus-key="cinematic:${index}">
               <header class="wb-card-head">
                 <b>${escapeHtml(cinematic.id)}</b>
                 <span class="wb-chip">${cinematic.kind.toUpperCase()}</span>
                 <span class="wb-chip">${cinematic.steps.length} STEPS</span>
-                ${duplicate ? '<span class="wb-chip bad">DUPLICATE CONTEXT · ONLY FIRST PLAYS</span>' : ''}
-                <button class="btn btn-ghost" data-act="preview-cinematic" data-index="${index}" ${hasCamera ? '' : 'disabled'}>PREVIEW</button>
+                ${duplicate ? `<span class="wb-chip">${counts.get(cinematic.kind)} IN CONTEXT · ALL PLAY</span>` : ''}
+                <button class="btn btn-ghost" data-act="cinematic-up" data-index="${index}" ${index === 0 ? 'disabled' : ''}>↑</button>
+                <button class="btn btn-ghost" data-act="cinematic-down" data-index="${index}" ${index === doc.cinematics.length - 1 ? 'disabled' : ''}>↓</button>
+                <button class="btn btn-ghost" data-act="preview-cinematic" data-index="${index}">PREVIEW</button>
+                <button class="btn btn-ghost" data-act="duplicate-cinematic" data-index="${index}">DUPLICATE</button>
                 <button class="btn btn-ghost" data-act="remove-cinematic" data-index="${index}">REMOVE</button>
               </header>
               <div class="wb-grid four">
                 ${field('ID', `<input data-scope="cinematic" data-index="${index}" data-field="id" value="${escapeHtml(cinematic.id)}" spellcheck="false">`)}
-                ${field('Context', `<select data-scope="cinematic" data-index="${index}" data-field="kind">${CINEMATIC_KINDS.map((kind) => option(kind, kind, cinematic.kind)).join('')}</select>`)}
+                ${field('Context', `<select data-scope="cinematic" data-index="${index}" data-field="kind">${CINEMATIC_KINDS.map((kind) => option(kind, CINEMATIC_KIND_LABEL[kind], cinematic.kind)).join('')}</select>`)}
                 ${field('At mission second', `<input type="number" min="0" step="0.5" data-scope="cinematic" data-index="${index}" data-field="atSeconds" value="${cinematic.atSeconds ?? ''}" placeholder="${cinematic.kind === 'inMission' ? 'required' : 'n/a'}" ${cinematic.kind === 'inMission' ? '' : 'disabled'}>`)}
                 <label class="wb-check"><input type="checkbox" data-scope="cinematic" data-index="${index}" data-field="skippable" ${cinematic.skippable ? 'checked' : ''}> Skippable</label>
               </div>
-              <div class="wb-subhead"><span>ORDERED TIMELINE</span><button class="btn btn-ghost" data-act="add-step" data-index="${index}" data-kind="line">ADD LINE</button><button class="btn btn-ghost" data-act="add-step" data-index="${index}" data-kind="camera">ADD CAMERA</button><button class="btn btn-ghost" data-act="add-step" data-index="${index}" data-kind="notify">ADD NOTICE</button></div>
+              ${this.transitionRow(cinematic, index)}
+              <div class="wb-subhead"><span>ORDERED TIMELINE</span><button class="btn btn-ghost" data-act="add-step" data-index="${index}" data-kind="line">ADD LINE</button><button class="btn btn-ghost" data-act="add-step" data-index="${index}" data-kind="camera">ADD CAMERA</button><button class="btn btn-ghost" data-act="add-step" data-index="${index}" data-kind="notify">ADD NOTICE</button><button class="btn btn-ghost" data-act="add-step" data-index="${index}" data-kind="actor">ADD ACTOR</button><button class="btn btn-ghost" data-act="add-step" data-index="${index}" data-kind="effect">ADD EFFECT</button><button class="btn btn-ghost" data-act="add-step" data-index="${index}" data-kind="sound">ADD SOUND</button><button class="btn btn-ghost" data-act="add-step" data-index="${index}" data-kind="card">ADD CARD</button><button class="btn btn-ghost" data-act="add-step" data-index="${index}" data-kind="music">ADD MUSIC</button></div>
               <div class="wb-stack">${
                 cinematic.steps
                   .map((step, si) => this.stepRow(cinematic, index, step, si))
@@ -1299,6 +1458,105 @@ export class MissionWorkbench {
       </section>`;
   }
 
+  /**
+   * Campaign intro, intermission and finale scenes.
+   *
+   * They share the mission timeline editor and preview, but their draft and
+   * save state are separate: a campaign definition is not a mission document,
+   * and saving a mission copy must never overwrite framing scenes.
+   */
+  private campaignCinematicsSection(): string {
+    const def = this.editorCampaign();
+    if (!def) return '';
+    const docs = this.campaignDraft(def.id);
+    const dirty = this.campaignDirty(def.id);
+    const issues = this.campaignIssues(def.id);
+    const errors = issues.filter((issue) => issue.severity === 'error').length;
+    const warnings = issues.filter((issue) => issue.severity === 'warning').length;
+    const counts = new Map<string, number>();
+    docs.forEach((cinematic) =>
+      counts.set(cinematic.kind, (counts.get(cinematic.kind) ?? 0) + 1),
+    );
+    return `<section class="wb-campaign-scenes" data-campaign-id="${escapeHtml(def.id)}">
+      <div class="wb-section-head">
+        <div>
+          <h3>Campaign framing scenes · ${escapeHtml(def.name)}</h3>
+          <p>These play around the campaign, not inside an operation: the introduction before the first deployment, an intermission after an accepted operation and the finale after the last one. They are stored as a campaign overlay in this browser and do not alter campaign progress.</p>
+        </div>
+        <div class="wb-actions">
+          <button class="btn btn-ghost" data-act="revert-campaign-scenes" ${dirty ? '' : 'disabled'}>REVERT</button>
+          <button class="btn btn-primary" data-act="save-campaign-scenes" ${dirty && errors === 0 ? '' : 'disabled'}>SAVE CAMPAIGN SCENES</button>
+        </div>
+      </div>
+      <div class="wb-inline">
+        <span class="wb-chip ${dirty ? 'warn' : 'ok'}">${dirty ? 'UNSAVED CAMPAIGN EDITS' : 'CAMPAIGN STORE CURRENT'}</span>
+        <span class="wb-chip ${errors ? 'bad' : warnings ? 'warn' : 'ok'}">${errors} ERR · ${warnings} WARN</span>
+        <button class="btn btn-ghost" data-act="add-cinematic">ADD CAMPAIGN SEQUENCE</button>
+      </div>
+      ${issues.length ? `<div class="wb-inline-issues">${issues.map((issue) => `<p class="wb-inline-issue ${issue.severity}"><b>${issue.severity === 'error' ? 'ERR' : issue.severity === 'warning' ? 'WARN' : 'INFO'}</b> ${escapeHtml(issue.message)} <small>${escapeHtml(issue.path)}</small></p>`).join('')}</div>` : '<p class="wb-note">Campaign scene validation is clean.</p>'}
+      ${docs.map((cinematic, index) =>
+        this.campaignCinematicCard(def, cinematic, index, docs.length, counts),
+      ).join('') || '<p class="wb-note">No campaign framing scenes. ADD CAMPAIGN SEQUENCE starts an introduction.</p>'}
+    </section>`;
+  }
+
+  private campaignCinematicCard(
+    def: CampaignDef,
+    cinematic: MissionCinematicDoc,
+    index: number,
+    total: number,
+    counts: Map<string, number>,
+  ): string {
+    const duplicate = (counts.get(cinematic.kind) ?? 0) > 1;
+    return `<article class="wb-card cinematic" data-campaign-id="${escapeHtml(def.id)}" data-focus-key="campaign-cinematic:${index}">
+      <header class="wb-card-head">
+        <b>${escapeHtml(cinematic.id)}</b>
+        <span class="wb-chip">${cinematic.kind.toUpperCase()}</span>
+        <span class="wb-chip">${cinematic.steps.length} STEPS</span>
+        ${duplicate ? `<span class="wb-chip">${counts.get(cinematic.kind)} IN CONTEXT · ALL PLAY</span>` : ''}
+        <button class="btn btn-ghost" data-act="cinematic-up" data-index="${index}" ${index === 0 ? 'disabled' : ''}>↑</button>
+        <button class="btn btn-ghost" data-act="cinematic-down" data-index="${index}" ${index === total - 1 ? 'disabled' : ''}>↓</button>
+        <button class="btn btn-ghost" data-act="preview-cinematic" data-index="${index}">PREVIEW</button>
+        <button class="btn btn-ghost" data-act="duplicate-cinematic" data-index="${index}">DUPLICATE</button>
+        <button class="btn btn-ghost" data-act="remove-cinematic" data-index="${index}">REMOVE</button>
+      </header>
+      <div class="wb-grid four">
+        ${field('ID', `<input data-scope="cinematic" data-index="${index}" data-field="id" value="${escapeHtml(cinematic.id)}" spellcheck="false">`)}
+        ${field('Context', `<select data-scope="cinematic" data-index="${index}" data-field="kind">${CAMPAIGN_CINEMATIC_CONTEXTS.map((kind) => option(kind, CINEMATIC_KIND_LABEL[kind], cinematic.kind)).join('')}</select>`)}
+        <span class="wb-note">Campaign scenes have no mission clock.</span>
+        <label class="wb-check"><input type="checkbox" data-scope="cinematic" data-index="${index}" data-field="skippable" ${cinematic.skippable ? 'checked' : ''}> Skippable</label>
+      </div>
+      ${this.transitionRow(cinematic, index)}
+      <div class="wb-subhead"><span>ORDERED TIMELINE</span><button class="btn btn-ghost" data-act="add-step" data-index="${index}" data-kind="line">ADD LINE</button><button class="btn btn-ghost" data-act="add-step" data-index="${index}" data-kind="camera">ADD CAMERA</button><button class="btn btn-ghost" data-act="add-step" data-index="${index}" data-kind="notify">ADD NOTICE</button><button class="btn btn-ghost" data-act="add-step" data-index="${index}" data-kind="actor">ADD ACTOR</button><button class="btn btn-ghost" data-act="add-step" data-index="${index}" data-kind="effect">ADD EFFECT</button><button class="btn btn-ghost" data-act="add-step" data-index="${index}" data-kind="sound">ADD SOUND</button><button class="btn btn-ghost" data-act="add-step" data-index="${index}" data-kind="card">ADD CARD</button><button class="btn btn-ghost" data-act="add-step" data-index="${index}" data-kind="music">ADD MUSIC</button></div>
+      <div class="wb-stack">${
+        cinematic.steps
+          .map((step, si) => this.stepRow(cinematic, index, step, si))
+          .join('') || '<p class="wb-note">No timeline steps. This sequence will be rejected by validation.</p>'
+      }</div>
+    </article>`;
+  }
+
+  /**
+   * Authored edge transitions.
+   *
+   * They belong to the scene's first and last frame rather than to a moment on
+   * the timeline, so they sit beside the scene settings instead of as beats.
+   * A scene with no transition keeps the historical hard cut.
+   */
+  private transitionRow(cinematic: MissionCinematicDoc, index: number): string {
+    const edge = (kind: 'in' | 'out', label: string) => {
+      const transition = cinematic.transition?.[kind];
+      return `${field(
+        `${label} transition`,
+        `<select data-scope="cinematic-transition" data-index="${index}" data-edge="${kind}" data-field="kind">${option('cut', 'Cut', transition?.kind ?? 'cut')}${option('fade', 'Fade through black', transition?.kind ?? 'cut')}</select>`,
+      )}${field(
+        `${label} seconds`,
+        `<input type="number" min="0" step="0.1" data-scope="cinematic-transition" data-index="${index}" data-edge="${kind}" data-field="durationSeconds" value="${transition?.durationSeconds ?? 0}">`,
+      )}`;
+    };
+    return `<div class="wb-grid four">${edge('in', 'In')}${edge('out', 'Out')}</div>`;
+  }
+
   private stepRow(
     cinematic: MissionCinematicDoc,
     ci: number,
@@ -1306,14 +1564,19 @@ export class MissionWorkbench {
     si: number,
   ): string {
     const common = `data-index="${ci}" data-step="${si}"`;
-    const reorder = `<button class="btn btn-ghost" data-act="step-up" ${common} ${si === 0 ? 'disabled' : ''}>↑</button><button class="btn btn-ghost" data-act="step-down" ${common} ${si === cinematic.steps.length - 1 ? 'disabled' : ''}>↓</button><button class="btn btn-ghost" data-act="remove-step" ${common}>REMOVE</button>`;
+    const reorder = `<button class="btn btn-ghost" data-act="step-up" ${common} ${si === 0 ? 'disabled' : ''}>↑</button><button class="btn btn-ghost" data-act="step-down" ${common} ${si === cinematic.steps.length - 1 ? 'disabled' : ''}>↓</button><button class="btn btn-ghost" data-act="duplicate-step" ${common}>DUPLICATE</button><button class="btn btn-ghost" data-act="remove-step" ${common}>REMOVE</button>`;
     if (step.kind === 'camera') {
       const entityTarget = step.target.kind === 'entity' ? step.target : null;
       const positionTarget = step.target.kind === 'position' ? step.target : null;
+      const targetLabel = step.target.kind === 'restore'
+        ? 'scene start framing'
+        : entityTarget
+          ? `focus ${escapeHtml(entityTarget.entity)}`
+          : `map ${Math.round(positionTarget?.x ?? 0)}, ${Math.round(positionTarget?.z ?? 0)}`;
       return `<div class="wb-row step">
-        <div class="wb-row-head"><span class="wb-chip">${String(si + 1).padStart(2, '0')} CAMERA</span><span class="wb-summary">${entityTarget ? `focus ${escapeHtml(entityTarget.entity)}` : `map ${Math.round(positionTarget?.x ?? 0)}, ${Math.round(positionTarget?.z ?? 0)}`} · ${step.durationSeconds}s move${step.holdSeconds ? ` · ${step.holdSeconds}s hold` : ''}</span><span class="wb-row-actions">${reorder}</span></div>
+        <div class="wb-row-head"><span class="wb-chip">${String(si + 1).padStart(2, '0')} CAMERA</span><span class="wb-summary">${targetLabel} · ${step.durationSeconds}s move${step.holdSeconds ? ` · ${step.holdSeconds}s hold` : ''}${step.track ? ' · tracking' : ''}${step.rotationDegrees !== undefined ? ` · yaw ${Math.round(step.rotationDegrees)}°` : ''}${step.shake ? ` · shake ${step.shake}` : ''}</span><span class="wb-row-actions">${reorder}</span></div>
         <div class="wb-grid four">
-          ${field('Target', `<select data-scope="step-target-kind" data-index="${ci}" data-step="${si}">${option('entity', 'Entity', step.target.kind)}${option('position', 'Map position', step.target.kind)}</select>`)}
+          ${field('Target', `<select data-scope="step-target-kind" data-index="${ci}" data-step="${si}">${option('entity', 'Entity', step.target.kind)}${option('position', 'Map position', step.target.kind)}${option('restore', 'Scene start framing', step.target.kind)}</select>`)}
           ${
             entityTarget
               ? this.entitySelectField(
@@ -1326,10 +1589,14 @@ export class MissionWorkbench {
               : `${field('X', `<input type="number" step="0.5" data-scope="step-target-x" data-index="${ci}" data-step="${si}" value="${positionTarget?.x ?? 0}">`)}${field('Z', `<input type="number" step="0.5" data-scope="step-target-z" data-index="${ci}" data-step="${si}" value="${positionTarget?.z ?? 0}">`)}`
           }
           ${field('Zoom', `<input type="number" min="1" max="110" step="1" data-scope="step" data-index="${ci}" data-step="${si}" data-field="zoom" value="${step.zoom ?? ''}" placeholder="current">`)}
+          ${field('Rotation °', `<input type="number" min="-360" max="360" step="5" data-scope="step" data-index="${ci}" data-step="${si}" data-field="rotationDegrees" value="${step.rotationDegrees ?? ''}" placeholder="45 = default">`)}
         </div>
         <div class="wb-grid three">
           ${field('Move seconds', `<input type="number" min="0" step="0.1" data-scope="step" data-index="${ci}" data-step="${si}" data-field="durationSeconds" value="${step.durationSeconds}">`)}
           ${field('Hold seconds', `<input type="number" min="0" step="0.1" data-scope="step" data-index="${ci}" data-step="${si}" data-field="holdSeconds" value="${step.holdSeconds ?? 0}">`)}
+          ${field('Transition', `<select data-scope="step" data-index="${ci}" data-step="${si}" data-field="ease">${option('smooth', 'Smooth', step.ease ?? 'smooth')}${option('linear', 'Linear', step.ease ?? 'smooth')}${option('cut', 'Cut', step.ease ?? 'smooth')}</select>`)}
+          ${field('Shake 0–1', `<input type="number" min="0" max="1" step="0.05" data-scope="step" data-index="${ci}" data-step="${si}" data-field="shake" value="${step.shake ?? 0}">`)}
+          <label class="wb-check"><input type="checkbox" data-scope="step" data-index="${ci}" data-step="${si}" data-field="track" ${step.track ? 'checked' : ''}> Track entity</label>
         </div>
       </div>`;
     }
@@ -1341,14 +1608,113 @@ export class MissionWorkbench {
           ${field('Text', `<input data-scope="step" data-index="${ci}" data-step="${si}" data-field="text" value="${escapeHtml(step.text)}">`)}
           ${field('Subtitle seconds', `<input type="number" min="0.1" step="0.1" data-scope="step" data-index="${ci}" data-step="${si}" data-field="durationSeconds" value="${step.durationSeconds}">`)}
           ${field('Silent pause', `<input type="number" min="0" step="0.1" data-scope="step" data-index="${ci}" data-step="${si}" data-field="pauseSeconds" value="${step.pauseSeconds ?? 0}">`)}
+          ${field('Portrait path', `<input data-scope="step" data-index="${ci}" data-step="${si}" data-field="portrait" value="${escapeHtml(step.portrait ?? '')}" placeholder="assets/portraits/name.webp" spellcheck="false">`)}
+          ${field('Voice path', `<input data-scope="step" data-index="${ci}" data-step="${si}" data-field="voice" value="${escapeHtml(step.voice ?? '')}" placeholder="assets/voice/line.mp3" spellcheck="false">`)}
+          <label class="wb-check"><input type="checkbox" data-scope="step" data-index="${ci}" data-step="${si}" data-field="radio" ${step.radio ? 'checked' : ''}> Radio transmission</label>
         </div>
       </div>`;
     }
+    if (step.kind === 'notify') {
+      return `<div class="wb-row step">
+        <div class="wb-row-head"><span class="wb-chip">${String(si + 1).padStart(2, '0')} NOTICE</span><span class="wb-summary">${escapeHtml(step.text)}</span><span class="wb-row-actions">${reorder}</span></div>
+        <div class="wb-grid two">
+          ${field('Heading', `<input data-scope="step" data-index="${ci}" data-step="${si}" data-field="heading" value="${escapeHtml(step.heading ?? '')}" placeholder="Kestrel Bay · 06:20">`)}
+          ${field('Text', `<input data-scope="step" data-index="${ci}" data-step="${si}" data-field="text" value="${escapeHtml(step.text)}">`)}
+          ${field('Duration', `<input type="number" min="0.1" step="0.1" data-scope="step" data-index="${ci}" data-step="${si}" data-field="durationSeconds" value="${step.durationSeconds ?? 3}">`)}
+        </div>
+      </div>`;
+    }
+    if (step.kind === 'actor') {
+      const keys = authoredEntityKeys(this.editor.scenario);
+      const actorOptions = `${keys.includes(step.entity) ? '' : `<option value="${escapeHtml(step.entity)}" selected>${escapeHtml(step.entity || '(choose an actor)')} (not placed)</option>`}${keys.map((key) => option(key, this.entityOptionLabel(key), step.entity)).join('')}`;
+      const structure = step.action === 'enter' || step.action === 'leave' ? step.structure : '';
+      const structureOptions = `${keys.includes(structure) ? '' : `<option value="${escapeHtml(structure)}" selected>${escapeHtml(structure || '(choose a structure)')} (not placed)</option>`}${keys.map((key) => option(key, this.entityOptionLabel(key), structure)).join('')}`;
+      const duration = field(
+        'Seconds',
+        `<input type="number" min="0" step="0.1" data-scope="step" data-index="${ci}" data-step="${si}" data-field="durationSeconds" value="${step.durationSeconds}">`,
+      );
+      const ease = (value: 'smooth' | 'linear' | 'cut' | undefined) =>
+        field(
+          'Transition',
+          `<select data-scope="step" data-index="${ci}" data-step="${si}" data-field="ease">${option('smooth', 'Smooth', value ?? 'smooth')}${option('linear', 'Linear', value ?? 'smooth')}${option('cut', 'Cut', value ?? 'smooth')}</select>`,
+        );
+      let details = '';
+      let summary = step.entity;
+      if (step.action === 'move') {
+        summary = `${step.entity} → ${Math.round(step.x)}, ${Math.round(step.z)}`;
+        details = `${field('Tile X', `<input type="number" step="0.5" data-scope="step" data-index="${ci}" data-step="${si}" data-field="x" value="${step.x}">`)}${field('Tile Z', `<input type="number" step="0.5" data-scope="step" data-index="${ci}" data-step="${si}" data-field="z" value="${step.z}">`)}${duration}${ease(step.ease)}`;
+      } else if (step.action === 'turn') {
+        summary = `${step.entity} → ${Math.round(step.facingDegrees)}°`;
+        details = `${field('Facing degrees', `<input type="number" step="5" data-scope="step" data-index="${ci}" data-step="${si}" data-field="facingDegrees" value="${step.facingDegrees}">`)}${duration}${ease(step.ease)}`;
+      } else if (step.action === 'animate') {
+        summary = `${step.entity} · ${step.pose}`;
+        details = `${field('Pose', `<select data-scope="step" data-index="${ci}" data-step="${si}" data-field="pose">${ACTOR_POSES.map((pose) => option(pose, pose === 'walk' ? 'Walk in place' : 'Idle', step.pose)).join('')}</select>`)}${duration}`;
+      } else if (step.action === 'fire') {
+        const target = step.target.kind === 'entity' ? `at ${step.target.entity}` : step.target.kind === 'position' ? `at ${Math.round(step.target.x)}, ${Math.round(step.target.z)}` : 'at scene start';
+        summary = `${step.entity} fires ${target}`;
+        const targetFields = `<select data-scope="actor-target-kind" data-index="${ci}" data-step="${si}">${option('entity', 'Entity', step.target.kind)}${option('position', 'Map position', step.target.kind)}</select>${step.target.kind === 'entity' ? `<select data-scope="actor-target-entity" data-index="${ci}" data-step="${si}">${keys.includes(step.target.entity) ? '' : `<option value="${escapeHtml(step.target.entity)}" selected>${escapeHtml(step.target.entity)} (not placed)</option>`}${keys.map((key) => option(key, this.entityOptionLabel(key), step.target.kind === 'entity' ? step.target.entity : '')).join('')}</select>` : step.target.kind === 'position' ? `<input type="number" step="0.5" data-scope="actor-target-x" data-index="${ci}" data-step="${si}" value="${step.target.x}" aria-label="Target tile X"><input type="number" step="0.5" data-scope="actor-target-z" data-index="${ci}" data-step="${si}" value="${step.target.z}" aria-label="Target tile Z">` : '<span class="wb-note">Choose a world position or entity.</span>'}`;
+        details = `${field('Target kind', targetFields)}${field('Scale', `<input type="number" min="0.1" step="0.1" data-scope="step" data-index="${ci}" data-step="${si}" data-field="scale" value="${step.scale ?? 1}">`)}${duration}`;
+      } else if (step.action === 'enter' || step.action === 'leave') {
+        summary = `${step.entity} ${step.action}s ${step.structure}`;
+        details = `${field('Structure', `<select data-scope="step" data-index="${ci}" data-step="${si}" data-field="structure">${structureOptions}</select>`)}${step.action === 'leave' ? `${field('Exit X', `<input type="number" step="0.5" data-scope="step" data-index="${ci}" data-step="${si}" data-field="x" value="${step.x}">`)}${field('Exit Z', `<input type="number" step="0.5" data-scope="step" data-index="${ci}" data-step="${si}" data-field="z" value="${step.z}">`)}` : ''}${duration}`;
+      } else {
+        summary = `${step.entity} ${step.action}s`;
+        details = duration;
+      }
+      return `<div class="wb-row step">
+        <div class="wb-row-head"><span class="wb-chip">${String(si + 1).padStart(2, '0')} ACTOR</span><span class="wb-summary">${escapeHtml(summary)}</span><span class="wb-row-actions">${reorder}</span></div>
+        <div class="wb-grid two">
+          ${field('Action', `<select data-scope="actor-action" data-index="${ci}" data-step="${si}">${ACTOR_ACTIONS.map((action) => option(action, action, step.action)).join('')}</select>`)}
+          ${field('Actor', `<select data-scope="step" data-index="${ci}" data-step="${si}" data-field="entity">${actorOptions}</select>`)}
+        </div>
+        <div class="wb-grid three">${details}</div>
+      </div>`;
+    }
+    if (step.kind === 'card') {
+      return `<div class="wb-row step">
+        <div class="wb-row-head"><span class="wb-chip">${String(si + 1).padStart(2, '0')} CARD</span><span class="wb-summary">${escapeHtml(step.heading)}${step.subheading ? ` · ${escapeHtml(step.subheading)}` : ''} · ${step.durationSeconds}s</span><span class="wb-row-actions">${reorder}</span></div>
+        <div class="wb-grid two">
+          ${field('Heading', `<input data-scope="step" data-index="${ci}" data-step="${si}" data-field="heading" value="${escapeHtml(step.heading)}">`)}
+          ${field('Subheading', `<input data-scope="step" data-index="${ci}" data-step="${si}" data-field="subheading" value="${escapeHtml(step.subheading ?? '')}" placeholder="KESTREL BAY">`)}
+          ${field('Body', `<input data-scope="step" data-index="${ci}" data-step="${si}" data-field="body" value="${escapeHtml(step.body ?? '')}" placeholder="Optional supporting line">`)}
+          ${field('Seconds', `<input type="number" min="0.1" step="0.1" data-scope="step" data-index="${ci}" data-step="${si}" data-field="durationSeconds" value="${step.durationSeconds}">`)}
+        </div>
+      </div>`;
+    }
+    if (step.kind === 'music') {
+      const listed = MUSIC_TRACKS.some((track) => track.id === step.track);
+      return `<div class="wb-row step">
+        <div class="wb-row-head"><span class="wb-chip">${String(si + 1).padStart(2, '0')} MUSIC</span><span class="wb-summary">${escapeHtml(step.track)} · hold ${step.durationSeconds ?? 0}s</span><span class="wb-row-actions">${reorder}</span></div>
+        <div class="wb-grid two">
+          ${field('Cue track', `<select data-scope="step" data-index="${ci}" data-step="${si}" data-field="track">${MUSIC_TRACKS.map((track) => option(track.id, `${track.title} · ${track.mood}`, step.track)).join('')}${listed ? '' : `<option value="${escapeHtml(step.track)}" selected>${escapeHtml(step.track)} (not in the catalogue)</option>`}</select>`)}
+          ${field('Hold seconds', `<input type="number" min="0" step="0.1" data-scope="step" data-index="${ci}" data-step="${si}" data-field="durationSeconds" value="${step.durationSeconds ?? 0}">`)}
+        </div>
+      </div>`;
+    }
+    if (step.kind === 'sound') {
+      return `<div class="wb-row step">
+        <div class="wb-row-head"><span class="wb-chip">${String(si + 1).padStart(2, '0')} SOUND</span><span class="wb-summary">${escapeHtml(step.cue)} · gain ${step.gain ?? 0.8}</span><span class="wb-row-actions">${reorder}</span></div>
+        <div class="wb-grid three">
+          ${field('Cue', `<select data-scope="step" data-index="${ci}" data-step="${si}" data-field="cue">${SOUND_CUES.map((cue) => option(cue, cue, step.cue)).join('')}${SOUND_CUES.includes(step.cue as (typeof SOUND_CUES)[number]) ? '' : `<option value="${escapeHtml(step.cue)}" selected>${escapeHtml(step.cue)}</option>`}</select>`)}
+          ${field('Gain', `<input type="number" min="0" max="1" step="0.05" data-scope="step" data-index="${ci}" data-step="${si}" data-field="gain" value="${step.gain ?? 0.8}">`)}
+          ${field('Delay after cue', `<input type="number" min="0" step="0.1" data-scope="step" data-index="${ci}" data-step="${si}" data-field="durationSeconds" value="${step.durationSeconds ?? 0}">`)}
+        </div>
+      </div>`;
+    }
+    const effectTarget = step.target;
     return `<div class="wb-row step">
-      <div class="wb-row-head"><span class="wb-chip">${String(si + 1).padStart(2, '0')} NOTICE</span><span class="wb-summary">${escapeHtml(step.text)}</span><span class="wb-row-actions">${reorder}</span></div>
-      <div class="wb-grid two">
-        ${field('Text', `<input data-scope="step" data-index="${ci}" data-step="${si}" data-field="text" value="${escapeHtml(step.text)}">`)}
-        ${field('Duration', `<input type="number" min="0.1" step="0.1" data-scope="step" data-index="${ci}" data-step="${si}" data-field="durationSeconds" value="${step.durationSeconds ?? 3}">`)}
+      <div class="wb-row-head"><span class="wb-chip">${String(si + 1).padStart(2, '0')} EFFECT</span><span class="wb-summary">${escapeHtml(step.effect)} · ${effectTarget.kind === 'entity' ? `at ${escapeHtml(effectTarget.entity)}` : effectTarget.kind === 'position' ? `map ${Math.round(effectTarget.x)}, ${Math.round(effectTarget.z)}` : 'scene start'}</span><span class="wb-row-actions">${reorder}</span></div>
+      <div class="wb-grid three">
+        ${field('Effect', `<select data-scope="step" data-index="${ci}" data-step="${si}" data-field="effect">${option('explosion', 'Explosion', step.effect)}${option('smoke', 'Smoke', step.effect)}${option('dust', 'Dust', step.effect)}${option('muzzle', 'Muzzle flash', step.effect)}</select>`)}
+        ${field('Target', `<select data-scope="step-target-kind" data-index="${ci}" data-step="${si}">${option('entity', 'Entity', step.target.kind)}${option('position', 'Map position', step.target.kind)}${option('restore', 'Scene start', step.target.kind)}</select>`)}
+        ${step.target.kind === 'entity'
+          ? field('Entity', `<select data-scope="step-target-entity" data-index="${ci}" data-step="${si}">${authoredEntityKeys(this.editor.scenario).includes(step.target.entity) ? '' : `<option value="${escapeHtml(step.target.entity)}" selected>${escapeHtml(step.target.entity)} (not placed)</option>`}${authoredEntityKeys(this.editor.scenario).map((key) => option(key, this.entityOptionLabel(key), step.target.kind === 'entity' ? step.target.entity : '')).join('')}</select>`)
+          : step.target.kind === 'position'
+            ? field('Tile X', `<input type="number" step="0.5" data-scope="step-target-x" data-index="${ci}" data-step="${si}" value="${step.target.x}">`)
+            : field('Target', '<span class="wb-note">The framing the scene started from.</span>')}
+        ${step.target.kind === 'position' ? field('Tile Z', `<input type="number" step="0.5" data-scope="step-target-z" data-index="${ci}" data-step="${si}" value="${step.target.z}">`) : ''}
+        ${field('Scale', `<input type="number" min="0.1" step="0.1" data-scope="step" data-index="${ci}" data-step="${si}" data-field="scale" value="${step.scale ?? 1}">`)}
+        ${field('Seconds', `<input type="number" min="0.1" step="0.1" data-scope="step" data-index="${ci}" data-step="${si}" data-field="durationSeconds" value="${step.durationSeconds ?? 1.5}">`)}
       </div>
     </div>`;
   }
@@ -1521,6 +1887,61 @@ export class MissionWorkbench {
       </section>`;
   }
 
+  /** Campaign that owns a cinematic control, if it is inside a campaign card. */
+  private campaignIdOf(element: HTMLElement | null): string | null {
+    const id = element?.closest<HTMLElement>('[data-campaign-id]')?.dataset.campaignId ?? '';
+    return id && CAMPAIGNS.some((campaign) => campaign.id === id) ? id : null;
+  }
+
+  private cinematicList(campaignId: string | null): MissionCinematicDoc[] | null {
+    if (campaignId) {
+      return CAMPAIGNS.some((campaign) => campaign.id === campaignId)
+        ? this.campaignDraft(campaignId)
+        : null;
+    }
+    return this.mission()?.cinematics ?? null;
+  }
+
+  private finishCinematicEdit(campaignId: string | null): void {
+    if (campaignId) this.render();
+    else this.commit();
+  }
+
+  private saveCampaignScenes(campaignId: string): void {
+    const def = CAMPAIGNS.find((campaign) => campaign.id === campaignId);
+    if (!def) return;
+    const errors = this.campaignIssues(campaignId).filter((issue) => issue.severity === 'error');
+    if (errors.length > 0) {
+      this.app.notify(
+        `Campaign scenes still have ${errors.length} validation error${errors.length === 1 ? '' : 's'}.`,
+        'warning',
+      );
+      return;
+    }
+    try {
+      const docs = this.campaignDraft(campaignId);
+      saveCampaignCinematics(this.storage, campaignId, docs);
+      this.campaignBaselines.set(campaignId, JSON.stringify(docs));
+      this.storageError = null;
+      this.app.notify(`Saved campaign scenes for "${def.name}".`, 'success');
+      this.render();
+    } catch (error) {
+      this.storageError = error instanceof Error ? error.message : String(error);
+      this.app.notify(`Campaign scenes not saved: ${this.storageError}`, 'critical');
+      this.render();
+    }
+  }
+
+  private revertCampaignScenes(campaignId: string): void {
+    const def = CAMPAIGNS.find((campaign) => campaign.id === campaignId);
+    if (!def) return;
+    const docs = campaignCinematicsFor(def, this.storage);
+    this.campaignDrafts.set(campaignId, docs);
+    this.campaignBaselines.set(campaignId, JSON.stringify(docs));
+    this.app.notify('Campaign scenes reverted to the saved campaign store.', 'info');
+    this.render();
+  }
+
   /* ------------------------------------------------------------------ */
   /* Events                                                              */
   /* ------------------------------------------------------------------ */
@@ -1539,6 +1960,15 @@ export class MissionWorkbench {
     if (!button) return;
     const act = button.dataset.act ?? '';
     const index = Number(button.dataset.index ?? 0);
+    const campaignId = this.campaignIdOf(button);
+    if (act === 'save-campaign-scenes') {
+      if (campaignId) this.saveCampaignScenes(campaignId);
+      return;
+    }
+    if (act === 'revert-campaign-scenes') {
+      if (campaignId) this.revertCampaignScenes(campaignId);
+      return;
+    }
     if (act === 'goto') {
       const path = button.dataset.path;
       if (path) {
@@ -1865,27 +2295,42 @@ export class MissionWorkbench {
       return;
     }
     if (act === 'add-cinematic') {
-      this.addCinematic();
+      this.addCinematic(campaignId);
       return;
     }
     if (act === 'remove-cinematic') {
-      const cinematic = this.mission()!.cinematics[index];
-      if (cinematic) this.confirmRemove(`Remove cinematic "${cinematic.id}"?`, () => {
-        this.mission()!.cinematics.splice(index, 1);
-        this.commit();
-      });
+      const list = this.cinematicList(campaignId);
+      const cinematic = list?.[index];
+      if (cinematic && list) {
+        this.confirmRemove(`Remove cinematic "${cinematic.id}"?`, () => {
+          list.splice(index, 1);
+          this.finishCinematicEdit(campaignId);
+        });
+      }
+      return;
+    }
+    if (act === 'duplicate-cinematic') {
+      this.duplicateCinematic(index, campaignId);
+      return;
+    }
+    if (act === 'cinematic-up' || act === 'cinematic-down') {
+      this.moveCinematic(index, act === 'cinematic-up' ? -1 : 1, campaignId);
+      return;
+    }
+    if (act === 'duplicate-step') {
+      this.duplicateStep(index, Number(button.dataset.step ?? 0), campaignId);
       return;
     }
     if (act === 'add-step') {
-      this.addStep(index, button.dataset.kind as MissionCinematicStep['kind']);
+      this.addStep(index, button.dataset.kind as MissionCinematicStep['kind'], campaignId);
       return;
     }
     if (act === 'remove-step' || act === 'step-up' || act === 'step-down') {
-      this.moveStep(index, Number(button.dataset.step ?? 0), act);
+      this.moveStep(index, Number(button.dataset.step ?? 0), act, campaignId);
       return;
     }
     if (act === 'preview-cinematic') {
-      const cinematic = this.mission()!.cinematics[index];
+      const cinematic = this.cinematicList(campaignId)?.[index];
       if (cinematic) this.app.previewCinematicFromEditor(cinematic);
       return;
     }
@@ -1901,6 +2346,8 @@ export class MissionWorkbench {
     const index = Number(el.dataset.index ?? 0);
     const fieldName = el.dataset.field ?? '';
     const value = el.type === 'checkbox' ? (el as HTMLInputElement).checked : el.value;
+    const campaignId = this.campaignIdOf(el);
+    const cinematics = campaignId ? this.campaignDraft(campaignId) : doc.cinematics;
     if (scope === 'mission') {
       if (fieldName === 'id') doc.id = String(value);
       if (fieldName === 'title') doc.title = String(value);
@@ -2091,7 +2538,7 @@ export class MissionWorkbench {
       if (!action) return;
       mutateAction(action, fieldName, String(value), doc);
     } else if (scope === 'cinematic') {
-      const cinematic = doc.cinematics[index];
+      const cinematic = cinematics[index];
       if (!cinematic) return;
       if (fieldName === 'id') cinematic.id = String(value);
       if (fieldName === 'kind') cinematic.kind = String(value) as MissionCinematicContext;
@@ -2100,26 +2547,77 @@ export class MissionWorkbench {
         if (String(value).trim() === '') delete cinematic.atSeconds;
         else cinematic.atSeconds = Math.max(0, num(String(value)));
       }
+    } else if (scope === 'cinematic-transition') {
+      const cinematic = cinematics[index];
+      if (!cinematic) return;
+      const edge = el.dataset.edge === 'out' ? 'out' : 'in';
+      const current = cinematic.transition?.[edge] ?? { kind: 'cut' as const, durationSeconds: 0 };
+      const next =
+        fieldName === 'durationSeconds'
+          ? { ...current, durationSeconds: Math.max(0, num(String(value))) }
+          : { ...current, kind: String(value) === 'fade' ? ('fade' as const) : ('cut' as const) };
+      cinematic.transition = { ...cinematic.transition, [edge]: next };
     } else if (scope === 'step-target-kind') {
-      const cinematic = doc.cinematics[index];
+      const cinematic = cinematics[index];
       const step = cinematic?.steps[Number(el.dataset.step ?? 0)];
-      if (!step || step.kind !== 'camera') return;
-      step.target =
-        String(value) === 'entity'
-          ? { kind: 'entity', entity: this.cinematicFocusKey() ?? 'own-hq' }
-          : { kind: 'position', x: this.editor.scenario.width / 2, z: this.editor.scenario.height / 2 };
+      if (!step || (step.kind !== 'camera' && step.kind !== 'effect')) return;
+      if (String(value) === 'entity') {
+        step.target = { kind: 'entity', entity: this.cinematicFocusKey() ?? 'own-hq' };
+      } else if (String(value) === 'restore') {
+        step.target = { kind: 'restore' };
+      } else {
+        step.target = {
+          kind: 'position',
+          x: this.editor.scenario.width / 2,
+          z: this.editor.scenario.height / 2,
+        };
+      }
     } else if (scope.startsWith('step-target-')) {
-      const cinematic = doc.cinematics[index];
+      const cinematic = cinematics[index];
       const step = cinematic?.steps[Number(el.dataset.step ?? 0)];
-      if (!step || step.kind !== 'camera') return;
+      if (!step || (step.kind !== 'camera' && step.kind !== 'effect')) return;
       if (scope === 'step-target-entity' && step.target.kind === 'entity') {
         step.target.entity = String(value);
       } else if (step.target.kind === 'position') {
         if (scope === 'step-target-x') step.target.x = num(String(value));
         if (scope === 'step-target-z') step.target.z = num(String(value));
       }
+    } else if (scope === 'actor-action') {
+      const cinematic = cinematics[index];
+      const step = cinematic?.steps[Number(el.dataset.step ?? 0)];
+      if (!step || step.kind !== 'actor') return;
+      cinematic.steps[Number(el.dataset.step ?? 0)] = defaultActorStep(
+        String(value) as MissionCinematicActorAction,
+        step.entity,
+        this.editor.scenario.width,
+        this.editor.scenario.height,
+        this.cinematicFocusKey(),
+      );
+    } else if (scope === 'actor-target-kind') {
+      const cinematic = cinematics[index];
+      const step = cinematic?.steps[Number(el.dataset.step ?? 0)];
+      if (!step || step.kind !== 'actor' || step.action !== 'fire') return;
+      if (String(value) === 'entity') {
+        step.target = { kind: 'entity', entity: this.cinematicFocusKey() ?? step.entity };
+      } else {
+        step.target = {
+          kind: 'position',
+          x: this.editor.scenario.width / 2,
+          z: this.editor.scenario.height / 2,
+        };
+      }
+    } else if (scope.startsWith('actor-target-')) {
+      const cinematic = cinematics[index];
+      const step = cinematic?.steps[Number(el.dataset.step ?? 0)];
+      if (!step || step.kind !== 'actor' || step.action !== 'fire') return;
+      if (scope === 'actor-target-entity' && step.target.kind === 'entity') {
+        step.target.entity = String(value);
+      } else if (step.target.kind === 'position') {
+        if (scope === 'actor-target-x') step.target.x = num(String(value));
+        if (scope === 'actor-target-z') step.target.z = num(String(value));
+      }
     } else if (scope === 'step') {
-      const cinematic = doc.cinematics[index];
+      const cinematic = cinematics[index];
       const step = cinematic?.steps[Number(el.dataset.step ?? 0)];
       if (!step) return;
       if (fieldName === 'zoom') {
@@ -2128,8 +2626,13 @@ export class MissionWorkbench {
           else step.zoom = Math.max(1, Math.min(110, num(String(value))));
         }
       }
+      if (fieldName === 'rotationDegrees' && step.kind === 'camera') {
+        if (String(value).trim() === '') delete step.rotationDegrees;
+        else step.rotationDegrees = Math.max(-360, Math.min(360, num(String(value))));
+      }
       if (fieldName === 'durationSeconds') {
-        step.durationSeconds = Math.max(step.kind === 'camera' ? 0 : 0.1, num(String(value), step.kind === 'camera' ? 0 : 1));
+        const zeroFloor = step.kind === 'camera' || step.kind === 'music';
+        step.durationSeconds = Math.max(zeroFloor ? 0 : 0.1, num(String(value), zeroFloor ? 0 : 1));
       }
       if (fieldName === 'holdSeconds' && step.kind === 'camera') {
         step.holdSeconds = Math.max(0, num(String(value)));
@@ -2139,8 +2642,75 @@ export class MissionWorkbench {
       }
       if (fieldName === 'speaker' && step.kind === 'line') step.speaker = String(value);
       if (fieldName === 'text' && (step.kind === 'line' || step.kind === 'notify')) step.text = String(value);
+      if (fieldName === 'heading' && step.kind === 'notify') {
+        if (String(value).trim() === '') delete step.heading;
+        else step.heading = String(value);
+      }
+      // A card heading is required, so an emptied field stays empty and lets
+      // validation report it instead of the control deleting the property.
+      if (fieldName === 'heading' && step.kind === 'card') step.heading = String(value);
+      if (fieldName === 'subheading' && step.kind === 'card') {
+        if (String(value).trim() === '') delete step.subheading;
+        else step.subheading = String(value);
+      }
+      if (fieldName === 'body' && step.kind === 'card') {
+        if (String(value).trim() === '') delete step.body;
+        else step.body = String(value);
+      }
+      if (fieldName === 'track' && step.kind === 'music') step.track = String(value);
+      if (fieldName === 'portrait' && step.kind === 'line') {
+        if (String(value).trim() === '') delete step.portrait;
+        else step.portrait = String(value);
+      }
+      if (fieldName === 'voice' && step.kind === 'line') {
+        if (String(value).trim() === '') delete step.voice;
+        else step.voice = String(value);
+      }
+      if (fieldName === 'radio' && step.kind === 'line') step.radio = value === true;
+      if (fieldName === 'track' && step.kind === 'camera') step.track = value === true;
+      if (fieldName === 'ease' && step.kind === 'camera') {
+        step.ease = String(value) as Extract<typeof step, { kind: 'camera' }>['ease'];
+      }
+      if (fieldName === 'shake' && step.kind === 'camera') {
+        const shake = Math.max(0, Math.min(1, num(String(value))));
+        if (shake <= 0) delete step.shake;
+        else step.shake = shake;
+      }
+      if (fieldName === 'effect' && step.kind === 'effect') {
+        step.effect = String(value) as Extract<typeof step, { kind: 'effect' }>['effect'];
+      }
+      if (fieldName === 'scale' && step.kind === 'effect') {
+        step.scale = Math.max(0.1, num(String(value), 1));
+      }
+      if (fieldName === 'cue' && step.kind === 'sound') step.cue = String(value);
+      if (fieldName === 'gain' && step.kind === 'sound') {
+        step.gain = Math.max(0, Math.min(1, num(String(value), 0.8)));
+      }
+      if (fieldName === 'entity' && step.kind === 'actor') step.entity = String(value);
+      if (fieldName === 'structure' && (step.kind === 'actor' && (step.action === 'enter' || step.action === 'leave'))) {
+        step.structure = String(value);
+      }
+      if (fieldName === 'pose' && step.kind === 'actor' && step.action === 'animate') {
+        step.pose = String(value) === 'walk' ? 'walk' : 'idle';
+      }
+      if (fieldName === 'facingDegrees' && step.kind === 'actor' && step.action === 'turn') {
+        step.facingDegrees = num(String(value));
+      }
+      if (fieldName === 'x' && step.kind === 'actor' && (step.action === 'move' || step.action === 'leave')) {
+        step.x = num(String(value));
+      }
+      if (fieldName === 'z' && step.kind === 'actor' && (step.action === 'move' || step.action === 'leave')) {
+        step.z = num(String(value));
+      }
+      if (fieldName === 'scale' && step.kind === 'actor' && step.action === 'fire') {
+        step.scale = Math.max(0.1, num(String(value), 1));
+      }
+      if (fieldName === 'ease' && step.kind === 'actor' && (step.action === 'move' || step.action === 'turn')) {
+        step.ease = String(value) as 'smooth' | 'linear' | 'cut';
+      }
     }
-    this.commit();
+    if (campaignId) this.render();
+    else this.commit();
   };
 
   /* ------------------------------------------------------------------ */
@@ -2436,15 +3006,17 @@ export class MissionWorkbench {
     return own ?? authoredEntityKeys(this.editor.scenario)[0];
   }
 
-  private addCinematic(): void {
-    const doc = this.mission()!;
-    const used = new Set(doc.cinematics.map((entry) => entry.kind));
-    const kind = CINEMATIC_KINDS.find((entry) => !used.has(entry)) ?? 'inMission';
+  private addCinematic(campaignId: string | null = null): void {
+    const list = this.cinematicList(campaignId);
+    if (!list) return;
+    const kinds = campaignId ? CAMPAIGN_CINEMATIC_CONTEXTS : MISSION_CINEMATIC_CONTEXTS;
+    const used = new Set(list.map((entry) => entry.kind));
+    const kind = kinds.find((entry) => !used.has(entry)) ?? kinds[0];
     let id: string = kind;
     let n = 2;
-    while (doc.cinematics.some((entry) => entry.id === id)) id = `${kind}-${n++}`;
+    while (list.some((entry) => entry.id === id)) id = `${kind}-${n++}`;
     const key = this.cinematicFocusKey();
-    doc.cinematics.push({
+    list.push({
       id,
       kind,
       skippable: true,
@@ -2462,11 +3034,15 @@ export class MissionWorkbench {
       ],
       dialogue: [],
     });
-    this.commit();
+    this.finishCinematicEdit(campaignId);
   }
 
-  private addStep(index: number, kind: MissionCinematicStep['kind']): void {
-    const cinematic = this.mission()!.cinematics[index];
+  private addStep(
+    index: number,
+    kind: MissionCinematicStep['kind'],
+    campaignId: string | null = null,
+  ): void {
+    const cinematic = this.cinematicList(campaignId)?.[index];
     if (!cinematic) return;
     let step: MissionCinematicStep;
     if (kind === 'camera') {
@@ -2481,15 +3057,74 @@ export class MissionWorkbench {
           };
     } else if (kind === 'line') {
       step = { kind: 'line', speaker: 'Command', text: 'New line.', durationSeconds: 4 };
-    } else {
+    } else if (kind === 'notify') {
       step = { kind: 'notify', text: 'New notice.', durationSeconds: 3 };
+    } else if (kind === 'sound') {
+      step = { kind: 'sound', cue: 'alert', gain: 0.8, durationSeconds: 0 };
+    } else if (kind === 'card') {
+      step = { kind: 'card', heading: 'New chapter', durationSeconds: 3 };
+    } else if (kind === 'music') {
+      step = { kind: 'music', track: MUSIC_TRACKS[0].id, durationSeconds: 0 };
+    } else if (kind === 'actor') {
+      step = defaultActorStep(
+        'move',
+        this.cinematicFocusKey() ?? '',
+        this.editor.scenario.width,
+        this.editor.scenario.height,
+        this.cinematicFocusKey(),
+      );
+    } else {
+      const key = this.cinematicFocusKey();
+      step = {
+        kind: 'effect',
+        effect: 'explosion',
+        target: key
+          ? { kind: 'entity', entity: key }
+          : { kind: 'position', x: this.editor.scenario.width / 2, z: this.editor.scenario.height / 2 },
+        scale: 1,
+        durationSeconds: 1.5,
+      };
     }
     cinematic.steps.push(step);
-    this.commit();
+    this.finishCinematicEdit(campaignId);
   }
 
-  private moveStep(index: number, stepIndex: number, act: string): void {
-    const cinematic = this.mission()!.cinematics[index];
+  private moveCinematic(index: number, delta: number, campaignId: string | null = null): void {
+    const list = this.cinematicList(campaignId);
+    if (!list) return;
+    const to = index + delta;
+    if (index < 0 || index >= list.length || to < 0 || to >= list.length) return;
+    [list[index], list[to]] = [list[to], list[index]];
+    this.finishCinematicEdit(campaignId);
+  }
+
+  private duplicateCinematic(index: number, campaignId: string | null = null): void {
+    const list = this.cinematicList(campaignId);
+    const source = list?.[index];
+    if (!list || !source) return;
+    const base = `${source.id}-copy`;
+    let id = base;
+    let n = 2;
+    while (list.some((entry) => entry.id === id)) id = `${base}-${n++}`;
+    list.splice(index + 1, 0, { ...structuredClone(source), id });
+    this.finishCinematicEdit(campaignId);
+  }
+
+  private duplicateStep(index: number, stepIndex: number, campaignId: string | null = null): void {
+    const cinematic = this.cinematicList(campaignId)?.[index];
+    const step = cinematic?.steps[stepIndex];
+    if (!cinematic || !step) return;
+    cinematic.steps.splice(stepIndex + 1, 0, structuredClone(step));
+    this.finishCinematicEdit(campaignId);
+  }
+
+  private moveStep(
+    index: number,
+    stepIndex: number,
+    act: string,
+    campaignId: string | null = null,
+  ): void {
+    const cinematic = this.cinematicList(campaignId)?.[index];
     if (!cinematic) return;
     if (act === 'remove-step') cinematic.steps.splice(stepIndex, 1);
     else {
@@ -2497,7 +3132,7 @@ export class MissionWorkbench {
       if (to < 0 || to >= cinematic.steps.length) return;
       [cinematic.steps[stepIndex], cinematic.steps[to]] = [cinematic.steps[to], cinematic.steps[stepIndex]];
     }
-    this.commit();
+    this.finishCinematicEdit(campaignId);
   }
 
   private confirmRemove(message: string, action: () => void, title = 'Confirm removal'): void {
@@ -2873,6 +3508,11 @@ function defaultAction(kind: string, doc: MissionDoc): MissionAction {
       return { kind: 'activateAiGroup', group: doc.aiGroups[0]?.id ?? '' };
     case 'spawnReinforcement':
       return { kind: 'spawnReinforcement', reinforcement: doc.reinforcements[0]?.id ?? '' };
+    case 'startCinematic':
+      return {
+        kind: 'startCinematic',
+        cinematic: doc.cinematics.find((entry) => entry.kind === 'inMission')?.id ?? '',
+      };
     case 'endMission':
       return { kind: 'endMission', outcome: 'victory' };
     default:
@@ -2919,6 +3559,8 @@ function mutateAction(action: MissionAction, fieldName: string, raw: string, doc
     }
   } else if (action.kind === 'message' && fieldName === 'text') {
     action.text = raw;
+  } else if (action.kind === 'startCinematic' && fieldName === 'cinematic') {
+    action.cinematic = raw;
   }
 }
 

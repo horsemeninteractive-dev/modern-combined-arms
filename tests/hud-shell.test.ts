@@ -171,15 +171,15 @@ describe('hud entry', () => {
     // A launch builds the interface and starts the scene in one task, but the
     // hide has to land before the mount: the entrance is what would otherwise
     // be painted for a frame and then yanked away.
-    const launch = app.slice(app.indexOf('const openingCinematic'), app.indexOf('this.audio.announce(\'battlefieldEstablished\')'));
+    const launch = app.slice(app.indexOf('const missionCinematics'), app.indexOf('this.audio.announce(\'battlefieldEstablished\')'));
     const hide = launch.indexOf('this.hud.setCinemaHidden(true)');
     const mount = launch.indexOf('this.hud.mount(game)');
-    const play = launch.indexOf('this.playCinematic(');
+    const play = launch.indexOf('this.playCinematicChain(');
     expect(hide).toBeGreaterThan(-1);
     expect(mount).toBeGreaterThan(hide);
     expect(play).toBeGreaterThan(mount);
-    // A scene that does not start hands the interface straight back.
-    expect(launch).toContain('if (!started) this.hud.setCinemaHidden(false)');
+    // A launch chain that does not start hands the interface straight back.
+    expect(launch).toMatch(/if \(started\)[\s\S]*?else \{[\s\S]*?this\.hud\.setCinemaHidden\(false\)/);
     // Leaving the battlefield clears the scene's hold on the shell.
     const unmount = hud.slice(hud.indexOf('unmount(): void'));
     expect(unmount.slice(0, 600)).toContain('this.cinemaHidden = false');

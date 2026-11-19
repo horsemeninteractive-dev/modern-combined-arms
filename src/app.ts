@@ -4,7 +4,7 @@ import { Game } from './sim/game';
 import { TICK_MS, TICK_RATE, TILE_SIZE } from './sim/constants';
 import { BUILDINGS } from './data/buildings';
 import { techDef } from './data/research';
-import { UNITS } from './data/units';
+import { ALL_UNITS } from './data/units';
 import { createIslandAssault } from './data/scenarios';
 import {
   SCENARIOS,
@@ -24,6 +24,7 @@ import {
   resolveOpponentNation,
   identityAlliance,
   identityDef,
+  identityLabel,
   tryIdentityDef,
 } from './data/factions';
 import {
@@ -40,6 +41,15 @@ import {
   type CampaignMission,
   type CampaignProgress,
 } from './data/campaign';
+import { campaignWithCinematics, type CampaignCinematicContext } from './campaign/cinematics';
+import {
+  OUTBREAK_DIFFICULTIES,
+  OUTBREAK_DIFFICULTY_ORDER,
+  outbreakDifficulty,
+} from './outbreak/config';
+import { createOutbreakScenario } from './outbreak/scenario';
+import type { OutbreakDifficulty } from './sim/scenario';
+import type { OutbreakHudState, OutbreakMode, OutbreakResult } from './outbreak/types';
 import {
   acceptCampaignResult,
   buildCampaignScenario,
@@ -70,6 +80,7 @@ import type {
   MissionCinematicDoc,
   MissionResult,
 } from './mission/types';
+import { dueInMissionCinematics, orderedCinematics } from './mission';
 import type { MissionSection } from './mission/authoring';
 import { missionDebriefMarkup } from './ui/missionDebrief';
 import {
@@ -77,6 +88,7 @@ import {
   cinematicPausesSimulation,
   localiseCinematic,
 } from './ui/cinematics';
+import { CinematicChainQueue, type QueuedCinematic } from './ui/cinematicQueue';
 import { CinematicOverlay } from './ui/cinematicOverlay';
 import {
   briefingObjectiveListMarkup,
@@ -188,6 +200,8 @@ import {
   type KeyBindings,
 } from './inputBindings';
 import {
+  CINEMATIC_SCOPE_DEFAULT,
+  cinematicScopeFor,
   GAMEPAD_SENSITIVITY_MAX,
   GAMEPAD_SENSITIVITY_MIN,
   GRAPHICS_QUALITIES,
@@ -198,6 +212,7 @@ import {
   graphicsPreset,
   normaliseEdgePanSpeed,
   normaliseEdgePanWidth,
+  normaliseCinematicScopes,
   normaliseEscBehavior,
   normaliseGamepadSensitivity,
   normaliseGraphicsQuality,
@@ -211,6 +226,7 @@ import {
   SHADOW_DETAIL_LABELS,
   UI_SCALE_MAX,
   UI_SCALE_MIN,
+  type CinematicScopes,
   type EscBehavior,
   type GraphicsQuality,
   type ShadowDetail,
@@ -236,6 +252,7 @@ export type MenuView =
   | 'multiplayer'
   | 'campaign'
   | 'skirmish'
+  | 'outbreak'
   | 'editor'
   | 'settings'
   | 'account';
@@ -329,6 +346,16 @@ export interface AppSettings {
   graphicsQuality: GraphicsQuality;
   /** Shadow fidelity, independent of the preset after the player picks one. */
   shadowDetail: ShadowDetail;
+  /** Ground-contact occlusion; independent of the graphics preset. */
+  ambientOcclusion: boolean;
+  /** HDR bloom around lamps, glints and explosions. */
+  bloom: boolean;
+  /** Water screen-space reflections; independent of the graphics preset. */
+  screenSpaceReflections: boolean;
+  /** Directional sun shadows that ground vehicles and infantry on the road. */
+  contactShadows: boolean;
+  /** Animated water normals; independent of the graphics preset. */
+  waterDetail: boolean;
   /** Fraction of the device pixel ratio (0.5–1), capped at 2x overall. */
   renderScale: number;
   /** Live frame-rate badge in the battle HUD. */
@@ -362,6 +389,8 @@ export interface AppSettings {
    * progression and mission outcomes are untouched, only the scenes are.
    */
   cinematics: boolean;
+  /** Which authored-scene groups the master switch leaves on. */
+  cinematicScopes: CinematicScopes;
 }
 
 /** Skirmish team colours: the alliance defaults, then four distinct picks. */
@@ -406,6 +435,7 @@ const MENU_VIEWS: MenuView[] = [
   'multiplayer',
   'campaign',
   'skirmish',
+  'outbreak',
   'editor',
   'settings',
   'account',
@@ -463,6 +493,8 @@ export class App {
   additiveSelection = false;
   mode: CommandMode = 'none';
   placeDefId: string | null = null;
+  /** First tile of a wall run, waiting for the end tile. */
+  placeStart: { tileX: number; tileZ: number } | null = null;
   paused = false;
   speed = 1;
   debug = false;
@@ -550,6 +582,18 @@ export class App {
   /** The sting belongs to the launch, not to the menu: it plays once per page. */
   private introPlayed = false;
   private victoryShown: VictoryState | 'none' = 'none';
+  /** Outbreak setup, remembered on this device like the skirmish choices. */
+  private outbreakDifficulty: OutbreakDifficulty = 'normal';
+  private outbreakMode: OutbreakMode = 'solo';
+  /** Which room shape the multiplayer deck's host button opens. */
+  private multiplayerMode: '1v1' | 'outbreak' = '1v1';
+  /**
+   * The room's survival readout for a networked Outbreak run. A network client
+   * ticks no simulation, so its own director never moves; every wave number and
+   * kill on screen comes from here.
+   */
+  private networkOutbreak: OutbreakHudState | null = null;
+
   /**
    * A mission test run owns a disposable scenario copy. It is never campaign
    * state and is never written to a battle or campaign save.
@@ -569,6 +613,32 @@ export class App {
   private readonly cinematicOverlay: CinematicOverlay;
   /** In-mission sequences already shown in this battle run. */
   private readonly cinematicPlayed = new Set<string>();
+  /**
+   * Chains waiting behind the scene on screen.
+   *
+   * Each chain carries its own follow-up on its last scene, so a second chain
+   * queued during the first cannot replace the earlier hand-off.
+   */
+  private readonly cinematicChains = new CinematicChainQueue({
+    playingId: () => this.cinematic?.doc.id ?? null,
+    enabled: (context) => this.cinematicsEnabled(context),
+    play: (item) =>
+      this.playCinematic(
+        item.doc,
+        item.context,
+        item.eyebrow,
+        item.title,
+        item.force ?? false,
+        item.after ?? null,
+      ),
+  });
+  /** Follow-up owned by the scene on screen: its chain's hand-off. */
+  private cinematicAfter: (() => void) | null = null;
+  /** Campaign framing already shown this session. */
+  private readonly campaignIntroShown = new Set<string>();
+  /** Mission briefing/debrief scenes already shown this session. */
+  private readonly briefingCinematicsShown = new Set<string>();
+  private readonly debriefCinematicsShown = new Set<string>();
   /** Background surfaces this scene made inert, so they can be restored. */
   private readonly cinematicBackground = new Set<HTMLElement>();
   private fpsSamples: number[] = [];
@@ -620,6 +690,18 @@ export class App {
     this.cinematicOverlay.bind({
       onSkip: () => this.skipCinematic(),
       onSkipAll: () => this.skipAllCinematics(),
+      onTogglePause: () => {
+        const player = this.cinematic;
+        if (!player) return;
+        player.togglePause();
+        this.cinematicOverlay.render(player.frame);
+      },
+      onNextStep: () => {
+        const player = this.cinematic;
+        if (!player) return;
+        player.seekToStep(player.stepIndex + 1);
+        this.cinematicOverlay.render(player.frame);
+      },
     });
     this.renderer.onContextLost = () => this.handleGraphicsContextLost();
     this.renderer.onContextRestored = () => this.handleGraphicsContextRestored();
@@ -672,6 +754,11 @@ export class App {
       colorVision: 'standard',
       graphicsQuality: 'high',
       shadowDetail: 'detailed',
+      ambientOcclusion: true,
+      bloom: true,
+      screenSpaceReflections: true,
+      contactShadows: true,
+      waterDetail: true,
       renderScale: 1,
       fpsReadout: false,
       escBehavior: 'pause',
@@ -685,6 +772,7 @@ export class App {
       // and only a long battle actually crosses into the dark.
       dayLengthMinutes: 240,
       cinematics: true,
+      cinematicScopes: { ...CINEMATIC_SCOPE_DEFAULT },
     };
     try {
       const raw = localStorage.getItem(SETTINGS_KEY);
@@ -744,6 +832,29 @@ export class App {
           parsed.shadowDetail ??
             graphicsPreset(normaliseGraphicsQuality(parsed.graphicsQuality)).shadowDetail,
         ),
+        // Individual effects follow the preset until the player changes one,
+        // which moves the quality selector to Custom. Older settings take the
+        // preset recommendation instead of a hidden default.
+        ambientOcclusion:
+          typeof parsed.ambientOcclusion === 'boolean'
+            ? parsed.ambientOcclusion
+            : graphicsPreset(normaliseGraphicsQuality(parsed.graphicsQuality)).ambientOcclusion,
+        bloom:
+          typeof parsed.bloom === 'boolean'
+            ? parsed.bloom
+            : graphicsPreset(normaliseGraphicsQuality(parsed.graphicsQuality)).bloom,
+        screenSpaceReflections:
+          typeof parsed.screenSpaceReflections === 'boolean'
+            ? parsed.screenSpaceReflections
+            : graphicsPreset(normaliseGraphicsQuality(parsed.graphicsQuality)).screenSpaceReflections,
+        contactShadows:
+          typeof parsed.contactShadows === 'boolean'
+            ? parsed.contactShadows
+            : graphicsPreset(normaliseGraphicsQuality(parsed.graphicsQuality)).contactShadows,
+        waterDetail:
+          typeof parsed.waterDetail === 'boolean'
+            ? parsed.waterDetail
+            : graphicsPreset(normaliseGraphicsQuality(parsed.graphicsQuality)).waterDetail,
         // A saved game with a quality but no explicit density (or any file
         // written before this setting existed) starts from the preset value.
         renderScale: normaliseRenderScale(
@@ -775,6 +886,7 @@ export class App {
         weather: normaliseWeather(parsed.weather),
         dayLengthMinutes: normaliseDayLength(parsed.dayLengthMinutes, defaults.dayLengthMinutes),
         cinematics: parsed.cinematics !== false,
+        cinematicScopes: normaliseCinematicScopes(parsed.cinematicScopes),
         // A settings file written before this rule existed permits strategic
         // superweapons, which is what a default match already meant.
         superweapons: parsed.superweapons !== false,
@@ -793,7 +905,11 @@ export class App {
     const preset = graphicsPreset(this.settings.graphicsQuality);
     this.renderer.settings.renderScale = normaliseRenderScale(this.settings.renderScale);
     this.renderer.settings.shadowDetail = normaliseShadowDetail(this.settings.shadowDetail);
-    this.renderer.settings.waterDetail = preset.waterDetail;
+    this.renderer.settings.ambientOcclusion = this.settings.ambientOcclusion;
+    this.renderer.settings.bloom = this.settings.bloom;
+    this.renderer.settings.screenSpaceReflections = this.settings.screenSpaceReflections;
+    this.renderer.settings.contactShadows = this.settings.contactShadows;
+    this.renderer.settings.waterDetail = this.settings.waterDetail;
     this.renderer.settings.silhouettes = this.settings.silhouettes;
     this.renderer.settings.nightLights = this.settings.nightLights;
     this.renderer.settings.lightBloom = normaliseLightBloom(this.settings.lightBloom);
@@ -849,7 +965,12 @@ export class App {
       });
     };
     on('btn-deploy', () => void this.startBattle(this.deployScenario()));
+    on('btn-outbreak-deploy', () => void this.startOutbreak());
+    on('btn-outbreak-retry', () => void this.startOutbreak());
+    on('btn-outbreak-menu', () => this.showMenu());
     on('btn-campaign-deploy', () => this.deployCampaignMission());
+    on('btn-campaign-scenes', () => this.editCampaignScenes());
+    on('btn-campaign-replay', () => this.replayCampaignFramingScenes());
     on('btn-tutorial', () => void this.startBattle(createTutorialScenario()));
     on('btn-editor', () => this.openEditor());
     on('btn-editor-autosave', () => this.openEditorAutosave());
@@ -921,6 +1042,7 @@ export class App {
     this.refreshChangelogBadge();
     this.buildMapSelector();
     this.buildNationSelector();
+    this.buildOutbreakSetup();
     this.buildOpponentSelector();
     this.buildCommanderSelector();
     this.buildTeamColors();
@@ -1255,6 +1377,8 @@ export class App {
     if (!this.multiplayerPanel) {
       this.multiplayerPanel = new MultiplayerPanel(host, {
         origin: this.multiplayerOrigin(),
+        mode: this.multiplayerMode,
+        difficulty: this.outbreakDifficulty,
         onMatchStart: (client, view) => this.startNetworkBattle(client, view),
         // A signed-in player's seat is verified by the room Worker; a guest, or
         // an account service that cannot mint a ticket, simply opens a guest
@@ -1295,10 +1419,12 @@ export class App {
     const level =
       view === 'skirmish'
         ? 'skirmish'
-        : view === 'singleplayer'
+        : view === 'outbreak'
           ? 'singleplayer'
-          : view === 'campaign'
-            ? 'campaign'
+          : view === 'singleplayer'
+            ? 'singleplayer'
+            : view === 'campaign'
+              ? 'campaign'
             : view === 'account'
               ? 'account'
               : 'top';
@@ -1317,7 +1443,11 @@ export class App {
     // The account screen reads the session and career on entry, the same way
     // Settings rebuilds its rows: the deck may be opened long after sign-in.
     if (view === 'account') this.accountPanel?.show();
-    if (view === 'multiplayer') this.ensureMultiplayerPanel()?.show();
+    if (view === 'multiplayer') {
+      const panel = this.ensureMultiplayerPanel();
+      panel?.setMode(this.multiplayerMode, this.outbreakDifficulty);
+      panel?.show();
+    }
     else this.multiplayerPanel?.hide();
     if (view === 'editor') this.refreshEditorAutosaveButton();
     // The board canvas has no size while the view is hidden; paint it on entry.
@@ -1455,7 +1585,7 @@ export class App {
       }
     }
     const armed = game.state.entities.filter(
-      (e) => e.kind === 'unit' && e.hp > 0 && (UNITS[e.defId]?.weapons.length ?? 0) > 0,
+      (e) => e.kind === 'unit' && e.hp > 0 && (ALL_UNITS[e.defId]?.weapons.length ?? 0) > 0,
     );
     let best: { a: Entity; b: Entity; d: number } | null = null;
     for (const a of armed) {
@@ -1673,6 +1803,244 @@ export class App {
    * both player slots stamped from the nation registry. The cached backdrop is
    * never mutated, so changing nations cannot leak into another view.
    */
+  /* ------------------------------------------------------------------ */
+  /* Outbreak                                                            */
+  /* ------------------------------------------------------------------ */
+
+  /** Nation, difficulty and player-count controls for the survival deck. */
+  private buildOutbreakSetup(): void {
+    const select = document.getElementById('outbreak-nation') as HTMLSelectElement | null;
+    if (select) {
+      select.innerHTML = PLAYABLE_NATION_IDS.map(
+        (id) => `<option value="${id}">${escapeHtml(identityDef(id).name)}</option>`,
+      ).join('');
+      select.value = PLAYABLE_NATION_IDS.includes(this.settings.nationId)
+        ? this.settings.nationId
+        : PLAYABLE_NATION_IDS[0];
+      select.onchange = () => {
+        if (!PLAYABLE_NATION_IDS.includes(select.value)) return;
+        this.settings.nationId = select.value;
+        this.saveSettings();
+        this.applyNationUi();
+        this.audio.play('ui');
+      };
+    }
+    const difficulty = document.getElementById('outbreak-difficulty');
+    if (difficulty) {
+      difficulty.innerHTML = OUTBREAK_DIFFICULTY_ORDER.map((id) => {
+        const config = OUTBREAK_DIFFICULTIES[id];
+        return `<button type="button" class="difficulty-btn" data-outbreak-difficulty="${id}" aria-pressed="false">${escapeHtml(config.name.toUpperCase())}</button>`;
+      }).join('');
+      difficulty.querySelectorAll<HTMLButtonElement>('[data-outbreak-difficulty]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const id = button.dataset.outbreakDifficulty as OutbreakDifficulty | undefined;
+          if (!id || !(id in OUTBREAK_DIFFICULTIES)) return;
+          this.audio.play('ui');
+          this.outbreakDifficulty = id;
+          this.applyOutbreakSetup();
+        });
+      });
+    }
+    document.querySelectorAll<HTMLButtonElement>('[data-outbreak-mode]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const mode = button.dataset.outbreakMode;
+        if (mode !== 'solo' && mode !== 'coop') return;
+        this.audio.play('ui');
+        this.outbreakMode = mode;
+        this.applyOutbreakSetup();
+      });
+    });
+    this.applyOutbreakSetup();
+  }
+
+  /** Reflect the current Outbreak choices on the deck. */
+  private applyOutbreakSetup(): void {
+    const config = outbreakDifficulty(this.outbreakDifficulty);
+    document.querySelectorAll<HTMLButtonElement>('[data-outbreak-difficulty]').forEach((button) => {
+      button.setAttribute(
+        'aria-pressed',
+        String(button.dataset.outbreakDifficulty === this.outbreakDifficulty),
+      );
+    });
+    document.querySelectorAll<HTMLButtonElement>('[data-outbreak-mode]').forEach((button) => {
+      button.setAttribute('aria-pressed', String(button.dataset.outbreakMode === this.outbreakMode));
+    });
+    const note = document.getElementById('outbreak-difficulty-note');
+    if (note) note.textContent = config.blurb;
+    const brief = document.getElementById('outbreak-brief');
+    if (brief) {
+      brief.textContent =
+        this.outbreakMode === 'coop'
+          ? 'Co-op seats share the Command Post, the economy and the wave clock. Hosting or joining opens the room deck: one player opens the room and shares its codes, the other joins, and both command the same defence.'
+          : 'You command the whole defence, with no AI teammate. Wave one opens after the deployment timer.';
+    }
+    const deploy = document.getElementById('btn-outbreak-deploy') as HTMLButtonElement | null;
+    if (deploy) {
+      const coop = this.outbreakMode === 'coop';
+      deploy.disabled = false;
+      deploy.removeAttribute('aria-disabled');
+      const label = deploy.querySelector('span:last-child');
+      if (label) label.textContent = coop ? 'Open the room deck' : 'Hold the basin';
+    }
+    const select = document.getElementById('outbreak-nation') as HTMLSelectElement | null;
+    if (select && PLAYABLE_NATION_IDS.includes(this.settings.nationId)) {
+      select.value = this.settings.nationId;
+    }
+  }
+
+  /**
+   * Start an Outbreak run, or open a co-op room for one.
+   *
+   * Solo is a local authoritative match: the director, the horde and the defeat
+   * rule all run in this client's simulation. Co-op is not a second code path —
+   * it is the same scenario hosted by a room, so the seating (and therefore the
+   * authority) has to come from the lobby rather than from here.
+   */
+  private async startOutbreak(): Promise<void> {
+    if (this.outbreakMode === 'coop') {
+      // Co-op is the same scenario hosted by a room, so the seating has to come
+      // from the lobby rather than from here. The deck opens in Outbreak shape:
+      // hosting creates a co-op room pinned to the basin, joining takes a code.
+      this.multiplayerMode = 'outbreak';
+      this.audio.play('ui');
+      this.showMenuView('multiplayer');
+      this.notify('Outbreak co-op: host a room and share its codes, or join one.', 'info');
+      return;
+    }
+    this.multiplayerMode = '1v1';
+    const scenario = createOutbreakScenario({
+      difficulty: this.outbreakDifficulty,
+      mode: 'solo',
+      nationId: this.settings.nationId,
+      seed: (Date.now() ^ 0x5f3a91) >>> 0,
+    });
+        this.audio.play('ui');
+    this.hideOutbreakUi();
+    await this.startBattle(scenario);
+  }
+
+  /** Show the wave panel while an Outbreak battle is on screen. */
+  private updateOutbreakHud(): void {
+    const panel = document.getElementById('outbreak-hud');
+    if (!panel) return;
+    // In a room the numbers are the room's. The local director is only a
+    // placeholder there: it is never ticked, so reading it would freeze the
+    // panel on wave one while the horde is already inside the wire.
+    const remote = this.network ? this.networkOutbreak : null;
+    const match = this.screen === 'battle' ? this.game?.outbreak ?? null : null;
+    // The room's drops go where the renderer already looks. A networked seat
+    // rolls none of its own, so without this its field stays empty while the
+    // host is walking between crates.
+    if (remote?.pickups && this.game?.outbreak) {
+      this.game.outbreak.applyRemotePickups(remote.pickups);
+    }
+    if (!remote && !match) {
+      panel.classList.add('hidden');
+      return;
+    }
+    panel.classList.remove('hidden');
+    const wave = document.getElementById('outbreak-wave-number');
+    if (wave) wave.textContent = String(remote ? remote.wave : match!.wave);
+    const phase = document.getElementById('outbreak-phase');
+    const timer = document.getElementById('outbreak-timer');
+    const fill = document.getElementById('outbreak-meter-fill');
+    const phaseName = remote ? remote.phase : match!.phase;
+    const seconds = remote
+      ? remote.secondsToAssault
+      : Math.max(0, Math.round(match!.secondsToAssault));
+    const clock = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+    if (phase) {
+      phase.textContent =
+        phaseName === 'preparation'
+          ? 'PREPARE'
+          : phaseName === 'warning'
+            ? 'INCOMING'
+            : phaseName === 'assault'
+              ? 'HORDE INBOUND'
+              : phaseName === 'cleanup'
+                ? 'CLEAR THE FIELD'
+                : 'WAVE HELD';
+      phase.dataset.phase = phaseName;
+    }
+    const unspawned = remote ? remote.unspawned : match!.unspawned;
+    if (timer) {
+      timer.textContent =
+        phaseName === 'assault' || phaseName === 'cleanup' ? `${unspawned} LEFT` : clock;
+    }
+    if (fill) {
+      const total = Math.max(1, remote ? remote.prepSeconds : match!.director.plan?.prepSeconds ?? 1);
+      const fraction =
+        phaseName === 'preparation' || phaseName === 'warning'
+          ? 1 - Math.min(1, seconds / total)
+          : 1;
+      fill.style.width = `${Math.round(fraction * 100)}%`;
+    }
+    const hostiles = document.getElementById('outbreak-hostiles');
+    if (hostiles) {
+      hostiles.textContent = String(remote ? remote.aliveInfected : match!.aliveInfected);
+    }
+    const kills = document.getElementById('outbreak-kills');
+    if (kills) {
+      kills.textContent = String(remote ? remote.zombiesKilled : match!.statistics.zombiesKilled);
+    }
+    // A networked seat gets no local announcements: the room owns the clock, so
+    // the wave notices below belong to the seat that is actually simulating.
+    const announcements = remote ? [] : match!.drainAnnouncements();
+    for (const event of announcements) {
+      if (event.kind === 'warning') {
+        this.notify(`Wave ${event.wave} is coming in ${Math.round(event.secondsToAssault)}s.`, 'warning');
+        this.audio.announce('baseUnderAttack');
+      } else if (event.kind === 'assault') {
+        this.notify(`Wave ${event.wave} has made contact.`, 'critical');
+      } else if (event.kind === 'wave-complete') {
+        this.notify(`Wave ${event.wave} held. Regroup.`, 'success');
+      }
+    }
+  }
+
+  /** Hide the survival chrome when leaving the battlefield or a run. */
+  private hideOutbreakUi(): void {
+    document.getElementById('outbreak-hud')?.classList.add('hidden');
+    document.getElementById('outbreak-results')?.classList.add('hidden');
+  }
+
+  /** The survival results card: wave reached, kills, losses and the clock. */
+  private showOutbreakResults(result: OutbreakResult): void {
+    const overlay = document.getElementById('outbreak-results');
+    const grid = document.getElementById('outbreak-results-grid');
+    if (!overlay || !grid) return;
+    document.getElementById('outbreak-hud')?.classList.add('hidden');
+    const lede = document.getElementById('outbreak-results-lede');
+    if (lede) {
+      lede.textContent = `The Command Post fell during wave ${result.wave}. ${result.wavesCompleted} wave${result.wavesCompleted === 1 ? '' : 's'} held.`;
+    }
+    const minutes = Math.floor(result.durationSeconds / 60);
+    const seconds = Math.round(result.durationSeconds % 60);
+    const rows: Array<[string, string]> = [
+      ['HIGHEST WAVE', String(Math.max(result.wave, result.wavesCompleted + 1))],
+      ['WAVES HELD', String(result.wavesCompleted)],
+      ['ZOMBIES KILLED', String(result.zombiesKilled)],
+      ['SHAMBLERS', String(result.killsByKind.shambler)],
+      ['RUNNERS', String(result.killsByKind.runner)],
+      ['BRUTES', String(result.killsByKind.brute)],
+      ['BLOATERS', String(result.killsByKind.bloater)],
+      ['CRAWLERS', String(result.killsByKind.crawler)],
+      ['SCREAMERS', String(result.killsByKind.flyer)],
+      ['STRUCTURES LOST', String(result.structuresLost)],
+      ['UNITS LOST', String(result.unitsLost)],
+      ['RESOURCES GATHERED', String(result.matsGathered)],
+      ['SURVIVED', `${minutes}m ${String(seconds).padStart(2, '0')}s`],
+      ['DIFFICULTY', OUTBREAK_DIFFICULTIES[result.difficulty].name.toUpperCase()],
+      ['NATION', result.nations.map((id) => identityLabel(id)).join(' · ')],
+      ['COMMANDERS', String(result.players)],
+    ];
+    grid.innerHTML = rows
+      .map(([label, value]) => `<div><span>${escapeHtml(label)}</span><b>${escapeHtml(value)}</b></div>`)
+      .join('');
+    overlay.classList.remove('hidden');
+    this.audio.play('defeat');
+  }
+
   private deployScenario(): Scenario {
     const scenario = cloneScenario(this.selectedScenario());
     const mine = identityDef(this.settings.nationId);
@@ -1954,7 +2322,7 @@ export class App {
   /* ------------------------------------------------------------------ */
 
   private campaignDef(): CampaignDef {
-    return campaignById(this.campaignId);
+    return campaignWithCinematics(campaignById(this.campaignId), localStorage);
   }
 
   private campaignMission(): CampaignMission {
@@ -2051,8 +2419,9 @@ export class App {
   campaignRun(): CampaignRun | null {
     const ref = this.game?.state.scenario.meta.campaign;
     if (!ref) return null;
-    const campaign = CAMPAIGNS.find((entry) => entry.id === ref.campaignId);
-    if (!campaign) return null;
+    const authored = CAMPAIGNS.find((entry) => entry.id === ref.campaignId);
+    if (!authored) return null;
+    const campaign = campaignWithCinematics(authored, localStorage);
     const index = campaign.missions.findIndex((mission) => mission.id === ref.missionId);
     if (index < 0) return null;
     return {
@@ -2208,6 +2577,28 @@ export class App {
           `Operation "${launched.currentMissionId}" could not be assembled on its theatre.`,
         );
       }
+      // A campaign introduction belongs to the campaign, not to operation one's
+      // mission document. It frames the first deployment only, and the battle
+      // waits until every intro sequence has finished or been skipped.
+      const introEligible =
+        state.phase === 'briefing' &&
+        state.completed.length === 0 &&
+        !this.campaignIntroShown.has(def.id);
+      const intro = introEligible ? orderedCinematics(def.cinematics ?? [], 'campaignIntro') : [];
+      if (intro.length > 0 && this.cinematicsEnabled('campaignIntro')) {
+        this.campaignIntroShown.add(def.id);
+        this.menuScenario = scenario;
+        const started = this.playCinematicChain(
+          intro.map((doc) => ({
+            doc,
+            context: 'campaignIntro' as const,
+            eyebrow: 'CAMPAIGN OPENING',
+            title: def.name,
+          })),
+          () => void this.startBattle(scenario),
+        );
+        if (started) return;
+      }
       void this.startBattle(scenario);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -2250,8 +2641,10 @@ export class App {
     const campaign = run?.campaign ?? this.campaignDef();
     if (!state) return;
     // Capture the operation being accepted: after acceptance the campaign's
-    // current mission already points at the next briefing.
+    // current mission already points at the next briefing. Its theatre is also
+    // captured so the ending frames the battlefield that was actually fought.
     const acceptedMission = missionById(campaign, state.currentMissionId);
+    const acceptedScenario = this.campaignScenario();
     const pending = state.pending;
     try {
       const accepted = acceptCampaignResult(state, campaign);
@@ -2271,23 +2664,46 @@ export class App {
       this.showMenuView('campaign');
       this.renderCampaignMissions();
       this.applyCampaignUi();
-      this.setMenuBackdrop(this.campaignScenario());
-      // The intermission or ending scene frames the campaign, not the battle.
-      // The result is already committed before playback starts, so a skipped or
-      // failed scene cannot lose progression.
-      const context: MissionCinematicContext =
-        accepted.phase === 'complete' ? 'ending' : 'intermission';
-      const sequence = acceptedMission.mission.cinematics.find(
-        (entry) => entry.kind === context,
+      this.setMenuBackdrop(acceptedScenario);
+      // The mission's ending frames the operation, then the campaign's own
+      // intermission or finale frames what comes next. The result is already
+      // committed before playback starts, so a skipped or failed scene cannot
+      // lose progression. Every authored sequence in each context plays.
+      const ending = orderedCinematics(acceptedMission.mission.cinematics, 'ending').map(
+        (doc) => ({
+          doc,
+          context: 'ending' as const,
+          eyebrow: 'OPERATION ENDING',
+          title: acceptedMission.name,
+        }),
       );
-      if (sequence) {
-        this.playCinematic(
-          sequence,
-          context,
-          accepted.phase === 'complete' ? 'CAMPAIGN COMPLETE' : 'OPERATION ACCEPTED',
-          accepted.phase === 'complete' ? campaign.name : acceptedMission.name,
-        );
-      }
+      const campaignScenes = accepted.phase === 'complete'
+        ? orderedCinematics(campaign.cinematics ?? [], 'campaignFinale')
+        : orderedCinematics(campaign.cinematics ?? [], 'intermission');
+      const missionIntermission = accepted.phase === 'complete'
+        ? []
+        : orderedCinematics(acceptedMission.mission.cinematics, 'intermission');
+      this.playCinematicChain(
+        [
+          ...ending,
+          ...missionIntermission.map((doc) => ({
+            doc,
+            context: 'intermission' as const,
+            eyebrow: 'OPERATION ACCEPTED',
+            title: acceptedMission.name,
+          })),
+          ...campaignScenes.map((doc) => ({
+            doc,
+            context: doc.kind,
+            eyebrow: accepted.phase === 'complete' ? 'CAMPAIGN COMPLETE' : 'OPERATION ACCEPTED',
+            title: accepted.phase === 'complete' ? campaign.name : acceptedMission.name,
+          })),
+        ],
+        // The deck returns to the next operation's theatre only after the last
+        // ending/intermission/finale sequence has released the frame. If there
+        // is nothing to play the callback runs immediately.
+        () => this.setMenuBackdrop(this.campaignScenario()),
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.notify(`Could not accept the result: ${message}`, 'critical');
@@ -2307,6 +2723,85 @@ export class App {
       const message = error instanceof Error ? error.message : String(error);
       this.notify(`Could not restart the operation: ${message}`, 'critical');
     }
+  }
+
+  /**
+   * Replay the campaign's authored framing scenes from the deck.
+   *
+   * Replay is presentation only. No operation launches, no run is written and
+   * the introduction is not marked as shown, so watching the story cannot move
+   * a campaign forward or backwards. The deck's selected operation supplies the
+   * theatre, which keeps every command-post camera beat on the ground the panel
+   * is already showing.
+   */
+  replayCampaignFramingScenes(): void {
+    const campaign = this.campaignDef();
+    const scenes = campaign.cinematics ?? [];
+    if (scenes.length === 0) {
+      this.notify(
+        `${campaign.name} has no framing scenes. AUTHOR · Campaign scenes writes them.`,
+        'info',
+      );
+      return;
+    }
+    const acts: Array<{ context: CampaignCinematicContext; label: string; note: string }> = [
+      { context: 'campaignIntro', label: 'Introduction', note: 'before the first deployment' },
+      { context: 'intermission', label: 'Intermission', note: 'after an accepted operation' },
+      { context: 'campaignFinale', label: 'Finale', note: 'after the last operation' },
+    ];
+    const available = acts
+      .map((act) => ({ ...act, scenes: orderedCinematics(scenes, act.context) }))
+      .filter((act) => act.scenes.length > 0);
+    if (available.length === 0) {
+      this.notify(`${campaign.name} authors no playable framing scene.`, 'info');
+      return;
+    }
+    const resume = this.pauseForModal();
+    openModal({
+      title: `${campaign.name} — framing scenes`,
+      body: `<p class="modal-note">These are the scenes the campaign plays around its operations. Replaying one changes nothing: no operation launches, no result is accepted and the deck stays where it is.</p><ul class="campaign-replay-list">${available
+        .map(
+          (act) =>
+            `<li><b>${escapeHtml(act.label)}</b> · ${act.scenes.length} scene${act.scenes.length === 1 ? '' : 's'} · ${escapeHtml(act.note)}</li>`,
+        )
+        .join('')}</ul>`,
+      actions: [
+        ...available.map((act) => ({
+          label: `Play ${act.label.toLowerCase()}`,
+          primary: act.context === 'campaignIntro',
+          onClick: () => {
+            // Close the dialog first so the scene opens on the deck itself.
+            window.setTimeout(() => this.playCampaignFramingScenes(act.context), 0);
+          },
+        })),
+        { label: 'Close' },
+      ],
+      onClose: () => this.resumeAfterModal(resume),
+    });
+  }
+
+  /** Play every scene authored in one campaign framing context over the deck. */
+  private playCampaignFramingScenes(context: CampaignCinematicContext): void {
+    const campaign = this.campaignDef();
+    const scenes = orderedCinematics(campaign.cinematics ?? [], context);
+    if (scenes.length === 0 || this.cinematic) return;
+    // Stage the theatre the deck is describing: the attract battle behind the
+    // menu cycles maps, and a shot must not cut to another coast mid-scene.
+    this.setMenuBackdrop(this.campaignScenario());
+    const eyebrow =
+      context === 'campaignIntro'
+        ? 'CAMPAIGN OPENING'
+        : context === 'campaignFinale'
+          ? 'CAMPAIGN COMPLETE'
+          : 'CAMPAIGN INTERMISSION';
+    // An explicit replay plays even when the campaign framing group is off: the
+    // player asked for this scene by name.
+    const started = this.playCinematicChain(
+      scenes.map((doc) => ({ doc, context, eyebrow, title: campaign.name })),
+      null,
+      true,
+    );
+    if (!started) this.notify('That scene cannot play while another is on screen.', 'warning');
   }
 
   /** Record the captured result without touching persistent progress. */
@@ -2642,11 +3137,17 @@ export class App {
   private showMenu(): void {
     this.missionTestScenario = null;
     this.cinematicPreview = false;
+    this.hideOutbreakUi();
+    // Leaving the battlefield drops anything still queued, including a chain's
+    // follow-up, so a deck visit cannot resume a stale launch.
+    this.cinematicChains.clear();
+    this.cinematicAfter = null;
     if (this.cinematic) this.cinematic.skip(true);
     this.endNetworkBattle();
     this.finishTutorial();
     document.getElementById('menu-screen')?.classList.remove('hidden', 'handoff');
     document.getElementById('loading-screen')?.classList.add('hidden');
+    document.getElementById('app')?.classList.remove('loading-map-pan');
     this.loading = false;
     this.hud.unmount();
     this.screen = 'menu';
@@ -2684,6 +3185,10 @@ export class App {
     if (!screen) return;
     if (active) this.stopAttract();
     this.loading = active;
+    // An orthographic pan is a pure image translation, so the canvas can keep
+    // drifting on the compositor while the synchronous battle build blocks the
+    // main thread. The live backdrop below already uses the same framing.
+    document.getElementById('app')?.classList.toggle('loading-map-pan', active);
     screen.classList.toggle('hidden', !active);
     if (active && scenario) {
       this.showLoadingBackdrop(scenario);
@@ -2790,9 +3295,14 @@ export class App {
     options: { missionTest?: boolean } = {},
   ): Promise<void> {
     // A restart or redeploy drops any scene from the previous battle and
-    // restores the camera the player was using before it.
+    // restores the camera the player was using before it. The queue is cleared
+    // first so a stale hand-off cannot deploy the new battle into a scene.
+    this.cinematicChains.clear();
+    this.cinematicAfter = null;
     if (this.cinematic) this.cinematic.skip(true);
     this.cinematicPlayed.clear();
+    this.briefingCinematicsShown.clear();
+    this.debriefCinematicsShown.clear();
     this.finishTutorial();
     // A new battle gets a clean pointer: no ghost from the last engagement.
     this.orderGhosts.length = 0;
@@ -2862,17 +3372,45 @@ export class App {
       this.mode = 'none';
       this.placeDefId = null;
       this.accumulator = 0;
-      // The opening scene belongs to the launch, not to a loaded save. It frames
-      // the battlefield that has just appeared and never advances the mission.
-      const openingCinematic = gameScenario.mission?.cinematics.find(
-        (entry) => entry.kind === 'opening',
-      );
+      // The mission's framing scenes belong to the launch, not to a loaded save.
+      // The opening frames the battlefield that has just appeared; the briefing
+      // follows it, so a campaign deployment runs intro, opening, briefing and
+      // then gameplay. Showing the briefing here does not take the dossier away:
+      // the manual briefing screen stays available and simply does not replay a
+      // scene the launch already played.
+      const missionCinematics = gameScenario.mission?.cinematics ?? [];
+      const openingCinematics = orderedCinematics(missionCinematics, 'opening');
+      const briefingCinematics = orderedCinematics(missionCinematics, 'briefing');
+      const briefingKey = gameScenario.mission ? `${gameScenario.mission.id}:briefing` : '';
+      const briefingWillPlay =
+        briefingKey !== '' &&
+        briefingCinematics.some((doc) => doc.steps.length > 0) &&
+        !this.briefingCinematicsShown.has(briefingKey);
+      const launchTitle = gameScenario.mission?.title ?? gameScenario.meta.name;
+      const launchCinematics: QueuedCinematic[] = [
+        ...openingCinematics.map((doc) => ({
+          doc,
+          context: 'opening' as const,
+          eyebrow: 'OPERATION OPENING',
+          title: launchTitle,
+        })),
+        ...(briefingWillPlay
+          ? briefingCinematics.map((doc) => ({
+              doc,
+              context: 'briefing' as const,
+              eyebrow: 'MISSION BRIEFING',
+              title: launchTitle,
+            }))
+          : []),
+      ];
       // A scene that opens the battle must own its very first painted frame. The
       // chrome is put away before the shell is built, so the interface is never
       // assembled on screen only to be pulled down again a frame later.
-      const openingWillPlay =
-        !!openingCinematic && this.settings.cinematics && !this.cinematic;
-      if (openingWillPlay) this.hud.setCinemaHidden(true);
+      const launchWillPlay =
+        launchCinematics.some(
+          (item) => item.doc.steps.length > 0 && this.cinematicsEnabled(item.context),
+        ) && !this.cinematic;
+      if (launchWillPlay) this.hud.setCinemaHidden(true);
       this.hud.mount(game);
       this.lastEventSeq = 0;
       this.frameBattleCamera();
@@ -2881,16 +3419,17 @@ export class App {
       this.missionTestScenario = options.missionTest ? cloneScenario(gameScenario) : null;
       this.setLoading(false);
       this.audio.startMatchMusic();
-      if (openingCinematic) {
-        const started = this.playCinematic(
-          openingCinematic,
-          'opening',
-          'OPERATION OPENING',
-          gameScenario.mission?.title ?? gameScenario.meta.name,
-        );
-        // Cinematics switched off, or a scene that already holds the frame: the
-        // battle still needs an interface, so give the chrome back immediately.
-        if (!started) this.hud.setCinemaHidden(false);
+      if (launchCinematics.length > 0) {
+        const started = this.playCinematicChain(launchCinematics);
+        if (started) {
+          // The briefing screen will not replay what the deployment showed; the
+          // dossier itself is still reachable from the rail and the menu.
+          if (briefingWillPlay) this.briefingCinematicsShown.add(briefingKey);
+        } else {
+          // Cinematics switched off, or a scene that already holds the frame: the
+          // battle still needs an interface, so give the chrome back immediately.
+          this.hud.setCinemaHidden(false);
+        }
       }
       // The opening line belongs to the battle, not to the deck: the announcer is
       // reset above, so each engagement establishes its own field once.
@@ -2988,6 +3527,9 @@ export class App {
       version: 1 as const,
       mapId: view.mapId ?? '',
       matchDurationMs: view.matchDurationMs,
+      // A co-op room carries its difficulty, and that block is what makes the
+      // client build the Outbreak battlefield rather than a skirmish map.
+      ...(view.outbreak ? { outbreak: { difficulty: view.outbreak.difficulty } } : {}),
       // The client builds its own copy of the battlefield from the room's
       // configuration, so the host's hour and weather have to be carried across
       // rather than left to the map's authored defaults: without them a guest
@@ -3017,7 +3559,11 @@ export class App {
     // launch uses and let it paint before any of that work starts.
     this.networkLoadingKey = handoffKey;
     this.networkLoadingShownAt = performance.now();
-    this.setLoading(true, scenario, { commandPlayerId: seat, network: true });
+    // Co-op seats both speak for player 0: the room's projection is that
+    // player's, and the HUD, orders and defeat card all belong to the defence
+    // the two of them share.
+    const commandPlayer = view.mode === 'outbreak' ? 0 : seat;
+    this.setLoading(true, scenario, { commandPlayerId: commandPlayer, network: true });
     document.getElementById('menu-screen')?.classList.add('hidden');
     this.hud.unmount();
     this.overlay.clear();
@@ -3026,7 +3572,7 @@ export class App {
     if (this.networkLoadingKey !== handoffKey) return;
     try {
       const game = new Game(cloneScenario(scenario), {
-        localPlayerId: seat,
+        localPlayerId: view.mode === 'outbreak' ? 0 : seat,
         // The room runs the only AI. A second one here would fight the stream.
         enableAI: false,
         // The shell must not spawn the scenario's forces: for the instant before
@@ -3091,6 +3637,7 @@ export class App {
         if (snapshot.map && this.game?.adoptNetworkMap(snapshot.map)) {
           this.renderer.rebuildTerrain();
         }
+        this.networkOutbreak = snapshot.outbreak ?? null;
         this.network?.apply(snapshot);
         // The room's first update is on screen, so the brief has done its job.
         this.releaseNetworkLoading();
@@ -3156,6 +3703,7 @@ export class App {
   private endNetworkBattle(): void {
     this.networkHandoffKey = null;
     this.networkStale = false;
+    this.networkOutbreak = null;
     this.cancelNetworkLoading();
     if (!this.network && !this.networkClient) return;
     this.networkClient?.onSnapshot(null);
@@ -3271,15 +3819,17 @@ export class App {
     }
 
     if (this.loading) {
-      // The briefing screen is the picture: drift the wide shot and keep the
-      // theatre rendering until the battle replaces it.
-      this.advanceMenuBackdrop(dt);
+      // The briefing screen is the picture. The slow drift is a compositor
+      // animation on the orthographic canvas, so terrain construction can block
+      // the main thread without freezing the map.
       this.renderer.render();
     } else if (this.screen === 'battle' && this.game) {
       const sig = this.hudSignatureOf(this.game);
       this.hud.update(this.game, dt, sig);
+      this.updateOutbreakHud();
       this.updateBattlefieldAmbience(dt);
       this.tutorial?.update(dt);
+      this.consumeTriggeredCinematics();
       this.maybeStartInMissionCinematic();
       this.checkVictory();
       this.renderer.setSimulationAlpha(
@@ -3289,6 +3839,12 @@ export class App {
       this.renderer.render();
       this.overlay.draw(this);
       this.perf.entities = this.game.state.entities.length;
+    } else if (this.cinematic) {
+      // Campaign scenes and Forge previews run over the deck or the editor. The
+      // attract camera must not chase its own subject through the authored shot.
+      this.renderer.update(dt);
+      this.renderer.render();
+      if (this.screen === 'editor') this.editor.draw();
     } else if (this.screen === 'editor') {
       this.renderer.update(dt);
       this.renderer.render();
@@ -3420,7 +3976,7 @@ export class App {
       if (e.hp <= 0) continue;
       if (!game.isVisibleTo(this.localPlayerId, e.id)) continue;
       if (e.kind === 'unit') {
-        const def = UNITS[e.defId];
+        const def = ALL_UNITS[e.defId];
         if (!def) continue;
         // A hull on turnaround is not idling: its engine is off and the bowser
         // beside it is the thing running. The kit's pump replaces the aircraft's
@@ -3552,6 +4108,40 @@ export class App {
   }
 
   /**
+   * Queue a group of sequences as one presentation chain.
+   *
+   * A chain is how a context with several authored sequences plays all of them
+   * in order, and how the campaign hand-offs (launch, acceptance, briefing)
+   * delay their follow-up until the last scene has finished or been skipped.
+   */
+  private playCinematicChain(
+    items: readonly QueuedCinematic[],
+    onDone: (() => void) | null = null,
+    force = false,
+  ): boolean {
+    // The scheduling itself lives in `CinematicChainQueue`, which is covered by
+    // tests: the hand-off belongs to the chain's last scene, not to a shared
+    // slot a later chain could overwrite.
+    return this.cinematicChains.chain(items, onDone, force);
+  }
+
+  /** Start the next queued scene, running each chain's hand-off as it drains. */
+  private advanceCinematicQueue(): void {
+    this.cinematicChains.drain();
+  }
+
+  /** Master switch plus the group the context belongs to. */
+  cinematicsEnabled(context: MissionCinematicContext): boolean {
+    if (!this.settings.cinematics) return false;
+    return this.settings.cinematicScopes[cinematicScopeFor(context)];
+  }
+
+  /** Queue one scene behind any that are already playing. */
+  private queueCinematic(item: QueuedCinematic): boolean {
+    return this.cinematicChains.push(item);
+  }
+
+  /**
    * Start one authored sequence.
    *
    * Presentation state only: the mission document is copied for commander
@@ -3565,8 +4155,9 @@ export class App {
     eyebrow: string,
     title: string,
     force = false,
+    after: (() => void) | null = null,
   ): boolean {
-    if ((!this.settings.cinematics && !force) || this.cinematic) return false;
+    if ((!this.cinematicsEnabled(context) && !force) || this.cinematic) return false;
     const commander = this.campaignState()?.commander ?? null;
     const localised = localiseCinematic(doc, commander);
     const camera = this.renderer.camera;
@@ -3575,13 +4166,38 @@ export class App {
       {
         camera,
         resolveEntity: (key) => this.cinematicPoint(key),
-        restoreCamera: (state) => camera.setFraming(state.cx, state.cz, state.zoom),
+        resolveActor: (key) => this.cinematicActor(key),
+        stageActor: (key, stage) => {
+          const entity = this.game?.state.entities.find(
+            (entry) => entry.authoredKey === key && entry.hp > 0,
+          );
+          if (entity) this.renderer.stageCinematicActor(entity.id, stage);
+        },
+        clearActors: () => this.renderer.clearCinematicActors(),
+        fire: (fromX, fromZ, toX, toZ, scale) =>
+          this.renderer.cinematicFire(fromX, fromZ, toX, toZ, scale),
+        restoreCamera: (state) =>
+          camera.setFraming(state.cx, state.cz, state.zoom, state.yaw),
         reducedMotion: this.prefersReducedMotion(),
+        shake: (amount) => this.renderer.cinematicShake(amount),
+        effect: (kind, x, z, scale) => {
+          if (kind === 'explosion') this.renderer.particles.explosion(x, 0.5, z, scale);
+          else if (kind === 'smoke') this.renderer.particles.smoke(x, 0.5, z, 12, 0.35);
+          else if (kind === 'dust') this.renderer.particles.dust(x, 0.4, z, 12, 0.4);
+          else this.renderer.particles.muzzle(x, 0.9, z, scale);
+        },
+        playVoice: (src) => this.audio.playCinematicVoice(src),
+        stopVoice: () => this.audio.stopCinematicVoice(),
+        sound: (cue, gain) => this.audio.play(cue, gain),
+        // A music beat borrows the audition channel: the cue plays once and the
+        // player's saved battle playlist is never rewritten by a scene.
+        playMusic: (track) => this.audio.previewMatchTrack(track),
       },
       () => this.endCinematic(),
     );
     this.cinematic = player;
     this.cinematicContext = context;
+    this.cinematicAfter = after;
     // A scene owns the frame: the chrome leaves with it and returns afterwards.
     this.hud.setCinemaHidden(true);
     this.hideCinematicBackground(true);
@@ -3590,6 +4206,7 @@ export class App {
       title,
       skippable: doc.skippable,
       framing: cinematicPausesSimulation(context),
+      preview: this.cinematicPreview,
     });
     player.start();
     this.cinematicOverlay.render(player.frame);
@@ -3599,6 +4216,8 @@ export class App {
   private endCinematic(): void {
     this.cinematic = null;
     this.cinematicContext = null;
+    const after = this.cinematicAfter;
+    this.cinematicAfter = null;
     if (this.cinematicPreview) {
       this.cinematicPreview = false;
       this.menuScenario = null;
@@ -3607,6 +4226,10 @@ export class App {
     // The commander's own HUD preference decides what comes back, not the scene.
     this.hud.setCinemaHidden(false);
     this.hideCinematicBackground(false);
+    // The chain's own follow-up runs once its last scene is over. It may start
+    // the battle that clears the queue, so it comes before the next sequence.
+    after?.();
+    this.advanceCinematicQueue();
   }
 
   /**
@@ -3632,6 +4255,27 @@ export class App {
     this.cinematicBackground.clear();
   }
 
+  /** Live actor pose for a staged beat; the simulation object is read only. */
+  private cinematicActor(
+    key: string,
+  ): { x: number; z: number; facing: number; alpha: number } | null {
+    const entity = this.game?.state.entities.find(
+      (entry) => entry.authoredKey === key && entry.hp > 0,
+    );
+    if (entity) return { x: entity.x, z: entity.z, facing: entity.facing, alpha: 1 };
+    const scenario = this.menuScenario ?? this.game?.state.scenario ?? null;
+    const unit = scenario?.units.find((entry) => entry.key === key);
+    if (unit) {
+      return {
+        x: (unit.x + 0.5) * TILE_SIZE,
+        z: (unit.z + 0.5) * TILE_SIZE,
+        facing: 0,
+        alpha: 1,
+      };
+    }
+    return null;
+  }
+
   /** World position of an authored placement, live or on the deck backdrop. */
   private cinematicPoint(key: string): { x: number; z: number } | null {
     const entity = this.game?.state.entities.find(
@@ -3650,12 +4294,50 @@ export class App {
   }
 
   /**
+   * Drain cinematic requests raised by mission triggers.
+   *
+   * Requests are queued, never overlaid: a scene already on screen finishes
+   * before the next one starts. A sequence plays at most once per battle, and a
+   * request from a trigger that already latched cannot arrive twice.
+   */
+  private consumeTriggeredCinematics(): void {
+    // Multiplayer is an authoritative room, not a campaign presentation. Its
+    // mission document (if one is carried at all) never drives local scenes.
+    if (this.network) return;
+    if (!this.game || this.paused || this.loading || this.screen !== 'battle') return;
+    const requests = this.game.consumeCinematicRequests();
+    if (requests.length === 0) return;
+    const doc = this.game.state.scenario.mission;
+    if (!doc) return;
+    for (const id of requests) {
+      if (this.cinematicPlayed.has(id)) continue;
+      const sequence = doc.cinematics.find(
+        (entry) => entry.id === id && entry.kind === 'inMission',
+      );
+      if (!sequence) continue;
+      this.cinematicPlayed.add(id);
+      if (!this.cinematicsEnabled('inMission')) continue;
+      this.mode = 'none';
+      this.placeDefId = null;
+      this.dragBox.active = false;
+      this.queueCinematic({
+        doc: sequence,
+        context: 'inMission',
+        eyebrow: 'FIELD REPORT',
+        title: doc.title,
+      });
+    }
+  }
+
+  /**
    * Start an in-mission sequence whose authored time has arrived.
    *
    * Eligible sequences are presentation state, not trigger actions: the mission
-   * runtime is not told about them and no simulation tick is consumed.
+   * runtime is not told about them and no simulation tick is consumed. Every
+   * due sequence plays, in authored-time then document order.
    */
   private maybeStartInMissionCinematic(): void {
+    if (this.network) return;
     if (this.cinematic || !this.game || this.screen !== 'battle' || this.loading || this.paused) {
       return;
     }
@@ -3663,22 +4345,20 @@ export class App {
     const doc = this.game.state.scenario.mission;
     if (!doc) return;
     const seconds = Math.max(0, this.game.state.tick - this.game.state.startedAtTick) / TICK_RATE;
-    const next = doc.cinematics
-      .filter(
-        (entry) =>
-          entry.kind === 'inMission' &&
-          !this.cinematicPlayed.has(entry.id) &&
-          (entry.atSeconds ?? Number.POSITIVE_INFINITY) <= seconds,
-      )
-      .sort((a, b) => (a.atSeconds ?? 0) - (b.atSeconds ?? 0) || a.id.localeCompare(b.id))[0];
+    const next = dueInMissionCinematics(doc.cinematics, seconds, this.cinematicPlayed)[0];
     if (!next) return;
     this.cinematicPlayed.add(next.id);
-    if (!this.settings.cinematics) return;
+    if (!this.cinematicsEnabled('inMission')) return;
     // A scene is not an order mode: leave placement/box selection cleanly.
     this.mode = 'none';
     this.placeDefId = null;
     this.dragBox.active = false;
-    this.playCinematic(next, 'inMission', 'FIELD REPORT', doc.title);
+    this.queueCinematic({
+      doc: next,
+      context: 'inMission',
+      eyebrow: 'FIELD REPORT',
+      title: doc.title,
+    });
   }
 
   /** A loaded battle must not replay scenes it has already passed. */
@@ -3712,10 +4392,55 @@ export class App {
       this.renderCampaignMissions();
       this.applyCampaignUi();
     }
+    // A mission's debrief scenes are the last presentation before the result
+    // card. They never change the captured result, and the card appears after
+    // the last one, including after a skip.
+    const missionDoc = run?.mission.mission ?? this.game.state.scenario.mission ?? null;
+    const debrief = missionDoc ? orderedCinematics(missionDoc.cinematics, 'debrief') : [];
+    const showResult = () => this.finishVictoryPresentation(result);
+    if (debrief.length > 0 && this.cinematicsEnabled('debrief') && missionDoc) {
+      const key = `${missionDoc.id}:debrief`;
+      if (!this.debriefCinematicsShown.has(key)) {
+        this.debriefCinematicsShown.add(key);
+        const started = this.playCinematicChain(
+          debrief.map((doc) => ({
+            doc,
+            context: 'debrief' as const,
+            eyebrow: 'MISSION DEBRIEF',
+            title: missionDoc.title,
+          })),
+          showResult,
+        );
+        if (started) return;
+      }
+    }
+    showResult();
+  }
+
+  /** Build the end card once any debrief presentation has finished. */
+  private finishVictoryPresentation(result: VictoryState): void {
     this.finishTutorial();
     this.audio.stopMatchMusic();
     this.selected = [];
     this.mode = 'none';
+    // An Outbreak run ends in its own card: a survival record, not a battle
+    // verdict. It has no opposing commander and no career line to award.
+    const outbreak = this.game?.outbreak ?? null;
+    if (outbreak) {
+      // A room's run is scored by the room. The local director never ticked, so
+      // its record would read wave 1 and no kills for a battle that was fought.
+      const remote = this.network ? this.networkOutbreak : null;
+      if (remote) {
+        this.showOutbreakResults({
+          ...remote,
+          ended: true,
+          commandPostLost: result === 'defeat',
+        });
+        return;
+      }
+      this.showOutbreakResults(outbreak.result());
+      return;
+    }
     this.hud.showEnd(result);
     void this.recordEndCareer(result);
   }
@@ -4061,7 +4786,7 @@ export class App {
       .entitiesOf(this.localPlayerId, 'unit')
       .filter((e) => {
         if (e.hp <= 0 || e.garrisonId) return false;
-        const wanted = kind === 'harvester' ? !!e.harvester : !!UNITS[e.defId]?.canBuild;
+        const wanted = kind === 'harvester' ? !!e.harvester : !!ALL_UNITS[e.defId]?.canBuild;
         return wanted && e.state === 'idle' && !e.order;
       })
       .sort((a, b) => a.id - b.id);
@@ -4136,7 +4861,7 @@ export class App {
    * helicopter unclickable.
    */
   private unitPickHeight(e: Entity): number {
-    if (e.kind !== 'unit' || UNITS[e.defId]?.domain !== 'air') return 1;
+    if (e.kind !== 'unit' || ALL_UNITS[e.defId]?.domain !== 'air') return 1;
     const ac = e.aircraft;
     const climb = ac ? ac.climb ?? (ac.landed ? 0 : 1) : 1;
     return PARKED_AIRCRAFT_CLEARANCE + (AIR_UNIT_ALTITUDE - PARKED_AIRCRAFT_CLEARANCE) * climb;
@@ -4253,7 +4978,7 @@ export class App {
     // the wire, and a right-click on an enemy APC falls through to attack.
     const occupants =
       target &&
-      (target.kind === 'building' || UNITS[target.defId]?.transport)
+      (target.kind === 'building' || ALL_UNITS[target.defId]?.transport)
         ? this.game.garrisonOccupants(target.id)
         : [];
     switch (contextOrderFor(target, this.ownSelected(), this.localPlayerId, hostile, occupants)) {
@@ -4402,7 +5127,7 @@ export class App {
 
   commandCapture(targetId: number): void {
     if (!this.game) return;
-    const engineers = this.ownSelected().filter((e) => UNITS[e.defId]?.canCapture && !e.garrisonId);
+    const engineers = this.ownSelected().filter((e) => ALL_UNITS[e.defId]?.canCapture && !e.garrisonId);
     if (engineers.length === 0) {
       this.notify('Combat Engineers capture strategic objectives.', 'warning');
       this.audio.play('denied');
@@ -4416,7 +5141,7 @@ export class App {
   commandGarrison(targetId: number): void {
     if (!this.game) return;
     const infantry = this.ownSelected().filter(
-      (e) => e.kind === 'unit' && !e.garrisonId && UNITS[e.defId]?.canGarrison,
+      (e) => e.kind === 'unit' && !e.garrisonId && ALL_UNITS[e.defId]?.canGarrison,
     );
     if (infantry.length === 0) {
       this.notify('Select exposed infantry to board a transport or garrison a building.', 'warning');
@@ -4439,11 +5164,11 @@ export class App {
         // was rejected even though the panel had offered UNLOAD ALL for it.
         if (e.kind === 'unit' && e.garrisonId) return e.owner === this.localPlayerId;
         if (e.kind === 'unit') {
-          if (!UNITS[e.defId]?.transport) return false;
+          if (!ALL_UNITS[e.defId]?.transport) return false;
           // Air and naval unloads depend on the owner's landing or beaching, so
           // only that owner may issue them. A ground carrier only needs one of
           // the player's own infantry aboard, even when a teammate owns it.
-          const domain = UNITS[e.defId]?.domain;
+          const domain = ALL_UNITS[e.defId]?.domain;
           if ((domain === 'air' || domain === 'naval') && e.owner !== this.localPlayerId) {
             return false;
           }
@@ -4463,7 +5188,7 @@ export class App {
 
   commandRepair(targetId: number): void {
     if (!this.game) return;
-    const engineers = this.ownSelected().filter((e) => UNITS[e.defId]?.canBuild);
+    const engineers = this.ownSelected().filter((e) => ALL_UNITS[e.defId]?.canBuild);
     if (engineers.length === 0) {
       this.notify('Combat Engineers repair damaged structures.', 'warning');
       this.audio.play('denied');
@@ -4553,7 +5278,7 @@ export class App {
   commandDive(): void {
     if (!this.game) return;
     const subs = this.ownSelected().filter(
-      (e) => e.kind === 'unit' && !!UNITS[e.defId]?.submarine,
+      (e) => e.kind === 'unit' && !!ALL_UNITS[e.defId]?.submarine,
     );
     if (subs.length === 0) {
       this.notify('Select a submarine to dive or surface.', 'warning');
@@ -4576,8 +5301,8 @@ export class App {
     const transports = this.ownSelected().filter(
       (e) =>
         e.kind === 'unit' &&
-        !!UNITS[e.defId]?.transport &&
-        UNITS[e.defId]?.domain === 'air',
+        !!ALL_UNITS[e.defId]?.transport &&
+        ALL_UNITS[e.defId]?.domain === 'air',
     );
     if (transports.length === 0) {
       this.notify('Select a transport helicopter to land.', 'warning');
@@ -4599,7 +5324,7 @@ export class App {
   commandReturn(): void {
     if (!this.game) return;
     const ids = this.ownSelected()
-      .filter((e) => e.kind === 'unit' && (UNITS[e.defId]?.domain === 'air' || UNITS[e.defId]?.domain === 'naval'))
+      .filter((e) => e.kind === 'unit' && (ALL_UNITS[e.defId]?.domain === 'air' || ALL_UNITS[e.defId]?.domain === 'naval'))
       .map((e) => e.id);
     if (ids.length === 0) {
       this.notify('Only aircraft and ships can return for service.', 'warning');
@@ -4615,7 +5340,7 @@ export class App {
       this.notify('Choose a structure to build first.', 'warning');
       return;
     }
-    if (mode === 'repair' && !this.ownSelected().some((e) => UNITS[e.defId]?.canBuild)) {
+    if (mode === 'repair' && !this.ownSelected().some((e) => ALL_UNITS[e.defId]?.canBuild)) {
       this.notify('Select a Combat Engineer to repair structures.', 'warning');
       this.audio.play('denied');
       return;
@@ -4623,7 +5348,7 @@ export class App {
     if (
       mode === 'garrison' &&
       !this.ownSelected().some(
-        (e) => e.kind === 'unit' && !e.garrisonId && UNITS[e.defId]?.canGarrison,
+        (e) => e.kind === 'unit' && !e.garrisonId && ALL_UNITS[e.defId]?.canGarrison,
       )
     ) {
       this.notify('Select exposed infantry to board a transport or garrison a building.', 'warning');
@@ -4635,8 +5360,8 @@ export class App {
       !this.ownSelected().some(
         (e) =>
           e.kind === 'unit' &&
-          !!UNITS[e.defId]?.transport &&
-          UNITS[e.defId]?.domain === 'air',
+          !!ALL_UNITS[e.defId]?.transport &&
+          ALL_UNITS[e.defId]?.domain === 'air',
       )
     ) {
       this.notify('Select a transport helicopter to land.', 'warning');
@@ -4662,7 +5387,10 @@ export class App {
       return;
     }
     this.mode = this.mode === mode ? 'none' : mode;
-    if (this.mode !== 'place') this.placeDefId = null;
+    if (this.mode !== 'place') {
+      this.placeDefId = null;
+      this.placeStart = null;
+    }
     if (this.mode !== 'none' && this.additiveSelection) {
       this.additiveSelection = false;
       this.hud.selectionChanged();
@@ -4673,6 +5401,7 @@ export class App {
   cancelMode(): void {
     this.mode = 'none';
     this.placeDefId = null;
+    this.placeStart = null;
     this.hud.selectionChanged();
   }
 
@@ -4881,6 +5610,7 @@ export class App {
     // No engineer needs to be selected: the site is placed immediately and an
     // idle engineer is dispatched to it by the simulation.
     this.placeDefId = defId;
+    this.placeStart = null;
     this.mode = 'place';
     this.audio.play('ui');
     this.hud.selectionChanged();
@@ -4907,6 +5637,10 @@ export class App {
       this.audio.play('denied');
       return;
     }
+    if (BUILDINGS[this.placeDefId].wall) {
+      this.wallAtScreen(site.tileX, site.tileZ);
+      return;
+    }
     this.dispatchCommand({
       type: 'placeBuilding',
       team: this.localPlayerId,
@@ -4918,6 +5652,97 @@ export class App {
     this.notify(`${BUILDINGS[this.placeDefId].name} queued for construction.`, 'success');
     this.mode = 'none';
     this.placeDefId = null;
+  }
+
+  /** Tiles covered by the wall run from the stored start to `tileX, tileZ`. */
+  wallLineTiles(tileX: number, tileZ: number): Array<{ tileX: number; tileZ: number }> {
+    const start = this.placeStart;
+    if (!start) return [];
+    const dx = tileX - start.tileX;
+    const dz = tileZ - start.tileZ;
+    const steps = Math.max(Math.abs(dx), Math.abs(dz));
+    if (steps === 0) return [{ tileX: start.tileX, tileZ: start.tileZ }];
+    const tiles: Array<{ tileX: number; tileZ: number }> = [];
+    for (let i = 0; i <= steps; i++) {
+      const x = Math.round(start.tileX + (dx * i) / steps);
+      const z = Math.round(start.tileZ + (dz * i) / steps);
+      const prev = tiles[tiles.length - 1];
+      if (!prev || prev.tileX !== x || prev.tileZ !== z) tiles.push({ tileX: x, tileZ: z });
+    }
+    return tiles;
+  }
+
+  /**
+   * Walls are laid as a run: the first click anchors the start, the second
+   * click closes the run. Every tile is validated before anything is queued so
+   * a run cannot half-build outside the zone or over another structure.
+   */
+  private wallAtScreen(tileX: number, tileZ: number): void {
+    if (!this.game || !this.placeDefId) return;
+    const def = BUILDINGS[this.placeDefId];
+    if (!this.placeStart) {
+      this.placeStart = { tileX, tileZ };
+      this.audio.play('ui');
+      this.notify('Wall start set — click the end tile to lay the run.', 'info');
+      this.hud.selectionChanged();
+      return;
+    }
+    const tiles = this.wallLineTiles(tileX, tileZ);
+    if (tiles.length > 32) {
+      this.notify('Wall run is too long — lay it in shorter sections.', 'warning');
+      this.audio.play('denied');
+      return;
+    }
+    for (const tile of tiles) {
+      const status = this.game.placementStatus(
+        this.localPlayerId,
+        this.placeDefId,
+        tile.tileX,
+        tile.tileZ,
+      );
+      if (!status.ok) {
+        this.notify(`Wall cannot run there: ${status.reason}`, 'warning');
+        this.audio.play('denied');
+        return;
+      }
+    }
+    const player = this.game.player(this.localPlayerId);
+    const mats = def.cost.mats * tiles.length;
+    const req = def.cost.req * tiles.length;
+    if (!player || player.mats < mats || player.req < req) {
+      this.notify(
+        `Not enough resources for ${tiles.length} wall segment${tiles.length === 1 ? '' : 's'} — need ${mats} materials and ${req} requisition.`,
+        'warning',
+      );
+      this.audio.play('denied');
+      return;
+    }
+    // Every segment shares the run's heading so the authored wall panel lines
+    // up along the clicked direction instead of leaving gaps on a north–south
+    // run. A single-tile run keeps the default facing.
+    const first = tiles[0];
+    const last = tiles[tiles.length - 1];
+    const facing =
+      tiles.length > 1 ? Math.atan2(last.tileZ - first.tileZ, last.tileX - first.tileX) : 0;
+    for (const tile of tiles) {
+      this.dispatchCommand({
+        type: 'placeBuilding',
+        team: this.localPlayerId,
+        defId: this.placeDefId,
+        tileX: tile.tileX,
+        tileZ: tile.tileZ,
+        facing,
+      });
+    }
+    this.audio.play('build');
+    this.notify(
+      `${def.name} run queued — ${tiles.length} segment${tiles.length === 1 ? '' : 's'}.`,
+      'success',
+    );
+    this.mode = 'none';
+    this.placeDefId = null;
+    this.placeStart = null;
+    this.hud.selectionChanged();
   }
 
   /* ------------------------------------------------------------------ */
@@ -5046,7 +5871,11 @@ export class App {
       this.renderer.setCommandFlag(null);
       this.applyNarrator(game);
       // A save has already passed its authored in-mission scenes; opening it
-      // must not replay dialogue the player has already seen.
+      // must not replay dialogue the player has already seen. Any scene or
+      // queue left from the battle being replaced is dropped first.
+      this.cinematicChains.clear();
+      this.cinematicAfter = null;
+      this.cinematic?.skip(true);
       this.cinematicPlayed.clear();
       this.markElapsedCinematics();
       this.audio.stopMatchMusic();
@@ -5145,6 +5974,33 @@ export class App {
   }
 
   openBriefing(): void {
+    // A mission's briefing scenes frame its dossier. They play once per mission
+    // and the dossier opens after the last one, so a briefing line is never
+    // hidden behind a modal.
+    const briefingMission = this.game?.state.scenario.mission ?? null;
+    const briefingSequences = briefingMission
+      ? orderedCinematics(briefingMission.cinematics, 'briefing')
+      : [];
+    if (
+      briefingMission &&
+      briefingSequences.length > 0 &&
+      this.cinematicsEnabled('briefing')
+    ) {
+      const key = `${briefingMission.id}:briefing`;
+      if (!this.briefingCinematicsShown.has(key)) {
+        this.briefingCinematicsShown.add(key);
+        const started = this.playCinematicChain(
+          briefingSequences.map((doc) => ({
+            doc,
+            context: 'briefing' as const,
+            eyebrow: 'MISSION BRIEFING',
+            title: briefingMission.title,
+          })),
+          () => this.openBriefing(),
+        );
+        if (started) return;
+      }
+    }
     const resume = this.pauseForModal();
     // A campaign operation brings its own brief into battle. A skirmish still
     // names the opponent actually staged for the next deployment, so the
@@ -5237,9 +6093,42 @@ export class App {
           </div>
         </div>
         <p class="modal-note">The simulation is fixed-step (20 Hz) and deterministic for identical scenarios, seeds and command sequences.</p>`,
-      actions: [{ label: 'Understood', primary: true }],
+      actions: [
+        // The launch already showed the briefing and marked it; this is the
+        // explicit way back to it without leaving the dossier silent forever.
+        ...(briefingMission && briefingSequences.length > 0 && this.cinematicsEnabled('briefing')
+          ? [
+              {
+                label: 'Replay briefing',
+                onClick: () => {
+                  this.replayBriefingScenes(briefingMission, briefingSequences);
+                },
+              },
+            ]
+          : []),
+        { label: 'Understood', primary: true },
+      ],
       onClose: () => this.resumeAfterModal(resume),
     });
+  }
+
+  /** Play a mission's briefing scenes again, on the player's explicit request. */
+  private replayBriefingScenes(
+    mission: { id: string; title: string },
+    sequences: readonly MissionCinematicDoc[],
+  ): void {
+    // Marking it shown keeps the follow-up dossier from starting a third pass.
+    this.briefingCinematicsShown.add(`${mission.id}:briefing`);
+    const started = this.playCinematicChain(
+      sequences.map((doc) => ({
+        doc,
+        context: 'briefing' as const,
+        eyebrow: 'MISSION BRIEFING',
+        title: mission.title,
+      })),
+      () => this.openBriefing(),
+    );
+    if (!started) this.notify('Briefing scenes are turned off in Settings.', 'warning');
   }
 
   private localStore(): KeyValueStore | null {
@@ -5411,7 +6300,12 @@ export class App {
     const displayRows = `
       <div class="setting-row"><div><label>Interface scale</label><small>HUD type, rail and sidebar sizes</small></div><div class="set-inline"><input type="range" min="${Math.round(UI_SCALE_MIN * 100)}" max="${Math.round(UI_SCALE_MAX * 100)}" step="5" value="${Math.round(s.uiScale * 100)}" data-set="uiScale"><output data-value-for="uiScale">${Math.round(s.uiScale * 100)}%</output></div></div>
       <div class="setting-row"><div><label>Colour palette</label><small>Recolours ownership, health and alerts; patterns remain</small></div><select data-choice="colorVision" aria-label="Colour-vision palette">${paletteOptions}</select></div>
-      <div class="setting-row"><div><label>Graphics quality</label><small>Resolution, particles, shadows and water</small></div><select data-choice="graphicsQuality" aria-label="Graphics quality">${qualityOptions}</select></div>
+      <div class="setting-row"><div><label>Graphics quality</label><small>Resolution, particles, shadows and effects; Custom keeps your switches</small></div><select data-choice="graphicsQuality" aria-label="Graphics quality">${qualityOptions}</select></div>
+      <div class="setting-row"><div><label>Ambient occlusion</label><small>Contact shading that grounds units and structures; changing an effect selects Custom</small></div><button class="switch ${s.ambientOcclusion ? 'on' : ''}" data-toggle="ambientOcclusion"></button></div>
+      <div class="setting-row"><div><label>Bloom</label><small>HDR glow around lamps, glints and explosions</small></div><button class="switch ${s.bloom ? 'on' : ''}" data-toggle="bloom"></button></div>
+      <div class="setting-row"><div><label>Contact shadows</label><small>Short sun shadows under vehicles and infantry, so they sit on the road</small></div><button class="switch ${s.contactShadows ? 'on' : ''}" data-toggle="contactShadows"></button></div>
+      <div class="setting-row"><div><label>Water reflections</label><small>Screen-space shore and structure reflections on the sea</small></div><button class="switch ${s.screenSpaceReflections ? 'on' : ''}" data-toggle="screenSpaceReflections"></button></div>
+      <div class="setting-row"><div><label>Water detail</label><small>Animated swell and ripples; off keeps the sea surface still</small></div><button class="switch ${s.waterDetail ? 'on' : ''}" data-toggle="waterDetail"></button></div>
       <div class="setting-row"><div><label>Shadow detail</label><small>Basic is the flat projected pass; Detailed renders real sun shadows from a depth map</small></div><select data-choice="shadowDetail" aria-label="Shadow detail">${shadowOptions}</select></div>
       <div class="setting-row"><div><label>Render scale</label><small>Share of the device pixel ratio, capped at 2×</small></div><div class="set-inline"><input type="range" min="50" max="100" step="5" value="${Math.round(s.renderScale * 100)}" data-set="renderScale"><output data-value-for="renderScale">${Math.round(s.renderScale * 100)}%</output></div></div>
       <div class="setting-row"><div><label>Frame rate</label><small>Show the live FPS badge in battle</small></div><button class="switch ${s.fpsReadout ? 'on' : ''}" data-toggle="fpsReadout"></button></div>
@@ -5419,6 +6313,9 @@ export class App {
       <div class="setting-row"><div><label>Unit silhouettes</label><small>Outline a unit hidden behind a structure</small></div><button class="switch ${s.silhouettes ? 'on' : ''}" data-toggle="silhouettes"></button></div>
       <div class="setting-row"><div><label>Screen shake</label><small>Explosion camera movement</small></div><button class="switch ${s.shake ? 'on' : ''}" data-toggle="shake"></button></div>
       <div class="setting-row"><div><label>Cinematics</label><small>Authored mission scenes. Off is skip-all; progression is unaffected.</small></div><button class="switch ${s.cinematics ? 'on' : ''}" data-toggle="cinematics"></button></div>
+      <div class="setting-row"><div><label>Campaign framing</label><small>Campaign introduction, intermissions and finale</small></div><button class="switch ${s.cinematicScopes.campaign ? 'on' : ''}" data-toggle="cinematicCampaign"></button></div>
+      <div class="setting-row"><div><label>Briefing scenes</label><small>The mission brief that plays before the dossier</small></div><button class="switch ${s.cinematicScopes.briefing ? 'on' : ''}" data-toggle="cinematicBriefing"></button></div>
+      <div class="setting-row"><div><label>Battle scenes</label><small>Openings, in-mission events, endings and debriefs</small></div><button class="switch ${s.cinematicScopes.battle ? 'on' : ''}" data-toggle="cinematicBattle"></button></div>
       <div class="setting-row"><div><label>Fog of war</label><small>Visual fog; gameplay detection is unchanged</small></div><button class="switch ${s.fogVisual ? 'on' : ''}" data-toggle="fogVisual"></button></div>
       <div class="setting-row"><div><label>Night lights</label><small>Building and vehicle lights; their detection effect is unchanged</small></div><button class="switch ${s.nightLights ? 'on' : ''}" data-toggle="nightLights"></button></div>
       <div class="setting-row"><div><label>Light glow</label><small>Additive brightness of lamps and beams</small></div><div class="set-inline"><input type="range" min="0" max="150" step="5" value="${Math.round(s.lightBloom * 100)}" data-set="lightBloom"><output data-value-for="lightBloom">${Math.round(s.lightBloom * 100)}%</output></div></div>
@@ -5528,24 +6425,34 @@ export class App {
     root.querySelectorAll<HTMLSelectElement>('[data-choice]').forEach((select) => {
       select.addEventListener('change', () => {
         if (select.dataset.choice === 'graphicsQuality') {
-          this.settings.graphicsQuality = normaliseGraphicsQuality(select.value);
-          // A preset is a starting point: choosing one also applies its
-          // recommended density, which the render-scale slider can refine.
-          this.settings.renderScale = normaliseRenderScale(
-            graphicsPreset(this.settings.graphicsQuality).renderScale,
-          );
-          // Low quality keeps the darkness but drops the additive light pass;
-          // the switch can turn it back on, because it is presentation only.
-          this.settings.nightLights = presetNightLights(this.settings.graphicsQuality);
-          // Choosing a preset also recommends a shadow level. Detailed is an
-          // explicit upgrade: no preset selects it silently.
-          this.settings.shadowDetail = graphicsPreset(this.settings.graphicsQuality).shadowDetail;
-          const shadowSelect = root.querySelector<HTMLSelectElement>('[data-choice="shadowDetail"]');
-          if (shadowSelect) shadowSelect.value = this.settings.shadowDetail;
-          const slider = root.querySelector<HTMLInputElement>('[data-set="renderScale"]');
-          if (slider) slider.value = String(Math.round(this.settings.renderScale * 100));
-          const out = root.querySelector<HTMLElement>('[data-value-for="renderScale"]');
-          if (out) out.textContent = `${Math.round(this.settings.renderScale * 100)}%`;
+          const quality = normaliseGraphicsQuality(select.value);
+          this.settings.graphicsQuality = quality;
+          // Custom preserves the explicit switches. Selecting a named preset
+          // is a starting point that also applies its density and effect mix;
+          // the render-scale slider and switches can refine it afterwards.
+          if (quality !== 'custom') {
+            const preset = graphicsPreset(quality);
+            this.settings.renderScale = normaliseRenderScale(preset.renderScale);
+            this.settings.nightLights = presetNightLights(quality);
+            this.settings.shadowDetail = preset.shadowDetail;
+            this.settings.ambientOcclusion = preset.ambientOcclusion;
+            this.settings.bloom = preset.bloom;
+            this.settings.screenSpaceReflections = preset.screenSpaceReflections;
+            this.settings.contactShadows = preset.contactShadows;
+            this.settings.waterDetail = preset.waterDetail;
+            const shadowSelect = root.querySelector<HTMLSelectElement>('[data-choice="shadowDetail"]');
+            if (shadowSelect) shadowSelect.value = this.settings.shadowDetail;
+            const slider = root.querySelector<HTMLInputElement>('[data-set="renderScale"]');
+            if (slider) slider.value = String(Math.round(this.settings.renderScale * 100));
+            const out = root.querySelector<HTMLElement>('[data-value-for="renderScale"]');
+            if (out) out.textContent = `${Math.round(this.settings.renderScale * 100)}%`;
+            for (const key of ['ambientOcclusion', 'bloom', 'screenSpaceReflections', 'contactShadows', 'waterDetail', 'nightLights'] as const) {
+              const button = root.querySelector<HTMLButtonElement>(`[data-toggle="${key}"]`);
+              if (!button) continue;
+              button.classList.toggle('on', this.settings[key]);
+              button.setAttribute('aria-pressed', this.settings[key] ? 'true' : 'false');
+            }
+          }
         } else if (select.dataset.choice === 'shadowDetail') {
           this.settings.shadowDetail = normaliseShadowDetail(select.value);
         } else if (select.dataset.choice === 'colorVision') {
@@ -5569,6 +6476,22 @@ export class App {
           void toggleFullscreen().then(() => this.syncFullscreenControls());
           return;
         }
+        const scopeKey =
+          key === 'cinematicCampaign'
+            ? ('campaign' as const)
+            : key === 'cinematicBriefing'
+              ? ('briefing' as const)
+              : key === 'cinematicBattle'
+                ? ('battle' as const)
+                : null;
+        if (scopeKey) {
+          const scopes = this.settings.cinematicScopes;
+          scopes[scopeKey] = !scopes[scopeKey];
+          btn.classList.toggle('on', scopes[scopeKey]);
+          btn.setAttribute('aria-pressed', scopes[scopeKey] ? 'true' : 'false');
+          this.saveSettings();
+          return;
+        }
         if (key === 'fpsReadout') {
           this.settings.fpsReadout = !this.settings.fpsReadout;
           btn.classList.toggle('on', this.settings.fpsReadout);
@@ -5584,11 +6507,29 @@ export class App {
           key !== 'customCursors' &&
           key !== 'silhouettes' &&
           key !== 'nightLights' &&
-          key !== 'cinematics'
+          key !== 'cinematics' &&
+          key !== 'ambientOcclusion' &&
+          key !== 'bloom' &&
+          key !== 'screenSpaceReflections' &&
+          key !== 'contactShadows' &&
+          key !== 'waterDetail'
         ) {
           return;
         }
         this.settings[key] = !this.settings[key];
+        // Any hand-tuned effect makes the current mix custom; the preset menu
+        // then tells the truth instead of still claiming High.
+        if (
+          key === 'ambientOcclusion' ||
+          key === 'bloom' ||
+          key === 'screenSpaceReflections' ||
+          key === 'contactShadows' ||
+          key === 'waterDetail'
+        ) {
+          this.settings.graphicsQuality = 'custom';
+          const qualitySelect = root.querySelector<HTMLSelectElement>('[data-choice="graphicsQuality"]');
+          if (qualitySelect) qualitySelect.value = 'custom';
+        }
         btn.classList.toggle('on', this.settings[key]);
         btn.setAttribute('aria-pressed', this.settings[key] ? 'true' : 'false');
         this.saveSettings();
@@ -5823,6 +6764,23 @@ export class App {
   /* ------------------------------------------------------------------ */
   /* Editor                                                              */
   /* ------------------------------------------------------------------ */
+
+  /**
+   * Open the selected campaign's framing scenes in the workbench.
+   *
+   * The mission scenario supplies entity placements for camera and actor
+   * references, but the campaign scenes themselves are stored independently of
+   * the operation and never written into its mission document.
+   */
+  editCampaignScenes(): void {
+    try {
+      this.openEditor(this.campaignScenario());
+      this.editor.openMissionWorkbench('cinematics');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.notify(`Could not open campaign scenes: ${message}`, 'critical');
+    }
+  }
 
   openEditor(scenario?: Scenario): void {
     this.missionTestScenario = null;

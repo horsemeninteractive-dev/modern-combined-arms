@@ -352,9 +352,9 @@ describe('presentation lights', () => {
     expect(MESH_FS).toContain('uNightGlow');
     expect(MESH_FS).toContain('materialId > 4.5 && materialId < 5.5');
     // Windows follow the owner's grid and the team's knowledge, not just the clock.
-    expect(rendererSource).toContain(
-      "kind === 'building' ? this.buildingWindowGlow(owner, construction, remembered) : 0",
-    );
+    // A collapsed shell or a wrecked body has no intact glazing to light.
+    expect(rendererSource).toContain("kind === 'building' && !collapsed && damageStage < 2");
+    expect(rendererSource).toContain("this.buildingWindowGlow(owner, construction, remembered)");
   });
 
   it('leaves a structure the team has only charted dark', () => {
@@ -694,11 +694,12 @@ describe('presentation lights', () => {
     // lit by it instead of staying a dark band through the light.
     expect(DECAL_FS).toContain('groundSpots(vWorld, vec3(0.0, 1.0, 0.0))');
     expect(rendererSource).toContain('this.decalGpu.draw(this.camera, decals, {');
-    // A bridge deck is a mesh over water, so the mesh pass opens the lamp gate
-    // for walkable spans only.
-    expect(rendererSource).toContain("const walkableDeck = e.kind === 'building'");
-    expect(rendererSource).toContain('const nextGate = walkableDeck ? 1 : 0;');
-    expect(rendererSource).toContain('gl.uniform1f(mp.u.uSpotGate ?? null, nextGate);');
+    // Every lit mesh receives the lamp cones, not only the road: a headlamp
+    // that lights the deck but not the hull or the wall beside it reads as a
+    // decal. The gate closes again after the entity pass.
+    expect(rendererSource).toContain('gl.uniform1f(mp.u.uSpotGate ?? null, 1);');
+    expect(rendererSource).toContain('gl.uniform1f(mp.u.uSpotGate ?? null, 0);');
+    expect(rendererSource).not.toContain('const walkableDeck');
   });
 
   it('respects the instance ceiling', () => {

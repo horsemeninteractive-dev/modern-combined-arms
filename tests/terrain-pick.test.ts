@@ -188,6 +188,36 @@ describe('rendered terrain geometry', () => {
         onCoast++;
         continue;
       }
+      // A land tile that touches water is drawn from a subdivided, smoothed
+      // height curve so the waterline bends inside the tile instead of
+      // following the square edge. Its interior therefore sits between the
+      // tile's four corner samples rather than exactly on the bilinear surface
+      // picking answers with — that disagreement is what the smoothing is for,
+      // and it stays inside the tile's own corner range.
+      let coastal = false;
+      for (let dz = -1; dz <= 1 && !coastal; dz++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = tx + dx;
+          const nz = tz + dz;
+          if (!inBounds(s.width, s.height, nx, nz)) continue;
+          if (TERRAIN[s.tiles[tileIndex(s.width, nx, nz)].t as TerrainId].water) {
+            coastal = true;
+            break;
+          }
+        }
+      }
+      if (coastal) {
+        const corners = [
+          terrainVisualHeight(s, tx * TILE_SIZE, tz * TILE_SIZE),
+          terrainVisualHeight(s, (tx + 1) * TILE_SIZE, tz * TILE_SIZE),
+          terrainVisualHeight(s, tx * TILE_SIZE, (tz + 1) * TILE_SIZE),
+          terrainVisualHeight(s, (tx + 1) * TILE_SIZE, (tz + 1) * TILE_SIZE),
+        ];
+        const spread = Math.max(...corners) - Math.min(...corners);
+        expect(delta, `smoothed vertex ${x},${z}`).toBeLessThanOrEqual(spread + 1e-3);
+        onCoast++;
+        continue;
+      }
       expect(delta, `vertex ${x},${z}`).toBeLessThan(1e-3);
       onLand++;
     }

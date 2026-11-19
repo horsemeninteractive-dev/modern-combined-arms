@@ -62,6 +62,18 @@ export function rotationZ(angle: number): Float32Array {
   return m;
 }
 
+/** Rotation about local +X: positive roll tips local +Y toward +Z. */
+export function rotationX(angle: number): Float32Array {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  const m = identity();
+  m[5] = c;
+  m[6] = s;
+  m[9] = -s;
+  m[10] = c;
+  return m;
+}
+
 export function modelMatrix(
   x: number,
   y: number,

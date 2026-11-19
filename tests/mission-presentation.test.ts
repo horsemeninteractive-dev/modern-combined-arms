@@ -105,6 +105,7 @@ class TestCamera implements CinematicCamera {
   cx = 0;
   cz = 0;
   zoom = 40;
+  yaw?: number;
   screenLift = 0;
   screenLiftX = 0;
 
@@ -117,10 +118,11 @@ class TestCamera implements CinematicCamera {
     this.zoom = zoom;
   }
 
-  setFraming(cx: number, cz: number, zoom: number): void {
+  setFraming(cx: number, cz: number, zoom: number, yaw?: number): void {
     this.cx = cx;
     this.cz = cz;
     this.zoom = zoom;
+    if (yaw !== undefined) this.yaw = yaw;
   }
 
   setScreenLift(pixels: number, horizontal = 0): void {
@@ -141,7 +143,7 @@ class TestWorld implements CinematicWorld {
 
   restoreCamera(state: CinematicCameraState): void {
     this.restored = state;
-    this.camera.setFraming(state.cx, state.cz, state.zoom);
+    this.camera.setFraming(state.cx, state.cz, state.zoom, state.yaw);
   }
 }
 
@@ -327,6 +329,13 @@ describe('camera interpolation', () => {
       cz: 20,
       zoom: 20,
     });
+    expect(
+      interpolateCamera(
+        { cx: 0, cz: 0, zoom: 10, yaw: 0 },
+        { cx: 0, cz: 0, zoom: 10, yaw: Math.PI / 2 },
+        0.5,
+      ).yaw,
+    ).toBeCloseTo(Math.PI / 4, 6);
   });
 
   it('converts authored tile coordinates to world units', () => {

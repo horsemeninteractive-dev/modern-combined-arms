@@ -512,6 +512,12 @@ export function createFoundryDistrict(): Scenario {
   p.neutral('ruin', 21, 57);
   p.neutral('warehouse', 33, 65);
 
+  // Civic services among the garrison blocks, mirrored so both approaches meet
+  // the same strongpoints. Each sits on a clear lot between two streets.
+  p.neutral('fireStation', 42, 9);
+  p.neutral('clinic', 21, 17);
+  p.neutral('marketHall', 25, 65);
+
   // The central square: a city hall and the works that named the district face
   // each other across the mirror line, with the strategic objectives around
   // them. Taking the square means holding both landmarks.
@@ -535,7 +541,7 @@ export function createFoundryDistrict(): Scenario {
       id: 'foundry-district',
       name: 'Foundry District',
       description:
-        'Two field bases on the open outskirts, facing each other across a dense city core. Warehouses, offices, tenements and ruins give the infantry dozens of strongpoints; armour fights avenue by avenue.',
+        'Two field bases on the open outskirts, facing each other across a dense city core. Warehouses, offices, tenements, a fire station, clinic, market hall and ruins give the infantry dozens of strongpoints; armour fights avenue by avenue.',
       author: 'MCA scenario team',
       created: '2026-10-25',
       targetSize: 'large',
@@ -548,7 +554,7 @@ export function createFoundryDistrict(): Scenario {
       objectives: [
         'Destroy the opposing Command Post.',
         'Clear the city blocks and hold the central square.',
-        'Garrison the warehouses and offices to hold the streets.',
+        'Garrison the civic buildings, warehouses and offices to hold the streets.',
         'Keep your own Command Post operational.',
       ],
     },
