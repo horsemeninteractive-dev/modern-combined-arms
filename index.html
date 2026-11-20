@@ -56,19 +56,127 @@
       html.booting,
       html.booting body { margin: 0; height: 100%; overflow: hidden; }
       html.booting #app { position: fixed; inset: 0; visibility: hidden; }
+      /*
+       * Boot plate. It cannot use the game's stylesheet (that is what it is
+       * waiting for), so the deck's language is rebuilt here in literals: the
+       * amber command glow, a perspective floor, scanlines and a status sweep.
+       */
       .boot-plate {
         position: fixed; inset: 0; z-index: 100;
-        display: grid; place-items: center; background: #04070a;
+        display: grid; place-items: center; overflow: hidden;
+        background:
+          radial-gradient(ellipse at 50% 34%, rgba(224, 163, 74, 0.1), transparent 58%),
+          radial-gradient(ellipse at 50% 118%, rgba(239, 108, 77, 0.07), transparent 62%),
+          #04070a;
       }
-      .boot-plate img { width: clamp(54px, 8vw, 84px); height: auto; animation: boot-pulse 1.7s ease-in-out infinite; }
+      .boot-atmos {
+        position: absolute; inset: 0; pointer-events: none;
+        background:
+          repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0 1px, transparent 1px 3px),
+          radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(0, 0, 0, 0.72) 100%);
+        animation: boot-film 1.6s linear infinite;
+      }
+      .boot-grid {
+        position: absolute; left: -25%; right: -25%; top: 58%; bottom: -34%;
+        pointer-events: none;
+        background-image:
+          linear-gradient(rgba(160, 190, 180, 0.07) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(160, 190, 180, 0.05) 1px, transparent 1px);
+        background-size: 64px 64px;
+        transform: perspective(620px) rotateX(62deg);
+        transform-origin: 50% 0%;
+        mask-image: linear-gradient(to bottom, transparent, black 14%, black 58%, transparent);
+        animation: boot-grid-run 7s linear infinite;
+      }
+      /* A wide amber band crossing the plate, like a sensor sweep on a standby
+         monitor. Kept faint: it should read as motion, never as a message. */
+      .boot-scan {
+        position: absolute; left: 0; right: 0; top: -34%; height: 34%;
+        pointer-events: none; mix-blend-mode: screen;
+        background: linear-gradient(
+          180deg,
+          transparent,
+          rgba(224, 163, 74, 0.07) 62%,
+          rgba(255, 214, 158, 0.16) 92%,
+          transparent
+        );
+        animation: boot-scan-move 5.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+      }
+      .boot-card {
+        position: relative; z-index: 1;
+        display: grid; justify-items: center; text-align: center;
+      }
+      .boot-mark {
+        position: relative; display: grid; place-items: center;
+        width: clamp(96px, 15vw, 136px); aspect-ratio: 1; margin-bottom: 18px;
+      }
+      .boot-mark img {
+        position: relative; z-index: 1;
+        width: clamp(54px, 8vw, 84px); height: auto;
+        animation: boot-pulse 1.7s ease-in-out infinite;
+        filter: drop-shadow(0 0 26px rgba(224, 163, 74, 0.32));
+      }
+      .boot-mark::before,
+      .boot-mark::after { content: ''; position: absolute; border-radius: 50%; }
+      .boot-mark::before {
+        inset: 0; border: 1px solid rgba(224, 163, 74, 0.22);
+        box-shadow: inset 0 0 26px rgba(224, 163, 74, 0.08);
+        animation: boot-ring 2.8s ease-out infinite;
+      }
+      .boot-mark::after {
+        inset: 7px; border: 1px solid rgba(224, 163, 74, 0.1);
+        border-top-color: rgba(224, 163, 74, 0.7);
+        animation: boot-sweep 3.2s linear infinite;
+      }
+      .boot-bar {
+        position: relative; width: clamp(180px, 34vw, 300px); height: 2px;
+        margin: 22px 0 0; overflow: hidden;
+        background: rgba(167, 190, 184, 0.18);
+      }
+      .boot-bar i {
+        display: block; width: 36%; height: 100%; background: #e0a34a;
+        animation: boot-load 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+      }
+      /* The floor travels toward the viewer instead of sitting still, so the
+         plate reads as a live feed rather than a logo card. */
+      .boot-plate::after {
+        content: ''; position: absolute; left: 0; right: 0; top: 58%; height: 1px;
+        pointer-events: none;
+        background: linear-gradient(90deg, transparent, rgba(224, 163, 74, 0.55), transparent);
+        box-shadow: 0 0 34px 7px rgba(224, 163, 74, 0.12);
+        animation: boot-horizon 4.6s ease-in-out infinite;
+      }
       @keyframes boot-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.92; } }
-      html:not(.booting) .boot-plate { display: none; }
+      @keyframes boot-sweep { to { transform: rotate(360deg); } }
+      @keyframes boot-load { 0% { transform: translateX(-110%); } 100% { transform: translateX(300%); } }
+      @keyframes boot-film { to { background-position: 0 3px, 0 0; } }
+      @keyframes boot-grid-run { to { background-position: 0 64px, 0 64px; } }
+      @keyframes boot-ring {
+        0% { box-shadow: inset 0 0 26px rgba(224, 163, 74, 0.08), 0 0 0 0 rgba(224, 163, 74, 0.2); }
+        70%, 100% { box-shadow: inset 0 0 26px rgba(224, 163, 74, 0.08), 0 0 0 16px rgba(224, 163, 74, 0); }
+      }
+      @keyframes boot-horizon { 0%, 100% { opacity: 0.32; } 50% { opacity: 0.92; } }
+      @keyframes boot-scan-move {
+        0% { transform: translateY(0); opacity: 0; }
+        10% { opacity: 1; }
+        85% { opacity: 1; }
+        100% { transform: translateY(420%); opacity: 0; }
+      }
+      /*
+       * Hand-off. There is deliberately no CSS show/hide here: main.ts turns the
+       * loading reticle into the start button itself (a clone of it flies from
+       * the mark's box to the button's), then drops this plate. Hiding it from
+       * the stylesheet would cut the morph off at the knee.
+       */
     </style>
     <noscript>
       <style>
         .boot-plate img { display: none; }
+        .boot-card { display: none; }
         .boot-plate::after {
           content: 'Modern Combined Arms needs JavaScript enabled to run.';
+          position: static; width: auto; height: auto;
+          background: none; box-shadow: none; animation: none;
           max-width: 32ch; text-align: center; color: #8d9d98;
           font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace;
         }
@@ -77,7 +185,15 @@
   </head>
   <body>
     <div class="boot-plate" aria-hidden="true">
-      <img src="/insignia.svg" alt="" width="84" height="84" />
+      <div class="boot-atmos"></div>
+      <div class="boot-grid"></div>
+      <div class="boot-scan"></div>
+      <div class="boot-card">
+        <span class="boot-mark">
+          <img src="/insignia.svg" alt="" width="84" height="84" />
+        </span>
+        <div class="boot-bar"><i></i></div>
+      </div>
     </div>
     <div id="app">
       <div id="stage">
@@ -110,11 +226,18 @@
       <section id="intro-screen" class="intro-screen" aria-label="Studio logo">
         <div class="intro-grid" aria-hidden="true"></div>
         <div class="intro-gate" id="intro-gate">
-          <button id="btn-start" class="intro-start" type="button">
-            <span class="intro-start-kicker">MCA PROJECT</span>
-            <span class="intro-start-title">Click to begin</span>
-            <span class="intro-start-note">Sound on · enters fullscreen</span>
-          </button>
+          <div class="intro-gate-atmos" aria-hidden="true"></div>
+          <div class="intro-gate-floor" aria-hidden="true"></div>
+          <div class="intro-gate-scan" aria-hidden="true"></div>
+          <div class="intro-gate-plate">
+            <span class="intro-gate-mark" aria-hidden="true">
+              <img src="/insignia.svg" alt="" width="96" height="96" />
+            </span>
+            <button id="btn-start" class="intro-start" type="button">
+              <span class="intro-start-title">Click to begin</span>
+              <span class="intro-start-note">Sound on · fullscreen</span>
+            </button>
+          </div>
         </div>
         <div class="intro-frame">
           <span class="intro-bracket tl" aria-hidden="true"></span>
@@ -220,14 +343,25 @@
                 <span class="menu-nav-badge">SOON</span>
                 <span class="menu-nav-go" aria-hidden="true">›</span>
               </button>
-              <button type="button" class="menu-nav-item" data-menu-view="editor">
+              <!--
+                Outbreak is a mode of its own, not a skirmish variant: its entry
+                sits below Singleplayer and Multiplayer and opens its own deck.
+              -->
+              <div class="menu-nav-rule" aria-hidden="true"></div>
+              <button type="button" class="menu-nav-item outbreak-entry" data-menu-view="outbreak-solo">
                 <span class="menu-nav-index">03</span>
-                <span class="menu-nav-text"><b>Map Editor</b><small>Scenario Forge</small></span>
+                <span class="menu-nav-text"><b>Outbreak</b><small>Endless survival · solo or co-op</small></span>
+                <span class="menu-nav-badge">SURVIVAL</span>
                 <span class="menu-nav-go" aria-hidden="true">›</span>
               </button>
               <div class="menu-nav-rule" aria-hidden="true"></div>
-              <button type="button" class="menu-nav-item" data-menu-view="settings">
+              <button type="button" class="menu-nav-item" data-menu-view="editor">
                 <span class="menu-nav-index">04</span>
+                <span class="menu-nav-text"><b>Map Editor</b><small>Scenario Forge</small></span>
+                <span class="menu-nav-go" aria-hidden="true">›</span>
+              </button>
+              <button type="button" class="menu-nav-item" data-menu-view="settings">
+                <span class="menu-nav-index">05</span>
                 <span class="menu-nav-text"><b>Settings</b><small>Audio · visuals · interface</small></span>
                 <span class="menu-nav-go" aria-hidden="true">›</span>
               </button>
@@ -253,16 +387,44 @@
                 <span class="menu-nav-text"><b>Skirmish</b><small>Deploy against the AI</small></span>
                 <span class="menu-nav-go" aria-hidden="true">›</span>
               </button>
-              <button type="button" class="menu-nav-item" data-menu-view="outbreak">
-                <span class="menu-nav-index">03B</span>
-                <span class="menu-nav-text"><b>Outbreak</b><small>Endless survival · solo or co-op</small></span>
-                <span class="menu-nav-go" aria-hidden="true">›</span>
-              </button>
               <button id="btn-load" type="button" class="menu-nav-item">
                 <span class="menu-nav-index">04</span>
                 <span class="menu-nav-text"><b>Load Battle</b><small>Saved deployments</small></span>
                 <span class="menu-nav-go" aria-hidden="true">›</span>
               </button>
+            </div>
+
+            <!--
+              Outbreak's own level. The stage beside it carries the deployment
+              form, so this rail only names the route and offers the way out.
+            -->
+            <div class="menu-nav-level menu-nav-options outbreak-rail" data-menu-level="outbreak" hidden>
+              <button type="button" class="menu-crumb" data-menu-back="top">
+                <span aria-hidden="true">‹</span> Main menu
+              </button>
+              <div class="skirmish-rail-head">
+                <p class="menu-nav-head" aria-hidden="true">OUTBREAK</p>
+                <span class="rail-tag">SURVIVAL</span>
+              </div>
+              <!--
+                Two routes, not one screen with a toggle: solo holds the basin
+                alone, while co-op is the room deck with its own host and join
+                forms. Each keeps its own stage panel beside this rail.
+              -->
+              <button type="button" class="menu-nav-item" data-menu-view="outbreak-solo">
+                <span class="menu-nav-index">01</span>
+                <span class="menu-nav-text"><b>Singleplayer</b><small>Solo · one commander, one defence</small></span>
+                <span class="menu-nav-go" aria-hidden="true">›</span>
+              </button>
+              <button type="button" class="menu-nav-item" data-menu-view="outbreak-coop">
+                <span class="menu-nav-index">02</span>
+                <span class="menu-nav-text"><b>Multiplayer</b><small>Co-op · two commanders share the post</small></span>
+                <span class="menu-nav-go" aria-hidden="true">›</span>
+              </button>
+              <p class="outbreak-rail-note">
+                The horde comes in from four roads and never stops. Hold the Relay
+                Basin alone, or open a room and share the defence with a second seat.
+              </p>
             </div>
 
             <!--
@@ -467,9 +629,9 @@
               </div>
             </section>
 
-            <section class="menu-view outbreak-view" data-menu-panel="outbreak" aria-label="Outbreak">
+            <section class="menu-view outbreak-view" data-menu-panel="outbreak-solo" aria-label="Outbreak singleplayer">
               <div class="menu-view-head">
-                <p class="eyebrow">OUTBREAK · ENDLESS SURVIVAL</p>
+                <p class="eyebrow">OUTBREAK · SINGLEPLAYER</p>
                 <h2>Relay Basin</h2>
                 <p class="lede">
                   One Command Post at the centre of the basin, four roads in, and a horde that
@@ -496,12 +658,9 @@
                 <div class="menu-column">
                   <div class="side-card">
                     <div class="side-card-head"><span>DEPLOYMENT</span><span class="side-card-mark blue" aria-hidden="true"></span></div>
-                    <div class="difficulty-options" id="outbreak-mode" role="group" aria-label="Outbreak players">
-                      <button type="button" class="difficulty-btn" data-outbreak-mode="solo" aria-pressed="true">SOLO</button>
-                      <button type="button" class="difficulty-btn" data-outbreak-mode="coop" aria-pressed="false">CO-OP · 2 PLAYERS</button>
-                    </div>
                     <p class="outbreak-brief" id="outbreak-brief">
-                      You command the whole defence. Wave one opens after the deployment timer.
+                      You command the whole defence, with no AI teammate. Wave one opens
+                      after the deployment timer.
                     </p>
                     <div class="menu-actions">
                       <button id="btn-outbreak-deploy" class="btn btn-primary btn-large">
@@ -652,7 +811,7 @@
 
         <footer class="menu-footer">
           <span>© 2026 MCA PROJECT · HORSEMEN INTERACTIVE</span>
-          <span class="menu-footer-mid" id="menu-build">v0.10.0 BETA · BUILD 0 · IRONTIDE ENGINE</span>
+          <span class="menu-footer-mid" id="menu-build">v0.10.1 BETA · BUILD 0 · IRONTIDE ENGINE</span>
           <div class="menu-footer-links">
             <button id="btn-changelog" class="menu-footer-link" type="button">Changelog</button>
             <button id="btn-briefing" class="menu-footer-link" type="button">Briefing &amp; Controls</button>

@@ -6,6 +6,9 @@ import {
   MAIN_THEME_SRC,
   MUSIC_TRACKS,
   MUSIC_TRACK_IDS,
+  OUTBREAK_MENU_THEME_SRC,
+  OUTBREAK_MUSIC_TRACK_ID,
+  PLAYLIST_MUSIC_TRACKS,
 } from '../src/ui/musicCatalogue';
 import {
   defaultMusicPlaylist,
@@ -86,8 +89,11 @@ afterEach(() => {
 
 describe('music catalogue', () => {
   it('has unique stable ids and the authored five-track default', () => {
-    expect(MUSIC_TRACKS).toHaveLength(5);
+    expect(PLAYLIST_MUSIC_TRACKS).toHaveLength(5);
+    expect(MUSIC_TRACKS).toHaveLength(6);
     expect(new Set(MUSIC_TRACK_IDS).size).toBe(MUSIC_TRACK_IDS.length);
+    // Outbreak's score is in the catalogue for playback, never in a playlist.
+    expect(MUSIC_TRACK_IDS).not.toContain(OUTBREAK_MUSIC_TRACK_ID);
     expect(DEFAULT_MUSIC_TRACK_IDS).toEqual(MUSIC_TRACK_IDS);
     expect(defaultMusicPlaylist().enabled).toEqual([...MUSIC_TRACK_IDS]);
     expect(defaultMusicPlaylist().order).toEqual([...MUSIC_TRACK_IDS]);
@@ -102,7 +108,11 @@ describe('music catalogue', () => {
   });
 
   it('ships a real asset for every selectable track and for the menu theme', () => {
-    for (const path of [...MUSIC_TRACK_IDS.map((id) => MUSIC_TRACKS.find((t) => t.id === id)!.src), MAIN_THEME_SRC]) {
+    for (const path of [
+      ...MUSIC_TRACK_IDS.map((id) => MUSIC_TRACKS.find((t) => t.id === id)!.src),
+      MUSIC_TRACKS.find((t) => t.id === OUTBREAK_MUSIC_TRACK_ID)!.src,
+      MAIN_THEME_SRC,
+    ]) {
       expect(existsSync(new URL(`../public${path}`, import.meta.url)), path).toBe(true);
     }
   });
@@ -552,5 +562,81 @@ describe('match soundtrack playback', () => {
     expect(audio.currentMatchTrack).toBeNull();
     audio.stopMatchMusic();
     expect(element.playCalls).toBe(1);
+  });
+});
+
+describe('deck themes', () => {
+  it('moves the menu soundtrack to the Outbreak cue and back again', async () => {
+    vi.useFakeTimers();
+    stubAudio();
+    const audio = startedEngine();
+    audio.setMusicVolume(0.5);
+    audio.playMenuMusic();
+    await Promise.resolve();
+    vi.advanceTimersByTime(1600);
+    const menu = FakeMedia.created.find((el) => el.src === MAIN_THEME_SRC)!;
+    expect(menu.paused).toBe(false);
+
+    audio.setMenuTheme(OUTBREAK_MENU_THEME_SRC);
+    await Promise.resolve();
+    expect(menu.src).toBe(OUTBREAK_MENU_THEME_SRC);
+    expect(menu.paused).toBe(false);
+
+    audio.setMenuTheme(MAIN_THEME_SRC);
+    await Promise.resolve();
+    expect(menu.src).toBe(MAIN_THEME_SRC);
+    // One element, one deck theme: nothing was layered on top.
+    expect(FakeMedia.created.filter((el) => el.src === OUTBREAK_MENU_THEME_SRC)).toHaveLength(
+      0,
+    );
+    audio.stopMenuMusic();
+    vi.advanceTimersByTime(1000);
+  });
+
+  it('remembers a route chosen before the first gesture creates the element', () => {
+    stubAudio();
+    const audio = new AudioEngine();
+    audio.setMenuTheme(OUTBREAK_MENU_THEME_SRC);
+    audio.playMenuMusic();
+    expect(FakeMedia.created.some((el) => el.src === OUTBREAK_MENU_THEME_SRC)).toBe(true);
+    audio.stopMenuMusic();
+  });
+});
+
+describe('outbreak score', () => {
+  const outbreakSrc = MUSIC_TRACKS.find((track) => track.id === OUTBREAK_MUSIC_TRACK_ID)!.src;
+
+  it('plays the one mode track on repeat and lets nothing take it over', () => {
+    const output = new FakeOutput();
+    const music = new MatchMusic(output, { preferences: sequential() });
+    music.startFixedTrack(OUTBREAK_MUSIC_TRACK_ID);
+    expect(output.plays).toEqual([outbreakSrc]);
+    expect(music.snapshot.trackId).toBe(OUTBREAK_MUSIC_TRACK_ID);
+
+    output.end();
+    expect(output.plays).toEqual([outbreakSrc, outbreakSrc]);
+
+    // The playlist, its next/previous controls and previews are inert while a
+    // mode's own score is running.
+    music.next();
+    music.previous();
+    music.preview(MUSIC_TRACK_IDS[0]);
+    expect(output.plays).toEqual([outbreakSrc, outbreakSrc]);
+
+    music.setPreferences({ ...sequential([MUSIC_TRACK_IDS[0]]), shuffle: false });
+    expect(output.plays).toEqual([outbreakSrc, outbreakSrc]);
+    expect(music.snapshot.trackId).toBe(OUTBREAK_MUSIC_TRACK_ID);
+    music.stop();
+  });
+
+  it('leaves the battle silent instead of falling back to the playlist', () => {
+    const output = new FakeOutput();
+    const music = new MatchMusic(output, { preferences: sequential() });
+    music.startFixedTrack(OUTBREAK_MUSIC_TRACK_ID);
+    output.fail();
+    expect(output.plays).toEqual([outbreakSrc]);
+    expect(output.active).toBeNull();
+    expect(music.snapshot.trackId).toBeNull();
+    music.stop();
   });
 });

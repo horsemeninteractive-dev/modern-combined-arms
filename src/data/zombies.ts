@@ -272,7 +272,10 @@ function flyer(
     radius,
     vision,
     hp,
-    armour: 'light',
+    // Damage is multiplied by armour class, and every anti-air weapon keys its
+    // reach on `air` (a dedicated SAM carries 1.65 there and 0 against light).
+    // A flyer left on light armour is a valid target that takes nothing.
+    armour: 'air',
     flier: true,
     cost: { mats: 0, req: 0 },
     buildTime: 1,

@@ -4,7 +4,9 @@ import { TICK_RATE, TILE_SIZE } from '../src/sim/constants';
 import { createOutbreakScenario } from '../src/outbreak/scenario';
 import { ZOMBIE_DEF_IDS, ZOMBIE_UNITS } from '../src/data/zombies';
 import { ALL_UNITS } from '../src/data/units';
+import { WEAPONS } from '../src/data/weapons';
 import { BUILDINGS } from '../src/data/buildings';
+import { canWeaponTarget, computeDamage, entityArmour } from '../src/sim/combat';
 import { Rng } from '../src/core/rng';
 import {
   PICKUP_DROP_CHANCE,
@@ -43,6 +45,28 @@ describe('the flying mutant', () => {
     expect(def.targetClass).toBe('air');
     // Nothing builds it: the director is the only source of a body.
     expect(def.producedBy).toEqual([]);
+  });
+
+  it('is met by anti-air fire as an aircraft, never as light armour', () => {
+    const game = outbreakGame();
+    const flyer = game.spawnInfected(ZOMBIE_DEF_IDS.flyer, 40 * TILE_SIZE, 40 * TILE_SIZE, 1)!;
+    // Damage is keyed on armour class: a dedicated SAM carries its whole
+    // multiplier on `air` and nothing at all on `light`.
+    expect(entityArmour(flyer)).toBe('air');
+    expect(canWeaponTarget(WEAPONS.samVehicle, flyer)).toBe(true);
+    expect(canWeaponTarget(WEAPONS.autocannon, flyer)).toBe(true);
+    // Small arms cannot pick it out of the sky, which is what anti-air is for.
+    expect(canWeaponTarget(WEAPONS.rifle, flyer)).toBe(false);
+    expect(
+      computeDamage(WEAPONS.samVehicle.damage, WEAPONS.samVehicle.multipliers, entityArmour(flyer)),
+    ).toBeGreaterThan(0);
+    expect(
+      computeDamage(
+        WEAPONS.autocannon.damage,
+        WEAPONS.autocannon.multipliers,
+        entityArmour(flyer),
+      ),
+    ).toBeGreaterThan(0);
   });
 
   it('spawns aloft instead of being walked onto a free tile', () => {

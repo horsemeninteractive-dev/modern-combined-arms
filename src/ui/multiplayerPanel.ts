@@ -27,6 +27,7 @@ import { drawBriefMap } from './mapPreview';
 import { PHASE_LABELS, formatHour, phaseForStartHour } from '../sim/dayNight';
 import { WEATHER, WEATHER_KINDS, weatherFor } from '../sim/weather';
 import { escapeHtml } from './modal';
+import { OUTBREAK_DIFFICULTIES, OUTBREAK_DIFFICULTY_ORDER } from '../outbreak/config';
 import type { Scenario } from '../sim/scenario';
 
 export interface MultiplayerPanelOptions {
@@ -229,6 +230,8 @@ export class MultiplayerPanel {
   private readonly options: MultiplayerPanelOptions;
   private picker: NationPicker | null = null;
   private durationIndex = 1;
+  /** The survival difficulty this deck would host, chosen on the co-op screen. */
+  private difficultyId: string;
   private mounted = false;
   private matchHandedOff = false;
   private view: LobbyView;
@@ -241,6 +244,7 @@ export class MultiplayerPanel {
   constructor(host: HTMLElement, options: MultiplayerPanelOptions) {
     this.host = host;
     this.options = options;
+    this.difficultyId = options.difficulty ?? 'normal';
     this.clientInstance = options.origin
       ? new LobbyClient({
           origin: options.origin,
@@ -324,6 +328,9 @@ export class MultiplayerPanel {
     if (this.options.mode === mode && this.options.difficulty === nextDifficulty) return;
     this.options.mode = mode;
     this.options.difficulty = nextDifficulty;
+    if (nextDifficulty && nextDifficulty in OUTBREAK_DIFFICULTIES) {
+      this.difficultyId = nextDifficulty;
+    }
     if (this.mounted) this.render(this.view);
   }
 
@@ -357,6 +364,17 @@ export class MultiplayerPanel {
                 ).join('')}
               </select>
             </label>
+            ${coop
+              ? `<label class="mp-field">
+              <span>Difficulty</span>
+              <select id="mp-difficulty" ${busy ? 'disabled' : ''}>
+                ${OUTBREAK_DIFFICULTY_ORDER.map(
+                  (id) =>
+                    `<option value="${id}" ${id === this.difficultyId ? 'selected' : ''}>${escapeHtml(OUTBREAK_DIFFICULTIES[id].name)}</option>`,
+                ).join('')}
+              </select>
+            </label>`
+              : ''}
             <p class="mp-hint">
               The room reserves capacity — the match plus time to fill the lobby — before the
               first player joins.
@@ -400,13 +418,17 @@ export class MultiplayerPanel {
         DURATIONS.findIndex((entry) => String(entry.ms) === duration.value),
       );
     });
+    const difficulty = this.host.querySelector<HTMLSelectElement>('#mp-difficulty');
+    difficulty?.addEventListener('change', () => {
+      if (difficulty.value in OUTBREAK_DIFFICULTIES) this.difficultyId = difficulty.value;
+    });
     this.host.querySelector('#mp-host')?.addEventListener('click', () => {
       const chosen = DURATIONS[this.durationIndex] ?? DURATIONS[1];
       void client.createRoom(
         chosen.ms,
         undefined,
         this.options.mode ?? '1v1',
-        this.options.difficulty ?? 'normal',
+        this.difficultyId,
       );
     });
     const join = () => {

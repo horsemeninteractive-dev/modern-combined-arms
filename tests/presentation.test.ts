@@ -368,7 +368,11 @@ describe('start gate and fullscreen', () => {
 describe('menu music', () => {
   it('plays the authored theme on the deck, stops it elsewhere and ships it offline', () => {
     const audioTs = readFileSync(new URL('../src/ui/audio.ts', import.meta.url), 'utf8');
-    expect(audioTs).toContain('new Audio(MAIN_THEME_SRC)');
+    // One looping deck element; its source is the route's theme, defaulting to
+    // the authored menu theme.
+    expect(audioTs).toContain('new Audio(this.menuThemeSrc)');
+    expect(audioTs).toContain('private menuThemeSrc = MAIN_THEME_SRC');
+    expect(audioTs).toContain('setMenuTheme(src: string)');
     expect(audioTs).toContain('el.loop = true');
 
     const app = readFileSync(new URL('../src/app.ts', import.meta.url), 'utf8');

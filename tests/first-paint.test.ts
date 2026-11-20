@@ -20,7 +20,13 @@ describe('first paint', () => {
   it('keeps the unstyled intro and menu behind the plate', () => {
     expect(html).toContain('class="boot-plate"');
     expect(html).toMatch(/<div id="app">[\s\S]*id="intro-screen"[\s\S]*id="menu-screen"/);
-    expect(html).toMatch(/html:not\(\.booting\)\s*\.boot-plate\s*\{\s*display:\s*none/);
+    // The hand-off is a morph, not a stylesheet show/hide: main.ts flies a
+    // clone of the start button out of the loading reticle, so hiding the plate
+    // from CSS would cut the transition off.
+    expect(html).not.toMatch(/html:not\(\.booting\)\s*\.boot-plate\s*\{[^}]*display:\s*none/);
+    expect(main).toContain("classList.add('morphing')");
+    expect(main).toContain('intro-start-ghost');
+    expect(main).toContain("classList.add('arriving')");
   });
 
   it('arrives at the menu with nothing selected', () => {

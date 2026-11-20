@@ -261,36 +261,191 @@ html.custom-cursors select { cursor: default !important; }
 .intro-gate {
   position: absolute; inset: 0; z-index: 6;
   display: grid; place-items: center;
+  /* The same plate the boot screen used: near-black with two soft command
+     glows, never a brown wash. The standing furniture (floor, horizon, scan
+     band) is built per element below so both screens share one look. */
   background:
-    radial-gradient(ellipse at 50% 46%, rgba(9, 15, 17, 0.82), rgba(0, 0, 0, 0.96) 62%),
-    #000;
+    radial-gradient(ellipse at 50% 34%, rgba(224, 163, 74, 0.1), transparent 58%),
+    radial-gradient(ellipse at 50% 118%, rgba(239, 108, 77, 0.07), transparent 62%),
+    #04070a;
   transition: opacity 420ms ease;
+}
+/* The gate is the deck in standby: one amber command glow, a scanline film and
+   the perspective floor showing through from behind it. */
+.intro-gate-atmos {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.028) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at 50% 40%, rgba(224, 163, 74, 0.1), transparent 54%),
+    radial-gradient(ellipse at 50% 50%, transparent 36%, rgba(0, 0, 0, 0.74) 100%);
+  animation: intro-gate-film 1.9s linear infinite;
+}
+/* A radar sweep turning behind the crest: the deck is awake and listening, not
+   a still frame waiting for a click. */
+.intro-gate-atmos::before {
+  content: ''; position: absolute; inset: -15%;
+  background: conic-gradient(from 0deg, transparent 0deg, rgba(224, 163, 74, 0.11) 22deg, transparent 58deg);
+  /* Held to a ring around the crest. Stretched wider, the straight edges of
+     the cone read as diagonal slices across the whole screen. */
+  -webkit-mask-image: radial-gradient(circle at 50% 42%, transparent 62px, #000 108px, transparent 236px);
+  mask-image: radial-gradient(circle at 50% 42%, transparent 62px, #000 108px, transparent 236px);
+  animation: intro-gate-radar 16s linear infinite;
+  opacity: 0.55;
+}
+/* The boots plate's floor, rebuilt inside the gate: same 64px grid, same
+   perspective and mask, so the two screens are visibly the same set. */
+.intro-gate-floor {
+  position: absolute; left: -25%; right: -25%; top: 58%; bottom: -34%;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(160, 190, 180, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(160, 190, 180, 0.05) 1px, transparent 1px);
+  background-size: 64px 64px;
+  transform: perspective(620px) rotateX(62deg);
+  transform-origin: 50% 0%;
+  mask-image: linear-gradient(to bottom, transparent, black 14%, black 58%, transparent);
+  animation: intro-gate-floor-run 7s linear infinite;
+}
+.intro-gate::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 58%; height: 1px;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgba(224, 163, 74, 0.5), transparent);
+  box-shadow: 0 0 34px 7px rgba(224, 163, 74, 0.1);
+  animation: intro-gate-horizon 4.6s ease-in-out infinite;
+}
+.intro-gate-scan {
+  position: absolute; left: 0; right: 0; top: -34%; height: 34%;
+  pointer-events: none; mix-blend-mode: screen;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    rgba(224, 163, 74, 0.06) 62%,
+    rgba(255, 214, 158, 0.14) 92%,
+    transparent
+  );
+  animation: intro-gate-scan-move 5.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+.intro-gate-plate {
+  position: relative; z-index: 1;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 0 20px; text-align: center;
+}
+/* A reticle around the crest, not a bare image: it reads as a sight being
+   brought onto the command deck while the gate waits for a gesture. */
+.intro-gate-mark {
+  position: relative; display: grid; place-items: center;
+  width: clamp(108px, 17vmin, 148px); aspect-ratio: 1; margin-bottom: 26px;
+}
+.intro-gate-mark img {
+  width: 54%; height: auto;
+  filter: drop-shadow(0 0 28px rgba(224, 163, 74, 0.35));
+}
+.intro-gate-mark::before,
+.intro-gate-mark::after { content: ''; position: absolute; border-radius: 50%; }
+.intro-gate-mark::before {
+  inset: 0; border: 1px solid rgba(224, 163, 74, 0.26);
+  box-shadow: inset 0 0 30px rgba(224, 163, 74, 0.08);
+  animation: intro-gate-ring 3.2s ease-out infinite;
+}
+.intro-gate-mark img { animation: intro-gate-crest 5.4s ease-in-out infinite; }
+.intro-gate-mark::after {
+  inset: 8px; border: 1px solid rgba(224, 163, 74, 0.1);
+  border-top-color: rgba(224, 163, 74, 0.8);
+  animation: intro-reticle 6s linear infinite;
+}
+@keyframes intro-reticle { to { transform: rotate(360deg); } }
+@keyframes intro-gate-film { to { background-position: 0 3px, 0 0, 0 0; } }
+@keyframes intro-gate-floor-run { to { background-position: 0 64px, 0 64px; } }
+@keyframes intro-gate-horizon { 0%, 100% { opacity: 0.32; } 50% { opacity: 0.92; } }
+@keyframes intro-gate-scan-move {
+  0% { transform: translateY(0); opacity: 0; }
+  10% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { transform: translateY(420%); opacity: 0; }
+}
+@keyframes intro-gate-radar { to { transform: rotate(360deg); } }
+@keyframes intro-gate-ring {
+  0% { box-shadow: inset 0 0 30px rgba(224, 163, 74, 0.08), 0 0 0 0 rgba(224, 163, 74, 0.2); }
+  70%, 100% { box-shadow: inset 0 0 30px rgba(224, 163, 74, 0.08), 0 0 0 16px rgba(224, 163, 74, 0); }
+}
+@keyframes intro-gate-crest {
+  0%, 100% { filter: drop-shadow(0 0 22px rgba(224, 163, 74, 0.28)); }
+  50% { filter: drop-shadow(0 0 40px rgba(224, 163, 74, 0.52)); }
 }
 .intro-screen.started .intro-gate { opacity: 0; pointer-events: none; }
 .intro-start {
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
-  min-width: min(330px, 76vw); padding: 24px 36px 21px;
+  position: relative; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; gap: 9px;
+  min-width: min(340px, 78vw); padding: 20px 40px 18px;
   border: 1px solid rgba(224, 163, 74, 0.42);
-  background: rgba(8, 13, 15, 0.78);
+  background:
+    linear-gradient(180deg, rgba(224, 163, 74, 0.07), rgba(8, 13, 15, 0.86) 44%),
+    rgba(8, 13, 15, 0.8);
   color: var(--ink); text-transform: uppercase;
-  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
-  animation: intro-gate-in 900ms ease-out both;
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
+.intro-start::before {
+  content: ''; position: absolute; inset: 0 auto 0 0; width: 2px;
+  background: var(--amber); opacity: 0.55;
+  animation: intro-start-bar 3.2s ease-in-out infinite;
+}
+@keyframes intro-start-bar { 0%, 100% { opacity: 0.3; } 50% { opacity: 0.9; } }
+.intro-start::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(100deg, transparent 34%, rgba(224, 163, 74, 0.16) 50%, transparent 66%);
+  transform: translateX(-130%);
+}
+.intro-start:hover::after,
+.intro-start:focus-visible::after { animation: intro-gate-sweep 720ms ease; }
 .intro-start:hover,
 .intro-start:focus-visible {
-  border-color: var(--amber); background: rgba(224, 163, 74, 0.08);
+  border-color: var(--amber);
+  background:
+    linear-gradient(180deg, rgba(224, 163, 74, 0.12), rgba(8, 13, 15, 0.9) 46%),
+    rgba(8, 13, 15, 0.8);
   transform: translateY(-1px); outline: none;
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(224, 163, 74, 0.25), 0 0 34px rgba(224, 163, 74, 0.12);
 }
-.intro-start-kicker { font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.32em; color: var(--ink-faint); }
+@keyframes intro-gate-sweep { from { transform: translateX(-130%); } to { transform: translateX(130%); } }
 .intro-start-title {
   font-family: var(--display); font-stretch: 88%;
   font-size: clamp(18px, 3vw, 26px); letter-spacing: 0.12em; color: var(--amber-soft);
+  text-shadow: 0 0 24px rgba(224, 163, 74, 0.28);
 }
 .intro-start-note { font-family: var(--mono); font-size: 8px; letter-spacing: 0.2em; color: var(--ink-dim); }
+@media (max-height: 560px) {
+  .intro-gate-mark { width: 88px; margin-bottom: 16px; }
+}
 .intro-screen:not(.started) .intro-skip { visibility: hidden; }
-@keyframes intro-gate-in {
-  from { opacity: 0; transform: translateY(8px); }
+/* The loading reticle becomes the start button: main.ts flies a clone of the
+   button out of the boot mark, so the circle is replaced by the call to action
+   rather than the two screens cutting. */
+.intro-start-ghost {
+  pointer-events: none; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.intro-screen.morphing #btn-start { visibility: hidden; }
+/* The gate rises in behind the collapsing boot plate instead of appearing on
+   top of it: main.ts flags `arriving` once the real stylesheet is live. */
+.intro-screen.arriving .intro-gate-plate {
+  animation: intro-gate-arrive 720ms cubic-bezier(0.2, 0.7, 0.2, 1) 120ms both;
+}
+@keyframes intro-gate-arrive {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
   to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .intro-gate-atmos,
+  .intro-gate-atmos::before,
+  .intro-gate-floor,
+  .intro-gate::after,
+  .intro-gate-scan,
+  .intro-gate-mark::before,
+  .intro-gate-mark::after,
+  .intro-gate-mark img,
+  .intro-start::before { animation: none; }
 }
 
 .intro-frame {
@@ -1203,6 +1358,36 @@ html.custom-cursors select { cursor: default !important; }
 .menu-nav-item.soon { filter: saturate(0.45) brightness(0.78); color: var(--ink-dim); }
 .menu-nav-item.soon .menu-nav-go { display: none; }
 .menu-nav-item.soon .menu-nav-badge { opacity: 0.85; }
+/*
+ * Outbreak is its own route, not a skirmish variant. Its entry carries a hazard
+ * index, and while it is armed (hovered, focused, open, or a co-op deck opened
+ * from it) the whole deck borrows the hostile palette: rails, accents, the
+ * button highlight and a hot wash over the stage.
+ */
+.menu-nav-item.outbreak-entry .menu-nav-index { color: var(--red); }
+.menu-nav-item.outbreak-entry .menu-nav-badge { border-color: rgba(239, 108, 77, 0.5); color: var(--red-soft); }
+#menu-screen[data-theme='outbreak'] { --amber: var(--red); --amber-soft: var(--red-soft); }
+#menu-screen[data-theme='outbreak'] .menu-nav {
+  border-right-color: rgba(239, 108, 77, 0.32);
+  background: linear-gradient(90deg, rgba(17, 8, 7, 0.9), rgba(5, 10, 12, 0.2));
+}
+#menu-screen[data-theme='outbreak'] .menu-nav-item.on {
+  background: linear-gradient(90deg, rgba(239, 108, 77, 0.18), rgba(239, 108, 77, 0.02));
+  border-color: rgba(239, 108, 77, 0.3);
+}
+#menu-screen[data-theme='outbreak'] .menu-nav-item.on::before {
+  box-shadow: 0 0 14px rgba(239, 108, 77, 0.75);
+}
+#menu-screen[data-theme='outbreak'] .menu-stage::after {
+  content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background:
+    radial-gradient(120% 80% at 72% 10%, rgba(226, 70, 44, 0.12), transparent 62%),
+    repeating-linear-gradient(180deg, rgba(255, 120, 90, 0.03) 0 1px, transparent 1px 3px);
+  mix-blend-mode: screen;
+}
+.outbreak-rail-note {
+  margin: 0; padding: 0 18px; font-size: 10.5px; line-height: 1.55; color: var(--ink-dim);
+}
 .menu-nav-item:hover::before { background: rgba(224, 163, 74, 0.5); }
 .menu-nav-item.on {
   color: var(--ink);
@@ -1283,7 +1468,8 @@ html.custom-cursors select { cursor: default !important; }
 .menu-screen[data-view='idle'] .menu-view[data-menu-panel='idle'],
 .menu-screen[data-view='multiplayer'] .menu-view[data-menu-panel='multiplayer'],
 .menu-screen[data-view='skirmish'] .menu-view[data-menu-panel='skirmish'],
-.menu-screen[data-view='outbreak'] .menu-view[data-menu-panel='outbreak'],
+.menu-screen[data-view='outbreak-solo'] .menu-view[data-menu-panel='outbreak-solo'],
+.menu-screen[data-view='outbreak-coop'] .menu-view[data-menu-panel='multiplayer'],
 .menu-screen[data-view='campaign'] .menu-view[data-menu-panel='campaign'],
 .menu-screen[data-view='editor'] .menu-view[data-menu-panel='editor'],
 .menu-screen[data-view='settings'] .menu-view[data-menu-panel='settings'],
@@ -3253,7 +3439,7 @@ html.custom-cursors select { cursor: default !important; }
   list-style: none; overflow-y: auto;
 }
 .music-track {
-  display: grid; grid-template-columns: 26px minmax(0, 1fr) 50px 64px;
+  display: grid; grid-template-columns: 26px minmax(0, 1fr) 50px auto;
   align-items: center; gap: 7px; padding: 6px 7px;
   border: 1px solid var(--line); background: rgba(255, 255, 255, 0.015);
   transition: border-color 140ms ease, background 140ms ease;
@@ -3310,6 +3496,27 @@ html.custom-cursors select { cursor: default !important; }
 .music-track.is-current .music-track-preview {
   border-color: rgba(224, 163, 74, 0.42); color: var(--amber-soft);
 }
+.music-track-actions { display: flex; gap: 4px; }
+.music-track-remove {
+  width: 27px; min-height: 27px; padding: 0;
+  border: 1px solid var(--line); background: rgba(255, 255, 255, 0.03);
+  color: var(--ink-faint); font-size: 9px; line-height: 1;
+}
+.music-track-remove:hover { border-color: var(--amber); color: var(--amber-soft); }
+.music-local { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.music-add-file {
+  position: relative; display: inline-flex; align-items: center; min-height: 30px; padding: 0 10px;
+  border: 1px dashed var(--line-strong); color: var(--ink-dim);
+  font-family: var(--mono); font-size: 8px; letter-spacing: 0.1em; text-transform: uppercase;
+  cursor: pointer; transition: border-color 120ms ease, color 120ms ease;
+}
+.music-add-file:hover, .music-add-file:focus-within {
+  border-color: var(--amber); color: var(--amber-soft);
+}
+.music-add-file input {
+  position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer;
+}
+.music-local small { font-size: 9px; color: var(--ink-faint); }
 .music-options { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .music-option { display: flex; align-items: center; gap: 7px; }
 .music-option-label {
@@ -3342,7 +3549,8 @@ html.custom-cursors select { cursor: default !important; }
 
 @media (max-width: 620px) {
   .music-track { grid-template-columns: 26px minmax(0, 1fr) auto; }
-  .music-track-preview { grid-column: 2 / 4; justify-self: stretch; min-height: 32px; }
+  .music-track-actions { grid-column: 2 / 4; }
+  .music-track-preview { flex: 1; min-height: 32px; }
   .music-track-order button { width: 30px; height: 32px; }
   .music-defaults { margin-left: 0; }
   .music-list { max-height: none; }
@@ -4527,7 +4735,8 @@ html.custom-cursors select { cursor: default !important; }
   .menu-screen.docked .menu-topbar .game-tagline,
   .menu-screen[data-view='idle'] .menu-view[data-menu-panel='idle'],
   .menu-screen[data-view='skirmish'] .menu-view[data-menu-panel='skirmish'],
-  .menu-screen[data-view='outbreak'] .menu-view[data-menu-panel='outbreak'],
+  .menu-screen[data-view='outbreak-solo'] .menu-view[data-menu-panel='outbreak-solo'],
+  .menu-screen[data-view='outbreak-coop'] .menu-view[data-menu-panel='multiplayer'],
   .menu-screen[data-view='campaign'] .menu-view[data-menu-panel='campaign'],
   .menu-screen[data-view='editor'] .menu-view[data-menu-panel='editor'],
   .menu-screen[data-view='settings'] .menu-view[data-menu-panel='settings'],

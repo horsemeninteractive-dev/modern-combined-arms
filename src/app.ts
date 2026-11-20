@@ -49,7 +49,7 @@ import {
 } from './outbreak/config';
 import { createOutbreakScenario } from './outbreak/scenario';
 import type { OutbreakDifficulty } from './sim/scenario';
-import type { OutbreakHudState, OutbreakMode, OutbreakResult } from './outbreak/types';
+import type { OutbreakHudState, OutbreakResult } from './outbreak/types';
 import {
   acceptCampaignResult,
   buildCampaignScenario,
@@ -127,6 +127,15 @@ import {
   type MusicRepeatMode,
 } from './ui/musicPlaylist';
 import { musicPanelMarkup, syncMusicPanel } from './ui/musicSettings';
+import { MAIN_THEME_SRC, OUTBREAK_MENU_THEME_SRC } from './ui/musicCatalogue';
+import {
+  addLocalMusicFiles,
+  deleteLocalMusicTrack,
+  forgetLocalMusicTrack,
+  isLocalMusicId,
+  localMusicTracks,
+  restoreLocalMusic,
+} from './ui/localMusic';
 import { unitVoiceForEvent } from './ui/unitVoice';
 import { eventVisibleToLocal } from './render/combatFx';
 import { announcementForEvent } from './ui/announcer';
@@ -252,7 +261,8 @@ export type MenuView =
   | 'multiplayer'
   | 'campaign'
   | 'skirmish'
-  | 'outbreak'
+  | 'outbreak-solo'
+  | 'outbreak-coop'
   | 'editor'
   | 'settings'
   | 'account';
@@ -435,7 +445,8 @@ const MENU_VIEWS: MenuView[] = [
   'multiplayer',
   'campaign',
   'skirmish',
-  'outbreak',
+  'outbreak-solo',
+  'outbreak-coop',
   'editor',
   'settings',
   'account',
@@ -480,6 +491,8 @@ export class App {
   screen: Screen = 'menu';
   /** null until the player picks a view: the menu opens with nothing selected. */
   menuView: MenuView | null = null;
+  /** The pointer or keyboard focus is over the Outbreak route in the deck. */
+  private outbreakMenuHover = false;
   game: Game | null = null;
   /** The flag flown by the battle on screen, captured when it started. */
   private matchFlag: FlagComposition | null = null;
@@ -584,9 +597,6 @@ export class App {
   private victoryShown: VictoryState | 'none' = 'none';
   /** Outbreak setup, remembered on this device like the skirmish choices. */
   private outbreakDifficulty: OutbreakDifficulty = 'normal';
-  private outbreakMode: OutbreakMode = 'solo';
-  /** Which room shape the multiplayer deck's host button opens. */
-  private multiplayerMode: '1v1' | 'outbreak' = '1v1';
   /**
    * The room's survival readout for a networked Outbreak run. A network client
    * ticks no simulation, so its own director never moves; every wave number and
@@ -683,6 +693,9 @@ export class App {
     // Keep an open settings sheet in step with automatic track changes and
     // previews without polling or rebuilding the panel.
     this.audio.onMatchMusicChange(() => this.syncMusicPlaybackUi());
+    // The player's own tracks are bytes on this device, not requests: they are
+    // read back in the background and join the saved playlist when ready.
+    void this.restoreLocalMusicLibrary();
     this.campaignSave = this.loadCampaignSave();
     this.restoreCampaignSelection();
     this.hud = new HUD(this);
@@ -987,6 +1000,23 @@ export class App {
         this.glitchSwitch();
       });
     });
+    // Outbreak arms its own deck cue and palette while the route is hovered or
+    // focused, so the mode reads as a different place before it is opened.
+    const outbreakEntry = document.querySelector<HTMLElement>('[data-menu-view="outbreak-solo"]');
+    if (outbreakEntry) {
+      const enter = (): void => {
+        this.outbreakMenuHover = true;
+        this.syncMenuTheme();
+      };
+      const leave = (): void => {
+        this.outbreakMenuHover = false;
+        this.syncMenuTheme();
+      };
+      outbreakEntry.addEventListener('pointerenter', enter);
+      outbreakEntry.addEventListener('pointerleave', leave);
+      outbreakEntry.addEventListener('focusin', enter);
+      outbreakEntry.addEventListener('focusout', leave);
+    }
     document.querySelectorAll<HTMLButtonElement>('[data-menu-back]').forEach((btn) => {
       btn.addEventListener('click', () => {
         this.audio.init();
@@ -1377,7 +1407,7 @@ export class App {
     if (!this.multiplayerPanel) {
       this.multiplayerPanel = new MultiplayerPanel(host, {
         origin: this.multiplayerOrigin(),
-        mode: this.multiplayerMode,
+        mode: '1v1',
         difficulty: this.outbreakDifficulty,
         onMatchStart: (client, view) => this.startNetworkBattle(client, view),
         // A signed-in player's seat is verified by the room Worker; a guest, or
@@ -1416,11 +1446,14 @@ export class App {
     // The deck is a stack of levels, not one long page: the top level chooses a
     // mode, Singleplayer opens its own list, and Skirmish and Campaign hand the
     // sidebar to their own options. Only one level is mounted at a time.
+    // Outbreak's two routes share one rail: solo and co-op are separate
+    // screens, but they are two places inside the mode, not two top sections.
+    const outbreakRoute = view === 'outbreak-solo' || view === 'outbreak-coop';
     const level =
       view === 'skirmish'
         ? 'skirmish'
-        : view === 'outbreak'
-          ? 'singleplayer'
+        : outbreakRoute
+          ? 'outbreak'
           : view === 'singleplayer'
             ? 'singleplayer'
             : view === 'campaign'
@@ -1443,9 +1476,12 @@ export class App {
     // The account screen reads the session and career on entry, the same way
     // Settings rebuilds its rows: the deck may be opened long after sign-in.
     if (view === 'account') this.accountPanel?.show();
-    if (view === 'multiplayer') {
+    if (view === 'multiplayer' || view === 'outbreak-coop') {
+      // Co-op is the room deck in its survival shape: the same host and join
+      // forms, drawn as Outbreak's own screen instead of a toggle sitting on
+      // the solo deployment panel.
       const panel = this.ensureMultiplayerPanel();
-      panel?.setMode(this.multiplayerMode, this.outbreakDifficulty);
+      panel?.setMode(view === 'outbreak-coop' ? 'outbreak' : '1v1', this.outbreakDifficulty);
       panel?.show();
     }
     else this.multiplayerPanel?.hide();
@@ -1461,6 +1497,26 @@ export class App {
       // skirmish map the player happened to select last.
       if (previousView !== 'campaign') this.setMenuBackdrop(this.campaignScenario());
     }
+    this.syncMenuTheme();
+  }
+
+  /**
+   * Point the deck's music and palette at the route it is showing.
+   *
+   * Outbreak keeps its own menu cue (and a red hazard wash) while its entry is
+   * armed or its deck is open, including a co-op room deck opened from it. The
+   * rest of the menu keeps the standard theme, so the change is a place, not a
+   * one-off sound.
+   */
+  private syncMenuTheme(): void {
+    const outbreak =
+      this.screen === 'menu' &&
+      (this.outbreakMenuHover ||
+        this.menuView === 'outbreak-solo' ||
+        this.menuView === 'outbreak-coop');
+    const menu = document.getElementById('menu-screen');
+    if (menu) menu.dataset.theme = outbreak ? 'outbreak' : 'standard';
+    this.audio.setMenuTheme(outbreak ? OUTBREAK_MENU_THEME_SRC : MAIN_THEME_SRC);
   }
 
   /* ------------------------------------------------------------------ */
@@ -1841,19 +1897,10 @@ export class App {
         });
       });
     }
-    document.querySelectorAll<HTMLButtonElement>('[data-outbreak-mode]').forEach((button) => {
-      button.addEventListener('click', () => {
-        const mode = button.dataset.outbreakMode;
-        if (mode !== 'solo' && mode !== 'coop') return;
-        this.audio.play('ui');
-        this.outbreakMode = mode;
-        this.applyOutbreakSetup();
-      });
-    });
     this.applyOutbreakSetup();
   }
 
-  /** Reflect the current Outbreak choices on the deck. */
+  /** Reflect the current Outbreak choices on the solo deployment screen. */
   private applyOutbreakSetup(): void {
     const config = outbreakDifficulty(this.outbreakDifficulty);
     document.querySelectorAll<HTMLButtonElement>('[data-outbreak-difficulty]').forEach((button) => {
@@ -1862,26 +1909,8 @@ export class App {
         String(button.dataset.outbreakDifficulty === this.outbreakDifficulty),
       );
     });
-    document.querySelectorAll<HTMLButtonElement>('[data-outbreak-mode]').forEach((button) => {
-      button.setAttribute('aria-pressed', String(button.dataset.outbreakMode === this.outbreakMode));
-    });
     const note = document.getElementById('outbreak-difficulty-note');
     if (note) note.textContent = config.blurb;
-    const brief = document.getElementById('outbreak-brief');
-    if (brief) {
-      brief.textContent =
-        this.outbreakMode === 'coop'
-          ? 'Co-op seats share the Command Post, the economy and the wave clock. Hosting or joining opens the room deck: one player opens the room and shares its codes, the other joins, and both command the same defence.'
-          : 'You command the whole defence, with no AI teammate. Wave one opens after the deployment timer.';
-    }
-    const deploy = document.getElementById('btn-outbreak-deploy') as HTMLButtonElement | null;
-    if (deploy) {
-      const coop = this.outbreakMode === 'coop';
-      deploy.disabled = false;
-      deploy.removeAttribute('aria-disabled');
-      const label = deploy.querySelector('span:last-child');
-      if (label) label.textContent = coop ? 'Open the room deck' : 'Hold the basin';
-    }
     const select = document.getElementById('outbreak-nation') as HTMLSelectElement | null;
     if (select && PLAYABLE_NATION_IDS.includes(this.settings.nationId)) {
       select.value = this.settings.nationId;
@@ -1889,32 +1918,19 @@ export class App {
   }
 
   /**
-   * Start an Outbreak run, or open a co-op room for one.
-   *
-   * Solo is a local authoritative match: the director, the horde and the defeat
-   * rule all run in this client's simulation. Co-op is not a second code path —
-   * it is the same scenario hosted by a room, so the seating (and therefore the
-   * authority) has to come from the lobby rather than from here.
+   * Start a solo Outbreak run: this client simulates the director, the horde
+   * and the defeat rule. Co-op is the room deck's own route (Outbreak →
+   * Multiplayer), where the seating and therefore the authority come from the
+   * lobby rather than from here.
    */
   private async startOutbreak(): Promise<void> {
-    if (this.outbreakMode === 'coop') {
-      // Co-op is the same scenario hosted by a room, so the seating has to come
-      // from the lobby rather than from here. The deck opens in Outbreak shape:
-      // hosting creates a co-op room pinned to the basin, joining takes a code.
-      this.multiplayerMode = 'outbreak';
-      this.audio.play('ui');
-      this.showMenuView('multiplayer');
-      this.notify('Outbreak co-op: host a room and share its codes, or join one.', 'info');
-      return;
-    }
-    this.multiplayerMode = '1v1';
     const scenario = createOutbreakScenario({
       difficulty: this.outbreakDifficulty,
       mode: 'solo',
       nationId: this.settings.nationId,
       seed: (Date.now() ^ 0x5f3a91) >>> 0,
     });
-        this.audio.play('ui');
+    this.audio.play('ui');
     this.hideOutbreakUi();
     await this.startBattle(scenario);
   }
@@ -3418,7 +3434,9 @@ export class App {
       // campaign reference, so the campaign layer cannot submit a result from it.
       this.missionTestScenario = options.missionTest ? cloneScenario(gameScenario) : null;
       this.setLoading(false);
-      this.audio.startMatchMusic();
+      // Outbreak is scored by its own track; every other battle gets the
+      // player's playlist.
+      this.audio.startMatchMusic(game.outbreak ? 'outbreak' : 'standard');
       if (launchCinematics.length > 0) {
         const started = this.playCinematicChain(launchCinematics);
         if (started) {
@@ -3661,7 +3679,8 @@ export class App {
       this.accumulator = 0;
       this.hud.mount(game);
       this.frameBattleCamera();
-      this.audio.startMatchMusic();
+      // A co-op room is an Outbreak match even before its first update lands.
+      this.audio.startMatchMusic(view.mode === 'outbreak' ? 'outbreak' : 'standard');
       this.audio.announce('battlefieldEstablished');
       this.notify(`Linked to the room as seat ${seat + 1}. The server is authoritative.`, 'info');
       // A silent room must not leave the player staring at a brief forever.
@@ -5901,8 +5920,11 @@ export class App {
       this.hud.mount(game);
       this.hud.seedLog(game);
       this.centerOnBase();
-      // A save may already be decided; only a live battle gets a soundtrack.
-      if (game.state.victory === 'playing') this.audio.startMatchMusic();
+      // A save may already be decided; only a live battle gets a soundtrack,
+      // and an Outbreak save keeps its own score.
+      if (game.state.victory === 'playing') {
+        this.audio.startMatchMusic(game.outbreak ? 'outbreak' : 'standard');
+      }
       this.audio.play('complete');
       this.notify(`Loaded ${record.name} from slot ${slot}.`, 'success');
     } catch (error) {
@@ -6717,7 +6739,94 @@ export class App {
         this.commitMusicPlaylist(restoreDefaultMusicPlaylist());
       });
     });
+    root.querySelectorAll<HTMLInputElement>('[data-music-add]').forEach((input) => {
+      input.addEventListener('change', () => {
+        void this.addLocalTracks(input);
+      });
+    });
+    root.querySelectorAll<HTMLButtonElement>('[data-music-remove]').forEach((button) => {
+      button.addEventListener('click', () => {
+        this.audio.play('ui');
+        this.removeLocalTrack(button.dataset.musicRemove ?? '');
+      });
+    });
     this.syncMusicPlaybackUi();
+  }
+
+  /**
+   * Read the player's own tracks back from this device and reconcile the saved
+   * playlist with them. A local id whose file is gone is dropped; a restored
+   * one keeps its place and plays again.
+   */
+  private async restoreLocalMusicLibrary(): Promise<void> {
+    await restoreLocalMusic();
+    const known = new Set(localMusicTracks().map((track) => track.id));
+    const playlist = normaliseMusicPlaylist(this.settings.musicPlaylist);
+    const keep = (id: string): boolean => !isLocalMusicId(id) || known.has(id);
+    const order = playlist.order.filter(keep);
+    const enabled = playlist.enabled.filter(keep);
+    if (order.length !== playlist.order.length || enabled.length !== playlist.enabled.length) {
+      this.commitMusicPlaylist({ ...playlist, order, enabled });
+      return;
+    }
+    this.audio.setMusicPlaylist(this.settings.musicPlaylist);
+    this.syncMusicPlaybackUi();
+  }
+
+  /**
+   * Append files the player picked to their battle playlist. The bytes never
+   * leave the device: the local library stores them and hands back catalogue
+   * entries, so nothing else has to know a track is not authored.
+   */
+  private async addLocalTracks(input: HTMLInputElement): Promise<void> {
+    const files = input.files ? [...input.files] : [];
+    // Clearing lets the same file be picked again after a mistake.
+    input.value = '';
+    if (files.length === 0) return;
+    this.audio.init();
+    const added = await addLocalMusicFiles(files);
+    if (added.length === 0) {
+      this.notify('No playable audio files were added.', 'warning');
+      return;
+    }
+    const playlist = normaliseMusicPlaylist(this.settings.musicPlaylist);
+    const ids = added.map((track) => track.id);
+    this.commitMusicPlaylist({
+      ...playlist,
+      order: [...playlist.order, ...ids.filter((id) => !playlist.order.includes(id))],
+      enabled: [...playlist.enabled, ...ids.filter((id) => !playlist.enabled.includes(id))],
+    });
+    this.refreshSettingsSheets();
+    this.notify(
+      `${added.length} local track${added.length === 1 ? '' : 's'} added to the battle playlist.`,
+      'success',
+    );
+  }
+
+  /** Remove one local file from the playlist and from this device. */
+  private removeLocalTrack(id: string): void {
+    if (!id) return;
+    const playlist = normaliseMusicPlaylist(this.settings.musicPlaylist);
+    // Unregister first so normalisation cannot append the id back, then commit
+    // (which hands playback to the next track), then delete the stored copy.
+    forgetLocalMusicTrack(id);
+    this.commitMusicPlaylist({
+      ...playlist,
+      order: playlist.order.filter((entry) => entry !== id),
+      enabled: playlist.enabled.filter((entry) => entry !== id),
+    });
+    void deleteLocalMusicTrack(id);
+    this.refreshSettingsSheets();
+  }
+
+  /** Rebuild every settings sheet after the playlist rows themselves changed. */
+  private refreshSettingsSheets(): void {
+    if (document.getElementById('menu-settings-grid')) this.renderMenuSettings();
+    document.querySelectorAll<HTMLElement>('.settings-grid').forEach((grid) => {
+      grid.innerHTML = this.settingsRowsMarkup();
+      this.bindSettingsControls(grid);
+    });
+    this.showSettingsTab(this.settingsTab);
   }
 
   private commitMusicPlaylist(next: MusicPlaylistPreferences): void {

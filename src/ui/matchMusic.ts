@@ -1,7 +1,4 @@
-import {
-  MUSIC_TRACKS_BY_ID,
-  musicTrack,
-} from './musicCatalogue';
+import { musicTrack } from './musicCatalogue';
 import {
   enabledMusicTrackIds,
   musicPlaylistKey,
@@ -16,6 +13,9 @@ import {
  * owns the player's playlist, the order of a pass, previews, and the choice of
  * what should be heard after a track ends. It is deliberately independent of
  * the menu theme and of the simulation.
+ *
+ * A mode that owns its score calls `startFixedTrack()` instead: one track, on
+ * repeat, deaf to the saved playlist and to next/previous/preview.
  */
 
 export interface MatchMusicSnapshot {
@@ -62,6 +62,8 @@ export class MatchMusic {
   private playing = false;
   private paused = false;
   private previewing = false;
+  /** Non-null while a mode's own score owns playback. */
+  private fixedId: string | null = null;
   private cycleHasPlayed = false;
   private lastPlayed: string | null = null;
   private generation = 0;
@@ -119,7 +121,24 @@ export class MatchMusic {
   /** Begin a match. Duplicate lifecycle notifications are deliberately inert. */
   start(): void {
     if (this.active) return;
+    this.begin(null);
+  }
+
+  /**
+   * Begin a match scored by one authored track, on repeat.
+   *
+   * Outbreak is a score, not a playlist: its track is the mode's own, so the
+   * saved playlist neither feeds it nor can skip away from it. Re-entering the
+   * same fixed score while it already runs is deliberately inert.
+   */
+  startFixedTrack(id: string): void {
+    if (this.active && this.fixedId === id) return;
+    this.begin(id);
+  }
+
+  private begin(fixedId: string | null): void {
     this.active = true;
+    this.fixedId = fixedId;
     this.failed.clear();
     this.queue = [];
     this.history = [];
@@ -130,7 +149,8 @@ export class MatchMusic {
     this.cycleHasPlayed = false;
     this.generation++;
     this.output.stop();
-    this.playNext({ auto: false, fade: false });
+    if (fixedId) this.playFixed();
+    else this.playNext({ auto: false, fade: false });
   }
 
   /** End the match and make every outstanding callback stale. */
@@ -141,6 +161,7 @@ export class MatchMusic {
     }
     this.active = false;
     this.generation++;
+    this.fixedId = null;
     this.queue = [];
     this.history = [];
     this.currentId = null;
@@ -164,6 +185,12 @@ export class MatchMusic {
 
     this.prefs = next;
     this.playlistKey = nextKey;
+    if (this.fixedId) {
+      // A mode's score ignores the playlist, but the saved preferences still
+      // update so the next standard battle hears the player's latest choices.
+      this.notify();
+      return;
+    }
     for (const id of next.enabled) {
       // A track re-enabled by the player gets another chance after a load error.
       if (!previouslyEnabled.has(id)) this.failed.delete(id);
@@ -204,6 +231,7 @@ export class MatchMusic {
 
   /** Audition any catalogue track without changing the saved playlist. */
   preview(id: string): void {
+    if (this.fixedId) return;
     const track = musicTrack(id);
     if (!track) return;
     this.failed.delete(id);
@@ -215,6 +243,7 @@ export class MatchMusic {
   }
 
   next(): void {
+    if (this.fixedId) return;
     const eligible = this.eligibleIds();
     if (eligible.length === 0) return;
 
@@ -238,6 +267,7 @@ export class MatchMusic {
   }
 
   previous(): void {
+    if (this.fixedId) return;
     const eligible = this.eligibleIds();
     if (eligible.length === 0) return;
 
@@ -263,6 +293,10 @@ export class MatchMusic {
 
   togglePause(): void {
     if (!this.currentId) {
+      if (this.fixedId) {
+        this.playFixed();
+        return;
+      }
       if (this.active) {
         this.playNext({ auto: false, fade: false });
       } else {
@@ -287,7 +321,8 @@ export class MatchMusic {
   private isEligible(id: string): boolean {
     return (
       this.prefs.enabled.includes(id) &&
-      MUSIC_TRACKS_BY_ID.has(id) &&
+      // Resolves authored and local ids alike; an unknown id is never eligible.
+      !!musicTrack(id) &&
       !this.failed.has(id)
     );
   }
@@ -298,6 +333,13 @@ export class MatchMusic {
 
   private trimHistory(): void {
     if (this.history.length > 50) this.history.shift();
+  }
+
+  /** Restart the mode's own score; it never consults the playlist. */
+  private playFixed(): void {
+    const id = this.fixedId;
+    if (!this.active || !id) return;
+    this.playId(id, { preview: false, fade: false, fromPlaylist: false });
   }
 
   private playNext(options: { auto: boolean; fade: boolean }): void {
@@ -363,8 +405,11 @@ export class MatchMusic {
       this.previewing = false;
       this.playing = false;
       this.paused = false;
-      if (this.active) this.playNext({ auto: true, fade: false });
-      else this.output.stop();
+      if (!this.active) this.output.stop();
+      // A mode's score has no fallback: a missing file leaves the battle silent
+      // rather than handing it to the standard playlist.
+      else if (this.fixedId) this.stopPlayback(false);
+      else this.playNext({ auto: true, fade: false });
       this.notify();
       return;
     }
@@ -387,10 +432,13 @@ export class MatchMusic {
         this.failed.add(id);
         if (this.currentId === id) this.currentId = null;
         this.previewing = false;
-        if (this.active) this.playNext({ auto: true, fade: false });
-        else {
+        if (!this.active) {
           this.output.stop();
           this.notify();
+        } else if (this.fixedId) {
+          this.stopPlayback(false);
+        } else {
+          this.playNext({ auto: true, fade: false });
         }
         return;
       }
@@ -408,6 +456,13 @@ export class MatchMusic {
         this.previewing = false;
         this.currentId = null;
         this.playNext({ auto: false, fade: false });
+        return;
+      }
+
+      // A mode's own score repeats itself and only itself.
+      if (this.fixedId === id) {
+        this.lastPlayed = id;
+        this.playFixed();
         return;
       }
 

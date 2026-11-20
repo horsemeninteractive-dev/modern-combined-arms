@@ -1,4 +1,4 @@
-import { MUSIC_TRACKS, musicTrack } from './musicCatalogue';
+import { musicTrack } from './musicCatalogue';
 import {
   MUSIC_REPEAT_LABELS,
   MUSIC_REPEAT_MODES,
@@ -62,8 +62,12 @@ function trackRows(preferences: MusicPlaylistPreferences, state: MatchMusicSnaps
             <button type="button" data-music-move="${escapeHtml(track.id)}" data-direction="1"
               aria-label="Move ${escapeHtml(track.title)} down" title="Move down"${last ? ' disabled' : ''}>↓</button>
           </div>
-          <button type="button" class="music-track-preview" data-music-preview="${escapeHtml(track.id)}"
-            aria-label="Preview ${escapeHtml(track.title)}" title="Preview without changing your playlist">Preview</button>
+          <div class="music-track-actions">
+            <button type="button" class="music-track-preview" data-music-preview="${escapeHtml(track.id)}"
+              aria-label="Preview ${escapeHtml(track.title)}" title="Preview without changing your playlist">Preview</button>
+            ${track.local ? `<button type="button" class="music-track-remove" data-music-remove="${escapeHtml(track.id)}"
+              aria-label="Remove ${escapeHtml(track.title)} from this device" title="Remove this local file">✕</button>` : ''}
+          </div>
         </li>`;
     })
     .join('');
@@ -75,6 +79,9 @@ export function musicPanelMarkup(
 ): string {
   const current = state.trackId ? musicTrack(state.trackId) : undefined;
   const enabledCount = preferences.enabled.length;
+  // Local files join the same list, so the counter follows the rows on screen
+  // rather than the authored catalogue.
+  const trackTotal = preferences.order.filter((id) => musicTrack(id)).length;
   const canPlay = enabledCount > 0 || !!state.trackId;
   const repeatOptions = MUSIC_REPEAT_MODES.map(
     (mode) =>
@@ -108,11 +115,20 @@ export function musicPanelMarkup(
 
       <div class="music-list-head">
         <span>Playlist</span>
-        <span data-music-summary>${enabledCount} of ${MUSIC_TRACKS.length} enabled</span>
+        <span data-music-summary>${enabledCount} of ${trackTotal} enabled</span>
       </div>
       <ul class="music-list" data-music-list role="list">
         ${trackRows(preferences, state)}
       </ul>
+
+      <section class="music-local" aria-label="Local tracks">
+        <label class="music-add-file" title="Choose audio files stored on this device">
+          <input type="file" accept="audio/*,.mp3,.ogg,.oga,.opus,.wav,.m4a,.aac,.flac,.webm"
+            multiple data-music-add aria-label="Add local audio files to the battle playlist">
+          <span>Add local tracks</span>
+        </label>
+        <small>Your own files stay on this device and join the battle playlist.</small>
+      </section>
 
       <section class="music-options" aria-label="Playback options">
         <div class="music-option">
@@ -129,7 +145,7 @@ export function musicPanelMarkup(
           <select data-music-repeat aria-label="Repeat mode">${repeatOptions}</select>
         </label>
         <button type="button" class="music-defaults" data-music-defaults
-          title="Restore the authored five-track playlist and order">Restore defaults</button>
+          title="Restore the authored playlist and order">Restore defaults</button>
       </section>
       <p class="music-note" data-music-note>${
         enabledCount === 0
@@ -214,7 +230,8 @@ export function syncMusicPanel(
 
   const summary = root.querySelector<HTMLElement>('[data-music-summary]');
   if (summary) {
-    summary.textContent = `${preferences.enabled.length} of ${MUSIC_TRACKS.length} enabled`;
+    const total = preferences.order.filter((id) => musicTrack(id)).length;
+    summary.textContent = `${preferences.enabled.length} of ${total} enabled`;
   }
   const note = root.querySelector<HTMLElement>('[data-music-note]');
   if (note) {

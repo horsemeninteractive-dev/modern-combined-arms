@@ -4,6 +4,7 @@ import {
   MAIN_THEME_SRC,
   MUSIC_TRACKS,
   MUSIC_TRACK_IDS,
+  PLAYLIST_MUSIC_TRACKS,
 } from '../src/ui/musicCatalogue';
 import {
   defaultMusicPlaylist,
@@ -30,15 +31,28 @@ describe('music playlist editor', () => {
   it('renders one row for every catalogue track in the saved order', () => {
     const prefs = defaultMusicPlaylist();
     const markup = musicPanelMarkup(prefs, idle);
-    expect(markup.match(/data-music-track=/g)).toHaveLength(MUSIC_TRACKS.length);
-    for (const track of MUSIC_TRACKS) {
+    expect(markup.match(/data-music-track=/g)).toHaveLength(PLAYLIST_MUSIC_TRACKS.length);
+    for (const track of PLAYLIST_MUSIC_TRACKS) {
       expect(markup).toContain(`data-music-track="${track.id}"`);
       expect(markup).toContain(track.title);
       expect(markup).toContain(track.subtitle);
     }
-    // The menu theme is not an in-game playlist row or preview control.
+    // The menu theme is not an in-game playlist row or preview control, and
+    // neither is Outbreak's own score.
     expect(markup).not.toContain(MAIN_THEME_SRC);
     expect(markup).not.toContain('menu-theme');
+    expect(markup).not.toContain('mechanical-ticks');
+    expect(markup).not.toContain('Mechanical Ticks');
+  });
+
+  it('offers a local-file picker and keeps the count on the rows shown', () => {
+    const prefs = defaultMusicPlaylist();
+    const markup = musicPanelMarkup(prefs, idle);
+    expect(markup).toContain('data-music-add');
+    expect(markup).toContain('Add local tracks');
+    expect(markup).toContain('type="file"');
+    expect(markup).toContain('multiple');
+    expect(markup).not.toContain('data-music-remove');
   });
 
   it('distinguishes enabled, excluded and currently playing tracks in text, not colour alone', () => {
@@ -98,13 +112,16 @@ describe('music playlist editor', () => {
     expect(app).toContain('setMusicRepeat');
     expect(app).toContain('restoreDefaultMusicPlaylist');
     expect(app).toContain('this.audio.setMusicPlaylist(this.settings.musicPlaylist)');
+    expect(app).toContain('data-music-add');
+    expect(app).toContain('addLocalMusicFiles');
+    expect(app).toContain('removeLocalTrack');
   });
 
   it('has a compact desktop list and a wrapping mobile row', () => {
     expect(styles).toContain('.music-panel');
     expect(styles).toContain('max-height: clamp(188px, 28vh, 280px)');
     expect(styles).toContain('@media (max-width: 620px)');
-    expect(styles).toContain('.music-track-preview { grid-column: 2 / 4');
+    expect(styles).toContain('.music-track-actions { grid-column: 2 / 4');
     expect(styles).toContain('min-height: 32px');
   });
 

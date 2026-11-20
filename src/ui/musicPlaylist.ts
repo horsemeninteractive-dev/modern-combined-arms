@@ -3,6 +3,7 @@ import {
   MUSIC_TRACK_IDS,
   isMusicTrackId,
 } from './musicCatalogue';
+import { isLocalMusicId, localMusicTracks } from './localMusic';
 
 /**
  * Pure playlist vocabulary and persistence normalisation.
@@ -38,12 +39,12 @@ function normaliseRepeat(value: unknown): MusicRepeatMode {
     : 'all';
 }
 
-function knownUnique(ids: unknown, known: ReadonlySet<string>): string[] {
+function knownUnique(ids: unknown, isKnown: (id: string) => boolean): string[] {
   if (!Array.isArray(ids)) return [];
   const seen = new Set<string>();
   const out: string[] = [];
   for (const value of ids) {
-    if (typeof value !== 'string' || !known.has(value) || seen.has(value)) continue;
+    if (typeof value !== 'string' || !isKnown(value) || seen.has(value)) continue;
     seen.add(value);
     out.push(value);
   }
@@ -64,11 +65,15 @@ export function normaliseMusicPlaylist(
   defaultEnabledIds: readonly string[] = DEFAULT_MUSIC_TRACK_IDS,
 ): MusicPlaylistPreferences {
   const known = new Set(catalogueIds);
+  // A local id is kept even before its file has been read back from storage, so
+  // a reload never prunes the player's own tracks from their saved playlist.
+  const isKnown = (id: string): boolean => known.has(id) || isLocalMusicId(id);
+  const localIds = localMusicTracks().map((track) => track.id);
   const raw =
     typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
 
   if (!raw) {
-    const order = [...catalogueIds];
+    const order = [...catalogueIds, ...localIds];
     return {
       order,
       enabled: order.filter((id) => defaultEnabledIds.includes(id)),
@@ -77,18 +82,23 @@ export function normaliseMusicPlaylist(
     };
   }
 
-  const order = knownUnique(raw.order, known);
+  const order = knownUnique(raw.order, isKnown);
   // An enabled list without an order still places its tracks first rather than
   // losing them at the end of a default order.
-  for (const id of knownUnique(raw.enabled, known)) {
+  for (const id of knownUnique(raw.enabled, isKnown)) {
     if (!order.includes(id)) order.push(id);
   }
   for (const id of catalogueIds) {
     if (known.has(id) && !order.includes(id)) order.push(id);
   }
+  // A local file stays listed (excluded, or still enabled) even when a saved
+  // order predates it, so the editor can always reach it again.
+  for (const id of localIds) {
+    if (!order.includes(id)) order.push(id);
+  }
 
   const enabledSource = Array.isArray(raw.enabled)
-    ? knownUnique(raw.enabled, known)
+    ? knownUnique(raw.enabled, isKnown)
     : defaultEnabledIds.filter((id) => known.has(id));
   const enabledSet = new Set(enabledSource);
   // Keep enabled ids in playlist order so the persisted value is deterministic.

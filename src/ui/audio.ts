@@ -10,7 +10,7 @@ import {
   parseAmbienceManifest,
   type AmbienceStepsSpec,
 } from './ambienceSamples';
-import { MAIN_THEME_SRC } from './musicCatalogue';
+import { MAIN_THEME_SRC, OUTBREAK_MUSIC_TRACK_ID } from './musicCatalogue';
 import { MatchMusic, type MatchMusicSnapshot } from './matchMusic';
 import { UnitVoice, type UnitVoiceCue } from './unitVoice';
 
@@ -190,6 +190,8 @@ export class AudioEngine {
   private cueBus: AudioNode | null = null;
   private cueCleanup = new Set<ReturnType<typeof setTimeout>>();
   private music: HTMLAudioElement | null = null;
+  /** Which looping deck theme is wanted; Outbreak swaps in its own cue. */
+  private menuThemeSrc = MAIN_THEME_SRC;
   private musicWanted = false;
   private musicFade: number | null = null;
   private musicRetryBound = false;
@@ -233,9 +235,13 @@ export class AudioEngine {
     });
   }
 
-  /** Begin the match soundtrack exactly once. */
-  startMatchMusic(): void {
-    this.matchMusic.start();
+  /**
+   * Begin the match soundtrack exactly once. Outbreak is scored by its own
+   * single track rather than by the player's playlist.
+   */
+  startMatchMusic(score: 'standard' | 'outbreak' = 'standard'): void {
+    if (score === 'outbreak') this.matchMusic.startFixedTrack(OUTBREAK_MUSIC_TRACK_ID);
+    else this.matchMusic.start();
   }
 
   /** Stop and release the match soundtrack; safe to call repeatedly. */
@@ -953,6 +959,25 @@ export class AudioEngine {
     this.fadeMusic(0, 0.7);
   }
 
+  /**
+   * Choose the looping deck theme (standard menu or Outbreak's cue).
+   *
+   * The element is reused, so a route change restarts the wanted track from
+   * its beginning rather than layering a second source. Nothing is created
+   * before the first gesture: an early choice is remembered and the element is
+   * built with it.
+   */
+  setMenuTheme(src: string): void {
+    if (src === this.menuThemeSrc) return;
+    this.menuThemeSrc = src;
+    const el = this.music;
+    if (!el) return;
+    el.pause();
+    el.volume = 0;
+    el.src = src;
+    if (this.musicWanted && !this.menuPausedForMatch && !this.muted) this.playMenuMusic();
+  }
+
   setMusicVolume(volume: number): void {
     this.musicVolume = Math.max(0, Math.min(1, volume));
     if (this.matchFade !== null) {
@@ -973,7 +998,7 @@ export class AudioEngine {
 
   private createMusic(): HTMLAudioElement | null {
     if (typeof Audio === 'undefined') return null;
-    const el = new Audio(MAIN_THEME_SRC);
+    const el = new Audio(this.menuThemeSrc);
     el.loop = true;
     el.preload = 'none';
     el.volume = 0;

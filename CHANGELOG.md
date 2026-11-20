@@ -12,6 +12,59 @@ rendered in game from **Changelog** in the main-menu footer.
 When the version is bumped, rename it to the new `## [x.y.z STAGE] — date`
 heading: `tools/release.mjs` refuses to ship unless that heading exists.
 
+## [0.10.1 BETA] — 2026-11-20
+
+The front-door release. The two screens a player passes before the menu — the
+loading plate and the press-to-begin gate — are rebuilt in the amber command
+deck theme and joined into one continuous hand-off, with the loading reticle
+morphing into the start button instead of one screen cutting to the other.
+Outbreak takes its own place in the rail with its own score, and the battle
+playlist now plays the player's own audio files.
+
+### Opening screens
+
+- **The loading reticle becomes the start button.** The plate measures its mark
+  and the gate's button, flies a clone of the button down into place over the
+  mark and fades the plate under it, so the deck opens rather than swaps. The
+  clone carries the label with it and is swapped for the real, focusable button
+  on landing.
+- **Both screens share one set of furniture.** The gate now draws the loading
+  plate's perspective floor and scan band — same 64px grid, same mask, same
+  seven-second drift started at page load — so the two screens read as the same
+  room instead of two different backgrounds.
+- **Copy is down to the minimum.** The plate carries the mark and its loading
+  sweep and nothing else; the gate carries the crest and one button.
+- **The radar sweep is masked to a ring.** Its cone edges no longer cross the
+  screen as diagonal slices, which is what made the frame look cut off.
+- **All of it is CSS.** The drift, scan band, horizon pulse and reticle rings
+  stop under `prefers-reduced-motion`, and the morph falls back to a direct
+  swap.
+
+### Outbreak
+
+- **Solo and co-op are separate rail entries with their own screens.** Each has
+  its own panel; the co-op screen carries the difficulty select that a room is
+  created with.
+- **Outbreak is scored by its own track.** *Mechanical Ticks* repeats for the
+  whole battle and is deaf to the saved playlist and to next, previous and
+  preview, so a co-op room hears the mode rather than one seat's music.
+- **The deck swaps its menu theme** to the Outbreak cue while an Outbreak view
+  is armed and back to the standard theme everywhere else.
+- **Flyers carry air armour.** Anti-air weapons key their reach on `air`, so a
+  flyer left on light armour was a valid target that took no damage from them.
+
+### Music
+
+- **Local battle music.** The playlist editor accepts audio files from the
+  player's device, keeps their bytes in IndexedDB and plays them from a fresh
+  object URL each load; nothing is uploaded. A local row can be removed, which
+  drops the stored copy.
+- **Local ids survive a reload.** The saved playlist keeps a local track before
+  its file has been read back from storage, so reopening the game never prunes
+  the player's own tracks.
+- **Playlist controls follow the list on screen** rather than the authored
+  catalogue, including the enabled counter and track total.
+
 ## [0.10.0 BETA] — 2026-11-19
 
 The survival release. **Outbreak** ships as a mode of its own — one basin, four
