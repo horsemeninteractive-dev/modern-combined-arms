@@ -50,12 +50,25 @@ export function canWeaponTarget(weapon: WeaponDef, target: Entity): boolean {
   return weapon.targets.includes(entityTargetClass(target));
 }
 
-/** Weapons available to an entity definition (without ammo considerations). */
+/**
+ * Weapons available to an entity definition (without ammo considerations).
+ *
+ * The list depends only on the definition, so it is resolved once per kind and
+ * id: every unit asks for its guns on every tick, and building a fresh array
+ * for each of them was pure garbage on a battlefield of hundreds of hulls. The
+ * result is shared and must be treated as read-only.
+ */
 export function entityWeapons(e: Entity): WeaponDef[] {
+  const key = e.kind === 'building' ? `b:${e.defId}` : `u:${e.defId}`;
+  const cached = ENTITY_WEAPON_CACHE.get(key);
+  if (cached) return cached;
   const ids = e.kind === 'building' ? BUILDINGS[e.defId]?.weapons : ALL_UNITS[e.defId]?.weapons;
-  if (!ids) return [];
-  return ids.map((id) => WEAPON_CACHE[id]).filter(Boolean);
+  const weapons = ids ? ids.map((id) => WEAPON_CACHE[id]).filter(Boolean) : [];
+  ENTITY_WEAPON_CACHE.set(key, weapons);
+  return weapons;
 }
+
+const ENTITY_WEAPON_CACHE = new Map<string, WeaponDef[]>();
 
 const WEAPON_CACHE: Record<string, WeaponDef> = WEAPONS;
 

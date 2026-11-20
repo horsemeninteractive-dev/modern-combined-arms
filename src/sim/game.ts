@@ -44,6 +44,7 @@ import {
   isMobileContainer,
 } from './containers';
 import { WEAPONS } from '../data/weapons';
+import { SpatialIndex } from './spatial';
 import {
   RESEARCH,
   TIER_ZERO_BUILDINGS,
@@ -414,6 +415,33 @@ export class Game {
   private weatherCache: { settings: unknown; profile: WeatherProfile } | null = null;
   /** Lights burning at the last vision refresh; presentation reads the same list. */
   private lightSources: LightSource[] = [];
+  /**
+   * Proximity broadphase for targeting, avoidance and separation.
+   *
+   * Rebuilt at the tick boundaries where the world has moved, so every scan
+   * inside a tick reads the same candidate set instead of walking the whole
+   * entity list once per unit. See `rebuildSpatial`.
+   */
+  private readonly spatial: SpatialIndex;
+  /** Living entities carrying electronic warfare, refreshed with the index. */
+  private ewSources: Entity[] = [];
+  private ewSourcesTick = -1;
+  /**
+   * Widest hull actually on the field per domain, refreshed with the index.
+   *
+   * Avoidance and traffic probes are padded by the widest hull they could meet,
+   * and on a battlefield of riflemen that is a rifleman: padding for a hauler
+   * that is not in the battle would ask the broadphase for six times the ground
+   * the probe can use.
+   */
+  private readonly fieldRadius: Record<UnitDef['domain'], number> = { land: 0, air: 0, naval: 0 };
+  private readonly fieldFormation: Record<UnitDef['domain'], number> = {
+    land: 0,
+    air: 0,
+    naval: 0,
+  };
+  /** One reusable query buffer: a tick's scans allocate no arrays. */
+  private readonly nearby: Entity[] = [];
   private litGrid: Float32Array | null = null;
   /**
    * Ground and height with every standing bridge deck laid over the water.
@@ -475,6 +503,13 @@ export class Game {
     this.rng = new Rng(this.state.seed);
     this.blocked = new Uint8Array(scenario.width * scenario.height);
     this.footBlocked = new Uint8Array(scenario.width * scenario.height);
+    // Two-tile buckets: small enough that a tight probe touches a handful of
+    // cells, large enough that a column of hulls shares one bucket.
+    this.spatial = new SpatialIndex(
+      scenario.width * TILE_SIZE,
+      scenario.height * TILE_SIZE,
+      SPATIAL_CELL_SIZE,
+    );
     this.visible = [[], []].map(() => new Set<number>());
     this.state.fog = [0, 1].map(() => new Uint8Array(scenario.width * scenario.height));
     if (!opts.skipInit) this.initialize();
@@ -5233,8 +5268,8 @@ export class Game {
     field: 'visionMultiplier' | 'engagementMultiplier',
   ): number {
     let factor = 1;
-    for (const source of this.state.entities) {
-      if (source.kind !== 'unit' || source.hp <= 0 || source.owner < 0) continue;
+    for (const source of this.electronicWarfareSources()) {
+      if (source.hp <= 0 || source.owner < 0) continue;
       if (source.owner === e.owner || !this.isHostile(source.owner, e.owner)) continue;
       if (source.garrisonId || this.isMobilePassenger(source)) continue;
       const ew = ALL_UNITS[source.defId]?.electronicWarfare;
@@ -6613,12 +6648,18 @@ export class Game {
     // Clouds expire on the authoritative clock and must be gone before vision
     // is refreshed, so an expired cloud cannot hide a unit for one extra beat.
     this.updateSmoke();
+    // Commands may have placed a structure since the last rebuild; the static
+    // guns in `updateBuildingSystems` below read the broadphase.
+    this.rebuildSpatial();
     // The controller schedules itself: its reaction time is a property of the
     // commander level, not of this loop. An Outbreak match has no skirmish
     // opponent to run: the wave director is the opposition, so it replaces the
     // AI update rather than competing with it.
     if (this.outbreak) this.outbreak.update(dt);
     else this.ai?.update(this);
+    // The wave director and the commander have spawned and ordered units, so
+    // the broadphase is rebuilt before anything reads positions again.
+    this.rebuildSpatial();
     this.updateUnits(dt);
     this.updateGarrisons(dt);
     this.updateProjectiles(dt);
@@ -7521,6 +7562,50 @@ export class Game {
   /* ------------------------------------------------------------------ */
   /* Vision                                                             */
   /* ------------------------------------------------------------------ */
+
+  /**
+   * Rebuild the proximity broadphase for the current tick.
+   *
+   * One pass over the entity list, so a 500-hull battle pays 500 inserts
+   * instead of the quarter of a million pair scans the callers used to do.
+   * The electronic-warfare emitters are collected here too: every range
+   * calculation consults them, and scanning the whole battlefield for them on
+   * each of the tens of thousands of calls a tick was the single largest cost
+   * in the simulation.
+   */
+  private rebuildSpatial(): void {
+    const grid = this.spatial;
+    grid.clear();
+    const ew = this.ewSources;
+    ew.length = 0;
+    this.fieldRadius.land = 0;
+    this.fieldRadius.air = 0;
+    this.fieldRadius.naval = 0;
+    this.fieldFormation.land = 0;
+    this.fieldFormation.air = 0;
+    this.fieldFormation.naval = 0;
+    for (const e of this.state.entities) {
+      if (e.hp <= 0) continue;
+      grid.insert(e);
+      if (e.kind !== 'unit') continue;
+      const def = ALL_UNITS[e.defId];
+      if (!def) continue;
+      const radius = def.radius;
+      const formation = formationRadius(def);
+      if (radius > this.fieldRadius[def.domain]) this.fieldRadius[def.domain] = radius;
+      if (formation > this.fieldFormation[def.domain]) {
+        this.fieldFormation[def.domain] = formation;
+      }
+      if (e.owner >= 0 && def.electronicWarfare) ew.push(e);
+    }
+    this.ewSourcesTick = this.state.tick;
+  }
+
+  /** Living electronic-warfare emitters, refreshed when the tick moves on. */
+  private electronicWarfareSources(): Entity[] {
+    if (this.ewSourcesTick !== this.state.tick) this.rebuildSpatial();
+    return this.ewSources;
+  }
 
   refreshVision(initial: boolean): void {
     const dayNight = this.dayNight;
@@ -9729,8 +9814,30 @@ export class Game {
     // building it is holding. Without this a brute at the foot of a 4x4 Command
     // Post would be permanently "out of range" of the only thing it can touch.
     const contact = weapons.some((weapon) => weapon.melee);
-    for (const target of this.state.entities) {
+    // Only what the guns could possibly reach is worth testing. This used to
+    // walk every entity on the map for every unit, which is what made a full
+    // battlefield quadratic.
+    let scanReach = 0;
+    for (const weapon of weapons) scanReach = Math.max(scanReach, this.engagementReach(e, weapon));
+    const candidates = this.spatial.query(e.x, e.z, scanReach + TARGET_QUERY_SLACK, this.nearby);
+    // Nearest first, ties in id order: with that order the search can stop as
+    // soon as the remaining candidates are too far to beat the best score, and
+    // it stops after a handful of sight lines instead of one per hostile in
+    // range. The winner is the same one the unordered scan chose.
+    candidates.sort((a, b) => {
+      const da = (a.x - e.x) * (a.x - e.x) + (a.z - e.z) * (a.z - e.z);
+      const db = (b.x - e.x) * (b.x - e.x) + (b.z - e.z) * (b.z - e.z);
+      return da - db || a.id - b.id;
+    });
+    const ex = e.x;
+    const ez = e.z;
+    for (const target of candidates) {
       if (target.hp <= 0) continue;
+      // Whatever is left is at least this far away, and no target can gain
+      // more than a structure's span plus the air preference, so nothing
+      // further out can win.
+      const centreDistance = dist(ex, ez, target.x, target.z);
+      if (best !== null && centreDistance > bestScore + TARGET_SCORE_MARGIN) break;
       if (!this.isAttackable(owner, target)) continue;
       if (!this.isVisibleTo(team, target.id)) continue;
       // Occupants are represented by their shelter; the structure is the
@@ -9740,7 +9847,6 @@ export class Game {
       // bridge it may need to cross on the strength of a stray sighting. An
       // explicit attack order can still bring one down.
       if (target.kind === 'building' && BUILDINGS[target.defId]?.walkable) continue;
-      const centreDistance = dist(e.x, e.z, target.x, target.z);
       const span = contact ? this.footprintSpan(target) : 0;
       const d = Math.max(0, centreDistance - span);
       let usable = false;
@@ -10679,7 +10785,10 @@ export class Game {
     const tile = this.tileAt(e.x, e.z);
     if (tile === null) return;
     const map = this.state.map;
-    for (const wall of this.state.entities) {
+    // Only a wall standing on the hull's own tile can be flattened, and a
+    // layer of masonry small enough to lie within one tile cannot straddle two
+    // buckets, so the broadphase's own cell is the whole search.
+    for (const wall of this.spatial.query(e.x, e.z, 0, this.nearby)) {
       if (wall.kind !== 'building' || wall.hp <= 0) continue;
       const def = BUILDINGS[wall.defId];
       if (!def?.wall || def.wall.blocksVehicles) continue;
@@ -10985,8 +11094,22 @@ export class Game {
     let bestOd: UnitDef | null = null;
     let bestHeadOn = false;
     let bestMoving = false;
-    for (const other of this.state.entities) {
+    // Nothing beyond the longest avoidance reach can be the obstacle this hull
+    // steers around, so the probe is bounded to it instead of walking the map.
+    const scanReach = (def.radius + this.fieldRadius[def.domain]) * 3.6 + TILE_SIZE;
+    for (const other of this.spatial.query(e.x, e.z, scanReach, this.nearby)) {
       if (other === e || other.kind !== 'unit' || other.hp <= 0 || other.garrisonId) continue;
+      // Cheapest possible rejection first: most candidates in a crowded lane
+      // are outside the longest reach this hull can care about, or off to the
+      // side of it, and neither needs a definition lookup to establish.
+      const dx = other.x - e.x;
+      const dz = other.z - e.z;
+      if (dx * dx + dz * dz > scanReach * scanReach) continue;
+      const ahead = dx * fx + dz * fz;
+      const widest = def.radius + this.fieldRadius[def.domain];
+      if (ahead <= -(formationRadius(def) + this.fieldFormation[def.domain])) continue;
+      if (ahead > widest * 3.6) continue;
+      if (Math.abs(-dx * fz + dz * fx) >= widest * 1.3 * 2) continue;
       const od = unitDef(other.defId);
       if (od.domain !== def.domain) continue;
       // Hostiles are targets, not traffic: swerving around them would break off
@@ -10994,8 +11117,6 @@ export class Game {
       if (this.isHostile(e.owner, other.owner)) continue;
       const otherMoving = other.state === 'moving' || other.path.length > 0;
       const headOn = otherMoving && Math.cos(normalizeAngle(other.facing - desired)) < -0.2;
-      const dx = other.x - e.x;
-      const dz = other.z - e.z;
       if (otherMoving) {
         const otherSpeed = unitDef(other.defId).speed;
         // Give a same-speed or faster column room, but only once there is room
@@ -11009,7 +11130,6 @@ export class Game {
       // Only the last couple of metres of the lane: this is about not walking
       // into someone standing still, not about re-planning the route.
       const reach = (def.radius + od.radius) * 3.6;
-      const ahead = dx * fx + dz * fz;
       // Keep steering until the obstacle is properly behind the nose:
       // dropping it the instant its centre fell behind the mover let a passing
       // vehicle cut back in and clip the unit it was overtaking.
@@ -11175,7 +11295,8 @@ export class Game {
     if (def.domain === 'air') return null;
     let best: Entity | null = null;
     let bestD = Infinity;
-    for (const other of this.state.entities) {
+    const scanReach = (formationRadius(def) + this.fieldFormation[def.domain]) * 0.9 + TILE_SIZE;
+    for (const other of this.spatial.query(x, z, scanReach, this.nearby)) {
       if (other === e || other.kind !== 'unit' || other.hp <= 0 || other.garrisonId) continue;
       const od = unitDef(other.defId);
       if (od.domain !== def.domain) continue;
@@ -11208,7 +11329,8 @@ export class Game {
     const fz = Math.sin(e.facing);
     let best: Entity | null = null;
     let bestAhead = Infinity;
-    for (const other of this.state.entities) {
+    const scanReach = (formationRadius(def) + this.fieldFormation[def.domain]) * 1.35 + TILE_SIZE;
+    for (const other of this.spatial.query(e.x, e.z, scanReach, this.nearby)) {
       if (other === e || other.kind !== 'unit' || other.hp <= 0 || other.garrisonId) continue;
       const od = unitDef(other.defId);
       if (od.domain !== def.domain) continue;
@@ -11340,7 +11462,8 @@ export class Game {
   /** Whether a step would put `e` inside another ground unit's footprint. */
   private unitClearAt(e: Entity, x: number, z: number): boolean {
     const def = unitDef(e.defId);
-    for (const other of this.state.entities) {
+    const scanReach = (formationRadius(def) + this.fieldFormation[def.domain]) * 0.7 + TILE_SIZE;
+    for (const other of this.spatial.query(x, z, scanReach, this.nearby)) {
       if (other === e || other.kind !== 'unit' || other.hp <= 0 || other.garrisonId) continue;
       if (unitDef(other.defId).domain !== def.domain) continue;
       const min = (formationRadius(def) + formationRadius(unitDef(other.defId))) * 0.7;
@@ -11470,43 +11593,54 @@ export class Game {
 
   private separateUnits(): void {
     const units = this.state.entities.filter((e) => e.kind === 'unit' && e.hp > 0 && !e.garrisonId);
-    for (let i = 0; i < units.length; i++) {
-      const a = units[i];
+    // Overlapping pairs only exist between near neighbours, so the broadphase
+    // finds them instead of every unit being measured against every other. The
+    // pairs are then applied in the same (nearer id first, then id) order the
+    // old nested loop produced, because each push moves both hulls and a pair
+    // must see exactly the positions the earlier pairs left behind.
+    const pairs: Array<[Entity, Entity]> = [];
+    for (const a of units) {
       const da = unitDef(a.defId);
       if (da.domain === 'air') continue;
-      for (let j = i + 1; j < units.length; j++) {
-        const b = units[j];
-        const db = unitDef(b.defId);
-        if (db.domain === 'air') continue;
-        if (da.domain !== db.domain) continue;
-        const minDist = (formationRadius(da) + formationRadius(db)) * 0.78;
-        const dx = b.x - a.x;
-        const dz = b.z - a.z;
-        const d2 = dx * dx + dz * dz;
-        if (d2 >= minDist * minDist || d2 < 0.0001) continue;
-        const d = Math.sqrt(d2);
-        // A unit holding position is never shoved aside, by a friend or by the
-        // enemy. The mover yields, or stops short when it has no room, so an
-        // idle defender stays where the commander put it.
-        const aMoving = a.state === 'moving' || a.path.length > 0;
-        const bMoving = b.state === 'moving' || b.path.length > 0;
-        const aShare = aMoving === bMoving ? 0.5 : aMoving ? 1 : 0;
-        const push = Math.min(0.35, (minDist - d) / d);
-        if (aShare > 0) {
-          const ax = a.x - dx * push * aShare;
-          const az = a.z - dz * push * aShare;
-          if (this.canOccupy(a, ax, az)) {
-            a.x = ax;
-            a.z = az;
-          }
+      const scanReach = (formationRadius(da) + this.fieldFormation[da.domain]) * 0.78 + 1;
+      for (const b of this.spatial.query(a.x, a.z, scanReach, this.nearby)) {
+        if (b.id <= a.id || b.kind !== 'unit' || b.hp <= 0 || b.garrisonId) continue;
+        if (unitDef(b.defId).domain !== da.domain) continue;
+        pairs.push([a, b]);
+      }
+    }
+    pairs.sort((left, right) => left[0].id - right[0].id || left[1].id - right[1].id);
+    for (const [a, b] of pairs) {
+      const da = unitDef(a.defId);
+      const db = unitDef(b.defId);
+      if (a.hp <= 0 || b.hp <= 0 || a.garrisonId || b.garrisonId) continue;
+      const minDist = (formationRadius(da) + formationRadius(db)) * 0.78;
+      const dx = b.x - a.x;
+      const dz = b.z - a.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 >= minDist * minDist || d2 < 0.0001) continue;
+      const d = Math.sqrt(d2);
+      // A unit holding position is never shoved aside, by a friend or by the
+      // enemy. The mover yields, or stops short when it has no room, so an
+      // idle defender stays where the commander put it.
+      const aMoving = a.state === 'moving' || a.path.length > 0;
+      const bMoving = b.state === 'moving' || b.path.length > 0;
+      const aShare = aMoving === bMoving ? 0.5 : aMoving ? 1 : 0;
+      const push = Math.min(0.35, (minDist - d) / d);
+      if (aShare > 0) {
+        const ax = a.x - dx * push * aShare;
+        const az = a.z - dz * push * aShare;
+        if (this.canOccupy(a, ax, az)) {
+          a.x = ax;
+          a.z = az;
         }
-        if (aShare < 1) {
-          const bx = b.x + dx * push * (1 - aShare);
-          const bz = b.z + dz * push * (1 - aShare);
-          if (this.canOccupy(b, bx, bz)) {
-            b.x = bx;
-            b.z = bz;
-          }
+      }
+      if (aShare < 1) {
+        const bx = b.x + dx * push * (1 - aShare);
+        const bz = b.z + dz * push * (1 - aShare);
+        if (this.canOccupy(b, bx, bz)) {
+          b.x = bx;
+          b.z = bz;
         }
       }
     }
@@ -12725,6 +12859,33 @@ const TICKS_PER_SECOND = TICK_RATE;
 function formationRadius(def: UnitDef): number {
   return def.armour === 'infantry' ? def.radius * 0.62 : def.radius;
 }
+
+/**
+ * Broadphase bucket edge, in world units.
+ *
+ * Two tiles keeps a bucket to a handful of hulls at battle density, which is
+ * what makes the tight probes — traffic, clearance, separation — return a few
+ * candidates instead of every unit sharing a wide cell.
+ */
+const SPATIAL_CELL_SIZE = 2 * TILE_SIZE;
+/**
+ * How much closer than the current best a target would have to be to still
+ * matter, in world units.
+ *
+ * A target's score is its distance less a structure's half-span for contact
+ * weapons and less six for an air target, so nothing more than this further
+ * away can win and the scan can stop there.
+ */
+const TARGET_SCORE_MARGIN = 6 + 3 * TILE_SIZE + 2;
+/**
+ * Slack added to a weapon scan, in world units.
+ *
+ * It covers the widest structure half-span a contact weapon strikes instead of
+ * its centre, the four world units every range test allows on top of the
+ * nominal reach, and the distance a hull can drift between the rebuild and the
+ * scan.
+ */
+const TARGET_QUERY_SLACK = 4 * TILE_SIZE;
 
 /**
  * Keep only well-formed, unexpired smoke clouds from a save file. Expired

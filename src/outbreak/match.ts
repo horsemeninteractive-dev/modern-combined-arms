@@ -45,6 +45,8 @@ const RETARGET_TICKS = 24;
 const LOCAL_UNIT_RADIUS = 11 * TILE_SIZE;
 /** Beyond this, a structure is not "on the way" — the Command Post is the goal. */
 const STRUCTURE_SEARCH_RADIUS = 34 * TILE_SIZE;
+/** How far a mark may drift before a marching body needs a fresh route. */
+const MARCH_TOLERANCE = 2 * TILE_SIZE;
 
 export interface OutbreakSaveState {
   director: ReturnType<OutbreakDirector['toState']>;
@@ -231,6 +233,18 @@ export class OutbreakMatch implements WaveHost {
       }
       const target = this.chooseTarget(zombie, defenderIds, post);
       if (!target) continue;
+      // Re-issuing the same march would re-plan the same route: a body already
+      // walking at this mark is only reconsidered so the director can notice
+      // that the mark moved under it. This is what keeps a 500-body horde from
+      // paying for 500 fresh path searches every second.
+      const marching = zombie.path.length > 0 && zombie.blockedTicks === 0;
+      if (
+        marching &&
+        (zombie.order?.type === 'attackMove' || zombie.order?.type === 'move') &&
+        Math.hypot(zombie.destX - target.x, zombie.destZ - target.z) <= MARCH_TOLERANCE
+      ) {
+        continue;
+      }
       const key = `t:${target.id}`;
       const gx = target.x;
       const gz = target.z;
