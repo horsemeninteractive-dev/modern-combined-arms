@@ -729,6 +729,11 @@ export class App {
     // Production bundles never expose it: `import.meta.env.DEV` is compiled out.
     if (import.meta.env.DEV) {
       (window as unknown as { mca?: App }).mca = this;
+      // Frame timing has to come from GPU timer queries: requestAnimationFrame
+      // stops entirely in a backgrounded tab, so sampling frames there reports
+      // the tab's throttling rather than the renderer's cost. See
+      // src/perf/probe.ts for what the probe measures and why.
+      void import('./perf/probe').then((module) => module.installPerfProbe(this));
     }
     this.lastFrame = performance.now();
     requestAnimationFrame(this.frame);
@@ -890,7 +895,12 @@ export class App {
             : defaults.customCursors,
         fpsReadout: typeof parsed.fpsReadout === 'boolean' ? parsed.fpsReadout : defaults.fpsReadout,
         escBehavior: normaliseEscBehavior(parsed.escBehavior),
-        silhouettes: typeof parsed.silhouettes === 'boolean' ? parsed.silhouettes : defaults.silhouettes,
+        // Like the effect switches above, an untouched silhouette setting
+        // follows the preset, so Low really is the low-end mix.
+        silhouettes:
+          typeof parsed.silhouettes === 'boolean'
+            ? parsed.silhouettes
+            : graphicsPreset(normaliseGraphicsQuality(parsed.graphicsQuality)).silhouettes,
         nightLights: typeof parsed.nightLights === 'boolean' ? parsed.nightLights : defaults.nightLights,
         lightBloom: normaliseLightBloom(parsed.lightBloom),
         startHour: normaliseStartHour(parsed.startHour, defaults.startHour),
@@ -6462,13 +6472,14 @@ export class App {
             this.settings.screenSpaceReflections = preset.screenSpaceReflections;
             this.settings.contactShadows = preset.contactShadows;
             this.settings.waterDetail = preset.waterDetail;
+            this.settings.silhouettes = preset.silhouettes;
             const shadowSelect = root.querySelector<HTMLSelectElement>('[data-choice="shadowDetail"]');
             if (shadowSelect) shadowSelect.value = this.settings.shadowDetail;
             const slider = root.querySelector<HTMLInputElement>('[data-set="renderScale"]');
             if (slider) slider.value = String(Math.round(this.settings.renderScale * 100));
             const out = root.querySelector<HTMLElement>('[data-value-for="renderScale"]');
             if (out) out.textContent = `${Math.round(this.settings.renderScale * 100)}%`;
-            for (const key of ['ambientOcclusion', 'bloom', 'screenSpaceReflections', 'contactShadows', 'waterDetail', 'nightLights'] as const) {
+            for (const key of ['ambientOcclusion', 'bloom', 'screenSpaceReflections', 'contactShadows', 'waterDetail', 'nightLights', 'silhouettes'] as const) {
               const button = root.querySelector<HTMLButtonElement>(`[data-toggle="${key}"]`);
               if (!button) continue;
               button.classList.toggle('on', this.settings[key]);

@@ -1,7 +1,7 @@
 {
   "name": "iron-tide",
   "private": true,
-  "version": "0.10.1",
+  "version": "0.10.2",
   "releaseStage": "BETA",
   "type": "module",
   "description": "MCA: Modern Combined Arms — combined-arms RTS vertical slice",
@@ -22,6 +22,7 @@
     "release": "node tools/release.mjs",
     "ai:matchups": "vitest run tests/ai-matchups.test.ts",
     "bench": "vitest run tests/perf.test.ts",
+    "fps": "node scripts/measure-fps.mjs",
     "determinism:spike": "node tools/determinism-spike.mjs"
   },
   "devDependencies": {

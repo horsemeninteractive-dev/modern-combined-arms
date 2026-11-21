@@ -12,6 +12,61 @@ rendered in game from **Changelog** in the main-menu footer.
 When the version is bumped, rename it to the new `## [x.y.z STAGE] — date`
 heading: `tools/release.mjs` refuses to ship unless that heading exists.
 
+## [0.10.2 BETA] — 2026-11-21
+
+The performance release. A full battle — around 300 entities, half of them the
+player's own — now costs about a quarter less simulation time per tick and
+submits far less to the GPU per frame, with the battles themselves unchanged:
+same hits, same kills, same outcome from the same seed.
+
+### Simulation
+
+- **Target acquisition stops re-deriving its own reach.** Engagement reach
+  already folds in this tick's light, weather and jamming, and it was being
+  measured once per weapon *per candidate*; it is now measured once per weapon
+  per acquisition. That is roughly 40% of acquisition's cost at contact range.
+- **Friendly hulls leave before the sort.** They can never be attacked, so they
+  are dropped up front instead of being sorted and then rejected one by one —
+  on a dense battlefield that is half the candidate list.
+- **Nothing about the battle changed.** A 120-tick contact scenario hashes
+  identically before and after: same positions, hit points, cooldowns, targets
+  and projectiles.
+
+### Rendering
+
+- **Off-screen entities are no longer submitted.** The unit pass tests each
+  entity's drawn position — a staged actor's screen position, an aircraft's
+  altitude — against the visible rect once and skips it. In a view where 16 of
+  294 entities are actually on screen, the entity pass fell from 127 ms a frame
+  to under 5 ms.
+- **Occluded-unit silhouettes use the same test**, so the second pass over
+  hidden units costs what the first one does rather than a full extra pass.
+- **The basic shadow pass culls ground quads** outside the visible rect, which
+  removes about 80% of its instances — roughly 4,700 quads a frame at a full
+  battle.
+
+### Graphics settings
+
+- **Presets are measured rather than assumed.** Low drops to 0.6 render scale
+  and switches off every optional pass; medium gives up ambient occlusion,
+  contact shadows and the shadow map, keeps bloom, and keeps unit silhouettes.
+- **"Basic" shadows are not the cheap option they sound like.** At a tactical
+  camera height they submit the whole map's ground quads for a flat ellipse and
+  measured no cheaper than the detailed depth map, so medium turns shadows off
+  instead of paying that price for the flatter look.
+- **Silhouettes follow the preset** like the other effect switches, so Low is
+  the low-end mix it claims to be.
+
+### Development tooling
+
+- **`window.mcaPerf`** (development builds only) times frames with GPU timer
+  queries and drives them by hand, so a reading taken from a backgrounded tab
+  measures the renderer instead of the tab's throttling, and breaks the post
+  chain down per effect.
+- **`npm run fps`** runs the in-page frame-rate harness, which samples the same
+  `requestAnimationFrame` scheduler that drives the game rather than a second
+  browser watching from outside.
+
 ## [0.10.1 BETA] — 2026-11-20
 
 The front-door release. The two screens a player passes before the menu — the

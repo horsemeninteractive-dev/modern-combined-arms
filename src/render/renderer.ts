@@ -3549,6 +3549,65 @@ export class Renderer {
     }
   }
 
+  /**
+   * Drop ground shadows that cannot reach the screen.
+   *
+   * The basic pass is a single instanced draw, so no caster costs a draw call —
+   * but every prop on the map contributes a blended quad every frame, several
+   * thousand of them at a full battle, and at battle zoom most of that set lies
+   * outside the camera's visible ground rectangle. A quad is a flat projected
+   * ellipse, so its pixels are bounded by its larger radius: once the centre is
+   * further than that outside the rect it covers nothing. Removing those
+   * changes no pixel and takes the per-frame instance upload and the blended
+   * overdraw down with the visible set instead of the whole map.
+   */
+  private cullOffscreenShadows(shadows: GpuShadow[]): void {
+    const rect = this.camera.viewRect();
+    // The rect is projected onto a flat ground plane and a rotated ellipse can
+    // reach past its own radius toward a corner, so leave slack: an edge shadow
+    // must not pop as the camera scrolls or as terrain height tilts the plane.
+    const slack = 8;
+    let write = 0;
+    for (let read = 0; read < shadows.length; read++) {
+      const s = shadows[read];
+      const reach = Math.max(s.rx, s.rz) + slack;
+      if (s.x + reach < rect.x0 || s.x - reach > rect.x1) continue;
+      if (s.z + reach < rect.z0 || s.z - reach > rect.z1) continue;
+      shadows[write++] = s;
+    }
+    shadows.length = write;
+  }
+
+  /**
+   * Is this entity anywhere near the viewport?
+   *
+   * The lit and silhouette passes used to walk every entity in the state and
+   * cull only by fog vision. A battle is wider than the camera, so that submits
+   * the whole army every frame: at 300 entities the camera could see 16 of
+   * them, and the unit pass alone cost 127 ms of a 210 ms frame. Nothing in the
+   * simulation reads this test.
+   *
+   * The slack is deliberately large — a quarter of the viewport on each side
+   * plus the entity's own radius in pixels — because the origin of a tall
+   * structure or an aircraft can sit off screen while its body is on it. Only
+   * entities that cannot reach the viewport at all are rejected.
+   */
+  private entityOnScreen(x: number, z: number, y: number, radius: number): boolean {
+    const p = this.camera.worldToScreen(x, y, z);
+    // Behind the eye: the ndc box can still look plausible there.
+    if (p.depth <= 0) return false;
+    const pixelsPerUnit = this.camera.width / (2 * this.camera.halfW);
+    const slack = radius * pixelsPerUnit;
+    const slackX = this.camera.width * 0.25 + slack;
+    const slackY = this.camera.height * 0.25 + slack;
+    return (
+      p.x >= -slackX &&
+      p.x <= this.camera.width + slackX &&
+      p.y >= -slackY &&
+      p.y <= this.camera.height + slackY
+    );
+  }
+
   private drawShadows(): void {
     // Detailed mode replaces the flat quads with the real shadow map; drawing
     // both would double every structure's shadow.
@@ -3721,6 +3780,7 @@ export class Renderer {
       });
     }
     for (const s of this.propShadows) shadows.push(s);
+    this.cullOffscreenShadows(shadows);
     this.shadowGpu.draw(this.camera, shadows, 0.62);
   }
 
@@ -4220,6 +4280,19 @@ export class Renderer {
       const v = this.visuals.get(e.id);
       const x = staged?.x ?? v?.x ?? e.x;
       const z = staged?.z ?? v?.z ?? e.z;
+      // Screen reject on the position actually drawn, which is the staged or
+      // eased visual position rather than the tick's: a cinematic actor is
+      // authored somewhere else entirely, and the visuals lag the simulation,
+      // so testing e.x/e.z would cull something that is on screen. Aircraft are
+      // tested at both their parked and cruise heights, because the height they
+      // are drawn at comes from the terrain beneath them.
+      const airborne = e.kind === 'unit' && ALL_UNITS[e.defId]?.domain === 'air';
+      if (
+        !this.entityOnScreen(x, z, 0.5, e.kind === 'building' ? 16 : 8) &&
+        !(airborne && this.entityOnScreen(x, z, AIR_UNIT_ALTITUDE, 8))
+      ) {
+        continue;
+      }
       const facing = staged?.facing ?? v?.facing ?? e.facing;
       const turret = remembered ? e.facing : v?.turret ?? e.turretFacing;
       const def = BUILDINGS[e.defId] ? null : ALL_UNITS[e.defId];
@@ -4379,6 +4452,12 @@ export class Renderer {
       const v = this.visuals.get(e.id);
       const x = v?.x ?? e.x;
       const z = v?.z ?? e.z;
+      // Same rule as the lit pass: the eased position is the one on screen, and
+      // an aircraft is drawn along its altitude, not on the ground point below.
+      const airborne = ALL_UNITS[e.defId]?.domain === 'air';
+      if (!this.entityOnScreen(x, z, 0.5, 8) && !(airborne && this.entityOnScreen(x, z, AIR_UNIT_ALTITUDE, 8))) {
+        continue;
+      }
       // Timber hides a unit with foliage rather than with a structure; an
       // outline there would wash across the canopy instead of reading as a
       // body behind a wall.

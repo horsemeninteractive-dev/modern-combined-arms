@@ -64,7 +64,10 @@ describe('graphics presets', () => {
     expect(low.renderScale).toBeLessThan(medium.renderScale);
     expect(medium.renderScale).toBeLessThanOrEqual(high.renderScale);
     expect(low.shadowDetail).toBe('off');
-    expect(medium.shadowDetail).toBe('basic');
+    // Basic is not the cheap shadow option: it submits the whole map's ground
+    // quads (about 4,700 a frame at 300 entities) and measured no cheaper than
+    // the detailed depth map, so medium keeps only the setting that saves time.
+    expect(medium.shadowDetail).toBe('off');
     // High is the authored look: realtime shadows are part of it, not a hidden
     // upgrade the player has to discover in a submenu.
     expect(high.shadowDetail).toBe('detailed');
@@ -76,14 +79,24 @@ describe('graphics presets', () => {
     expect(low.bloom).toBe(false);
     expect(low.screenSpaceReflections).toBe(false);
     expect(low.contactShadows).toBe(false);
-    expect(medium.ambientOcclusion).toBe(true);
+    // Medium keeps the cheap part of the look. Ambient occlusion and contact
+    // shadows are ~2.1 ms and ~1.8 ms of a ~40 ms frame at 300 entities, which
+    // is the difference between missing a 60 Hz deadline and half-hitting one.
+    expect(medium.ambientOcclusion).toBe(false);
     expect(medium.bloom).toBe(true);
     expect(medium.screenSpaceReflections).toBe(false);
-    expect(medium.contactShadows).toBe(true);
+    expect(medium.contactShadows).toBe(false);
     expect(high.ambientOcclusion).toBe(true);
     expect(high.bloom).toBe(true);
     expect(high.screenSpaceReflections).toBe(true);
     expect(high.contactShadows).toBe(true);
+  });
+
+  it('keeps the information-bearing silhouette pass off only where budget rules', () => {
+    const { low, medium, high } = GRAPHICS_PRESETS;
+    expect(low.silhouettes).toBe(false);
+    expect(medium.silhouettes).toBe(true);
+    expect(high.silhouettes).toBe(true);
   });
 
   it('normalises the three shadow levels and rejects unknown ones', () => {

@@ -106,32 +106,67 @@ export interface GraphicsPreset {
   contactShadows: boolean;
   /** Animated water normals; off keeps the sea surface but freezes ripples. */
   waterDetail: boolean;
+  /**
+   * Team-coloured outline where a unit is hidden behind a structure. It draws
+   * the occluded units a second time, so it costs roughly a second unit pass.
+   */
+  silhouettes: boolean;
 }
 
 /**
  * Presets trade resolution for effects. High is the authored look; medium and
- * low are for integrated GPUs and phones, where fill rate is the bottleneck.
+ * low exist to keep a full battle playable on weaker hardware.
+ *
+ * The mixes are measured rather than assumed. At around 300 entities the whole
+ * frame is roughly 40 ms, of which the post chain is about 5 ms (ambient
+ * occlusion 2.1, contact shadows 1.8, bloom 0.15) and the shadow map about
+ * 1.5 ms, while the battlefield's own fill cost scales with the render scale —
+ * 0.7 of the pixels is where the largest single saving is. So: low turns every
+ * optional pass off and drops resolution hardest, medium keeps only what the
+ * look needs at a distance (bloom is nearly free, ambient occlusion is not) and
+ * high is untouched.
+ *
+ * Shadows get their own note, because "basic" is not the cheap option it
+ * sounds like. It is a single instanced draw, but it submits the whole map's
+ * ground quads — around 4,700 instances a frame at a full battle — and at a
+ * tactical camera height that is a lot of blended overdraw for a flat ellipse.
+ * Measured against the detailed depth map at 300 entities it was never cheaper
+ * (within noise of it, and worse in some blocks), so medium does not pay that
+ * price for the flatter look: it turns shadows off. The basic pass also culls
+ * quads outside the visible ground rect now, which drops about 80% of those
+ * instances for players who still choose it by hand.
+ *
+ * None of these touch the simulation: two players on different presets see the
+ * same battle, the same hits and the same outcomes. Silhouettes are the one
+ * information-bearing switch, so they stay on for medium and are only dropped
+ * on low, where the frame budget is the point.
  */
 export const GRAPHICS_PRESETS: Record<GraphicsQuality, GraphicsPreset> = {
   low: {
-    renderScale: 0.7,
-    maxParticles: 900,
+    renderScale: 0.6,
+    maxParticles: 600,
     shadowDetail: 'off',
     ambientOcclusion: false,
     bloom: false,
     screenSpaceReflections: false,
     contactShadows: false,
     waterDetail: false,
+    silhouettes: false,
   },
   medium: {
-    renderScale: 0.85,
-    maxParticles: 1800,
-    shadowDetail: 'basic',
-    ambientOcclusion: true,
+    renderScale: 0.8,
+    maxParticles: 1500,
+    // Basic shadows measured no cheaper than the detailed depth map, so this
+    // keeps only the setting that actually saves frame time.
+    shadowDetail: 'off',
+    // Ambient occlusion and contact shadows are the two post passes that cost
+    // real milliseconds and read least at a tactical camera height.
+    ambientOcclusion: false,
     bloom: true,
     screenSpaceReflections: false,
-    contactShadows: true,
+    contactShadows: false,
     waterDetail: false,
+    silhouettes: true,
   },
   high: {
     renderScale: 1,
@@ -142,6 +177,7 @@ export const GRAPHICS_PRESETS: Record<GraphicsQuality, GraphicsPreset> = {
     screenSpaceReflections: true,
     contactShadows: true,
     waterDetail: true,
+    silhouettes: true,
   },
   // Custom starts from the authored look; selecting it preserves the player's
   // explicit effect switches instead of reapplying a preset.
@@ -154,6 +190,7 @@ export const GRAPHICS_PRESETS: Record<GraphicsQuality, GraphicsPreset> = {
     screenSpaceReflections: true,
     contactShadows: true,
     waterDetail: true,
+    silhouettes: true,
   },
 };
 

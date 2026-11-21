@@ -9817,9 +9817,28 @@ export class Game {
     // Only what the guns could possibly reach is worth testing. This used to
     // walk every entity on the map for every unit, which is what made a full
     // battlefield quadratic.
+    // Reach is a function of this tick's light, weather and jamming, so one
+    // evaluation per weapon serves both the scan radius and every candidate
+    // below; recomputing it inside the candidate loop repeated that work for
+    // each weapon of each hull.
+    const reaches: number[] = new Array(weapons.length);
     let scanReach = 0;
-    for (const weapon of weapons) scanReach = Math.max(scanReach, this.engagementReach(e, weapon));
+    for (let i = 0; i < weapons.length; i++) {
+      const reach = this.engagementReach(e, weapons[i]);
+      reaches[i] = reach;
+      if (reach > scanReach) scanReach = reach;
+    }
     const candidates = this.spatial.query(e.x, e.z, scanReach + TARGET_QUERY_SLACK, this.nearby);
+    // A friendly hull can never win — isAttackable rejects it — so the friendly
+    // half of a dense battlefield is dropped before the sort instead of being
+    // carried through it and rejected again in the loop.
+    let kept = 0;
+    for (const target of candidates) {
+      if (target.hp <= 0) continue;
+      if (target.owner !== -1 && !this.isHostile(owner, target.owner)) continue;
+      candidates[kept++] = target;
+    }
+    candidates.length = kept;
     // Nearest first, ties in id order: with that order the search can stop as
     // soon as the remaining candidates are too far to beat the best score, and
     // it stops after a handful of sight lines instead of one per hostile in
@@ -9852,13 +9871,14 @@ export class Game {
       let usable = false;
       let weaponRange = 0;
       let ignoresCover = false;
-      for (const w of weapons) {
+      for (let wi = 0; wi < weapons.length; wi++) {
+        const w = weapons[wi];
         if (!canWeaponTarget(w, target)) continue;
         if (usesPrimaryAmmo(e, w) && e.ammo <= 0) continue;
         if (d < (w.minRange ?? 0) * TILE_SIZE) continue;
         // Indirect fire is aimed at a known location, so its reach is physical;
         // direct fire is limited by what the crew can identify at this light.
-        const reach = this.engagementReach(e, w);
+        const reach = reaches[wi];
         if (d > reach + 4) continue;
         usable = true;
         weaponRange = Math.max(weaponRange, reach / TILE_SIZE);
@@ -11598,6 +11618,7 @@ export class Game {
     // pairs are then applied in the same (nearer id first, then id) order the
     // old nested loop produced, because each push moves both hulls and a pair
     // must see exactly the positions the earlier pairs left behind.
+    //
     const pairs: Array<[Entity, Entity]> = [];
     for (const a of units) {
       const da = unitDef(a.defId);
