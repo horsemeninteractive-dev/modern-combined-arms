@@ -6860,7 +6860,7 @@ body.cinematic-active #hud-root > * { pointer-events: none; }
   font-family: var(--mono);
 }
 .board-tab b { font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink); }
-.board-tab small { font-size: 10px; letter-spacing: 0.04em; color: var(--ink-dim); }
+.board-tab small { font-size: var(--fs-xs); letter-spacing: 0.04em; color: var(--ink-dim); }
 .board-tab.on { background: linear-gradient(180deg, rgba(239, 108, 77, 0.16), rgba(9, 13, 15, 0.94)); }
 .board-tab.on b { color: #ffb499; }
 .outbreak-board-difficulty { display: flex; flex: 1 1 240px; gap: 1px; }
@@ -6889,9 +6889,9 @@ body.cinematic-active #hud-root > * { pointer-events: none; }
 .outbreak-board-row.you { background: rgba(239, 108, 77, 0.1); }
 .board-rank { color: var(--amber); }
 .board-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.board-name i { margin-left: 8px; font-size: 9px; letter-spacing: 0.14em; color: #ffb499; font-style: normal; }
+.board-name i { margin-left: 8px; font-size: var(--fs-xs); letter-spacing: 0.14em; color: #ffb499; font-style: normal; }
 .board-wave, .board-kills, .board-time { text-align: right; }
-.outbreak-board-note { margin: 0; font-size: 10.5px; line-height: 1.55; color: var(--ink-dim); }
+.outbreak-board-note { margin: 0; font-size: var(--fs-xs); line-height: 1.55; color: var(--ink-dim); }
 
 @media (max-width: 720px) {
   .outbreak-board-head, .outbreak-board-row { grid-template-columns: 34px minmax(0, 1fr) 52px 64px 64px; gap: 6px; }

@@ -12,6 +12,41 @@ rendered in game from **Changelog** in the main-menu footer.
 When the version is bumped, rename it to the new `## [x.y.z STAGE] — date`
 heading: `tools/release.mjs` refuses to ship unless that heading exists.
 
+## [0.10.3 BETA] — 2026-11-22
+
+The leaderboard release. Outbreak has online boards for solo and duo runs, on
+their own screen in the Outbreak menu, below Singleplayer and Multiplayer.
+
+### Outbreak
+
+- **A board for every hold.** Solo and duo runs are ranked separately, and each
+  board is filtered by difficulty, so a Normal hold is measured against other
+  Normal holds rather than against Nightmare.
+- **The run posts itself.** When an Outbreak run ends, the result card sends the
+  wave reached, waves completed, kills, duration and losses to your account and
+  reports whether the run moved you up.
+- **Your best run stands.** Each player keeps one entry per board, and a worse
+  run never replaces a better one; equal scores keep the run that got there
+  first.
+- **Runs rank on wave first**, then waves completed, kills, duration and finally
+  the earlier run, so a deeper hold always outranks a shorter one.
+- **The board is readable signed out.** Guests can browse every board; posting a
+  run needs a signed-in session, and the board only ever shows callsigns, never
+  account identifiers.
+- **Renaming keeps your standing**, because entries join the current callsign
+  from your profile rather than storing it with the run.
+- **Submitted figures are checked for plausibility** — wave against waves
+  completed, duration against the waves held, kills against the waves survived —
+  and submissions are rate limited.
+
+### Accounts and data
+
+- **New `outbreak_runs` table** with one row per player per board and an index on
+  `(mode, difficulty, wave, waves_completed, zombies_killed, duration_seconds,
+  recorded_at)` for a single-scan read.
+- **New routes** `GET /outbreak/leaderboard` and `POST /outbreak/runs` on the
+  account Worker.
+
 ## [0.10.2 BETA] — 2026-11-21
 
 The performance release. A full battle — around 300 entities, half of them the
