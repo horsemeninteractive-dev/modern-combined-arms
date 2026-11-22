@@ -57,6 +57,17 @@ import { rankForXp } from './ranks';
 import { safeEqual } from './crypto';
 import { randomToken } from './crypto';
 import {
+  MAX_OUTBREAK_BOARD_LIMIT,
+  OUTBREAK_BOARD_LIMIT,
+  isOutbreakBoardDifficulty,
+  isOutbreakBoardMode,
+  parseOutbreakRun,
+  type OutbreakBoardDifficulty,
+  type OutbreakBoardEntry,
+  type OutbreakBoardMode,
+  type OutbreakRunRecord,
+} from './outbreakBoard';
+import {
   beginAuthorization,
   completeDiscord,
   completeGoogle,
@@ -438,6 +449,17 @@ class Router {
     if (segments[0] === 'matches' && segments.length === 1) {
       if (request.method !== 'POST') throw new AccountError('method-not-allowed', 'Use POST for this endpoint.', 405);
       return this.recordMatch(request);
+    }
+
+    if (segments[0] === 'outbreak' && segments.length === 2) {
+      if (segments[1] === 'leaderboard') {
+        if (request.method !== 'GET') throw new AccountError('method-not-allowed', 'Use GET for this endpoint.', 405);
+        return this.outbreakBoard(request, url);
+      }
+      if (segments[1] === 'runs') {
+        if (request.method !== 'POST') throw new AccountError('method-not-allowed', 'Use POST for this endpoint.', 405);
+        return this.submitOutbreakRun(request);
+      }
     }
 
     if (segments[0] === 'flags' && segments.length === 1) {
@@ -889,6 +911,136 @@ class Router {
         promoted: rankAfter.id !== rankBefore.id,
       },
       career: await this.careerView(resolved.account.id),
+    });
+  }
+
+  /**
+   * One Outbreak board.
+   *
+   * Reading is public: a guest can see the standings from the deck, and a board
+   * row carries a callsign, never an account id. A session, when there is one,
+   * adds the reader's own row and rank even if it falls outside the page.
+   */
+  private async outbreakBoard(request: Request, url: URL): Promise<Response> {
+    await enforceRateLimit(this.deps, 'outbreak-board', RATE_LIMITS.sessionRead, request, 'any');
+    const mode = url.searchParams.get('mode') ?? 'solo';
+    if (!isOutbreakBoardMode(mode)) {
+      throw new AccountError('invalid-request', 'That board does not exist.', 400);
+    }
+    const difficulty = url.searchParams.get('difficulty') ?? 'normal';
+    if (!isOutbreakBoardDifficulty(difficulty)) {
+      throw new AccountError('invalid-request', 'That difficulty is not one of ours.', 400);
+    }
+    const requested = Math.floor(Number(url.searchParams.get('limit') ?? OUTBREAK_BOARD_LIMIT));
+    const limit = Math.min(
+      MAX_OUTBREAK_BOARD_LIMIT,
+      Math.max(1, Number.isFinite(requested) ? requested : OUTBREAK_BOARD_LIMIT),
+    );
+    const resolved = await this.currentSession(request);
+    return jsonResponse({
+      ok: true,
+      ...(await this.outbreakBoardView(
+        mode,
+        difficulty,
+        limit,
+        resolved?.account.id ?? null,
+        resolved !== null,
+      )),
+    });
+  }
+
+  /** The board, the caller's own standing, and nothing that identifies an account. */
+  private async outbreakBoardView(
+    mode: OutbreakBoardMode,
+    difficulty: OutbreakBoardDifficulty,
+    limit: number,
+    accountId: string | null,
+    signedIn: boolean,
+  ): Promise<{
+    mode: OutbreakBoardMode;
+    difficulty: OutbreakBoardDifficulty;
+    signedIn: boolean;
+    entries: OutbreakBoardEntry[];
+    own: OutbreakBoardEntry | null;
+  }> {
+    const rows = await this.deps.store.outbreakLeaderboard(mode, difficulty, limit);
+    let own: OutbreakBoardEntry | null = null;
+    if (accountId) {
+      const record = await this.deps.store.outbreakRun(accountId, mode, difficulty);
+      if (record) {
+        own = this.outbreakEntry(record, await this.deps.store.outbreakRank(record), true);
+      }
+    }
+    return {
+      mode,
+      difficulty,
+      signedIn,
+      entries: rows.map((record, index) =>
+        this.outbreakEntry(record, index + 1, accountId !== null && record.accountId === accountId),
+      ),
+      own,
+    };
+  }
+
+  private outbreakEntry(
+    record: OutbreakRunRecord,
+    rank: number,
+    you: boolean,
+  ): OutbreakBoardEntry {
+    return {
+      rank,
+      callsign: record.callsign,
+      mode: record.mode,
+      difficulty: record.difficulty,
+      wave: record.wave,
+      wavesCompleted: record.wavesCompleted,
+      zombiesKilled: record.zombiesKilled,
+      durationSeconds: record.durationSeconds,
+      players: record.players,
+      nations: [...record.nations],
+      recordedAt: record.recordedAt,
+      you,
+    };
+  }
+
+  /**
+   * Record one finished run.
+   *
+   * The client reports the run it simulated. The service validates the envelope,
+   * takes the callsign from the account rather than the request, stamps its own
+   * clock and keeps only the better of the two runs, so a replay or a retry can
+   * never lower a standing and a renamed player follows their new name.
+   */
+  private async submitOutbreakRun(request: Request): Promise<Response> {
+    const resolved = await this.requireSession(request);
+    await enforceRateLimit(
+      this.deps,
+      'outbreak-submit',
+      RATE_LIMITS.outbreakSubmit,
+      request,
+      resolved.account.id,
+    );
+    const parsed = parseOutbreakRun(await readJsonBody(request));
+    if (!parsed.ok) throw new AccountError('invalid-request', parsed.message, 400);
+    const profile = await this.identityFor(resolved.account.id);
+    const record: OutbreakRunRecord = {
+      ...parsed.value,
+      accountId: resolved.account.id,
+      callsign: profile.callsign,
+      players: parsed.value.mode === 'coop' ? 2 : 1,
+      recordedAt: this.now,
+    };
+    const outcome = await this.deps.store.saveOutbreakRun(record);
+    return jsonResponse({
+      ok: true,
+      improved: outcome === 'ok',
+      ...(await this.outbreakBoardView(
+        record.mode,
+        record.difficulty,
+        OUTBREAK_BOARD_LIMIT,
+        resolved.account.id,
+        true,
+      )),
     });
   }
 

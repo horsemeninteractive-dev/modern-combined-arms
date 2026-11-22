@@ -11,6 +11,11 @@
 import type { CareerMatchRecord, CareerTotals } from './career';
 import type { AvatarId } from './identity';
 import type { MatchRewardSummary, MpRewardStatus } from './matchCareer';
+import type {
+  OutbreakBoardDifficulty,
+  OutbreakBoardMode,
+  OutbreakRunRecord,
+} from './outbreakBoard';
 import type { StatGroupRow } from './stats';
 
 export type ProviderId = 'google' | 'discord';
@@ -307,6 +312,26 @@ export interface AccountStore {
   /** Rewarded authoritative matches at or after `since`, for the daily cap. */
   mpResultsSince(accountId: string, since: number): Promise<number>;
 
+  /** One account's best run on one board, or null before its first finish. */
+  outbreakRun(
+    accountId: string,
+    mode: OutbreakBoardMode,
+    difficulty: OutbreakBoardDifficulty,
+  ): Promise<OutbreakRunRecord | null>;
+  /**
+   * Upsert the account's best run on that board. `conflict` means the stored run
+   * is still the better one: a leaderboard keeps the best, never the latest.
+   */
+  saveOutbreakRun(record: OutbreakRunRecord): Promise<WriteOutcome>;
+  /** Top runs for one board, best first. */
+  outbreakLeaderboard(
+    mode: OutbreakBoardMode,
+    difficulty: OutbreakBoardDifficulty,
+    limit: number,
+  ): Promise<OutbreakRunRecord[]>;
+  /** 1-based position of a stored run among its board's best runs. */
+  outbreakRank(run: OutbreakRunRecord): Promise<number>;
+
   /**
    * Increment one fixed-window counter and return the new value. A window is a
    * monotonic bucket index (`floor(now / windowMs)`), so no cleanup is needed
@@ -334,6 +359,9 @@ export const RATE_LIMITS = Object.freeze({
   // A completed match is a rare event; the window is a UTC day and the budget
   // is far above what a person can play, so it only stops scripted farming.
   matchSubmit: { windowMs: 24 * 60 * 60_000, limit: 60 } as RateLimitRule,
+  // An Outbreak run is equally rare, and the same reasoning applies: the budget
+  // exists to stop a script posting boards of runs, not to throttle players.
+  outbreakSubmit: { windowMs: 60 * 60_000, limit: 30 } as RateLimitRule,
 });
 
 export type AccountErrorCode =

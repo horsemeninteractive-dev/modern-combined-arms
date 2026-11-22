@@ -575,6 +575,13 @@ function asProviders(value: unknown): ProviderId[] {
 }
 
 import { parseFlagSyncDocument, type FlagSyncDocument } from '../identity/flagSync';
+import {
+  parseOutbreakBoard,
+  type OutbreakBoard,
+  type OutbreakBoardDifficulty,
+  type OutbreakBoardMode,
+  type OutbreakRunInput,
+} from './outbreakBoard';
 
 export class HttpAccountApi {
   private readonly base: string;
@@ -802,6 +809,35 @@ export class HttpAccountApi {
       ? num((body.award as Record<string, unknown>).xp)
       : 0;
     return { recorded: body.recorded === true, award, rewards: asCareerRewards(body.rewards), career };
+  }
+
+  /** One public leaderboard; a session also brings the reader's own standing. */
+  async outbreakBoard(
+    mode: OutbreakBoardMode,
+    difficulty: OutbreakBoardDifficulty,
+  ): Promise<OutbreakBoard> {
+    const body = await this.request(
+      `/outbreak/leaderboard?mode=${mode}&difficulty=${difficulty}`,
+    );
+    const board = parseOutbreakBoard(body);
+    if (!board) throw new AccountApiError('server-error', 'The leaderboard reply was malformed.', 500);
+    return board;
+  }
+
+  /**
+   * Post a finished run. The service keeps the better of the two, so this is
+   * safe to call on every finish: `improved` says whether the board changed.
+   */
+  async submitOutbreakRun(
+    run: OutbreakRunInput,
+  ): Promise<{ improved: boolean; board: OutbreakBoard }> {
+    const body = await this.request('/outbreak/runs', {
+      method: 'POST',
+      body: JSON.stringify(run),
+    });
+    const board = parseOutbreakBoard(body);
+    if (!board) throw new AccountApiError('server-error', 'The leaderboard reply was malformed.', 500);
+    return { improved: body.improved === true, board };
   }
 
   async multiplayerTicket(): Promise<{ ticket: string; expiresAt: number }> {

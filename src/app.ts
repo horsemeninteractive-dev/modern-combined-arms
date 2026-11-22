@@ -187,9 +187,10 @@ import { MenuAttractMatch } from './ui/menuAttract';
 import { readFlagState } from './identity/flagStore';
 import { camoTintFor } from './identity/cosmetics';
 import { AccountPanel } from './ui/accountPanel';
+import { OutbreakLeaderboardView } from './ui/outbreakLeaderboard';
 import { FlagStore } from './identity/flagStore';
 import { parseFlagComposition, type FlagComposition } from './identity/flag';
-import { HttpAccountApi, takeAuthOutcome } from './accounts/client';
+import { AccountApiError, HttpAccountApi, takeAuthOutcome } from './accounts/client';
 import { ensureGuestProfile } from './accounts/guest';
 import { CareerService } from './accounts/careerService';
 import type { CareerMatchInput } from './accounts/career';
@@ -263,6 +264,7 @@ export type MenuView =
   | 'skirmish'
   | 'outbreak-solo'
   | 'outbreak-coop'
+  | 'outbreak-leaderboards'
   | 'editor'
   | 'settings'
   | 'account';
@@ -447,6 +449,7 @@ const MENU_VIEWS: MenuView[] = [
   'skirmish',
   'outbreak-solo',
   'outbreak-coop',
+  'outbreak-leaderboards',
   'editor',
   'settings',
   'account',
@@ -597,6 +600,10 @@ export class App {
   private victoryShown: VictoryState | 'none' = 'none';
   /** Outbreak setup, remembered on this device like the skirmish choices. */
   private outbreakDifficulty: OutbreakDifficulty = 'normal';
+  /** The standings screen, built on first use and reused after that. */
+  private outbreakLeaderboard: OutbreakLeaderboardView | null = null;
+  /** One run is posted once, even if its card is re-shown. */
+  private outbreakPosted = false;
   /**
    * The room's survival readout for a networked Outbreak run. A network client
    * ticks no simulation, so its own director never moves; every wave number and
@@ -1458,19 +1465,22 @@ export class App {
     // sidebar to their own options. Only one level is mounted at a time.
     // Outbreak's two routes share one rail: solo and co-op are separate
     // screens, but they are two places inside the mode, not two top sections.
-    const outbreakRoute = view === 'outbreak-solo' || view === 'outbreak-coop';
+        const outbreakRoute = view === 'outbreak-solo' || view === 'outbreak-coop';
     const level =
       view === 'skirmish'
         ? 'skirmish'
         : outbreakRoute
           ? 'outbreak'
-          : view === 'singleplayer'
-            ? 'singleplayer'
-            : view === 'campaign'
-              ? 'campaign'
-            : view === 'account'
-              ? 'account'
-              : 'top';
+          : // Standings are the third place in the mode, not a way into a battle.
+            view === 'outbreak-leaderboards'
+            ? 'outbreak'
+            : view === 'singleplayer'
+              ? 'singleplayer'
+              : view === 'campaign'
+                ? 'campaign'
+                : view === 'account'
+                  ? 'account'
+                  : 'top';
     menu.dataset.level = level;
     menu.querySelectorAll<HTMLElement>('[data-menu-level]').forEach((entry) => {
       entry.hidden = entry.dataset.menuLevel !== level;
@@ -1495,6 +1505,19 @@ export class App {
       panel?.show();
     }
     else this.multiplayerPanel?.hide();
+    if (view === 'outbreak-leaderboards') {
+      // Standings are read on entry: a run finished a moment ago may already be
+      // on the board, and a session may have ended since the deck was opened.
+      const host = document.getElementById('outbreak-board');
+      if (host) {
+        if (!this.outbreakLeaderboard) {
+          this.outbreakLeaderboard = new OutbreakLeaderboardView(host, {
+            api: () => this.accountApi,
+          });
+        }
+        this.outbreakLeaderboard.show();
+      }
+    }
     if (view === 'editor') this.refreshEditorAutosaveButton();
     // The board canvas has no size while the view is hidden; paint it on entry.
     if (view === 'skirmish') this.paintBriefMap();
@@ -1523,7 +1546,8 @@ export class App {
       this.screen === 'menu' &&
       (this.outbreakMenuHover ||
         this.menuView === 'outbreak-solo' ||
-        this.menuView === 'outbreak-coop');
+        this.menuView === 'outbreak-coop' ||
+        this.menuView === 'outbreak-leaderboards');
     const menu = document.getElementById('menu-screen');
     if (menu) menu.dataset.theme = outbreak ? 'outbreak' : 'standard';
     this.audio.setMenuTheme(outbreak ? OUTBREAK_MENU_THEME_SRC : MAIN_THEME_SRC);
@@ -1934,6 +1958,7 @@ export class App {
    * lobby rather than from here.
    */
   private async startOutbreak(): Promise<void> {
+    this.outbreakPosted = false;
     const scenario = createOutbreakScenario({
       difficulty: this.outbreakDifficulty,
       mode: 'solo',
@@ -2028,11 +2053,59 @@ export class App {
   private hideOutbreakUi(): void {
     document.getElementById('outbreak-hud')?.classList.add('hidden');
     document.getElementById('outbreak-results')?.classList.add('hidden');
+    const note = document.getElementById('outbreak-results-note');
+    if (note) note.textContent = '';
+  }
+
+  /**
+   * Post a finished run to its online board.
+   *
+   * The card reports what the service said: a new best, the standing it kept, or
+   * the reason it could not post. A guest is told to sign in rather than shown a
+   * silent failure, and an unreachable service never blocks the card itself.
+   */
+  private postOutbreakRun(result: OutbreakResult): void {
+    const note = document.getElementById('outbreak-results-note');
+    if (note) note.textContent = '';
+    if (this.outbreakPosted) return;
+    this.outbreakPosted = true;
+    const api = this.accountApi;
+    if (!api) return;
+    const mode = result.mode === 'coop' ? 'coop' : 'solo';
+    void api
+      .submitOutbreakRun({
+        mode,
+        difficulty: result.difficulty,
+        // The card reports the wave the run reached, which is one past the last
+        // wave it held; the board records the same number so both agree.
+        wave: Math.max(result.wave, result.wavesCompleted + 1),
+        wavesCompleted: result.wavesCompleted,
+        zombiesKilled: result.zombiesKilled,
+        durationSeconds: Math.round(result.durationSeconds),
+        structuresLost: result.structuresLost,
+        unitsLost: result.unitsLost,
+        nations: result.nations,
+      })
+      .then(({ improved, board }) => {
+        if (!note) return;
+        const boardName = `${mode === 'coop' ? 'Duo' : 'Solo'} · ${OUTBREAK_DIFFICULTIES[board.difficulty].name}`;
+        note.textContent = board.own
+          ? `${improved ? 'NEW BEST' : 'BEST KEPT'} · ${boardName} · rank ${board.own.rank}`
+          : `${boardName} · posted`;
+      })
+      .catch((error: unknown) => {
+        if (!note) return;
+        note.textContent =
+          error instanceof AccountApiError && error.status === 401
+            ? 'Sign in under Account to post this run on the leaderboards.'
+            : 'The leaderboard could not be reached, so this run was not posted.';
+      });
   }
 
   /** The survival results card: wave reached, kills, losses and the clock. */
   private showOutbreakResults(result: OutbreakResult): void {
     const overlay = document.getElementById('outbreak-results');
+    this.postOutbreakRun(result);
     const grid = document.getElementById('outbreak-results-grid');
     if (!overlay || !grid) return;
     document.getElementById('outbreak-hud')?.classList.add('hidden');
@@ -3171,6 +3244,7 @@ export class App {
     if (this.cinematic) this.cinematic.skip(true);
     this.endNetworkBattle();
     this.finishTutorial();
+    this.outbreakPosted = false;
     document.getElementById('menu-screen')?.classList.remove('hidden', 'handoff');
     document.getElementById('loading-screen')?.classList.add('hidden');
     document.getElementById('app')?.classList.remove('loading-map-pan');

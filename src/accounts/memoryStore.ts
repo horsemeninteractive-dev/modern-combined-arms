@@ -26,6 +26,12 @@ import type {
   SessionRecord,
   WriteOutcome,
 } from './types';
+import {
+  compareOutbreakRuns,
+  type OutbreakBoardDifficulty,
+  type OutbreakBoardMode,
+  type OutbreakRunRecord,
+} from './outbreakBoard';
 import type { StatGroupRow } from './stats';
 
 
@@ -43,6 +49,20 @@ export class MemoryAccountStore implements AccountStore {
   private flagDocuments = new Map<string, PlayerIdentityDocument>();
   private achievements = new Map<string, CareerAchievementRecord>();
   private campaigns = new Map<string, CareerCampaignRecord>();
+  private outbreakRuns = new Map<string, OutbreakRunRecord>();
+
+  private outbreakKey(accountId: string, mode: string, difficulty: string): string {
+    return `${accountId}:${mode}:${difficulty}`;
+  }
+
+  /** A stored run with the player's current callsign, never an account id outward. */
+  private outbreakView(record: OutbreakRunRecord): OutbreakRunRecord {
+    return {
+      ...record,
+      nations: [...record.nations],
+      callsign: this.profiles.get(record.accountId)?.callsign ?? record.callsign,
+    };
+  }
 
   /** Test hook: change an account's status without going through a route. */
   setStatus(accountId: string, status: AccountRecord['status']): void {
@@ -341,6 +361,47 @@ export class MemoryAccountStore implements AccountStore {
       inserted += 1;
     }
     return inserted;
+  }
+
+  async outbreakRun(
+    accountId: string,
+    mode: OutbreakBoardMode,
+    difficulty: OutbreakBoardDifficulty,
+  ): Promise<OutbreakRunRecord | null> {
+    const record = this.outbreakRuns.get(this.outbreakKey(accountId, mode, difficulty));
+    return record ? this.outbreakView(record) : null;
+  }
+
+  async saveOutbreakRun(record: OutbreakRunRecord): Promise<WriteOutcome> {
+    const key = this.outbreakKey(record.accountId, record.mode, record.difficulty);
+    const current = this.outbreakRuns.get(key);
+    // A better-or-equal run never replaces the stored one, matching the
+    // conditional upsert in the D1 store.
+    if (current && compareOutbreakRuns(record, current) >= 0) return 'conflict';
+    this.outbreakRuns.set(key, { ...record, nations: [...record.nations] });
+    return 'ok';
+  }
+
+  async outbreakLeaderboard(
+    mode: OutbreakBoardMode,
+    difficulty: OutbreakBoardDifficulty,
+    limit: number,
+  ): Promise<OutbreakRunRecord[]> {
+    return [...this.outbreakRuns.values()]
+      .filter((record) => record.mode === mode && record.difficulty === difficulty)
+      .sort(compareOutbreakRuns)
+      .slice(0, limit)
+      .map((record) => this.outbreakView(record));
+  }
+
+  async outbreakRank(run: OutbreakRunRecord): Promise<number> {
+    let ahead = 0;
+    for (const record of this.outbreakRuns.values()) {
+      if (record.mode !== run.mode || record.difficulty !== run.difficulty) continue;
+      if (record.accountId === run.accountId) continue;
+      if (compareOutbreakRuns(record, run) < 0) ahead++;
+    }
+    return ahead + 1;
   }
 
   async recordCampaignCompletion(accountId: string, campaignId: string, completedAt: number): Promise<WriteOutcome> {

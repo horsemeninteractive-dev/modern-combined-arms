@@ -421,6 +421,12 @@
                 <span class="menu-nav-text"><b>Multiplayer</b><small>Co-op · two commanders share the post</small></span>
                 <span class="menu-nav-go" aria-hidden="true">›</span>
               </button>
+              <!-- Standings are their own route: a board is not a way to play. -->
+              <button type="button" class="menu-nav-item" data-menu-view="outbreak-leaderboards">
+                <span class="menu-nav-index">03</span>
+                <span class="menu-nav-text"><b>Leaderboards</b><small>Online · solo and duo survival standings</small></span>
+                <span class="menu-nav-go" aria-hidden="true">›</span>
+              </button>
               <p class="outbreak-rail-note">
                 The horde comes in from four roads and never stops. Hold the Relay
                 Basin alone, or open a room and share the defence with a second seat.
@@ -673,6 +679,18 @@
               </div>
             </section>
 
+            <section class="menu-view outbreak-view" data-menu-panel="outbreak-leaderboards" aria-label="Outbreak leaderboards">
+              <div class="menu-view-head">
+                <p class="eyebrow">OUTBREAK · LEADERBOARDS</p>
+                <h2>Survival standings</h2>
+                <p class="lede">
+                  The longest holds on record, solo and duo, split by difficulty. A finished run
+                  posts the best wave it reached.
+                </p>
+              </div>
+              <div class="outbreak-board" id="outbreak-board"></div>
+            </section>
+
             <section class="menu-view" data-menu-panel="campaign" aria-label="Campaign">
               <div class="menu-view-head">
                 <p class="eyebrow" id="campaign-eyebrow">CAMPAIGN · ATLANTIC ACCORD</p>
@@ -866,6 +884,7 @@
           <h2 id="outbreak-results-title">The line broke</h2>
           <p class="outbreak-results-lede" id="outbreak-results-lede">The Command Post has fallen.</p>
           <div class="outbreak-results-grid" id="outbreak-results-grid"></div>
+          <p class="outbreak-results-note" id="outbreak-results-note" role="status" aria-live="polite"></p>
           <div class="outbreak-results-actions">
             <button id="btn-outbreak-retry" class="btn btn-primary" type="button">Redeploy</button>
             <button id="btn-outbreak-menu" class="btn btn-ghost" type="button">Command deck</button>

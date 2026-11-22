@@ -6841,7 +6841,61 @@ body.cinematic-active #hud-root > * { pointer-events: none; }
 .outbreak-results-grid div { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; background: rgba(10, 15, 17, 0.92); }
 .outbreak-results-grid span { font-size: var(--fs-xs); letter-spacing: 0.16em; color: var(--ink-dim); }
 .outbreak-results-grid b { font-family: var(--mono); font-size: 15px; letter-spacing: 0.03em; }
+.outbreak-results-note {
+  margin: 12px 0 0; min-height: 1em;
+  font-family: var(--mono); font-size: var(--fs-xs); letter-spacing: 0.08em;
+  color: var(--ink-dim);
+}
+.outbreak-results-note:not(:empty) { color: #d6f08a; }
 .outbreak-results-actions { display: flex; gap: 10px; margin-top: 20px; }
+
+/* Leaderboards: solo and duo boards, one difficulty at a time. */
+.outbreak-board { display: flex; flex-direction: column; gap: 14px; }
+.outbreak-board-top { display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px; }
+.outbreak-board-modes { display: flex; flex: 1 1 260px; gap: 1px; background: var(--line); border: 1px solid var(--line); }
+.board-tab {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px;
+  padding: 10px 12px; text-align: left; cursor: pointer;
+  border: 0; background: rgba(9, 13, 15, 0.94); color: var(--ink-dim);
+  font-family: var(--mono);
+}
+.board-tab b { font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink); }
+.board-tab small { font-size: 10px; letter-spacing: 0.04em; color: var(--ink-dim); }
+.board-tab.on { background: linear-gradient(180deg, rgba(239, 108, 77, 0.16), rgba(9, 13, 15, 0.94)); }
+.board-tab.on b { color: #ffb499; }
+.outbreak-board-difficulty { display: flex; flex: 1 1 240px; gap: 1px; }
+.outbreak-board-difficulty .difficulty-btn { flex: 1; min-width: 0; padding: 8px 6px; font-size: var(--fs-xs); }
+.outbreak-board-difficulty .difficulty-btn.on { border-color: rgba(239, 108, 77, 0.42); color: #ffb499; }
+.outbreak-board-status { margin: 0; font-size: 11px; letter-spacing: 0.04em; color: var(--ink-dim); }
+.outbreak-board-own {
+  display: flex; align-items: baseline; gap: 12px; padding: 9px 12px;
+  border: 1px solid var(--line); background: rgba(10, 15, 17, 0.9);
+}
+.outbreak-board-own span { font-size: var(--fs-xs); letter-spacing: 0.16em; color: var(--ink-dim); }
+.outbreak-board-own b { font-family: var(--mono); font-size: 12px; letter-spacing: 0.03em; }
+.outbreak-board-own.empty b { color: var(--ink-dim); }
+.outbreak-board-table { border: 1px solid var(--line); background: rgba(8, 12, 14, 0.86); }
+.outbreak-board-head,
+.outbreak-board-row {
+  display: grid; grid-template-columns: 48px minmax(0, 1fr) 64px 84px 84px;
+  align-items: center; gap: 10px; padding: 7px 12px;
+  font-family: var(--mono); font-size: 12px;
+}
+.outbreak-board-head {
+  font-size: var(--fs-xs); letter-spacing: 0.14em; color: var(--ink-dim);
+  border-bottom: 1px solid var(--line);
+}
+.outbreak-board-row + .outbreak-board-row { border-top: 1px solid rgba(255, 255, 255, 0.05); }
+.outbreak-board-row.you { background: rgba(239, 108, 77, 0.1); }
+.board-rank { color: var(--amber); }
+.board-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board-name i { margin-left: 8px; font-size: 9px; letter-spacing: 0.14em; color: #ffb499; font-style: normal; }
+.board-wave, .board-kills, .board-time { text-align: right; }
+.outbreak-board-note { margin: 0; font-size: 10.5px; line-height: 1.55; color: var(--ink-dim); }
+
+@media (max-width: 720px) {
+  .outbreak-board-head, .outbreak-board-row { grid-template-columns: 34px minmax(0, 1fr) 52px 64px 64px; gap: 6px; }
+}
 
 @media (max-width: 720px) {
   .outbreak-hud { min-width: 0; width: calc(100% - 24px); top: 46px; }

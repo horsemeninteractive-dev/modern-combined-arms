@@ -56,6 +56,17 @@ describe('Outbreak as a top-level route', () => {
     );
   });
 
+  it('adds leaderboards below the solo and duo routes, on their own screen', () => {
+    const solo = outbreakLevel.indexOf('data-menu-view="outbreak-solo"');
+    const coop = outbreakLevel.indexOf('data-menu-view="outbreak-coop"');
+    const boards = outbreakLevel.indexOf('data-menu-view="outbreak-leaderboards"');
+    expect(solo).toBeGreaterThan(-1);
+    expect(coop).toBeGreaterThan(solo);
+    expect(boards).toBeGreaterThan(coop);
+    expect(html).toContain('data-menu-panel="outbreak-leaderboards"');
+    expect(app).toContain("view === 'outbreak-leaderboards'");
+  });
+
   it('keeps both routes inside one Outbreak rail level', () => {
     expect(app).toMatch(
       /const outbreakRoute = view === 'outbreak-solo' \|\| view === 'outbreak-coop';/,

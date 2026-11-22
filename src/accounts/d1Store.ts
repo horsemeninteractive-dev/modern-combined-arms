@@ -36,6 +36,13 @@ import type {
 } from './types';
 import { DEFAULT_AVATAR, isAvatarId, type AvatarId } from './identity';
 import type { MatchRewardSummary } from './matchCareer';
+import {
+  isOutbreakBoardDifficulty,
+  isOutbreakBoardMode,
+  type OutbreakBoardDifficulty,
+  type OutbreakBoardMode,
+  type OutbreakRunRecord,
+} from './outbreakBoard';
 import type { StatGroupRow } from './stats';
 
 /** The subset of the D1 binding this service uses. */
@@ -207,6 +214,57 @@ function provider(value: string): ProviderId {
 
 function migrationState(value: string): MigrationState {
   return value === 'pending' || value === 'conflict' ? value : 'complete';
+}
+
+interface OutbreakRunRow {
+  account_id: string;
+  mode: string;
+  difficulty: string;
+  wave: number;
+  waves_completed: number;
+  zombies_killed: number;
+  duration_seconds: number;
+  structures_lost: number;
+  units_lost: number;
+  players: number;
+  nations: string;
+  callsign: string | null;
+  recorded_at: number;
+}
+
+/**
+ * One stored run, or null for a row this build cannot read.
+ *
+ * The check constraints already bound mode and difficulty, but a row written by
+ * a newer build must degrade to "not on this board" rather than poison the
+ * table with an unknown label.
+ */
+function toOutbreakRun(row: OutbreakRunRow): OutbreakRunRecord | null {
+  if (!isOutbreakBoardMode(row.mode) || !isOutbreakBoardDifficulty(row.difficulty)) return null;
+  let nations: string[] = [];
+  try {
+    const parsed: unknown = JSON.parse(row.nations);
+    if (Array.isArray(parsed)) {
+      nations = parsed.filter((entry): entry is string => typeof entry === 'string').slice(0, 2);
+    }
+  } catch {
+    nations = [];
+  }
+  return {
+    accountId: row.account_id,
+    mode: row.mode,
+    difficulty: row.difficulty,
+    wave: row.wave,
+    wavesCompleted: row.waves_completed,
+    zombiesKilled: row.zombies_killed,
+    durationSeconds: row.duration_seconds,
+    structuresLost: row.structures_lost,
+    unitsLost: row.units_lost,
+    players: row.players,
+    nations,
+    callsign: row.callsign ?? 'Commander',
+    recordedAt: row.recorded_at,
+  };
 }
 
 export class D1AccountStore implements AccountStore {
@@ -868,6 +926,131 @@ export class D1AccountStore implements AccountStore {
       .bind(accountId)
       .all<CampaignRow>();
     return (result.results ?? []).map(toCampaign);
+  }
+
+  async outbreakRun(
+    accountId: string,
+    mode: OutbreakBoardMode,
+    difficulty: OutbreakBoardDifficulty,
+  ): Promise<OutbreakRunRecord | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT r.account_id, r.mode, r.difficulty, r.wave, r.waves_completed, r.zombies_killed,
+                r.duration_seconds, r.structures_lost, r.units_lost, r.players, r.nations,
+                COALESCE(p.callsign, r.callsign) AS callsign, r.recorded_at
+           FROM outbreak_runs r
+           LEFT JOIN account_profiles p ON p.account_id = r.account_id
+          WHERE r.account_id = ? AND r.mode = ? AND r.difficulty = ?`,
+      )
+      .bind(accountId, mode, difficulty)
+      .first<OutbreakRunRow>();
+    return row ? toOutbreakRun(row) : null;
+  }
+
+  /**
+   * Upsert a run only when it beats the stored one.
+   *
+   * The comparison lives in the statement, not in a read-then-write: two
+   * devices finishing at once may both submit, and the board must keep the
+   * better run rather than whichever write landed last. A no-op update reports
+   * zero changed rows, which is exactly the `conflict` answer.
+   */
+  async saveOutbreakRun(record: OutbreakRunRecord): Promise<WriteOutcome> {
+    const result = await this.db
+      .prepare(
+        `INSERT INTO outbreak_runs (
+           account_id, mode, difficulty, wave, waves_completed, zombies_killed,
+           duration_seconds, structures_lost, units_lost, players, nations, callsign, recorded_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (account_id, mode, difficulty) DO UPDATE SET
+           wave = excluded.wave,
+           waves_completed = excluded.waves_completed,
+           zombies_killed = excluded.zombies_killed,
+           duration_seconds = excluded.duration_seconds,
+           structures_lost = excluded.structures_lost,
+           units_lost = excluded.units_lost,
+           players = excluded.players,
+           nations = excluded.nations,
+           callsign = excluded.callsign,
+           recorded_at = excluded.recorded_at
+         WHERE excluded.wave > outbreak_runs.wave
+            OR (excluded.wave = outbreak_runs.wave AND excluded.waves_completed > outbreak_runs.waves_completed)
+            OR (excluded.wave = outbreak_runs.wave AND excluded.waves_completed = outbreak_runs.waves_completed
+                AND excluded.zombies_killed > outbreak_runs.zombies_killed)
+            OR (excluded.wave = outbreak_runs.wave AND excluded.waves_completed = outbreak_runs.waves_completed
+                AND excluded.zombies_killed = outbreak_runs.zombies_killed
+                AND excluded.duration_seconds > outbreak_runs.duration_seconds)`,
+      )
+      .bind(
+        record.accountId,
+        record.mode,
+        record.difficulty,
+        record.wave,
+        record.wavesCompleted,
+        record.zombiesKilled,
+        record.durationSeconds,
+        record.structuresLost,
+        record.unitsLost,
+        record.players,
+        JSON.stringify(record.nations),
+        record.callsign,
+        record.recordedAt,
+      )
+      .run();
+    return changed(result) > 0 ? 'ok' : 'conflict';
+  }
+
+  async outbreakLeaderboard(
+    mode: OutbreakBoardMode,
+    difficulty: OutbreakBoardDifficulty,
+    limit: number,
+  ): Promise<OutbreakRunRecord[]> {
+    const result = await this.db
+      .prepare(
+        `SELECT r.account_id, r.mode, r.difficulty, r.wave, r.waves_completed, r.zombies_killed,
+                r.duration_seconds, r.structures_lost, r.units_lost, r.players, r.nations,
+                COALESCE(p.callsign, r.callsign) AS callsign, r.recorded_at
+           FROM outbreak_runs r
+           LEFT JOIN account_profiles p ON p.account_id = r.account_id
+          WHERE r.mode = ? AND r.difficulty = ?
+          ORDER BY r.wave DESC, r.waves_completed DESC, r.zombies_killed DESC,
+                   r.duration_seconds DESC, r.recorded_at ASC
+          LIMIT ?`,
+      )
+      .bind(mode, difficulty, limit)
+      .all<OutbreakRunRow>();
+    return (result.results ?? [])
+      .map(toOutbreakRun)
+      .filter((run): run is OutbreakRunRecord => run !== null);
+  }
+
+  /** Rows ahead of this run on its board, plus one. Ties do not move a row. */
+  async outbreakRank(run: OutbreakRunRecord): Promise<number> {
+    const row = await this.db
+      .prepare(
+        `SELECT COUNT(*) AS ahead FROM outbreak_runs
+          WHERE mode = ? AND difficulty = ?
+            AND (wave > ?
+              OR (wave = ? AND waves_completed > ?)
+              OR (wave = ? AND waves_completed = ? AND zombies_killed > ?)
+              OR (wave = ? AND waves_completed = ? AND zombies_killed = ? AND duration_seconds > ?))`,
+      )
+      .bind(
+        run.mode,
+        run.difficulty,
+        run.wave,
+        run.wave,
+        run.wavesCompleted,
+        run.wave,
+        run.wavesCompleted,
+        run.zombiesKilled,
+        run.wave,
+        run.wavesCompleted,
+        run.zombiesKilled,
+        run.durationSeconds,
+      )
+      .first<{ ahead: number }>();
+    return (row?.ahead ?? 0) + 1;
   }
 
   async careerStatRows(accountId: string): Promise<StatGroupRow[]> {
