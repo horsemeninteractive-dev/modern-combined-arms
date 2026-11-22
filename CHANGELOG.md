@@ -12,6 +12,18 @@ rendered in game from **Changelog** in the main-menu footer.
 When the version is bumped, rename it to the new `## [x.y.z STAGE] — date`
 heading: `tools/release.mjs` refuses to ship unless that heading exists.
 
+## [0.10.4 BETA] — 2026-11-22
+
+The standings hotfix. The Outbreak leaderboards screen is visible again.
+
+### Outbreak
+
+- **Choosing Leaderboards shows the board.** The screen held its tabs, filters
+  and standings, but the deck's per-view style rule had no entry for it, so the
+  panel stayed hidden and the stage came up empty. It now switches in like the
+  solo, co-op and campaign screens, and a test asserts the rule exists so a new
+  view cannot ship without one.
+
 ## [0.10.3 BETA] — 2026-11-22
 
 The leaderboard release. Outbreak has online boards for solo and duo runs, on
