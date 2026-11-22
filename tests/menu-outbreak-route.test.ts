@@ -67,6 +67,17 @@ describe('Outbreak as a top-level route', () => {
     expect(app).toContain("view === 'outbreak-leaderboards'");
   });
 
+  it('shows the leaderboards panel when its view is open', () => {
+    // The deck hides every panel by default and reveals the active one from a
+    // per-view selector list. A view missing from that list leaves the stage
+    // empty even though the rail item selects and the board itself loads.
+    const reveal =
+      ".menu-screen[data-view='outbreak-leaderboards'] .menu-view[data-menu-panel='outbreak-leaderboards']";
+    // Both copies of the list matter: the display switch and the reduced-motion
+    // override enumerate the same panels.
+    expect(styles.split(reveal)).toHaveLength(3);
+  });
+
   it('keeps both routes inside one Outbreak rail level', () => {
     expect(app).toMatch(
       /const outbreakRoute = view === 'outbreak-solo' \|\| view === 'outbreak-coop';/,
