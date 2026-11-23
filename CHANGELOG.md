@@ -12,6 +12,53 @@ rendered in game from **Changelog** in the main-menu footer.
 When the version is bumped, rename it to the new `## [x.y.z STAGE] — date`
 heading: `tools/release.mjs` refuses to ship unless that heading exists.
 
+## [0.11.0 BETA] — 2026-11-23
+
+The theatres release. Outbreak has four authored battlefields, a selector for
+each mode, and a standing kept for every one of them.
+
+### Outbreak
+
+- **Four theatres, four problems.** The Relay Basin stays the open hold it was,
+  and beside it sit the Civic Square — a clearing made to be built in, ringed by
+  a city — the Tidewall Quay and the Frostline Junction. Each carries its own
+  ground, weather and structures, and every one is chosen on the screen that
+  deploys you.
+- **Singleplayer picks the ground.** The solo Outbreak screen lists the four
+  theatres with their theme and note, and remembers the one you last deployed
+  on.
+- **A duo fights one battlefield.** The lobby carries the host's map alongside
+  the difficulty, so both players are briefed on the same ground before the
+  first front is called.
+- **The maps lean on buildings.** Each authored map seats garrisonable and
+  capturable structures on buildable ground, so cover is something to take and
+  then to hold rather than scenery to build around.
+- **A standing for each ground.** A wave in the square is not a wave in the
+  basin: the board key is now battlefield, mode and difficulty, and the
+  Leaderboards screen carries a battlefield row beside the mode and difficulty
+  filters.
+- **Old runs stay where they were fought.** Every result recorded before the
+  theatres shipped is re-filed on the Relay Basin, and a client that names no
+  map still reads that board.
+
+### Accounts and data
+
+- **`outbreak_runs` is keyed by map.** Migration `0011` rebuilds the table so
+  the board key is `(account_id, map, mode, difficulty)`, with a checked map
+  column, the existing rows copied onto the basin, and the board index rebuilt
+  over the new key.
+
+### Interface
+
+- **The Outbreak palette reaches the whole deck.** Amber is carried in channel
+  variables as well as hex, so arming Outbreak repaints the hairlines, washes and
+  glows with the mode's red instead of leaving amber seams through the chrome.
+  The insignia follows through a hue turn, and the swap crossfades rather than
+  flipping in one frame.
+- **Every menu view declares its reveal rule.** A test now asserts that each
+  view has the style rule that shows it, so a screen cannot ship hidden the way
+  Leaderboards once did.
+
 ## [0.10.4 BETA] — 2026-11-22
 
 The standings hotfix. The Outbreak leaderboards screen is visible again.
