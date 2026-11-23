@@ -1,12 +1,18 @@
 #!/usr/bin/env node
 /**
- * One-command release: check the declared version, build, ship to Pages, and
- * prove the new bundle is the one being served.
+ * One-command release: check the declared version, build, ship to Pages, prove
+ * the new bundle is the one being served, then tag that commit and push the
+ * branch and tag together.
  *
- *   npm run release                # validate, test, build, deploy, verify
- *   npm run release -- --dry-run   # everything except the upload
+ *   npm run release                # validate, test, build, deploy, verify, tag
+ *   npm run release -- --dry-run   # everything except the upload and the tag
  *   npm run release -- --skip-tests
  *   npm run release -- --allow-dirty
+ *
+ * The tag is `v<version>`, annotated, with the `<version> BETA` message used by
+ * every tag before it. It is created only after the live site is proven to serve
+ * the freshly built bundle, so the tag always names the live build. `--allow-dirty`
+ * ships uncommitted files, which no commit contains, so that path skips the tag.
  *
  * The build stamp is the commit count, so a release normally starts from a
  * clean tree: `--allow-dirty` ships whatever is on disk under the previous
@@ -63,7 +69,10 @@ function captureShell(command) {
 
 /** git is a real executable everywhere, so it needs no shell. */
 function git(args) {
-  const result = spawnSync('git', args, { encoding: 'utf8' });
+  const result = spawnSync('git', args, {
+    encoding: 'utf8',
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+  });
   if (result.error) fail(`git could not start: ${result.error.message}`);
   return { status: result.status ?? 1, out: `${result.stdout ?? ''}${result.stderr ?? ''}` };
 }
@@ -72,6 +81,7 @@ const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 const version = pkg.version;
 const stage = String(pkg.releaseStage ?? 'BETA').toUpperCase();
 const label = `${version} ${stage}`;
+const tag = `v${version}`;
 
 console.log(`MCA release \u2014 v${label}${dryRun ? ' (dry run)' : ''}`);
 
@@ -86,6 +96,8 @@ if (!html.includes(`id="menu-build">v${label} \u00b7 BUILD`)) {
 }
 console.log(`  package.json, CHANGELOG.md and the menu footer agree on v${label}`);
 
+const head = git(['rev-parse', 'HEAD']).out.trim();
+
 step('Checking the working tree');
 const dirty = git(['status', '--porcelain']).out.trim();
 if (dirty && !allowDirty) {
@@ -93,6 +105,20 @@ if (dirty && !allowDirty) {
   fail('The tree is dirty. Commit the release first, or pass --allow-dirty.');
 }
 console.log(dirty ? '  shipping an uncommitted tree (--allow-dirty)' : '  clean');
+
+step(`Checking the tag \u00b7 ${tag}`);
+if (dirty) {
+  console.log('  --allow-dirty skips the tag, so a stale one does not matter here');
+} else {
+  const staleTag = git(['rev-parse', '--verify', '--quiet', `refs/tags/${tag}^{commit}`]);
+  if (staleTag.status === 0 && staleTag.out.trim() !== head) {
+    fail(
+      `Tag ${tag} already names ${staleTag.out.trim().slice(0, 7)}, not HEAD. ` +
+        'Bump the version, or delete the stale tag, before releasing.',
+    );
+  }
+  console.log(staleTag.status === 0 ? `  ${tag} already names HEAD` : `  ${tag} is unused`);
+}
 
 if (!skipTests) {
   step('Running the test suite');
@@ -150,5 +176,30 @@ while (Date.now() < deadline) {
   await new Promise((resolve) => setTimeout(resolve, 3000));
 }
 if (!live) fail(`${SITE} did not serve ${bundle} within 90 s. Check the deployment in the Pages dashboard.`);
+
+step(`Tagging the live build \u00b7 ${tag}`);
+if (dirty) {
+  console.log('  skipped: --allow-dirty shipped files that no commit contains, so no tag could match');
+  console.log(`  commit the tree, then: git tag -a ${tag} -m "${label}" && git push origin HEAD refs/tags/${tag}`);
+} else {
+  const tagged = git(['rev-parse', '--verify', '--quiet', `refs/tags/${tag}^{commit}`]);
+  if (tagged.status === 0) {
+    console.log(`  ${tag} already names this commit`);
+  } else if (git(['tag', '-a', tag, '-m', label, 'HEAD']).status !== 0) {
+    fail(`Deployed, but creating ${tag} failed. Tag it by hand: git tag -a ${tag} -m "${label}"`);
+  } else {
+    console.log(`  created ${tag} \u2192 ${label}`);
+  }
+
+  const push = git(['push', 'origin', 'HEAD', `refs/tags/${tag}`]);
+  process.stdout.write(push.out);
+  if (push.status !== 0) {
+    fail(
+      `Deployed and tagged locally, but the push failed. ${SITE} is live on ${head.slice(0, 7)}; ` +
+        `retry with: git push origin HEAD refs/tags/${tag}`,
+    );
+  }
+  console.log(`  pushed HEAD and ${tag} to origin`);
+}
 
 console.log(`\n\u2714 Released v${label} \u00b7 BUILD ${stamp} \u2014 ${SITE}`);

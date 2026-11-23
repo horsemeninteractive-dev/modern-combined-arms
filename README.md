@@ -135,8 +135,10 @@ matter.
 `## [x.y.z BETA]` heading in [CHANGELOG.md](CHANGELOG.md) and the `#menu-build`
 footer in [index.html](index.html) agree on the version, refuses a dirty tree
 (the build stamp is the commit count), runs the test suite, builds, uploads
-`dist/` to the `moderncombinedarms` Pages project, and then waits until the live
-site is serving the new bundle.
+`dist/` to the `moderncombinedarms` Pages project, waits until the live site is
+serving the new bundle, then tags that commit `v<version>` (annotated, message
+`<version> BETA`) and pushes the branch and the tag in one push, so the tag
+always names the build that is actually live.
 
 So the order is: bump the version in those three places, write the notes,
 commit, then `npm run release`. The measured baseline for that check — the

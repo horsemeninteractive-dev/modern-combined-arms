@@ -343,6 +343,12 @@ npm run release                  # build, upload dist/, wait until the live site
 polls the live site for up to 90 seconds until it serves the bundle it just
 uploaded. A failure there is a real deployment failure, not a warning.
 
+When the live site serves the new bundle, the same command tags that commit
+`v<version>` (annotated, message `<version> BETA`, as every earlier tag was) and
+pushes the branch and the tag together, so the tag cannot name anything but the
+live build. `--allow-dirty` skips the tag, because no commit contains the shipped
+files; commit first, then tag and push by hand.
+
 After the first deploy of a new Pages project, the `MCA_ACCOUNT` service binding
 must exist (Dashboard → Pages → Settings → Functions → Service bindings, or the
 equivalent project configuration). Without it, `/api/account/*` answers 503
