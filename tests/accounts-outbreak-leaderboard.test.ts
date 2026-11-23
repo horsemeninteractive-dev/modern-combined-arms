@@ -32,7 +32,9 @@ interface BoardBody {
   ok: boolean;
   improved?: boolean;
   mode: string;
+  map: string;
   difficulty: string;
+  you?: boolean;
   signedIn: boolean;
   entries: Array<{
     rank: number;
@@ -203,6 +205,65 @@ describe('Outbreak leaderboards', () => {
     );
     expect(unchanged.entries).toHaveLength(0);
     expect(unchanged.own).toBeNull();
+  });
+
+  it('gives every map its own board', async () => {
+    const harness = await AccountHarness.create();
+    const cookie = await signedIn(harness, 'outbreak-map-boards');
+
+    // The same commander, mode and difficulty, on two different battlefields:
+    // these are two boards, not one board with a filter.
+    await harness.request('/outbreak/runs', {
+      method: 'POST',
+      cookie,
+      body: run({ map: 'outbreak-relay-basin', wave: 9, wavesCompleted: 8, durationSeconds: 1_800 }),
+    });
+    await harness.request('/outbreak/runs', {
+      method: 'POST',
+      cookie,
+      body: run({ map: 'outbreak-civic-square', wave: 14, wavesCompleted: 13, durationSeconds: 2_600 }),
+    });
+
+    const basin = await board(
+      await harness.request(
+        '/outbreak/leaderboard?mode=solo&difficulty=normal&map=outbreak-relay-basin',
+        { cookie },
+      ),
+    );
+    const city = await board(
+      await harness.request(
+        '/outbreak/leaderboard?mode=solo&difficulty=normal&map=outbreak-civic-square',
+        { cookie },
+      ),
+    );
+    expect(basin.entries).toHaveLength(1);
+    expect(basin.entries[0].wave).toBe(9);
+    expect(city.entries).toHaveLength(1);
+    expect(city.entries[0].wave).toBe(14);
+    expect(basin.map).toBe('outbreak-relay-basin');
+    expect(city.map).toBe('outbreak-civic-square');
+
+    // A board with no map named is the basin: that is where every run was
+    // fought before the maps shipped, and where an older client still posts.
+    const legacy = await board(
+      await harness.request('/outbreak/leaderboard?mode=solo&difficulty=normal'),
+    );
+    expect(legacy.map).toBe('outbreak-relay-basin');
+    expect(legacy.entries).toHaveLength(1);
+
+    const unknownBoard = await harness.request(
+      '/outbreak/leaderboard?mode=solo&difficulty=normal&map=outbreak-nowhere',
+    );
+    expect(unknownBoard.status).toBe(400);
+
+    const unknownRun = await board(
+      await harness.request('/outbreak/runs', {
+        method: 'POST',
+        cookie,
+        body: run({ map: 'outbreak-nowhere' }),
+      }),
+    );
+    expect(unknownRun.error?.message).toMatch(/battlefield/);
   });
 
   it('requires a session to post and refuses an unknown board', async () => {

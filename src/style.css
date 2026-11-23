@@ -6854,6 +6854,17 @@ body.cinematic-active #hud-root > * { pointer-events: none; }
 /* Leaderboards: solo and duo boards, one difficulty at a time. */
 .outbreak-board { display: flex; flex-direction: column; gap: 14px; }
 .outbreak-board-top { display: flex; flex-wrap: wrap; align-items: stretch; gap: 10px; }
+/* The map row: one board per authored theatre. It leads the board because the
+   ground is the first choice a reader makes, ahead of mode and difficulty. */
+.outbreak-board-map {
+  display: flex; flex: 1 1 100%; gap: 1px;
+  background: var(--line); border: 1px solid var(--line);
+}
+.outbreak-board-map .difficulty-btn {
+  flex: 1 1 0; min-width: 0; padding: 8px 6px; font-size: var(--fs-xs);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.outbreak-board-map .difficulty-btn.on { border-color: rgba(239, 108, 77, 0.42); color: #ffb499; }
 .outbreak-board-modes { display: flex; flex: 1 1 260px; gap: 1px; background: var(--line); border: 1px solid var(--line); }
 .board-tab {
   flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px;

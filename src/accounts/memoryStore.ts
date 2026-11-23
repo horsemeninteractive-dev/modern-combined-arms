@@ -51,8 +51,8 @@ export class MemoryAccountStore implements AccountStore {
   private campaigns = new Map<string, CareerCampaignRecord>();
   private outbreakRuns = new Map<string, OutbreakRunRecord>();
 
-  private outbreakKey(accountId: string, mode: string, difficulty: string): string {
-    return `${accountId}:${mode}:${difficulty}`;
+  private outbreakKey(accountId: string, map: string, mode: string, difficulty: string): string {
+    return `${accountId}:${map}:${mode}:${difficulty}`;
   }
 
   /** A stored run with the player's current callsign, never an account id outward. */
@@ -367,13 +367,14 @@ export class MemoryAccountStore implements AccountStore {
     accountId: string,
     mode: OutbreakBoardMode,
     difficulty: OutbreakBoardDifficulty,
+    map: string,
   ): Promise<OutbreakRunRecord | null> {
-    const record = this.outbreakRuns.get(this.outbreakKey(accountId, mode, difficulty));
+    const record = this.outbreakRuns.get(this.outbreakKey(accountId, map, mode, difficulty));
     return record ? this.outbreakView(record) : null;
   }
 
   async saveOutbreakRun(record: OutbreakRunRecord): Promise<WriteOutcome> {
-    const key = this.outbreakKey(record.accountId, record.mode, record.difficulty);
+    const key = this.outbreakKey(record.accountId, record.map, record.mode, record.difficulty);
     const current = this.outbreakRuns.get(key);
     // A better-or-equal run never replaces the stored one, matching the
     // conditional upsert in the D1 store.
@@ -385,10 +386,13 @@ export class MemoryAccountStore implements AccountStore {
   async outbreakLeaderboard(
     mode: OutbreakBoardMode,
     difficulty: OutbreakBoardDifficulty,
+    map: string,
     limit: number,
   ): Promise<OutbreakRunRecord[]> {
     return [...this.outbreakRuns.values()]
-      .filter((record) => record.mode === mode && record.difficulty === difficulty)
+      .filter(
+        (record) => record.mode === mode && record.difficulty === difficulty && record.map === map,
+      )
       .sort(compareOutbreakRuns)
       .slice(0, limit)
       .map((record) => this.outbreakView(record));
@@ -398,6 +402,7 @@ export class MemoryAccountStore implements AccountStore {
     let ahead = 0;
     for (const record of this.outbreakRuns.values()) {
       if (record.mode !== run.mode || record.difficulty !== run.difficulty) continue;
+      if (record.map !== run.map) continue;
       if (record.accountId === run.accountId) continue;
       if (compareOutbreakRuns(record, run) < 0) ahead++;
     }

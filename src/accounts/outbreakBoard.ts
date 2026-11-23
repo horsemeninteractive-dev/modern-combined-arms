@@ -13,6 +13,30 @@
  */
 import type { OutbreakDifficulty } from '../sim/scenario';
 
+/**
+ * One board per authored map. Ground is a competition, not a filter: a run on
+ * the city compound never ranks against one in the basin, because the two ask
+ * different things of the player.
+ *
+ * The ids are listed here rather than imported from the scenario catalogue so
+ * the account Worker does not pull the whole simulation data graph into its
+ * bundle. `tests/outbreak-maps.test.ts` asserts this list matches the maps the
+ * game actually ships, so a new theatre cannot ship without its boards.
+ */
+export const OUTBREAK_BOARD_MAPS: readonly string[] = Object.freeze([
+  'outbreak-relay-basin',
+  'outbreak-civic-square',
+  'outbreak-tidewall-quay',
+  'outbreak-frostline-junction',
+]);
+
+/** The basin: every board recorded before maps existed lives here. */
+export const DEFAULT_OUTBREAK_BOARD_MAP = 'outbreak-relay-basin';
+
+export function isOutbreakBoardMap(value: unknown): value is string {
+  return typeof value === 'string' && OUTBREAK_BOARD_MAPS.includes(value);
+}
+
 /** The two boards. Solo and duo are separate competitions, never merged. */
 export type OutbreakBoardMode = 'solo' | 'coop';
 
@@ -55,6 +79,8 @@ export function isOutbreakBoardDifficulty(value: unknown): value is OutbreakDiff
 /** One finished run as a client reports it. */
 export interface OutbreakRunInput {
   mode: OutbreakBoardMode;
+  /** The map the run was fought on; its own board. */
+  map: string;
   difficulty: OutbreakDifficulty;
   /** Wave the Command Post fell on. */
   wave: number;
@@ -79,6 +105,7 @@ export interface OutbreakBoardEntry {
   rank: number;
   callsign: string;
   mode: OutbreakBoardMode;
+  map: string;
   difficulty: OutbreakDifficulty;
   wave: number;
   wavesCompleted: number;
@@ -93,6 +120,7 @@ export interface OutbreakBoardEntry {
 
 export interface OutbreakBoard {
   mode: OutbreakBoardMode;
+  map: string;
   difficulty: OutbreakDifficulty;
   entries: OutbreakBoardEntry[];
   /** The reader's own best run, even when it sits outside the top rows. */
@@ -131,6 +159,10 @@ function nationList(value: unknown, max: number): string[] | null {
  */
 export function parseOutbreakRun(body: Record<string, unknown>): OutbreakRunParse {
   if (!isOutbreakBoardMode(body.mode)) return { ok: false, message: 'That board is not one of ours.' };
+  // A run that names no map is a run from before the maps shipped, and it was
+  // fought in the basin: that is the only honest reading of an absent field.
+  const map = body.map === undefined ? DEFAULT_OUTBREAK_BOARD_MAP : body.map;
+  if (!isOutbreakBoardMap(map)) return { ok: false, message: 'That battlefield is not one of ours.' };
   if (!isOutbreakBoardDifficulty(body.difficulty)) {
     return { ok: false, message: 'That difficulty is not one of ours.' };
   }
@@ -162,6 +194,7 @@ export function parseOutbreakRun(body: Record<string, unknown>): OutbreakRunPars
     ok: true,
     value: {
       mode: body.mode,
+      map,
       difficulty: body.difficulty,
       wave,
       wavesCompleted,
@@ -207,6 +240,8 @@ function asEntry(value: unknown): OutbreakBoardEntry | null {
   if (!isOutbreakBoardMode(record.mode) || !isOutbreakBoardDifficulty(record.difficulty)) {
     return null;
   }
+  const map = record.map === undefined ? DEFAULT_OUTBREAK_BOARD_MAP : record.map;
+  if (!isOutbreakBoardMap(map)) return null;
   const numbers = {
     wave: integer(record.wave, MAX_WAVE),
     wavesCompleted: integer(record.wavesCompleted, MAX_WAVE),
@@ -220,6 +255,7 @@ function asEntry(value: unknown): OutbreakBoardEntry | null {
     rank,
     callsign: record.callsign,
     mode: record.mode,
+    map,
     difficulty: record.difficulty,
     wave: numbers.wave!,
     wavesCompleted: numbers.wavesCompleted!,
@@ -240,11 +276,14 @@ export function parseOutbreakBoard(value: unknown): OutbreakBoard | null {
   if (typeof value !== 'object' || value === null) return null;
   const record = value as Record<string, unknown>;
   if (!isOutbreakBoardMode(record.mode) || !isOutbreakBoardDifficulty(record.difficulty)) return null;
+  const map = record.map === undefined ? DEFAULT_OUTBREAK_BOARD_MAP : record.map;
+  if (!isOutbreakBoardMap(map)) return null;
   const entries = Array.isArray(record.entries)
     ? record.entries.map(asEntry).filter((entry): entry is OutbreakBoardEntry => entry !== null)
     : [];
   return {
     mode: record.mode,
+    map,
     difficulty: record.difficulty,
     entries,
     own: asEntry(record.own),

@@ -47,7 +47,13 @@ import {
   OUTBREAK_DIFFICULTY_ORDER,
   outbreakDifficulty,
 } from './outbreak/config';
-import { createOutbreakScenario } from './outbreak/scenario';
+import {
+  DEFAULT_OUTBREAK_MAP_ID,
+  OUTBREAK_MAPS,
+  createOutbreakScenario,
+  isOutbreakMapId,
+  outbreakMap,
+} from './outbreak/scenario';
 import type { OutbreakDifficulty } from './sim/scenario';
 import type { OutbreakHudState, OutbreakResult } from './outbreak/types';
 import {
@@ -334,6 +340,8 @@ export interface AppSettings {
   difficulty: AIDifficulty;
   /** Selected skirmish theatre. */
   mapId: string;
+  /** Selected Outbreak battlefield; each map keeps its own boards. */
+  outbreakMapId: string;
   /** Playable nation the local commander fields in a new skirmish. */
   nationId: string;
   /**
@@ -600,6 +608,8 @@ export class App {
   private victoryShown: VictoryState | 'none' = 'none';
   /** Outbreak setup, remembered on this device like the skirmish choices. */
   private outbreakDifficulty: OutbreakDifficulty = 'normal';
+  /** The theatre the solo deck is set to deploy into. */
+  private outbreakMapId: string = DEFAULT_OUTBREAK_MAP_ID;
   /** The standings screen, built on first use and reused after that. */
   private outbreakLeaderboard: OutbreakLeaderboardView | null = null;
   /** One run is posted once, even if its card is re-shown. */
@@ -770,6 +780,7 @@ export class App {
       customCursors: true,
       difficulty: 'veteran',
       mapId: defaultScenarioId('skirmish'),
+      outbreakMapId: DEFAULT_OUTBREAK_MAP_ID,
       nationId: PLAYABLE_NATION_IDS[0],
       opponentNationId: '',
       opponentCommanderId: '',
@@ -840,6 +851,9 @@ export class App {
         unitVoice: Math.max(0, Math.min(1, Number(parsed.unitVoice ?? defaults.unitVoice))),
         difficulty,
         mapId,
+        outbreakMapId: isOutbreakMapId(parsed.outbreakMapId)
+          ? (parsed.outbreakMapId as string)
+          : defaults.outbreakMapId,
         nationId,
         opponentNationId,
         opponentCommanderId,
@@ -1426,6 +1440,7 @@ export class App {
         origin: this.multiplayerOrigin(),
         mode: '1v1',
         difficulty: this.outbreakDifficulty,
+        map: this.outbreakMapId,
         onMatchStart: (client, view) => this.startNetworkBattle(client, view),
         // A signed-in player's seat is verified by the room Worker; a guest, or
         // an account service that cannot mint a ticket, simply opens a guest
@@ -1501,7 +1516,11 @@ export class App {
       // forms, drawn as Outbreak's own screen instead of a toggle sitting on
       // the solo deployment panel.
       const panel = this.ensureMultiplayerPanel();
-      panel?.setMode(view === 'outbreak-coop' ? 'outbreak' : '1v1', this.outbreakDifficulty);
+      panel?.setMode(
+        view === 'outbreak-coop' ? 'outbreak' : '1v1',
+        this.outbreakDifficulty,
+        this.outbreakMapId,
+      );
       panel?.show();
     }
     else this.multiplayerPanel?.hide();
@@ -1515,7 +1534,9 @@ export class App {
             api: () => this.accountApi,
           });
         }
-        this.outbreakLeaderboard.show();
+        // Open on the ground the player last chose: the board of the run they
+        // just fought is the one they came here to read.
+        this.outbreakLeaderboard.show(undefined, this.outbreakMapId);
       }
     }
     if (view === 'editor') this.refreshEditorAutosaveButton();
@@ -1897,8 +1918,26 @@ export class App {
   /* Outbreak                                                            */
   /* ------------------------------------------------------------------ */
 
-  /** Nation, difficulty and player-count controls for the survival deck. */
+  /** Battlefield, nation and difficulty controls for the survival deck. */
   private buildOutbreakSetup(): void {
+    this.outbreakMapId = this.settings.outbreakMapId;
+    const maps = document.getElementById('outbreak-maps');
+    if (maps) {
+      maps.innerHTML = OUTBREAK_MAPS.map((map) => {
+        return `<button type="button" class="difficulty-btn" data-outbreak-map="${map.id}" aria-pressed="false">${escapeHtml(map.tag.toUpperCase())}</button>`;
+      }).join('');
+      maps.querySelectorAll<HTMLButtonElement>('[data-outbreak-map]').forEach((button) => {
+        button.addEventListener('click', () => {
+          const id = button.dataset.outbreakMap;
+          if (!id || !isOutbreakMapId(id) || id === this.outbreakMapId) return;
+          this.audio.play('ui');
+          this.outbreakMapId = id;
+          this.settings.outbreakMapId = id;
+          this.saveSettings();
+          this.applyOutbreakSetup();
+        });
+      });
+    }
     const select = document.getElementById('outbreak-nation') as HTMLSelectElement | null;
     if (select) {
       select.innerHTML = PLAYABLE_NATION_IDS.map(
@@ -1936,6 +1975,18 @@ export class App {
 
   /** Reflect the current Outbreak choices on the solo deployment screen. */
   private applyOutbreakSetup(): void {
+    const map = outbreakMap(this.outbreakMapId);
+    document.querySelectorAll<HTMLButtonElement>('[data-outbreak-map]').forEach((button) => {
+      button.setAttribute('aria-pressed', String(button.dataset.outbreakMap === map.id));
+    });
+    const name = document.getElementById('outbreak-map-name');
+    if (name) name.textContent = map.name;
+    const blurb = document.getElementById('outbreak-map-blurb');
+    if (blurb) blurb.textContent = map.blurb;
+    const mapNote = document.getElementById('outbreak-map-note');
+    if (mapNote) mapNote.textContent = map.theme;
+    const action = document.getElementById('outbreak-deploy-action');
+    if (action) action.textContent = map.order;
     const config = outbreakDifficulty(this.outbreakDifficulty);
     document.querySelectorAll<HTMLButtonElement>('[data-outbreak-difficulty]').forEach((button) => {
       button.setAttribute(
@@ -1963,6 +2014,7 @@ export class App {
       difficulty: this.outbreakDifficulty,
       mode: 'solo',
       nationId: this.settings.nationId,
+      mapId: this.outbreakMapId,
       seed: (Date.now() ^ 0x5f3a91) >>> 0,
     });
     this.audio.play('ui');
@@ -2072,10 +2124,15 @@ export class App {
     const api = this.accountApi;
     if (!api) return;
     const mode = result.mode === 'coop' ? 'coop' : 'solo';
+    // The board is the map's: read it back off the battlefield that ran, so a
+    // run can never land on a board for ground it was not fought on.
+    const runMapId = this.game?.state.scenario.meta.id;
+    const map = isOutbreakMapId(runMapId) ? runMapId : this.outbreakMapId;
     void api
       .submitOutbreakRun({
         mode,
         difficulty: result.difficulty,
+        map,
         // The card reports the wave the run reached, which is one past the last
         // wave it held; the board records the same number so both agree.
         wave: Math.max(result.wave, result.wavesCompleted + 1),
@@ -2088,7 +2145,7 @@ export class App {
       })
       .then(({ improved, board }) => {
         if (!note) return;
-        const boardName = `${mode === 'coop' ? 'Duo' : 'Solo'} · ${OUTBREAK_DIFFICULTIES[board.difficulty].name}`;
+        const boardName = `${outbreakMap(board.map).name} · ${mode === 'coop' ? 'Duo' : 'Solo'} · ${OUTBREAK_DIFFICULTIES[board.difficulty].name}`;
         note.textContent = board.own
           ? `${improved ? 'NEW BEST' : 'BEST KEPT'} · ${boardName} · rank ${board.own.rank}`
           : `${boardName} · posted`;
@@ -3631,7 +3688,9 @@ export class App {
       matchDurationMs: view.matchDurationMs,
       // A co-op room carries its difficulty, and that block is what makes the
       // client build the Outbreak battlefield rather than a skirmish map.
-      ...(view.outbreak ? { outbreak: { difficulty: view.outbreak.difficulty } } : {}),
+      ...(view.outbreak
+        ? { outbreak: { difficulty: view.outbreak.difficulty, map: view.outbreak.map } }
+        : {}),
       // The client builds its own copy of the battlefield from the room's
       // configuration, so the host's hour and weather have to be carried across
       // rather than left to the map's authored defaults: without them a guest

@@ -239,6 +239,7 @@ async function openPublicRoom(
   durationMs: number,
   mode: '1v1' | 'outbreak' | string = '1v1',
   difficulty?: string,
+  map?: string,
 ): Promise<{ status: number } & Record<string, unknown>> {
   const room = await open(h);
   return readJson(
@@ -251,6 +252,7 @@ async function openPublicRoom(
           mode,
           matchDurationMs: durationMs,
           ...(difficulty ? { difficulty } : {}),
+          ...(map ? { map } : {}),
         }),
       }),
     ),
@@ -1263,23 +1265,47 @@ describe('Phase 2B.1 outbreak co-op rooms', () => {
     const config = (info.lobby as unknown as { config: LobbyConfigV1 }).config;
     expect(config.mapId).toBe(OUTBREAK_MAP_ID);
     // The host's difficulty is part of the room, not a client-side preference.
-    expect(config.outbreak).toEqual({ difficulty: 'hard' });
+    expect(config.outbreak).toEqual({ difficulty: 'hard', map: OUTBREAK_MAP_ID });
+    // The host's battlefield is part of the room too, and a room that names an
+    // unknown one opens on the basin instead of failing to build anything.
+    const city = harness('coop-city-room');
+    await openPublicRoom(city, DURATION_MS, 'outbreak', 'normal', 'outbreak-civic-square');
+    const cityConfig = (city.storage.raw(ROOM_STORAGE_KEYS.meta) as {
+      lobbyConfig: LobbyConfigV1;
+    }).lobbyConfig;
+    expect(cityConfig.mapId).toBe('outbreak-civic-square');
+    expect(cityConfig.outbreak).toEqual({
+      difficulty: 'normal',
+      map: 'outbreak-civic-square',
+    });
+    const odd = harness('coop-odd-map');
+    await openPublicRoom(odd, DURATION_MS, 'outbreak', 'normal', 'outbreak-nowhere');
+    const oddConfig = (odd.storage.raw(ROOM_STORAGE_KEYS.meta) as {
+      lobbyConfig: LobbyConfigV1;
+    }).lobbyConfig;
+    expect(oddConfig.mapId).toBe(OUTBREAK_MAP_ID);
     // An unknown difficulty never becomes the run's difficulty.
     const fallback = harness('coop-odd-difficulty');
     await openPublicRoom(fallback, DURATION_MS, 'outbreak', 'impossible');
     const fallbackConfig = (fallback.storage.raw(ROOM_STORAGE_KEYS.meta) as {
       lobbyConfig: LobbyConfigV1;
     }).lobbyConfig;
-    expect(fallbackConfig.outbreak).toEqual({ difficulty: 'normal' });
+    expect(fallbackConfig.outbreak).toEqual({ difficulty: 'normal', map: OUTBREAK_MAP_ID });
   });
 
   it('starts the co-op run against the horde and keeps the mode across eviction', async () => {
     const h = harness('coop-start-room');
-    expect((await openPublicRoom(h, DURATION_MS, 'outbreak')).status).toBe(200);
+    expect(
+      (
+        await openPublicRoom(h, DURATION_MS, 'outbreak', 'normal', 'outbreak-civic-square')
+      ).status,
+    ).toBe(200);
     joinBoth(h);
     expect((await startMatch(h, 0)).status).toBe(200);
     const match = matchOf(h.current!) as RoomMatch;
     expect(match.mode).toBe('outbreak');
+    // The room builds the battlefield it advertised, not the mode's default.
+    expect(match.game.state.scenario.meta.id).toBe('outbreak-civic-square');
     // Two players, one defence: the host's army and the horde it holds off.
     expect(match.game.state.players).toHaveLength(2);
     expect(match.game.player(0)?.team).toBe(0);

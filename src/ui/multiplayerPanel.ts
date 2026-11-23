@@ -28,6 +28,13 @@ import { PHASE_LABELS, formatHour, phaseForStartHour } from '../sim/dayNight';
 import { WEATHER, WEATHER_KINDS, weatherFor } from '../sim/weather';
 import { escapeHtml } from './modal';
 import { OUTBREAK_DIFFICULTIES, OUTBREAK_DIFFICULTY_ORDER } from '../outbreak/config';
+import {
+  DEFAULT_OUTBREAK_MAP_ID,
+  OUTBREAK_MAPS,
+  createOutbreakScenario,
+  isOutbreakMapId,
+  outbreakMap,
+} from '../outbreak/scenario';
 import type { Scenario } from '../sim/scenario';
 
 export interface MultiplayerPanelOptions {
@@ -40,6 +47,8 @@ export interface MultiplayerPanelOptions {
   mode?: '1v1' | 'outbreak';
   /** The survival difficulty a hosted co-op room carries. */
   difficulty?: string;
+  /** The battlefield a hosted co-op room carries. */
+  map?: string;
   onChange?: (view: LobbyView) => void;
   /**
    * Called once when the room confirms the match started. The host screen
@@ -81,6 +90,9 @@ const NATION_ENTRIES: NationPickerEntry[] = PLAYABLE_NATION_IDS.map((id) => ({
 
 function mapName(mapId: string | null): string {
   if (!mapId) return 'Unknown theatre';
+  // Outbreak theatres are their own catalogue: they are not skirmish maps and
+  // never appear in the scenario list, so they are resolved first.
+  if (isOutbreakMapId(mapId)) return outbreakMap(mapId).name;
   return scenarioById(mapId)?.name ?? mapId;
 }
 
@@ -106,6 +118,11 @@ function startHourLabel(hour: number): string {
 
 function mapDetail(mapId: string | null): string {
   if (!mapId) return '';
+  if (isOutbreakMapId(mapId)) {
+    const map = outbreakMap(mapId);
+    const weather = weatherFor(map.weather).label;
+    return `${map.size}×${map.size} · 2 players · ${weather} · ${map.theme}`;
+  }
   const entry = scenarioById(mapId);
   if (!entry) return '';
   const weather = weatherFor(previewScenario(mapId)?.settings.weather).label;
@@ -120,6 +137,18 @@ function mapDetail(mapId: string | null): string {
 function previewScenario(mapId: string): Scenario | null {
   const cached = previewScenarios.get(mapId);
   if (cached) return cached;
+  // An Outbreak room draws the ground the room will build, which is one of the
+  // mode's own theatres rather than a skirmish entry.
+  if (isOutbreakMapId(mapId)) {
+    const scenario = createOutbreakScenario({
+      difficulty: 'normal',
+      mode: 'coop',
+      nationId: 'lithuania',
+      mapId,
+    });
+    previewScenarios.set(mapId, scenario);
+    return scenario;
+  }
   const entry = scenarioById(mapId);
   if (!entry) return null;
   const scenario = entry.create();
@@ -232,6 +261,8 @@ export class MultiplayerPanel {
   private durationIndex = 1;
   /** The survival difficulty this deck would host, chosen on the co-op screen. */
   private difficultyId: string;
+  /** The co-op theatre a hosted room carries; ignored by a 1v1 room. */
+  private mapId: string;
   private mounted = false;
   private matchHandedOff = false;
   private view: LobbyView;
@@ -245,6 +276,7 @@ export class MultiplayerPanel {
     this.host = host;
     this.options = options;
     this.difficultyId = options.difficulty ?? 'normal';
+    this.mapId = isOutbreakMapId(options.map) ? options.map : DEFAULT_OUTBREAK_MAP_ID;
     this.clientInstance = options.origin
       ? new LobbyClient({
           origin: options.origin,
@@ -323,11 +355,19 @@ export class MultiplayerPanel {
   }
 
   /** Switch the deck between the 1v1 and Outbreak room shapes. */
-  setMode(mode: '1v1' | 'outbreak', difficulty?: string): void {
+  setMode(mode: '1v1' | 'outbreak', difficulty?: string, map?: string): void {
     const nextDifficulty = difficulty ?? this.options.difficulty;
-    if (this.options.mode === mode && this.options.difficulty === nextDifficulty) return;
+    const nextMap = isOutbreakMapId(map) ? map : this.mapId;
+    if (
+      this.options.mode === mode &&
+      this.options.difficulty === nextDifficulty &&
+      this.mapId === nextMap
+    ) {
+      return;
+    }
     this.options.mode = mode;
     this.options.difficulty = nextDifficulty;
+    this.mapId = nextMap;
     if (nextDifficulty && nextDifficulty in OUTBREAK_DIFFICULTIES) {
       this.difficultyId = nextDifficulty;
     }
@@ -366,6 +406,15 @@ export class MultiplayerPanel {
             </label>
             ${coop
               ? `<label class="mp-field">
+              <span>Battlefield</span>
+              <select id="mp-outbreak-map" ${busy ? 'disabled' : ''}>
+                ${OUTBREAK_MAPS.map(
+                  (map) =>
+                    `<option value="${map.id}" ${map.id === this.mapId ? 'selected' : ''}>${escapeHtml(map.name)}</option>`,
+                ).join('')}
+              </select>
+            </label>
+            <label class="mp-field">
               <span>Difficulty</span>
               <select id="mp-difficulty" ${busy ? 'disabled' : ''}>
                 ${OUTBREAK_DIFFICULTY_ORDER.map(
@@ -422,6 +471,10 @@ export class MultiplayerPanel {
     difficulty?.addEventListener('change', () => {
       if (difficulty.value in OUTBREAK_DIFFICULTIES) this.difficultyId = difficulty.value;
     });
+    const battlefield = this.host.querySelector<HTMLSelectElement>('#mp-outbreak-map');
+    battlefield?.addEventListener('change', () => {
+      if (isOutbreakMapId(battlefield.value)) this.mapId = battlefield.value;
+    });
     this.host.querySelector('#mp-host')?.addEventListener('click', () => {
       const chosen = DURATIONS[this.durationIndex] ?? DURATIONS[1];
       void client.createRoom(
@@ -429,6 +482,7 @@ export class MultiplayerPanel {
         undefined,
         this.options.mode ?? '1v1',
         this.difficultyId,
+        this.mapId,
       );
     });
     const join = () => {
@@ -532,7 +586,7 @@ export class MultiplayerPanel {
           }
           <p class="mp-hint" id="mp-map-detail">${
             coop
-              ? 'The basin is fixed: Outbreak is fought on the same ground as the solo run.'
+              ? escapeHtml(mapDetail(view.mapId) || 'The host chooses the Outbreak battlefield when the room opens.')
               : escapeHtml(mapDetail(view.mapId))
           }</p>
           ${

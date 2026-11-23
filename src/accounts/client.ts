@@ -815,9 +815,10 @@ export class HttpAccountApi {
   async outbreakBoard(
     mode: OutbreakBoardMode,
     difficulty: OutbreakBoardDifficulty,
+    map: string,
   ): Promise<OutbreakBoard> {
     const body = await this.request(
-      `/outbreak/leaderboard?mode=${mode}&difficulty=${difficulty}`,
+      `/outbreak/leaderboard?mode=${mode}&difficulty=${difficulty}&map=${encodeURIComponent(map)}`,
     );
     const board = parseOutbreakBoard(body);
     if (!board) throw new AccountApiError('server-error', 'The leaderboard reply was malformed.', 500);

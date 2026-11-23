@@ -77,11 +77,26 @@ describe('Outbreak co-op rooms', () => {
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
     expect(parsed.config.mapId).toBe(OUTBREAK_MAP_ID);
-    expect(parsed.config.outbreak).toEqual({ difficulty: 'hard' });
+    expect(parsed.config.outbreak).toEqual({ difficulty: 'hard', map: OUTBREAK_MAP_ID });
     // The deck's own default opens a co-op room, not a skirmish map.
     expect(defaultLobbyConfig(undefined, undefined, 'outbreak').outbreak).toEqual({
       difficulty: 'normal',
+      map: OUTBREAK_MAP_ID,
     });
+    // The host's battlefield travels with the room, and the two must agree: a
+    // room cannot advertise one map and build another.
+    const city = defaultOutbreakLobbyConfig(600_000, 'normal', 'outbreak-civic-square');
+    expect(validateLobbyConfig(city)).toMatchObject({
+      ok: true,
+      config: { mapId: 'outbreak-civic-square', outbreak: { map: 'outbreak-civic-square' } },
+    });
+    expect(validateLobbyConfig({ ...city, mapId: 'open-front' })).toMatchObject({
+      ok: false,
+      problem: { code: 'invalid-map' },
+    });
+    expect(
+      validateLobbyConfig({ ...city, outbreak: { ...city.outbreak, map: 'outbreak-nowhere' } }),
+    ).toMatchObject({ ok: false, problem: { code: 'invalid-outbreak' } });
     // An Outbreak lobby cannot be pointed at a skirmish theatre, and a room
     // cannot smuggle in a difficulty the horde does not know.
     expect(validateLobbyConfig({ ...config }).ok).toBe(true);

@@ -2,6 +2,7 @@ import { identitySnapshot, type IdentitySnapshot } from '../accounts/identity';
 import { matchIdFor } from '../accounts/matchCareer';
 import { defaultScenarioId } from '../data/scenarioCatalog';
 import { OUTBREAK_DIFFICULTY_ORDER } from '../outbreak/config';
+import { DEFAULT_OUTBREAK_MAP_ID, isOutbreakMapId } from '../outbreak/scenario';
 import type { OutbreakDifficulty } from '../sim/scenario';
 import { Game } from '../sim/game';
 import {
@@ -181,6 +182,8 @@ interface CreateBody {
   matchDurationMs?: unknown;
   /** A co-op room's difficulty; ignored by a 1v1 room. */
   difficulty?: unknown;
+  /** A co-op room's battlefield; ignored by a 1v1 room. */
+  map?: unknown;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -841,6 +844,9 @@ export class MatchRoomDurableObject {
     )
       ? (body.difficulty as OutbreakDifficulty)
       : 'normal';
+    // The battlefield travels with it, for the same reason: both seats must
+    // build the same ground or the run is not the run the host advertised.
+    const outbreakMapId = isOutbreakMapId(body.map) ? body.map : DEFAULT_OUTBREAK_MAP_ID;
 
     const now = Date.now();
     const requestId = `mp2a:${roomId}`;
@@ -893,6 +899,7 @@ export class MatchRoomDurableObject {
             matchDurationMs,
             gameMode,
             difficulty,
+            outbreakMapId,
           );
           const lobby = new RoomLobby({
             roomId,
@@ -953,7 +960,7 @@ export class MatchRoomDurableObject {
   }
 
   private async readCreateBody(request: Request): Promise<
-    | { ok: true; mode: unknown; matchDurationMs: unknown; difficulty: unknown }
+    | { ok: true; mode: unknown; matchDurationMs: unknown; difficulty: unknown; map: unknown }
     | { ok: false; code: string; message: string }
   > {
     let text: string;
@@ -983,6 +990,7 @@ export class MatchRoomDurableObject {
       mode: body.mode,
       matchDurationMs: body.matchDurationMs,
       difficulty: body.difficulty,
+      map: body.map,
     };
   }
 

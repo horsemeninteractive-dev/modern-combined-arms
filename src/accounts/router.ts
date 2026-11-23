@@ -57,9 +57,11 @@ import { rankForXp } from './ranks';
 import { safeEqual } from './crypto';
 import { randomToken } from './crypto';
 import {
+  DEFAULT_OUTBREAK_BOARD_MAP,
   MAX_OUTBREAK_BOARD_LIMIT,
   OUTBREAK_BOARD_LIMIT,
   isOutbreakBoardDifficulty,
+  isOutbreakBoardMap,
   isOutbreakBoardMode,
   parseOutbreakRun,
   type OutbreakBoardDifficulty,
@@ -931,6 +933,12 @@ class Router {
     if (!isOutbreakBoardDifficulty(difficulty)) {
       throw new AccountError('invalid-request', 'That difficulty is not one of ours.', 400);
     }
+    // A board is ground, mode and difficulty. An older client that names no map
+    // reads the basin, which is where every run recorded before the maps is.
+    const map = url.searchParams.get('map') ?? DEFAULT_OUTBREAK_BOARD_MAP;
+    if (!isOutbreakBoardMap(map)) {
+      throw new AccountError('invalid-request', 'That battlefield is not one of ours.', 400);
+    }
     const requested = Math.floor(Number(url.searchParams.get('limit') ?? OUTBREAK_BOARD_LIMIT));
     const limit = Math.min(
       MAX_OUTBREAK_BOARD_LIMIT,
@@ -942,6 +950,7 @@ class Router {
       ...(await this.outbreakBoardView(
         mode,
         difficulty,
+        map,
         limit,
         resolved?.account.id ?? null,
         resolved !== null,
@@ -953,26 +962,29 @@ class Router {
   private async outbreakBoardView(
     mode: OutbreakBoardMode,
     difficulty: OutbreakBoardDifficulty,
+    map: string,
     limit: number,
     accountId: string | null,
     signedIn: boolean,
   ): Promise<{
     mode: OutbreakBoardMode;
+    map: string;
     difficulty: OutbreakBoardDifficulty;
     signedIn: boolean;
     entries: OutbreakBoardEntry[];
     own: OutbreakBoardEntry | null;
   }> {
-    const rows = await this.deps.store.outbreakLeaderboard(mode, difficulty, limit);
+    const rows = await this.deps.store.outbreakLeaderboard(mode, difficulty, map, limit);
     let own: OutbreakBoardEntry | null = null;
     if (accountId) {
-      const record = await this.deps.store.outbreakRun(accountId, mode, difficulty);
+      const record = await this.deps.store.outbreakRun(accountId, mode, difficulty, map);
       if (record) {
         own = this.outbreakEntry(record, await this.deps.store.outbreakRank(record), true);
       }
     }
     return {
       mode,
+      map,
       difficulty,
       signedIn,
       entries: rows.map((record, index) =>
@@ -991,6 +1003,7 @@ class Router {
       rank,
       callsign: record.callsign,
       mode: record.mode,
+      map: record.map,
       difficulty: record.difficulty,
       wave: record.wave,
       wavesCompleted: record.wavesCompleted,
@@ -1037,6 +1050,7 @@ class Router {
       ...(await this.outbreakBoardView(
         record.mode,
         record.difficulty,
+        record.map,
         OUTBREAK_BOARD_LIMIT,
         resolved.account.id,
         true,

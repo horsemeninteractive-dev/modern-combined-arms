@@ -317,16 +317,18 @@ export interface AccountStore {
     accountId: string,
     mode: OutbreakBoardMode,
     difficulty: OutbreakBoardDifficulty,
+    map: string,
   ): Promise<OutbreakRunRecord | null>;
   /**
    * Upsert the account's best run on that board. `conflict` means the stored run
    * is still the better one: a leaderboard keeps the best, never the latest.
    */
   saveOutbreakRun(record: OutbreakRunRecord): Promise<WriteOutcome>;
-  /** Top runs for one board, best first. */
+  /** Top runs for one board, best first. A board is a map, mode and difficulty. */
   outbreakLeaderboard(
     mode: OutbreakBoardMode,
     difficulty: OutbreakBoardDifficulty,
+    map: string,
     limit: number,
   ): Promise<OutbreakRunRecord[]>;
   /** 1-based position of a stored run among its board's best runs. */

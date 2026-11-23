@@ -28,7 +28,11 @@ import type { OutbreakDifficulty, Scenario } from '../sim/scenario';
 import { normaliseStartHour } from '../sim/dayNight';
 import { isWeatherKind, normaliseWeather, type WeatherKind } from '../sim/weather';
 import { OUTBREAK_DIFFICULTIES } from '../outbreak/config';
-import { createOutbreakScenario, OUTBREAK_MAP_ID } from '../outbreak/scenario';
+import {
+  DEFAULT_OUTBREAK_MAP_ID,
+  createOutbreakScenario,
+  isOutbreakMapId,
+} from '../outbreak/scenario';
 
 export const LOBBY_CONFIG_VERSION = 1 as const;
 
@@ -73,11 +77,13 @@ export type LobbyMode = '1v1' | 'outbreak';
 
 /**
  * An Outbreak lobby. Both seats command the same defence, so there is no second
- * nation to choose: the room carries the difficulty instead, and the horde is
- * the only opponent.
+ * nation to choose: the room carries the battlefield and difficulty instead,
+ * and the horde is the only opponent.
  */
 export interface LobbyOutbreakConfig {
   difficulty: OutbreakDifficulty;
+  /** Which authored theatre both seats fight on. */
+  map: string;
 }
 
 export interface LobbyConfigV1 {
@@ -189,15 +195,19 @@ function defaultNations(mapId: string): [string, string] {
 export function defaultOutbreakLobbyConfig(
   matchDurationMs: number = DEFAULT_MATCH_DURATION_MS,
   difficulty: OutbreakDifficulty = 'normal',
+  map: string = DEFAULT_OUTBREAK_MAP_ID,
 ): LobbyConfigV1 {
   const duration = isValidMatchDuration(matchDurationMs)
     ? matchDurationMs
     : DEFAULT_MATCH_DURATION_MS;
   const nation = PLAYABLE_NATION_IDS[0] ?? 'lithuania';
-  const scenario = createOutbreakScenario({ difficulty, mode: 'coop', nationId: nation });
+  // An unknown id falls back to the basin rather than leaving the room with a
+  // battlefield the catalogue cannot build.
+  const mapId = isOutbreakMapId(map) ? map : DEFAULT_OUTBREAK_MAP_ID;
+  const scenario = createOutbreakScenario({ difficulty, mode: 'coop', nationId: nation, mapId });
   return {
     version: LOBBY_CONFIG_VERSION,
-    mapId: OUTBREAK_MAP_ID,
+    mapId,
     matchDurationMs: duration,
     startHour: normaliseStartHour(scenario.settings.startHour, 18),
     weather: normaliseWeather(scenario.settings.weather),
@@ -205,7 +215,7 @@ export function defaultOutbreakLobbyConfig(
       { nation, color: LOBBY_COLORS[0], ready: false },
       { nation, color: LOBBY_COLORS[1], ready: false },
     ],
-    outbreak: { difficulty },
+    outbreak: { difficulty, map: mapId },
   };
 }
 
@@ -214,8 +224,11 @@ export function defaultLobbyConfig(
   matchDurationMs: number = DEFAULT_MATCH_DURATION_MS,
   mode: LobbyMode = '1v1',
   difficulty: OutbreakDifficulty = 'normal',
+  outbreakMapId: string = DEFAULT_OUTBREAK_MAP_ID,
 ): LobbyConfigV1 {
-  if (mode === 'outbreak') return defaultOutbreakLobbyConfig(matchDurationMs, difficulty);
+  if (mode === 'outbreak') {
+    return defaultOutbreakLobbyConfig(matchDurationMs, difficulty, outbreakMapId);
+  }
   const safeMap = isPlayableMapId(mapId) ? mapId : defaultScenarioId('multiplayer');
   const authoredScenario = scenarioById(safeMap)?.create();
   const authored = authoredScenario?.settings.startHour ?? 18;
@@ -252,9 +265,9 @@ export function validateLobbyConfig(raw: unknown): LobbyParseResult {
       },
     };
   }
-  // An Outbreak room plays exactly one battlefield: the basin the mode was
-  // authored on. It is not in the multiplayer catalogue, so it is checked by
-  // identity rather than by the skirmish list.
+  // An Outbreak room plays one of the mode's own theatres. They are not in the
+  // multiplayer catalogue, so they are checked against the Outbreak list rather
+  // than the skirmish one, and the room's mapId must be the map it recorded.
   let outbreak: LobbyOutbreakConfig | undefined;
   if (raw.outbreak !== undefined) {
     const block = raw.outbreak;
@@ -268,13 +281,22 @@ export function validateLobbyConfig(raw: unknown): LobbyParseResult {
         problem: { code: 'invalid-outbreak', message: 'Outbreak difficulty is not a known level.' },
       };
     }
-    outbreak = { difficulty: block.difficulty as OutbreakDifficulty };
-    if (raw.mapId !== OUTBREAK_MAP_ID) {
+    // A room created before the maps shipped carried no map: it was fought in
+    // the basin, and it restores there rather than failing to load.
+    const map = block.map === undefined ? DEFAULT_OUTBREAK_MAP_ID : block.map;
+    if (!isOutbreakMapId(map)) {
+      return {
+        ok: false,
+        problem: { code: 'invalid-outbreak', message: 'Outbreak battlefield is not one of ours.' },
+      };
+    }
+    outbreak = { difficulty: block.difficulty as OutbreakDifficulty, map };
+    if (raw.mapId !== map) {
       return {
         ok: false,
         problem: {
           code: 'invalid-map',
-          message: 'An Outbreak room must play the Outbreak battlefield.',
+          message: 'An Outbreak room must play the battlefield it recorded.',
         },
       };
     }
@@ -360,6 +382,7 @@ function buildOutbreakLobbyScenario(config: LobbyConfigV1): Scenario {
     difficulty: config.outbreak!.difficulty,
     mode: 'coop',
     nationId: config.seats[0].nation,
+    mapId: config.outbreak!.map,
   });
   scenario.settings.fog = true;
   scenario.settings.startHour = normaliseStartHour(config.startHour, scenario.settings.startHour);

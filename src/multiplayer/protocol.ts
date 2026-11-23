@@ -301,8 +301,8 @@ export interface LobbyMessage {
     startHour: number;
     /** Authoritative weather kind, so both seats fight the same sky. */
     weather: string;
-    /** Present on a co-op room: the run's difficulty, chosen by the host. */
-    outbreak?: { difficulty: string };
+    /** Present on a co-op room: the run's battlefield and difficulty. */
+    outbreak?: { difficulty: string; map?: string };
     /** Seat order, so index 0 is always the host. */
     seats: Array<{
       nation: string;

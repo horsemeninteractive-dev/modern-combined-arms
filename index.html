@@ -638,14 +638,19 @@
             <section class="menu-view outbreak-view" data-menu-panel="outbreak-solo" aria-label="Outbreak singleplayer">
               <div class="menu-view-head">
                 <p class="eyebrow">OUTBREAK · SINGLEPLAYER</p>
-                <h2>Relay Basin</h2>
-                <p class="lede">
+                <h2 id="outbreak-map-name">Relay Basin</h2>
+                <p class="lede" id="outbreak-map-blurb">
                   One Command Post at the centre of the basin, four roads in, and a horde that
                   never stops coming. Build, hold, and see how many waves the line survives.
                 </p>
               </div>
               <div class="menu-columns outbreak-columns">
                 <div class="menu-column">
+                  <div class="side-card">
+                    <div class="side-card-head"><span>BATTLEFIELD</span><span class="side-card-mark red" aria-hidden="true"></span></div>
+                    <div class="difficulty-options outbreak-difficulty" id="outbreak-maps" role="group" aria-label="Outbreak battlefield"></div>
+                    <p class="outbreak-difficulty-note" id="outbreak-map-note"></p>
+                  </div>
                   <div class="side-card">
                     <div class="side-card-head"><span>YOUR COMMAND</span><span class="side-card-mark blue" aria-hidden="true"></span></div>
                     <label class="rail-row">
@@ -671,7 +676,7 @@
                     <div class="menu-actions">
                       <button id="btn-outbreak-deploy" class="btn btn-primary btn-large">
                         <span class="btn-kicker">DEPLOY</span>
-                        <span>Hold the basin</span>
+                        <span id="outbreak-deploy-action">Hold the basin</span>
                       </button>
                     </div>
                   </div>

@@ -38,6 +38,7 @@ import { DEFAULT_AVATAR, isAvatarId, type AvatarId } from './identity';
 import type { MatchRewardSummary } from './matchCareer';
 import {
   isOutbreakBoardDifficulty,
+  isOutbreakBoardMap,
   isOutbreakBoardMode,
   type OutbreakBoardDifficulty,
   type OutbreakBoardMode,
@@ -219,6 +220,7 @@ function migrationState(value: string): MigrationState {
 interface OutbreakRunRow {
   account_id: string;
   mode: string;
+  map: string;
   difficulty: string;
   wave: number;
   waves_completed: number;
@@ -241,6 +243,7 @@ interface OutbreakRunRow {
  */
 function toOutbreakRun(row: OutbreakRunRow): OutbreakRunRecord | null {
   if (!isOutbreakBoardMode(row.mode) || !isOutbreakBoardDifficulty(row.difficulty)) return null;
+  if (!isOutbreakBoardMap(row.map)) return null;
   let nations: string[] = [];
   try {
     const parsed: unknown = JSON.parse(row.nations);
@@ -253,6 +256,7 @@ function toOutbreakRun(row: OutbreakRunRow): OutbreakRunRecord | null {
   return {
     accountId: row.account_id,
     mode: row.mode,
+    map: row.map,
     difficulty: row.difficulty,
     wave: row.wave,
     wavesCompleted: row.waves_completed,
@@ -932,17 +936,18 @@ export class D1AccountStore implements AccountStore {
     accountId: string,
     mode: OutbreakBoardMode,
     difficulty: OutbreakBoardDifficulty,
+    map: string,
   ): Promise<OutbreakRunRecord | null> {
     const row = await this.db
       .prepare(
-        `SELECT r.account_id, r.mode, r.difficulty, r.wave, r.waves_completed, r.zombies_killed,
-                r.duration_seconds, r.structures_lost, r.units_lost, r.players, r.nations,
-                COALESCE(p.callsign, r.callsign) AS callsign, r.recorded_at
+        `SELECT r.account_id, r.mode, r.map, r.difficulty, r.wave, r.waves_completed,
+                r.zombies_killed, r.duration_seconds, r.structures_lost, r.units_lost,
+                r.players, r.nations, COALESCE(p.callsign, r.callsign) AS callsign, r.recorded_at
            FROM outbreak_runs r
            LEFT JOIN account_profiles p ON p.account_id = r.account_id
-          WHERE r.account_id = ? AND r.mode = ? AND r.difficulty = ?`,
+          WHERE r.account_id = ? AND r.mode = ? AND r.difficulty = ? AND r.map = ?`,
       )
-      .bind(accountId, mode, difficulty)
+      .bind(accountId, mode, difficulty, map)
       .first<OutbreakRunRow>();
     return row ? toOutbreakRun(row) : null;
   }
@@ -959,10 +964,10 @@ export class D1AccountStore implements AccountStore {
     const result = await this.db
       .prepare(
         `INSERT INTO outbreak_runs (
-           account_id, mode, difficulty, wave, waves_completed, zombies_killed,
+           account_id, mode, map, difficulty, wave, waves_completed, zombies_killed,
            duration_seconds, structures_lost, units_lost, players, nations, callsign, recorded_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (account_id, mode, difficulty) DO UPDATE SET
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (account_id, map, mode, difficulty) DO UPDATE SET
            wave = excluded.wave,
            waves_completed = excluded.waves_completed,
            zombies_killed = excluded.zombies_killed,
@@ -984,6 +989,7 @@ export class D1AccountStore implements AccountStore {
       .bind(
         record.accountId,
         record.mode,
+        record.map,
         record.difficulty,
         record.wave,
         record.wavesCompleted,
@@ -1003,21 +1009,22 @@ export class D1AccountStore implements AccountStore {
   async outbreakLeaderboard(
     mode: OutbreakBoardMode,
     difficulty: OutbreakBoardDifficulty,
+    map: string,
     limit: number,
   ): Promise<OutbreakRunRecord[]> {
     const result = await this.db
       .prepare(
-        `SELECT r.account_id, r.mode, r.difficulty, r.wave, r.waves_completed, r.zombies_killed,
-                r.duration_seconds, r.structures_lost, r.units_lost, r.players, r.nations,
-                COALESCE(p.callsign, r.callsign) AS callsign, r.recorded_at
+        `SELECT r.account_id, r.mode, r.map, r.difficulty, r.wave, r.waves_completed,
+                r.zombies_killed, r.duration_seconds, r.structures_lost, r.units_lost,
+                r.players, r.nations, COALESCE(p.callsign, r.callsign) AS callsign, r.recorded_at
            FROM outbreak_runs r
            LEFT JOIN account_profiles p ON p.account_id = r.account_id
-          WHERE r.mode = ? AND r.difficulty = ?
+          WHERE r.mode = ? AND r.difficulty = ? AND r.map = ?
           ORDER BY r.wave DESC, r.waves_completed DESC, r.zombies_killed DESC,
                    r.duration_seconds DESC, r.recorded_at ASC
           LIMIT ?`,
       )
-      .bind(mode, difficulty, limit)
+      .bind(mode, difficulty, map, limit)
       .all<OutbreakRunRow>();
     return (result.results ?? [])
       .map(toOutbreakRun)
@@ -1029,7 +1036,7 @@ export class D1AccountStore implements AccountStore {
     const row = await this.db
       .prepare(
         `SELECT COUNT(*) AS ahead FROM outbreak_runs
-          WHERE mode = ? AND difficulty = ?
+          WHERE mode = ? AND difficulty = ? AND map = ?
             AND (wave > ?
               OR (wave = ? AND waves_completed > ?)
               OR (wave = ? AND waves_completed = ? AND zombies_killed > ?)
@@ -1038,6 +1045,7 @@ export class D1AccountStore implements AccountStore {
       .bind(
         run.mode,
         run.difficulty,
+        run.map,
         run.wave,
         run.wave,
         run.wavesCompleted,
