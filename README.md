@@ -138,7 +138,9 @@ footer in [index.html](index.html) agree on the version, refuses a dirty tree
 `dist/` to the `moderncombinedarms` Pages project, waits until the live site is
 serving the new bundle, then tags that commit `v<version>` (annotated, message
 `<version> BETA`) and pushes the branch and the tag in one push, so the tag
-always names the build that is actually live.
+always names the build that is actually live. `--dry-run` stops before the
+upload and the tag, and reports a tag that already names another commit instead
+of refusing the run.
 
 So the order is: bump the version in those three places, write the notes,
 commit, then `npm run release`. The measured baseline for that check — the

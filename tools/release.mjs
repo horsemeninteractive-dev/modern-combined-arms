@@ -5,7 +5,8 @@
  * branch and tag together.
  *
  *   npm run release                # validate, test, build, deploy, verify, tag
- *   npm run release -- --dry-run   # everything except the upload and the tag
+ *   npm run release -- --dry-run   # everything except the upload and the tag;
+ *                                  # a stale tag is reported, not fatal
  *   npm run release -- --skip-tests
  *   npm run release -- --allow-dirty
  *
@@ -111,13 +112,18 @@ if (dirty) {
   console.log('  --allow-dirty skips the tag, so a stale one does not matter here');
 } else {
   const staleTag = git(['rev-parse', '--verify', '--quiet', `refs/tags/${tag}^{commit}`]);
-  if (staleTag.status === 0 && staleTag.out.trim() !== head) {
-    fail(
+  const namesHead = staleTag.status !== 0 || staleTag.out.trim() === head;
+  if (namesHead) {
+    console.log(staleTag.status === 0 ? `  ${tag} already names HEAD` : `  ${tag} is unused`);
+  } else {
+    const message =
       `Tag ${tag} already names ${staleTag.out.trim().slice(0, 7)}, not HEAD. ` +
-        'Bump the version, or delete the stale tag, before releasing.',
-    );
+      'Bump the version, or delete the stale tag, before releasing.';
+    // A dry run uploads nothing and tags nothing, so the stale tag is a
+    // rehearsal note; the real release still stops here.
+    if (dryRun) console.log(`  ${message} (dry run: reported only)`);
+    else fail(message);
   }
-  console.log(staleTag.status === 0 ? `  ${tag} already names HEAD` : `  ${tag} is unused`);
 }
 
 if (!skipTests) {
