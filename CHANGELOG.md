@@ -12,6 +12,108 @@ rendered in game from **Changelog** in the main-menu footer.
 When the version is bumped, rename it to the new `## [x.y.z STAGE] — date`
 heading: `tools/release.mjs` refuses to ship unless that heading exists.
 
+## [0.11.1 BETA] — 2026-11-25
+
+The audit release. Outbreak's director finally does what its difficulty table
+says, late waves change in shape rather than only in size, unheld emplacements
+are positions an engineer can take, and the night is lit by lamps that behave
+like lamps.
+
+### Outbreak
+
+- **Difficulty's approach count is real.** `planWave` had always computed how
+  many axes a wave uses, and `spawnOrder` had always ignored it and cycled every
+  entry region, so Easy's first wave arrived down six roads at once. The regions
+  now come from the director's seeded shuffle: Easy opens on one road, Nightmare
+  owns the perimeter from wave ten.
+- **A survival time is a survival time.** Runs were recorded at `tick / 30` on a
+  20 Hz clock, so every result card and board entry read a third short. The
+  duration now divides by `TICK_RATE`.
+- **Specialists arrive when the table says.** `firstWave` gated a share that a
+  ramp then shrank back below a single body, so a brute configured for wave 12
+  first appeared at 16. The arrival body is now forced on its wave and held,
+  with the shambler absorbing the remainder.
+- **A stuck body no longer ends the run.** Cleanup closes on progress: a wave
+  ends when the living count has not fallen for 45 s, and a slow kill restarts
+  the window. The host also sweeps any body that has held neither a route nor a
+  target for 20 s and removes it through `Game.despawn` — no kill, no drop, no
+  score, and the body simply leaves the field.
+- **Late waves change shape.** From wave 24, 20, 16 or 14 depending on
+  difficulty, a wave is a `sprint` (the fast archetypes doubled and reweighted,
+  same total, the shambler still leading) or a `push` (a trickle, then a wall,
+  then a tail). The shape comes from the wave number alone, so both co-op seats
+  and a reloaded save agree without a new field on the wire, and the director
+  persists `pushOpen` so a wall cannot land twice. Hit points and totals are
+  untouched.
+- **The results card names the ground.** It carries a `MAP` row, and the card and
+  the board it posts to resolve the battlefield through one helper, so they can
+  no longer disagree.
+- **The arrival is announced.** `wave-cleared` now reaches the HUD, and a remote
+  seat derives that beat — and the rest of the wave notices — from the two
+  samples the room already publishes, so a co-op partner sees the same toasts
+  with nothing new on the wire.
+- **`INFECTED`, not `HOSTILES`.** The number is every living Infected body on
+  the field, and it stays truthful: a stalled wave can leave bodies standing, and
+  clamping them down to `maxAlive` would hide them. The label now names the
+  population it counts.
+
+### Capture
+
+- **An unheld emplacement is a position worth taking.** A nest, gun pit, bunker,
+  coastal battery or SAM site a map authored neutral can be crewed by a Combat
+  Engineer. A strategic objective still changes hands whoever holds it, a gun pit
+  a player built is his own for good, and an enemy's manned one has to be reduced
+  with fire first. `canSeizeStructure` holds the rule, and the command gate, AI,
+  overlay, HUD and order intent all ask it.
+- **Capture-only objectives are the ones weapons ignore.** `isCaptureObjective`
+  now separates a relay or depot from a capturable blueprint, so a seizable
+  emplacement keeps its integrity bar and can be shelled like any other concrete.
+
+### Night
+
+- **No grid, no light.** An ownerless structure has nothing feeding its fittings,
+  so its lamps and its window glass stay dark until it is taken. The simulation's
+  light list and the renderer agree on it, and a graphicked light can no longer
+  glow for a site no grid supplies.
+- **Searchlights search, hold and climb.** Emplacements carry two lamps on
+  separate swings, both held on a target their gunbook has, and air-defence
+  pieces throw a beam at the sky that follows an aircraft when one is up.
+  Concrete runs light their own corners, so a walled compound reads as a lit
+  perimeter rather than a ring of slabs.
+- **The lamp budget follows the camera.** A built-up line burns more cones than
+  one pass evaluates, so slots now go to the lamps nearest the eye
+  (`selectGroundSpots`) and a lamp out of shot keeps its lens instead of looking
+  broken. Up to 32 cones are evaluated, and the fragment shader skips its shadow
+  probes outside a cone.
+- **Detonations light their surroundings.** A blast adds a half-second pool and
+  glow to the light pass — bounded and gated on effects — so a fireball no longer
+  sits on unlit ground at night.
+- **The particles are rebuilt.** Explosions carry a hot core, a rolling
+  fireball, propellant pops a beat later, thrown debris, a ground skirt, a rising
+  stem and embers that fall back through the light. Puffs fade in, billow as they
+  age and shear with height; a wreck column climbs while it is hot and then
+  settles; a muzzle flash lies along the bore it came out of; tracers are comets,
+  not beads. Each sprite carries its own life and seed, so two never share a
+  silhouette.
+- **Armed carriers and the rocket battery drive with their lamps on.** The APC,
+  IFV, tank destroyer and rocket artillery had fallen through to an
+  infantryman's optics with no illuminator at all, leaving a mechanised push
+  unlit after dark.
+
+### Performance
+
+- **The horde has a measured cost.** `tests/perf.test.ts` now times a Nightmare
+  field at 30, 90 and 150 bodies — 1.18, 3.04 and 4.78 ms/tick, under a tenth of
+  a 20 Hz tick even at the ceiling — and the per-frame readouts the HUD calls at
+  0.009 ms. Nothing on the audit's performance list needed changing yet.
+
+### Documentation
+
+- **The audit is part of the tree.** `docs/OUTBREAK_PHASE_1_AUDIT.md` records what
+  was verified against the source, the two items that turned out to be audit
+  errors rather than defects, the measurements above, and the 1D/1E work that is
+  still open.
+
 ## [0.11.0 BETA] — 2026-11-23
 
 The theatres release. Outbreak has four authored battlefields, a selector for
