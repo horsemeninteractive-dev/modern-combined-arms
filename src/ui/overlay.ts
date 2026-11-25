@@ -1,5 +1,5 @@
 import type { App } from '../app';
-import { BUILDINGS, isIndestructibleStructure } from '../data/buildings';
+import { BUILDINGS, canSeizeStructure, isIndestructibleStructure, isSeizableSite } from '../data/buildings';
 import { ALL_UNITS } from '../data/units';
 import { tryIdentityDef } from '../data/factions';
 import { TILE_SIZE } from '../sim/constants';
@@ -406,7 +406,11 @@ export class Overlay {
       // Every strategic objective carries its control meter, destructible or
       // not. A radar station changes hands by capture exactly like a relay, so
       // it cannot be the one objective with no readable owner.
-      if (!BUILDINGS[relay.defId]?.capturable) continue;
+      // Every site engineers can still walk into carries its control meter: the
+      // strategic objectives, and the emplacements the map itself left unmanned.
+      // A structure the player raised is his own for good — especially a gun pit
+      // off a capturable blueprint — so it shows no control meter at all.
+      if (!isSeizableSite(relay.defId, relay.owner, relay.neutralStart === true)) continue;
       if (relay.hp <= 0) continue;
       // Remembered ground still names the holder: a charted objective keeps its
       // owner label, but not live capture progress nobody is watching.
@@ -971,7 +975,7 @@ export class Overlay {
     // ghost is dim by design, so the label has to carry the invitation: without
     // it there is nothing on screen to tell the player the silhouette can still
     // be taken from memory.
-    const capturable = !!BUILDINGS[e.defId]?.capturable && e.owner !== app.localPlayerId;
+    const capturable = canSeizeStructure(e.defId, e.owner, app.localPlayerId, e.neutralStart === true);
     const engineerReady =
       capturable &&
       app.ownSelected().some((u) => ALL_UNITS[u.defId]?.canCapture && !u.garrisonId);

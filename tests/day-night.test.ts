@@ -359,8 +359,11 @@ describe('presentation lights', () => {
 
   it('leaves a structure the team has only charted dark', () => {
     const night = windowGlow(dayNightAt(0, NIGHT), true);
-    const lit = { construction: false, remembered: false, power: null };
+    const lit = { construction: false, remembered: false, power: { demand: 5, ratio: 1 } };
     expect(structureWindowGlow(night, lit)).toBe(night);
+    // No grid, no glass: an ownerless site has nothing feeding its lamps, so its
+    // windows stay dark until an engineer brings it onto a grid.
+    expect(structureWindowGlow(night, { ...lit, power: null })).toBe(0);
     // A memory of a compound does not include whether anyone switched the lights
     // on, so a charted building must not glow through the fog.
     expect(structureWindowGlow(night, { ...lit, remembered: true })).toBe(0);
@@ -621,7 +624,10 @@ describe('presentation lights', () => {
     expect(TERRAIN_FS).toContain('uniform vec4 uSpotSrc[GROUND_SPOT_MAX]');
     expect(rendererSource).toContain('this.bindGroundSpots(p)');
     expect(rendererSource).toContain("'uSpotSrc[0]'");
-    expect(rendererSource).toContain('this.groundSpots.length < MAX_GROUND_SPOTS');
+    // The cone budget is spent on the nearest lamps, not on list order: a base
+    // can put more emplacements on the ground than one pass evaluates.
+    expect(rendererSource).toContain('const MAX_GROUND_SPOTS = 32;');
+    expect(rendererSource).toContain('this.selectGroundSpots(lights);');
 
     const game = scene(22);
     const tank = tankOf(game);

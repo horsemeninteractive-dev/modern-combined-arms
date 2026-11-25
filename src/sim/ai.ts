@@ -1,5 +1,5 @@
 import type { Game } from './game';
-import { BUILDINGS, buildingFamily, isIndestructibleStructure } from '../data/buildings';
+import { BUILDINGS, buildingFamily, isCaptureObjective, isIndestructibleStructure } from '../data/buildings';
 import { unitFamily, ALL_UNITS } from '../data/units';
 import {
   COMMANDER_PROFILE_VERSION,
@@ -4787,6 +4787,10 @@ export class AIController {
         !e.construction &&
         !!BUILDINGS[e.defId]?.capturable &&
         e.owner !== ctx.aiId &&
+        // Only an unheld site the map authored, or a strategic objective, is a
+        // walk-in. An enemy's manned gun pit has to be reduced with fire first,
+        // and a gun pit a player built is never walked into.
+        ((e.neutralStart === true && e.owner < 0) || isCaptureObjective(e.defId)) &&
         // A structure the enemy built has to be found before it can be walked
         // to. Authored objectives (`owner -1`) are part of the map itself —
         // they are counted on the objective line whether or not they are in

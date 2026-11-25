@@ -1,4 +1,4 @@
-import { BUILDINGS } from '../data/buildings';
+import { BUILDINGS, canSeizeStructure } from '../data/buildings';
 import { ALL_UNITS } from '../data/units';
 import type { Entity } from '../sim/types';
 
@@ -65,9 +65,9 @@ export function isGarrisonTarget(target: Entity | null | undefined): target is E
  *
  * A damaged structure takes priority over occupation when an engineer is
  * selected: the explicit right-click is then a repair order, even if infantry
- * in the group could also garrison it. Capturable objectives are never attack
- * targets; with an engineer selected they always take priority over the hostile
- * branch, so neutral and enemy-held objectives send the engineer to capture.
+ * in the group could also garrison it. Seizable sites are never attack targets;
+ * with an engineer selected they take priority over the hostile branch, so an
+ * unheld emplacement or a contested objective sends the engineer to capture.
  * Anything else follows the existing garrison / hostile-attack / move rules.
  */
 export function contextOrderFor(
@@ -79,8 +79,7 @@ export function contextOrderFor(
 ): ContextOrder {
   if (!target) return 'move';
   if (
-    BUILDINGS[target.defId]?.capturable &&
-    target.owner !== localPlayerId &&
+    canSeizeStructure(target.defId, target.owner, localPlayerId, target.neutralStart === true) &&
     selected.some((e) => ALL_UNITS[e.defId]?.canCapture && !e.garrisonId)
   ) {
     return 'capture';

@@ -22,6 +22,12 @@ export interface SensorProfile {
   acquire: number;
   kind: SensorKind;
   illuminator: IlluminatorKind;
+  /**
+   * Air-defence piece: it also throws a beam at the sky. A ground searchlight
+   * sweeping the apron is the wrong instrument for an aircraft, and an air
+   * defence site that sits dark reads as abandoned.
+   */
+  sky?: boolean;
   /** Human-readable capability for the unit inspector. */
   label: string;
 }
@@ -130,6 +136,14 @@ export const UNIT_SENSORS: Record<string, SensorProfile> = {
   engineer: ENGINEERING,
   harvester: LOGISTICS,
   recovery: LOGISTICS,
+  // Armed carriers, tank destroyers and the rocket battery drive on lamps like
+  // every other vehicle. They were falling through to an infantryman's optics,
+  // with no illuminator at all, so a whole mechanised push came down the road
+  // unlit after dark. The lamps are the change; their optics stay what they were.
+  apc: { ...OPTICAL, illuminator: 'headlights', label: 'Optical sights, headlights' },
+  ifv: { ...OPTICAL, illuminator: 'headlights', label: 'Optical sights, headlights' },
+  td: { ...NIGHT_OPTICS, illuminator: 'headlights', label: 'Night-vision optics, headlights' },
+  rocketArtillery: { ...NIGHT_OPTICS, illuminator: 'headlights', label: 'Night-vision optics, headlights' },
   rifle: OPTICAL,
   medic: OPTICAL,
   atgm: NIGHT_OPTICS,
@@ -140,7 +154,7 @@ export const UNIT_SENSORS: Record<string, SensorProfile> = {
   heavyHowitzer: { ...NIGHT_OPTICS, illuminator: 'headlights', label: 'Night-vision optics, headlights' },
   recon: RECON_THERMAL,
   pathfinder: { ...NIGHT_OPTICS, nightVision: 0.68, illuminator: 'none', label: 'Pathfinder night optics' },
-  aa: { ...THERMAL, kind: 'radar', illuminator: 'headlights', label: 'Radar + thermal tracker, headlights' },
+  aa: { ...THERMAL, kind: 'radar', illuminator: 'headlights', sky: true, label: 'Radar + thermal tracker, headlights, sky searchlight' },
   fighter: AVIONICS,
   interceptor: AVIONICS,
   uav: RECON_AVIONICS,
@@ -183,6 +197,14 @@ const STRUCTURE_FLOODLIT: SensorProfile = {
   label: 'Floodlit perimeter',
 };
 
+const STRUCTURE_SEARCHLIT: SensorProfile = {
+  nightVision: 0.7,
+  acquire: 0.74,
+  kind: 'optical',
+  illuminator: 'searchlight',
+  label: 'Sweeping searchlight',
+};
+
 const STRUCTURE_RADAR: SensorProfile = {
   nightVision: 0.85,
   acquire: 0.85,
@@ -203,10 +225,16 @@ export const BUILDING_SENSORS: Record<string, SensorProfile> = {
   powerPlant: { ...STRUCTURE_FLOODLIT, illuminator: 'windows', label: 'Plant lighting' },
   radar: { ...STRUCTURE_RADAR, label: 'Radar station' },
   radarStation: { ...STRUCTURE_RADAR, label: 'Radar station' },
-  samBattery: { ...STRUCTURE_OPTICAL, nightVision: 0.72, kind: 'radar', label: 'Fire-control radar' },
-  mgNest: STRUCTURE_OPTICAL,
-  atTurret: STRUCTURE_OPTICAL,
-  coastalBattery: { ...STRUCTURE_OPTICAL, nightVision: 0.7, label: 'Coastal fire control' },
+  samBattery: {
+    ...STRUCTURE_SEARCHLIT,
+    nightVision: 0.72,
+    kind: 'radar',
+    sky: true,
+    label: 'Fire-control radar, sky searchlight',
+  },
+  mgNest: STRUCTURE_SEARCHLIT,
+  atTurret: STRUCTURE_SEARCHLIT,
+  coastalBattery: { ...STRUCTURE_SEARCHLIT, nightVision: 0.7, label: 'Coastal fire control, searchlight' },
   relay: { ...STRUCTURE_OPTICAL, illuminator: 'beacon', label: 'Signals relay' },
   supplyDepot: { ...STRUCTURE_OPTICAL, illuminator: 'windows', label: 'Lit depot' },
   tenement: { ...STRUCTURE_OPTICAL, illuminator: 'windows', label: 'Lit windows' },
@@ -221,13 +249,19 @@ export const BUILDING_SENSORS: Record<string, SensorProfile> = {
   // that is exactly as easy to find as it is useful to its owner.
   watchtower: { ...STRUCTURE_OPTICAL, nightVision: 0.6, illuminator: 'beacon', label: 'Lookout lamp' },
   ruin: { ...STRUCTURE_OPTICAL, illuminator: 'none', label: 'No lighting' },
-  bunker: { ...STRUCTURE_OPTICAL, nightVision: 0.7, label: 'Emplacement optics' },
+  bunker: { ...STRUCTURE_SEARCHLIT, nightVision: 0.7, label: 'Emplacement optics, searchlight' },
   forwardPost: { ...STRUCTURE_RADAR, nightVision: 0.8, label: 'Forward observation optics' },
   researchCentre: { ...STRUCTURE_FLOODLIT, nightVision: 0.9, label: 'Laboratory lighting' },
   signalsBureau: { ...STRUCTURE_FLOODLIT, nightVision: 0.88, label: 'Bureau lighting' },
   armourWorks: { ...STRUCTURE_FLOODLIT, label: 'Workshop floodlights' },
   expeditionaryAirfield: { ...STRUCTURE_FLOODLIT, nightVision: 0.86, label: 'Expeditionary strip lighting' },
-  longRangeSam: { ...STRUCTURE_OPTICAL, nightVision: 0.74, kind: 'radar', label: 'Long-range fire-control radar' },
+  longRangeSam: {
+    ...STRUCTURE_SEARCHLIT,
+    nightVision: 0.74,
+    kind: 'radar',
+    sky: true,
+    label: 'Long-range fire-control radar, sky searchlight',
+  },
 };
 
 /**

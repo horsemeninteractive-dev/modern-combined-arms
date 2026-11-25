@@ -1,4 +1,7 @@
+import { describe, expect, it } from 'vitest';
 import { CommandGate } from '../src/multiplayer/commandGate';
+import { remoteWaveNotices, type RemoteWaveSample } from '../src/outbreak/notices';
+import type { DirectorEvent } from '../src/outbreak/director';
 import { createTeamSnapshot } from '../src/multiplayer/projection';
 import { Game } from '../src/sim/game';
 import { createOutbreakScenario } from '../src/outbreak/scenario';
@@ -115,6 +118,86 @@ describe('Outbreak co-op permissions', () => {
       game.state.entities.filter((entity) => entity.owner === 1 && entity.kind === 'unit').length,
     );
     expect(game.state.tick).toBeGreaterThan(700);
+  });
+});
+
+describe('Outbreak co-op wave notices', () => {
+  function sample(over: Partial<RemoteWaveSample> = {}): RemoteWaveSample {
+    return { wave: 1, phase: 'preparation', unspawned: 6, secondsToAssault: 30, ...over };
+  }
+
+  /** The notices a remote seat would raise, one sample at a time. */
+  function watch(states: RemoteWaveSample[]): DirectorEvent[] {
+    const out: DirectorEvent[] = [];
+    for (let index = 1; index < states.length; index++) {
+      out.push(...remoteWaveNotices(states[index - 1], states[index]));
+    }
+    return out;
+  }
+
+  it('says nothing for the first published sample', () => {
+    // A seat that connects mid-assault should render the wave, not announce it.
+    expect(remoteWaveNotices(null, sample({ phase: 'assault' }))).toEqual([]);
+  });
+
+  it('announces every beat of a wave once, in order', () => {
+    const notices = watch([
+      sample({ phase: 'preparation', unspawned: 6, secondsToAssault: 30 }),
+      sample({ phase: 'warning', unspawned: 6, secondsToAssault: 4 }),
+      sample({ phase: 'assault', unspawned: 6, secondsToAssault: 0 }),
+      sample({ phase: 'assault', unspawned: 3, secondsToAssault: 0 }),
+      sample({ phase: 'cleanup', unspawned: 0, secondsToAssault: 0 }),
+      sample({ phase: 'cleanup', unspawned: 0, secondsToAssault: 0 }),
+      sample({ phase: 'complete', unspawned: 0, secondsToAssault: 0 }),
+    ]);
+    expect(notices.map((notice) => `${notice.kind}:${notice.wave}`)).toEqual([
+      'warning:1',
+      'assault:1',
+      'wave-cleared:1',
+      'wave-complete:1',
+    ]);
+  });
+
+  it('reports a wave that finished between two samples', () => {
+    const notices = remoteWaveNotices(
+      sample({ wave: 3, phase: 'cleanup', unspawned: 0 }),
+      sample({ wave: 4, phase: 'preparation', unspawned: 9, secondsToAssault: 20 }),
+    );
+    expect(notices.map((notice) => `${notice.kind}:${notice.wave}`)).toEqual(['wave-complete:3']);
+  });
+
+  it('treats a restarted room as a reset, not a notice', () => {
+    expect(
+      remoteWaveNotices(
+        sample({ wave: 9, phase: 'assault', unspawned: 4 }),
+        sample({ wave: 1, phase: 'preparation', unspawned: 6 }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('derives the same beats the host director emits', () => {
+    // The real thing: one authoritative match, its own event stream, and a
+    // remote seat sampling the published state it would receive every tick.
+    const game = outbreakGame();
+    const match = game.outbreak!;
+    const host: DirectorEvent[] = [];
+    const remote: DirectorEvent[] = [];
+    let previous: RemoteWaveSample | null = match.hudState();
+    for (let tick = 0; tick < 20000; tick++) {
+      game.tick();
+      for (const event of match.drainAnnouncements()) {
+        // The first preparation is the run opening, not a wave notice.
+        if (event.kind !== 'preparation') host.push(event);
+      }
+      const next = match.hudState();
+      remote.push(...remoteWaveNotices(previous, next));
+      previous = next;
+      if (host.length >= 8) break;
+    }
+    expect(host.length).toBeGreaterThanOrEqual(4);
+    expect(remote.map((notice) => `${notice.kind}:${notice.wave}`)).toEqual(
+      host.map((notice) => `${notice.kind}:${notice.wave}`),
+    );
   });
 });
 

@@ -15,10 +15,10 @@
  */
 import type { Game } from '../sim/game';
 import type { Entity } from '../sim/types';
-import { TILE_SIZE } from '../sim/constants';
+import { TICK_RATE, TILE_SIZE } from '../sim/constants';
 import { Rng } from '../core/rng';
 import { zombieDefId, zombieKindOf, INFECTED_FACTION_ID } from '../data/zombies';
-import { BUILDINGS } from '../data/buildings';
+import { isCaptureObjective } from '../data/buildings';
 import { outbreakDifficulty } from './config';
 import {
   PICKUP_LIFETIME_SECONDS,
@@ -47,6 +47,22 @@ const LOCAL_UNIT_RADIUS = 11 * TILE_SIZE;
 const STRUCTURE_SEARCH_RADIUS = 34 * TILE_SIZE;
 /** How far a mark may drift before a marching body needs a fresh route. */
 const MARCH_TOLERANCE = 2 * TILE_SIZE;
+/**
+ * How long a body may stand with no route and nothing to attack before the host
+ * takes it off the field.
+ *
+ * The pathfinder refuses ground it cannot cross; the simulation then clears the
+ * order and leaves the body standing where it is. Waiting longer cannot help —
+ * it holds no route to run and no target to fight, so it will never arrive and
+ * never die — and until it goes it counts against `maxAlive` and taxes the
+ * cleanup of every later wave. The grace is far longer than a re-plan or a jam
+ * takes to clear, so only a genuinely stranded body is ever removed.
+ */
+export const STRANDED_DESPAWN_SECONDS = 20;
+/** Ticks between stranded sweeps: four a second, over the whole field. */
+const STRANDED_SWEEP_TICKS = 5;
+/** Inside this distance of its march, a body has arrived rather than been refused. */
+const ARRIVED_TOLERANCE = 2 * TILE_SIZE;
 
 export interface OutbreakSaveState {
   director: ReturnType<OutbreakDirector['toState']>;
@@ -67,6 +83,8 @@ export class OutbreakMatch implements WaveHost {
   private lastEventSeq: number;
   private stats: OutbreakStats;
   private commandPostLost = false;
+  /** Tick at which each body was first seen with no route and no target. */
+  private readonly strandedSince = new Map<number, number>();
   /** Drops on the field that nobody has walked over yet. */
   private pickups: Pickup[] = [];
   private nextPickupId = 1;
@@ -153,6 +171,7 @@ export class OutbreakMatch implements WaveHost {
     }
     this.director.update(this, dt);
     this.issueOrders();
+    this.sweepStranded();
     this.updatePickups();
     this.collectStats();
   }
@@ -279,11 +298,13 @@ export class OutbreakMatch implements WaveHost {
         }
         continue;
       }
-      // Objectives are not targets. A relay or a supply depot cannot be
-      // destroyed, so a horde sent at one arrives, attacks masonry that will
-      // never fall and stops being a wave; those buildings are taken by an
-      // engineer, never by a claw.
-      if (BUILDINGS[candidate.defId]?.capturable) continue;
+      // Capture-only objectives are not targets. A relay or a supply depot
+      // cannot be destroyed, so a horde sent at one arrives, attacks masonry
+      // that will never fall and stops being a wave; those buildings are taken
+      // by an engineer, never by a claw. A seizable emplacement — a bunker, a gun
+      // pit — is ordinary concrete and stays on the list: once a defender crews
+      // it, it is a position the wave has to reduce.
+      if (isCaptureObjective(candidate.defId)) continue;
       // Structures are scored by role: a turret or production building is a
       // better target than a wall segment, and the Command Post is best of all.
       const bias = candidate === post ? 0.45 : isDefence(candidate.defId) ? 0.6 : 1;
@@ -295,6 +316,40 @@ export class OutbreakMatch implements WaveHost {
     }
     if (bestUnit) return bestUnit;
     return bestStructure ?? post;
+  }
+
+  /**
+   * Take bodies the pathfinder has given up on off the field.
+   *
+   * `issueOrders` asks for a route every second or so; where the ground has no
+   * answer the simulation clears the order and leaves the body standing. Such a
+   * body is left alone for `STRANDED_DESPAWN_SECONDS` first, so one waiting on
+   * its next order, or on a jam that clears, is never removed for a pause — and
+   * then it is despawned, not killed: no `unitLost` is emitted, so the survival
+   * tally scores nothing and no drop is rolled.
+   */
+  private sweepStranded(): void {
+    if (this.game.state.tick % STRANDED_SWEEP_TICKS !== 0) return;
+    const tick = this.game.state.tick;
+    const window = STRANDED_DESPAWN_SECONDS * TICK_RATE;
+    const living = new Set<number>();
+    for (const entity of this.game.state.entities) {
+      if (entity.kind !== 'unit' || entity.hp <= 0 || entity.owner !== this.infectedOwner) continue;
+      living.add(entity.id);
+      if (!isStranded(entity)) {
+        this.strandedSince.delete(entity.id);
+        continue;
+      }
+      const since = this.strandedSince.get(entity.id);
+      if (since === undefined) {
+        this.strandedSince.set(entity.id, tick);
+        continue;
+      }
+      if (tick - since < window) continue;
+      this.strandedSince.delete(entity.id);
+      this.game.despawn(entity);
+    }
+    for (const id of this.strandedSince.keys()) if (!living.has(id)) this.strandedSince.delete(id);
   }
 
   private commandPost(): Entity | null {
@@ -334,9 +389,16 @@ export class OutbreakMatch implements WaveHost {
         if (event.defId === 'commandPost') this.commandPostLost = true;
       }
     }
+    // One defending army, in both modes: an Outbreak scenario has the defender
+    // at id 0 and the Infected at id 1, and a co-op room seats both commanders
+    // on that same player. So this is the pair's gathered total, not one seat's
+    // share, and there is no second pool to add.
     const defender = game.player(0);
     if (defender) this.stats.matsGathered = defender.stats.matsGathered;
-    this.stats.durationSeconds = game.state.tick / 30;
+    // The simulation's own clock, not a second one: the rest of the engine
+    // converts ticks with TICK_RATE, and a hard-coded 30 made every survival
+    // card and leaderboard entry report two thirds of the time actually held.
+    this.stats.durationSeconds = game.state.tick / TICK_RATE;
     this.stats.wave = this.director.wave;
     // A wave counts as completed only once its own cleanup beat has ended: the
     // director's phase is the only clock that knows the field is clear and the
@@ -451,6 +513,22 @@ export class OutbreakMatch implements WaveHost {
     this.lastEventSeq = save.eventSeq;
     this.rng.setState(save.rngState);
   }
+}
+
+/**
+ * True when the field has nothing for this body: no route to run, no target to
+ * fight, and no march it is close enough to count as having arrived at. A body
+ * that reached the point it was sent to is quiet, not stranded, and is left be.
+ */
+function isStranded(zombie: Entity): boolean {
+  if (zombie.path.length > 0) return false;
+  if (zombie.targetId !== 0 || zombie.aimTargetId !== 0) return false;
+  const order = zombie.order;
+  if (!order) return true;
+  if (order.type !== 'move' && order.type !== 'attackMove') return false;
+  // A march without a mark cannot be judged against one: leave it to the sim.
+  if (order.x === undefined || order.z === undefined) return false;
+  return Math.hypot(order.x - zombie.x, order.z - zombie.z) > ARRIVED_TOLERANCE;
 }
 
 /** Defensive emplacements the horde should treat as obstacles worth clearing. */

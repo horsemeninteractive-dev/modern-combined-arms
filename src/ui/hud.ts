@@ -6,6 +6,7 @@ import {
   BUILDABLE_BY_PLAYER,
   buildingFamily,
   buildingRequirements,
+  isCaptureObjective,
   isIndestructibleStructure,
 } from '../data/buildings';
 import { UNITS, ALL_UNITS } from '../data/units';
@@ -2214,7 +2215,9 @@ export class HUD {
     const isEnemy = e.owner !== this.app.localPlayerId && p && game.isHostile(e.owner, this.app.localPlayerId);
     const frac = clamp01(e.hp / e.maxHp);
     const iconName = def?.icon ?? 'target';
-    const objective = BUILDINGS[e.defId]?.capturable
+    // A seizable emplacement is ordinary concrete with a crew to clear, so it
+    // keeps its integrity bar; the control meter is for the authored objectives.
+    const objective = isCaptureObjective(e.defId)
       ? objectiveMeterState(game, e, {
           palette: this.app.settings.colorVision,
           localPlayerId: this.app.localPlayerId,

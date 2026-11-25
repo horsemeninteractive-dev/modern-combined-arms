@@ -4,6 +4,8 @@ import { TICK_RATE, TILE_SIZE } from '../src/sim/constants';
 import { createOutbreakScenario } from '../src/outbreak/scenario';
 import { ZOMBIE_DEF_IDS, ZOMBIE_UNITS } from '../src/data/zombies';
 import { BUILDINGS } from '../src/data/buildings';
+import { TERRAIN, Terrain, type TerrainId } from '../src/sim/terrain';
+import { STRANDED_DESPAWN_SECONDS } from '../src/outbreak/match';
 import type { Scenario } from '../src/sim/scenario';
 
 function outbreakGame(overrides: Partial<Parameters<typeof createOutbreakScenario>[0]> = {}): {
@@ -28,6 +30,37 @@ function infectedIds(game: Game): number[] {
   return game.state.entities
     .filter((e) => e.owner === 1 && e.kind === 'unit' && e.hp > 0)
     .map((e) => e.id);
+}
+
+/**
+ * Open ground with standable neighbours, near an approach and clear of the base.
+ * A one-tile pocket there can be sealed without touching anything else.
+ */
+function pocketSite(scenario: Scenario): { x: number; z: number } {
+  const standable = (x: number, z: number): boolean => {
+    const tile = scenario.tiles[z * scenario.width + x];
+    return Number.isFinite(TERRAIN[tile.t as TerrainId].costs.foot);
+  };
+  const open = (x: number, z: number): boolean => {
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) if (!standable(x + dx, z + dz)) return false;
+    }
+    return true;
+  };
+  for (const region of scenario.meta.outbreak!.entryRegions) {
+    for (let ring = 0; ring <= 3; ring++) {
+      for (let dz = -ring; dz <= ring; dz++) {
+        for (let dx = -ring; dx <= ring; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dz)) !== ring) continue;
+          const x = region.x + dx;
+          const z = region.z + dz;
+          if (x < 2 || z < 2 || x >= scenario.width - 2 || z >= scenario.height - 2) continue;
+          if (open(x, z)) return { x, z };
+        }
+      }
+    }
+  }
+  throw new Error('no open ground for the pocket');
 }
 
 describe('the infected in the live simulation', () => {
@@ -168,6 +201,63 @@ describe('the infected in the live simulation', () => {
     const before = other.outbreak!.secondsToAssault;
     for (let i = 0; i < TICK_RATE; i++) other.tick();
     expect(other.outbreak!.secondsToAssault).toBeLessThan(before);
+  });
+
+  it('takes a body the pathfinder has given up on off the field without scoring it', () => {
+    const scenario = createOutbreakScenario({
+      difficulty: 'easy',
+      mode: 'solo',
+      nationId: 'poland',
+      seed: 11,
+    });
+    // Seal one tile with water on every side. Foot has no route out of it, so
+    // every march the horde controller issues is refused at the door.
+    const pocket = pocketSite(scenario);
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dz === 0) continue;
+        const index = (pocket.z + dz) * scenario.width + pocket.x + dx;
+        scenario.tiles[index] = { ...scenario.tiles[index], t: Terrain.DeepWater, o: 0 };
+      }
+    }
+    const game = new Game(scenario, { enableAI: false });
+    const body = game.spawnInfected(
+      ZOMBIE_DEF_IDS.shambler,
+      (pocket.x + 0.5) * TILE_SIZE,
+      (pocket.z + 0.5) * TILE_SIZE,
+      1,
+    );
+    expect(body).not.toBeNull();
+    // The seal held: the body is inside the pocket, not beside it.
+    expect(Math.floor(body!.x / TILE_SIZE)).toBe(pocket.x);
+    expect(Math.floor(body!.z / TILE_SIZE)).toBe(pocket.z);
+    expect(game.outbreak!.aliveInfected).toBe(1);
+    const killsBefore = game.outbreak!.statistics.zombiesKilled;
+    for (let i = 0; i < TICK_RATE * (STRANDED_DESPAWN_SECONDS + 5); i++) game.tick();
+    // Gone: no longer on the field and no longer counted against the wave cap.
+    expect(game.getEntity(body!.id)).toBeUndefined();
+    expect(game.outbreak!.aliveInfected).toBe(0);
+    // Removed, not killed: a despawn is never credited to the survival tally.
+    expect(game.outbreak!.statistics.zombiesKilled).toBe(killsBefore);
+    expect(game.outbreak!.statistics.killsByKind.shambler).toBe(0);
+  });
+
+  it('leaves a body with a route on the field, however slowly it walks', () => {
+    const { game } = outbreakGame({ difficulty: 'easy' });
+    // Nothing of the defence can shoot, so the body is judged on its route alone.
+    for (const entity of game.state.entities) {
+      if (entity.owner === 0 && entity.kind === 'unit') entity.hp = 0;
+    }
+    game.tick();
+    const region = game.state.scenario.meta.outbreak!.entryRegions[0];
+    const body = game.spawnInfected(
+      ZOMBIE_DEF_IDS.shambler,
+      (region.x + 0.5) * TILE_SIZE,
+      (region.z + 0.5) * TILE_SIZE,
+      1,
+    )!;
+    for (let i = 0; i < TICK_RATE * (STRANDED_DESPAWN_SECONDS + 5); i++) game.tick();
+    expect(game.getEntity(body.id)).toBeDefined();
   });
 
   it('splashes a cluster with one bloater burst', () => {

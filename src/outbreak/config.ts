@@ -8,7 +8,7 @@
  * dies to the same burst as an Easy one.
  */
 import type { OutbreakDifficulty } from '../sim/scenario';
-import { ZOMBIE_KINDS, type WavePlan, type ZombieKind } from './types';
+import { ZOMBIE_KINDS, type WavePlan, type WaveShape, type ZombieKind } from './types';
 
 export interface OutbreakDifficultyConfig {
   id: OutbreakDifficulty;
@@ -34,6 +34,12 @@ export interface OutbreakDifficultyConfig {
   /** Seconds between spawn batches at wave 1, and the floor. */
   spawnIntervalSeconds: number;
   minSpawnIntervalSeconds: number;
+  /**
+   * First wave that arrives in a scripted shape rather than the steady trickle.
+   * Every wave before it is unchanged; from it on, `LATE_WAVE_SHAPES` alternate.
+   * Harder difficulties start the change sooner, as they do with specials.
+   */
+  shapesFromWave: number;
   /** Simultaneous living zombies allowed for wave 1, growth, and the ceiling. */
   maxAliveBase: number;
   maxAlivePerWave: number;
@@ -93,6 +99,7 @@ export const OUTBREAK_DIFFICULTIES: Readonly<Record<OutbreakDifficulty, Outbreak
       groupsMax: 3,
       spawnIntervalSeconds: 3.6,
       minSpawnIntervalSeconds: 2.0,
+      shapesFromWave: 24,
       maxAliveBase: 14,
       maxAlivePerWave: 2,
       maxAliveCap: 90,
@@ -113,6 +120,7 @@ export const OUTBREAK_DIFFICULTIES: Readonly<Record<OutbreakDifficulty, Outbreak
       groupsMax: 4,
       spawnIntervalSeconds: 3.2,
       minSpawnIntervalSeconds: 1.6,
+      shapesFromWave: 20,
       maxAliveBase: 16,
       maxAlivePerWave: 2.4,
       maxAliveCap: 110,
@@ -133,6 +141,7 @@ export const OUTBREAK_DIFFICULTIES: Readonly<Record<OutbreakDifficulty, Outbreak
       groupsMax: 5,
       spawnIntervalSeconds: 2.8,
       minSpawnIntervalSeconds: 1.3,
+      shapesFromWave: 16,
       maxAliveBase: 18,
       maxAlivePerWave: 2.8,
       maxAliveCap: 130,
@@ -159,6 +168,7 @@ export const OUTBREAK_DIFFICULTIES: Readonly<Record<OutbreakDifficulty, Outbreak
         groupsMax: 6,
         spawnIntervalSeconds: 2.4,
         minSpawnIntervalSeconds: 1.0,
+        shapesFromWave: 14,
         maxAliveBase: 20,
         maxAlivePerWave: 3.2,
         maxAliveCap: 150,
@@ -195,11 +205,23 @@ function populationFor(wave: number, config: OutbreakDifficultyConfig): number {
  * `shareRampWaves`, so the second half of the horde changes character instead of
  * only getting longer. Specials stay a minority: a wave of nothing but brutes is
  * not more interesting than a mixed one.
+ *
+ * `firstWave` is a promise, not an estimate: the ramp's first step is a fraction
+ * of the apex share, so the share-proportional count rounds to zero there and an
+ * archetype could not appear until the ramp had grown for several more waves. The
+ * arrival body is therefore forced, and held, so a kind that has been introduced
+ * never drops back out while its share catches up.
+ *
+ * `shareScale` reweights a single wave without changing the difficulty table: a
+ * sprint wave passes the fast archetypes' multipliers, so the ramp it inherits
+ * stays the ramp but its horde comes in quicker. Every body is still accounted
+ * for, and a kind whose weight is scaled is never scaled to nothing.
  */
 export function waveComposition(
   wave: number,
   config: OutbreakDifficultyConfig,
   total: number,
+  shareScale?: Partial<Record<ZombieKind, number>>,
 ): Record<ZombieKind, number> {
   const weights: Record<ZombieKind, number> = {
     shambler: 1,
@@ -215,7 +237,7 @@ export function waveComposition(
     const first = config.firstWave[kind];
     if (wave < first) continue;
     const progress = Math.min(1, (wave - first + 1) / Math.max(1, config.shareRampWaves - first + 1));
-    const weight = config.share[kind] * progress;
+    const weight = config.share[kind] * progress * (shareScale?.[kind] ?? 1);
     weights[kind] = weight;
     sum += weight;
   }
@@ -234,9 +256,59 @@ export function waveComposition(
     composition[kind] = count;
     assigned += count;
   }
+  // The introduction wave fields one body of the new archetype, and every later
+  // wave fields at least one too. A single body is the announcement; the ramp
+  // decides how much of the horde follows it. Held back only by the wave's own
+  // size, so a tiny horde still adds up to exactly `total`.
+  for (const kind of ZOMBIE_KINDS) {
+    if (kind === 'shambler') continue;
+    if (wave < config.firstWave[kind] || composition[kind] > 0) continue;
+    if (assigned >= total) break;
+    composition[kind] = 1;
+    assigned += 1;
+  }
   // The shambler is the backbone: whatever the specialists did not take.
   composition.shambler = Math.max(0, total - assigned);
   return composition;
+}
+
+/**
+ * Late waves alternate these instead of arriving as one steady stream.
+ *
+ * Two entries is deliberate: the rhythm is learnable (the wave after this one is
+ * always the other kind) while still changing the shape of every wave past the
+ * floors, which is what the mode was missing once preparation, interval and axes
+ * had all bottomed out.
+ */
+export const LATE_WAVE_SHAPES: readonly WaveShape[] = Object.freeze(['sprint', 'push']);
+
+/**
+ * Composition multipliers a sprint wave applies: the fast archetypes take a
+ * larger share of the same horde. Kept moderate on purpose — a sprint is a spike
+ * in pace, not a change of faction, so the shambler still leads the mix.
+ */
+const SPRINT_SHARE_SCALE: Partial<Record<ZombieKind, number>> = Object.freeze({
+  runner: 2.0,
+  crawler: 1.6,
+});
+
+/** Where a push wave's wall opens, and how much of the wave it lands at once. */
+const PUSH_AT_SHARE = 0.55;
+const PUSH_SIZE_SHARE = 0.3;
+/** Floors so a push is still a block on a wave that happens to be small. */
+const PUSH_MIN_BODIES = 3;
+
+/**
+ * The arrival shape for a wave.
+ *
+ * Before `shapesFromWave` every wave is the steady trickle the mode always had.
+ * From there on the scripted shapes alternate. Derived from the wave number
+ * alone — no extra draw from the rng — so both peers of a co-op room and a
+ * reloaded save agree without a new field on the wire.
+ */
+export function waveShapeFor(wave: number, config: OutbreakDifficultyConfig): WaveShape {
+  if (wave < config.shapesFromWave) return 'steady';
+  return LATE_WAVE_SHAPES[(wave - config.shapesFromWave) % LATE_WAVE_SHAPES.length];
 }
 
 /**
@@ -272,7 +344,23 @@ export function planWave(
   // without making the difficulty curve unreadable.
   const jitter = 1 + (rng.next() - 0.5) * 0.12;
   const tuned = Math.max(1, Math.round(total * jitter));
-  const tunedComposition = waveComposition(wave, config, tuned);
+  // Past the floors, size is no longer the only thing a wave can vary. A shaped
+  // wave changes which bodies turn up and how they land; the count, the ceiling,
+  // the approaches and every hit point stay on the curve above.
+  const shape = waveShapeFor(wave, config);
+  const tunedComposition = waveComposition(
+    wave,
+    config,
+    tuned,
+    shape === 'sprint' ? SPRINT_SHARE_SCALE : undefined,
+  );
+  // A push keeps the mix and changes the arrival: the first stretch walks in,
+  // then a held block lands in one instant, then a short tail does.
+  const pushAt = shape === 'push' ? Math.max(1, Math.floor(tuned * PUSH_AT_SHARE)) : 0;
+  const pushSize =
+    shape === 'push'
+      ? Math.min(tuned - pushAt, Math.max(PUSH_MIN_BODIES, Math.round(tuned * PUSH_SIZE_SHARE)))
+      : 0;
   return {
     wave,
     total: tuned,
@@ -281,6 +369,9 @@ export function planWave(
     spawnIntervalSeconds: Math.round(spawnInterval * 10) / 10,
     prepSeconds: Math.round(prep),
     maxAlive,
+    shape,
+    pushAt,
+    pushSize,
   };
 }
 
@@ -300,9 +391,19 @@ export function spawnOrder(
     const j = Math.floor(rng.next() * (i + 1));
     [queue[i], queue[j]] = [queue[j], queue[i]];
   }
-  const pool = regionIds.length > 0 ? regionIds : ['default'];
+  // Each assault group walks in on its own approach, and `plan.groups` is the
+  // width of the attack: one road on Easy's opening, the whole perimeter on a
+  // late Nightmare wave. Drawing the regions here is what makes that table mean
+  // anything — cycling every entry region on every wave turned six roads into
+  // the only wave shape the mode had, whatever difficulty asked for.
+  const pool = regionIds.length > 0 ? [...regionIds] : ['default'];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(rng.next() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  const approaches = pool.slice(0, Math.max(1, Math.min(plan.groups, pool.length)));
   for (let i = 0; i < queue.length; i++) {
-    queue[i] = { kind: queue[i].kind, regionId: pool[i % pool.length] ?? rng.pick(pool) };
+    queue[i] = { kind: queue[i].kind, regionId: approaches[i % approaches.length] };
   }
   return queue;
 }

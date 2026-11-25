@@ -1,4 +1,5 @@
 import { illuminatorActive, sensorFor } from '../sim/sensors';
+import { TILE_SIZE } from '../sim/constants';
 import { headlampAnchor, structureAnchor } from './lightAnchors';
 import type { DayNightState } from '../sim/dayNight';
 import type { Entity } from '../sim/types';
@@ -19,6 +20,11 @@ import type { GpuLight } from './lightGpu';
  * one blob, a cone beam aimed along the hull, corner work-lamps on structures so a
  * base reads as a lit compound rather than a dark roof, and window rows on the
  * facades that face the camera.
+ *
+ * Nothing here burns without supply. A structure draws its lamps from its
+ * owner's grid, so a browned-out compound is dark — including its window glass,
+ * which the shader lights from the owner's power status. An ownerless site has no
+ * grid at all, so it stands dark until someone crews it.
  */
 
 export interface LightViewInput {
@@ -49,11 +55,52 @@ export interface LightViewInput {
   visible?: (entity: Entity) => boolean;
   /** Hard ceiling on instances; the pass is one draw call either way. */
   maxLights?: number;
+  /**
+   * Seconds of battle view time. Searchlights sweep on it; every other lamp
+   * ignores it. Absent means t=0, which is a valid still frame.
+   */
+  time?: number;
 }
 
-/** Beam reach in world units. A tile is four units, so this is about 3 tiles. */
+/** Beam reach in world units. A tile is four units, so this is about six and a half. */
 const HEADLAMP_LENGTH = 13;
-const SEARCHLIGHT_LENGTH = 18;
+const SEARCHLIGHT_LENGTH = 26;
+/** A corner wall lamp is a searchlight: it clears the bastion and sweeps. */
+const WALL_LAMP_LENGTH = 24;
+/** Air-defence beams are thrown at the sky and reach further than a ground sweep. */
+const SKY_BEAM_LENGTH = 30;
+
+/**
+ * How far off its mount a searchlight swings, how fast it works, and how many
+ * lamps one crew is drawing on.
+ *
+ * A searchlight that holds still is a floodlight with a different label; what
+ * reads as a crew hunting the dark is the beam crossing its arc and coming back.
+ * Two lamps per emplacement, each on its own phase, is what makes a perimeter
+ * read as several crews searching rather than one lamp dragged from roof to
+ * roof. The sweep is presentation only: the gameplay light the simulation knows
+ * about is the pool around the position, not the beam angle.
+ */
+const SEARCHLIGHT_ARC = 0.62;
+const SEARCHLIGHT_RATE = 0.36;
+const SEARCHLIGHT_LAMPS = 2;
+
+/** Discs that make up one sky beam, and the most beams drawn in a frame. */
+const SKY_BEAM_STEPS = 12;
+const MAX_SKY_BEAMS = 6;
+
+/** A stable 0..1 value per entity and salt; ids are not evenly spread. */
+function idNoise(id: number, salt: number): number {
+  const value = Math.sin(id * 12.9898 + salt * 78.233) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+/** Where a searchlight is pointing this frame, without a target to hold. */
+function sweptFacing(id: number, time: number, index: number): number {
+  const phase = idNoise(id, index + 1) * Math.PI * 2;
+  const rate = SEARCHLIGHT_RATE * (0.8 + idNoise(id, 7) * 0.5);
+  return Math.sin(time * rate + phase) * SEARCHLIGHT_ARC;
+}
 
 /**
  * How brightly a structure's own window glass glows, 0 by day.
@@ -74,8 +121,8 @@ export function windowGlow(dayNight: DayNightState, nightLights: boolean): numbe
  * Glazing is part of a compound's own electrical load, so it follows the same
  * rule the wall lamps already use: a browned-out base dims its windows with its
  * production, and a grid with no supply at all leaves them dark. A structure
- * whose owner draws nothing (a neutral site, a lone headquarters) has no deficit
- * to share and keeps its glow.
+ * whose owner draws nothing (a lone headquarters) has no deficit to share and
+ * keeps its glow.
  */
 export function poweredWindowGlow(glow: number, power: { demand: number; ratio: number }): number {
   if (glow <= 0) return 0;
@@ -91,8 +138,9 @@ export function poweredWindowGlow(glow: number, power: { demand: number; ratio: 
  * the team has only charted is drawn from memory, and memory does not carry
  * whether the lights are on, so it stays dark until it is seen again rather than
  * advertising itself through the fog. Everything else follows the owner's grid:
- * `null` means no grid applies (a neutral site), otherwise the supply ratio cuts
- * the glow.
+ * `null` means there is no grid to feed the glass — an ownerless site — so it is
+ * dark, exactly like a blacked-out compound. Capture is what brings a site onto
+ * a grid and its windows to life.
  */
 export function structureWindowGlow(
   glow: number,
@@ -104,7 +152,7 @@ export function structureWindowGlow(
 ): number {
   if (glow <= 0) return 0;
   if (state.construction || state.remembered) return 0;
-  if (!state.power) return glow;
+  if (!state.power) return 0;
   return poweredWindowGlow(glow, state.power);
 }
 
@@ -177,6 +225,40 @@ export function buildLightView(input: LightViewInput): GpuLight[] {
   const gain = Math.max(0, Math.min(2, bloom)) * (effects ? 1 : 0.6);
   if (gain <= 0.01) return out;
   const strength = dayNight.darkness;
+  const time = input.time ?? 0;
+
+  // Lock-on lookups and wall corners are built only when a beam actually needs
+  // them, so a night with nothing aiming and no walls pays for neither.
+  let byId: Map<number, Entity> | null = null;
+  const targetOf = (e: Entity): Entity | null => {
+    // `aimTargetId` is what a crew is actually shooting at (it is set when the
+    // gun traverses and fires); `targetId` is an explicit order's target.
+    const id = e.aimTargetId || e.targetId;
+    if (!id) return null;
+    if (!byId) {
+      byId = new Map<number, Entity>();
+      for (const other of entities) byId.set(other.id, other);
+    }
+    const target = byId.get(id);
+    return target && target.hp > 0 ? target : null;
+  };
+  let wallTiles: Set<string> | null = null;
+  const wallsAt = (e: Entity): boolean => {
+    if (!wallTiles) {
+      wallTiles = new Set<string>();
+      for (const other of entities) {
+        if (other.kind !== 'building' || other.hp <= 0) continue;
+        if (other.defId !== 'concreteWall') continue;
+        wallTiles.add(`${Math.round(other.x / TILE_SIZE)},${Math.round(other.z / TILE_SIZE)}`);
+      }
+    }
+    const tx = Math.round(e.x / TILE_SIZE);
+    const tz = Math.round(e.z / TILE_SIZE);
+    const along = wallTiles.has(`${tx + 1},${tz}`) || wallTiles.has(`${tx - 1},${tz}`);
+    const across = wallTiles.has(`${tx},${tz + 1}`) || wallTiles.has(`${tx},${tz - 1}`);
+    return along && across;
+  };
+  let skyBeams = 0;
 
   for (const e of entities) {
     if (out.length >= limit) break;
@@ -185,17 +267,45 @@ export function buildLightView(input: LightViewInput): GpuLight[] {
     if (input.visible && !input.visible(e)) continue;
     const profile = sensorFor(e);
     const kind = profile.illuminator;
-    if (kind === 'none') continue;
 
     if (e.kind === 'building') {
       // A structure being sold for parts is no longer a working base: its
-      // floodlights go out with its windows as soon as the sale starts.
-      if (e.owner >= 0 && (!powered(e.owner) || e.construction || e.deconstruct)) continue;
+      // floodlights go out with its windows as soon as the sale starts. An
+      // ownerless site has no grid, so it stands dark like any blackout.
+      if (!powered(e.owner) || e.construction || e.deconstruct) continue;
       const pose = input.pose?.(e) ?? { x: e.x, z: e.z, facing: e.facing };
-      pushStructureLights(out, e, pose, kind, gain * strength, groundY, limit);
+
+      // A concrete run turns its own corners: a lamp on the corner segment is
+      // what makes a walled compound read as a perimeter rather than a line of
+      // slabs in the dark.
+      if (e.defId === 'concreteWall') {
+        if (wallsAt(e) && out.length + 2 <= limit) {
+          pushCornerWallLight(out, pose, gain * strength, groundY, time, e.id);
+        }
+        continue;
+      }
+
+      if (kind === 'none') continue;
+      if (profile.sky) {
+        if (skyBeams < MAX_SKY_BEAMS) {
+          pushSkyBeam(out, e, pose, gain * strength, groundY, time, targetOf(e), limit);
+          skyBeams++;
+        }
+        continue;
+      }
+      pushStructureLights(out, e, pose, kind, gain * strength, groundY, limit, time, targetOf(e));
       continue;
     }
 
+    // An air-defence hull sweeps the sky whether it is moving or not: a parked
+    // launcher is still watching, and an aircraft does not wait for it to drive.
+    if (profile.sky && skyBeams < MAX_SKY_BEAMS) {
+      const pose = input.pose?.(e) ?? { x: e.x, z: e.z, facing: e.facing };
+      pushSkyBeam(out, e, pose, gain * strength, groundY, time, targetOf(e), limit);
+      skyBeams++;
+    }
+
+    if (kind === 'none') continue;
     const moving =
       e.state === 'moving' ||
       e.state === 'attacking' ||
@@ -203,7 +313,7 @@ export function buildLightView(input: LightViewInput): GpuLight[] {
       e.order?.type === 'attackMove';
     if (!illuminatorActive(e, profile, dayNight, moving)) continue;
     const pose = input.pose?.(e) ?? { x: e.x, z: e.z, facing: e.facing };
-    pushVehicleLights(out, e, pose, kind, gain * strength, groundY);
+    pushVehicleLights(out, e, pose, kind, gain * strength, groundY, time);
   }
   return out;
 }
@@ -215,6 +325,7 @@ function pushVehicleLights(
   kind: 'headlights' | 'searchlight' | 'beacon' | 'floodlight' | 'windows',
   gain: number,
   groundY: LightViewInput['groundY'],
+  time: number,
 ): void {
   if (kind === 'beacon') {
     out.push({
@@ -242,7 +353,7 @@ function pushVehicleLights(
     const x = pose.x + cos * anchor.forward - sin * side;
     const z = pose.z + sin * anchor.forward + cos * side;
     (kind === 'searchlight'
-      ? pushSearchlight(out, x, z, pose.facing, anchor.height, gain, groundY)
+      ? pushSearchlight(out, x, z, pose.facing + sweptFacing(e.id, time, i), anchor.height, gain, groundY)
       : pushHeadlamp(out, x, z, pose.facing, anchor.height, gain, groundY));
   }
 }
@@ -295,7 +406,7 @@ function pushProjectedLamp(
       dirY: -tilt / norm,
       dirZ: sin / norm,
       range: length,
-      cosOuter: Math.cos(0.62),
+      cosOuter: Math.cos(0.58),
       color,
       intensity,
     },
@@ -325,7 +436,120 @@ function pushSearchlight(
   gain: number,
   groundY: LightViewInput['groundY'],
 ): void {
-  pushProjectedLamp(out, x, z, facing, lampHeight, groundY, SEARCHLIGHT_LENGTH, [0.93, 0.97, 1.0], gain * 1.4, 0.22, 0.35, 0.16);
+  pushProjectedLamp(out, x, z, facing, lampHeight, groundY, SEARCHLIGHT_LENGTH, [0.93, 0.97, 1.0], gain * 1.7, 0.34, 0.35, 0.2);
+}
+
+/** A lamp bolted to a corner segment of a concrete run. */
+function pushCornerWallLight(
+  out: GpuLight[],
+  pose: { x: number; z: number; facing: number },
+  gain: number,
+  groundY: LightViewInput['groundY'],
+  time: number,
+  id: number,
+): void {
+  // The corner tile is drawn as a bastion, so the lamp is mounted on its roof
+  // and sweeps like the emplacements' crews do: a walled compound is a lit
+  // perimeter, not a ring of dark slabs.
+  const base = idNoise(id, 5) * Math.PI * 2;
+  const facing = base + sweptFacing(id, time, 0) * 1.2;
+  pushProjectedLamp(
+    out, pose.x, pose.z, facing, 2.5, groundY,
+    WALL_LAMP_LENGTH, [0.94, 0.97, 1.0], gain * 1.25, 0.26, 0.2, 0.24,
+  );
+}
+
+/**
+ * One air-defence beam, thrown into the sky.
+ *
+ * A ground spot cannot describe a beam that never meets the ground, so the sky
+ * beam is a short chain of additive glows along its own axis: overlapping discs
+ * that widen and fade with height. It is presentation only, and capped both per
+ * beam and per frame, because an army of launchers must not grow the pass.
+ *
+ * With a target the beam is held on it — azimuth to the aircraft, elevation to
+ * its altitude; otherwise it searches its sector like the ground lamps do.
+ */
+function pushSkyBeam(
+  out: GpuLight[],
+  e: Entity,
+  pose: { x: number; z: number; facing: number },
+  gain: number,
+  groundY: LightViewInput['groundY'],
+  time: number,
+  target: Entity | null,
+  limit: number,
+): void {
+  if (out.length + SKY_BEAM_STEPS + 2 > limit) return;
+  const anchor = e.kind === 'building' ? structureAnchor(e.defId) : null;
+  const baseY = groundY(pose.x, pose.z) + (anchor ? Math.max(1.8, anchor.height * 0.88) : 2.4);
+  const phase = idNoise(e.id, 9) * Math.PI * 2;
+  let azimuth: number;
+  let elevation: number;
+  if (target) {
+    const dx = target.x - pose.x;
+    const dz = target.z - pose.z;
+    const flat = Math.hypot(dx, dz);
+    azimuth = Math.atan2(dz, dx);
+    // An aircraft is held up at the altitude the simulation flies it at; a
+    // ground target is held just above the horizon.
+    const altitude = target.kind === 'unit' && target.aircraft ? 13 : 2;
+    elevation = Math.max(0.32, Math.min(1.3, Math.atan2(altitude - baseY, Math.max(4, flat))));
+  } else {
+    azimuth = pose.facing + (idNoise(e.id, 4) - 0.5) * 1.2 + Math.sin(time * 0.5 + phase) * 1.0;
+    elevation = 0.78 + 0.26 * Math.sin(time * 0.33 + phase * 1.7);
+  }
+  const cosEl = Math.cos(elevation);
+  const dirX = Math.cos(azimuth) * cosEl;
+  const dirY = Math.sin(elevation);
+  const dirZ = Math.sin(azimuth) * cosEl;
+  const originX = pose.x;
+  const originZ = pose.z;
+
+  // The lamp head and the patch of apron it washes, so the emitter is visible.
+  out.push({
+    x: originX,
+    y: baseY + 0.3,
+    z: originZ,
+    radius: 0.36,
+    rotation: 0,
+    stretch: 1,
+    glow: 1,
+    cone: 0,
+    color: [0.92, 0.97, 1.0],
+    intensity: gain * 0.95,
+  });
+  out.push({
+    x: originX,
+    y: groundY(originX, originZ) + 0.07,
+    z: originZ,
+    radius: 3.2,
+    rotation: 0,
+    stretch: 1,
+    glow: 0,
+    cone: 0,
+    color: [0.9, 0.95, 1.0],
+    intensity: gain * 0.2,
+  });
+
+  for (let i = 1; i <= SKY_BEAM_STEPS; i++) {
+    const t = i / SKY_BEAM_STEPS;
+    const reach = t * SKY_BEAM_LENGTH;
+    out.push({
+      x: originX + dirX * reach,
+      y: baseY + dirY * reach,
+      z: originZ + dirZ * reach,
+      // Overlapping discs: each is wider than the gap to the next, so the shaft
+      // is continuous instead of a string of beads.
+      radius: 0.7 + t * 1.9,
+      rotation: 0,
+      stretch: 1,
+      glow: 1,
+      cone: 0,
+      color: [0.9, 0.96, 1.0],
+      intensity: gain * 0.15 * (1 - t * 0.72),
+    });
+  }
 }
 
 function pushStructureLights(
@@ -336,6 +560,8 @@ function pushStructureLights(
   gain: number,
   groundY: LightViewInput['groundY'],
   limit: number,
+  time: number,
+  target: Entity | null,
 ): void {
   // Walls, not the data footprint: a corner lamp has to sit on the model it
   // belongs to, or it hangs in the air beside it.
@@ -378,6 +604,51 @@ function pushStructureLights(
       color: [1.0, 0.34, 0.26],
       intensity: gain * 0.95,
     });
+    return;
+  }
+
+  if (kind === 'searchlight') {
+    // A defensive emplacement works its own approach: two lamps on the roof,
+    // each on its own swing, with the lens drawn where the beam comes from so
+    // the sweep has a visible source. A crew with a target on its gunbook holds
+    // both beams on it instead of searching, which is what makes an engaged
+    // nest read as engaged.
+    const lampLift = Math.max(1.8, anchor.height * 0.84);
+    const spacing = Math.min(hz * 0.8, 1.5);
+    const aimed = target
+      ? Math.atan2(target.z - pose.z, target.x - pose.x)
+      : null;
+    const aimedLength = target
+      ? Math.min(SEARCHLIGHT_LENGTH * 1.5, Math.max(10, Math.hypot(target.x - pose.x, target.z - pose.z) * 1.1))
+      : SEARCHLIGHT_LENGTH;
+    for (let i = 0; i < SEARCHLIGHT_LAMPS; i++) {
+      if (out.length + 2 > limit) return;
+      const side = (i - (SEARCHLIGHT_LAMPS - 1) / 2) * spacing;
+      const lamp = place(0, side);
+      // Without a target each lamp is given its own standing direction as well
+      // as its own phase, so a line of emplacements is not one beam repeated.
+      const idle = pose.facing + (idNoise(e.id, 3) - 0.5) * 1.9;
+      const facing = aimed === null
+        ? idle + sweptFacing(e.id, time, i)
+        : aimed;
+      pushProjectedLamp(
+        out, lamp.x, lamp.z, facing, lampLift, groundY,
+        aimedLength, [0.93, 0.97, 1.0], gain * 1.9, 0.34, 0.4, 0.24,
+      );
+      out.push({
+        x: lamp.x,
+        y: groundY(lamp.x, lamp.z) + lampLift + 0.52,
+        z: lamp.z,
+        radius: 0.36,
+        rotation: 0,
+        stretch: 1,
+        glow: 1,
+        cone: 0,
+        color: [0.92, 0.97, 1.0],
+        // A slight beat, as the arc motor works: bright when it faces this way.
+        intensity: gain * (1.0 + 0.18 * Math.cos(time * 2.1 + e.id + i)),
+      });
+    }
     return;
   }
 

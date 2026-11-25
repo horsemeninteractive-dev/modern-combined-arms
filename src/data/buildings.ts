@@ -260,6 +260,9 @@ const ROSTER: BuildingDef[] = [
     weapons: ['samBattery'],
     // The launcher trains on its target instead of standing welded to the pad.
     turretRate: 1.6,
+    // An emplacement left unmanned on a map is a position worth taking, not
+    // just an obstacle: a Combat Engineer can walk in and crew it.
+    capturable: true,
     description:
       'Static long-range surface-to-air battery. Denies airspace around the base; cannot engage ground forces.',
     icon: 'sam',
@@ -279,6 +282,7 @@ const ROSTER: BuildingDef[] = [
     power: -6,
     weapons: ['heavyMg'],
     turretRate: 3.4,
+    capturable: true,
     description:
       'Entrenched heavy machine gun. Cheap, durable and murderous against infantry, but nearly useless against armour.',
     icon: 'mg',
@@ -335,6 +339,7 @@ const ROSTER: BuildingDef[] = [
     power: -10,
     weapons: ['atTurretGun'],
     turretRate: 2.2,
+    capturable: true,
     description:
       'Concealed 76mm anti-tank gun in a sandbagged emplacement. Long reach against vehicles and ships; poor against dispersed infantry.',
     icon: 'atgun',
@@ -355,6 +360,7 @@ const ROSTER: BuildingDef[] = [
     requires: ['factory'],
     weapons: ['coastalMissile'],
     turretRate: 1.5,
+    capturable: true,
     requiresWater: true,
     description:
       'Shore-based anti-ship missile launcher. Long reach against corvettes and other hulls, but it cannot engage ground forces and needs a buildable coastline with navigable water alongside.',
@@ -891,6 +897,7 @@ const NATIONAL_BUILDINGS: BuildingDef[] = [
     power: -8,
     weapons: ['heavyMg'],
     turretRate: 3.0,
+    capturable: true,
     variantOf: 'mgNest',
     national: true,
     description:
@@ -980,6 +987,7 @@ const NATIONAL_BUILDINGS: BuildingDef[] = [
     weapons: ['longRangeSamMissile'],
     // Heavier mount than the shared battery, so it traverses more slowly.
     turretRate: 1.1,
+    capturable: true,
     variantOf: 'samBattery',
     national: true,
     description:
@@ -1148,6 +1156,54 @@ export function buildingDef(id: string): BuildingDef {
  */
 export function isIndestructibleStructure(defId: string): boolean {
   return BUILDINGS[defId]?.indestructible === true;
+}
+
+/**
+ * A strategic objective: the authored sites the objective line is about.
+ *
+ * They are always capturable and never buildable, which is what separates a
+ * relay or a radar station from an emplacement a player can also put up. An
+ * objective is contested for the whole match; an emplacement is only a walk-in
+ * while nobody holds it.
+ */
+export function isCaptureObjective(defId: string): boolean {
+  const def = BUILDINGS[defId];
+  return def?.capturable === true && def.authoredOnly === true;
+}
+
+/**
+ * Whether a structure is a site engineers can still walk into.
+ *
+ * Two kinds of site are seizable. A strategic objective (relay, depot, radar
+ * station) changes hands whoever holds it, which is what makes the objective
+ * line worth fighting over. A defensive emplacement — a nest, gun pit, bunker or
+ * SAM site — is only a capture target if the map left it unmanned and nobody has
+ * crewed it yet (`neutralStart`). A gun pit a player built is his own: the
+ * blueprint can be capturable on an authored map and still never hand a built
+ * one to an enemy engineer.
+ */
+export function isSeizableSite(defId: string, owner: number, neutralStart: boolean): boolean {
+  const def = BUILDINGS[defId];
+  if (!def?.capturable) return false;
+  return isCaptureObjective(defId) || (neutralStart && owner < 0);
+}
+
+/**
+ * Whether one owner may send an engineer to seize a structure.
+ *
+ * An objective is contested for the whole match; an emplacement is a walk-in
+ * only while it is an unheld site the map authored, because its own crew is
+ * inside it. An enemy position has to be cleared with fire before anyone can
+ * take it over, and a structure a player built is never seizable at all.
+ */
+export function canSeizeStructure(
+  defId: string,
+  owner: number,
+  seizer: number,
+  neutralStart: boolean,
+): boolean {
+  if (owner === seizer) return false;
+  return isSeizableSite(defId, owner, neutralStart);
 }
 
 /** Buildings a player can place. Strategic objectives and neutral shelters are authored only. */

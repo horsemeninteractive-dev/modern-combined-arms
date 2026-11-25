@@ -108,6 +108,20 @@ export interface OutbreakHudState {
   pickups?: OutbreakHudPickup[];
 }
 
+/**
+ * How a wave arrives, as distinct from how many bodies it brings.
+ *
+ * `steady` is the original trickle: one batch every `spawnIntervalSeconds`.
+ * `sprint` keeps that schedule and multiplies the fast archetypes' share of the
+ * mix, so the horde reads as a charge rather than a walk. `push` keeps the mix
+ * and changes the arrival: a stretch of trickle, then a held block that lands in
+ * a single instant, then a short tail.
+ *
+ * A shape never touches a zombie's hit points. It decides which bodies turn up,
+ * in what proportion, and when — nothing else.
+ */
+export type WaveShape = 'steady' | 'sprint' | 'push';
+
 /** One wave, as the director plans it. Pure data: no live entities. */
 export interface WavePlan {
   wave: number;
@@ -121,6 +135,15 @@ export interface WavePlan {
   prepSeconds: number;
   /** Hard cap on simultaneously living zombies for this wave. */
   maxAlive: number;
+  /** Arrival pattern beyond the body count. */
+  shape: WaveShape;
+  /**
+   * Index into the spawn order where a push wave's wall opens, 0 when the wave
+   * has none: everything before it trickles, then `pushSize` arrive together.
+   */
+  pushAt: number;
+  /** Bodies released in one instant when the push opens; 0 when there is none. */
+  pushSize: number;
 }
 
 /** Live, serialisable wave state. Saved with the match so a reload keeps rhythm. */
@@ -135,10 +158,22 @@ export interface OutbreakDirectorState {
   spawned: number;
   /** Ticks until the next batch, inside an assault. */
   spawnTimer: number;
+  /**
+   * Whether this wave's push has already been released. Persisted with the rest
+   * of the wave state: a reload must not land the same wall a second time.
+   */
+  pushOpen: boolean;
   /** The plan for the active wave, or the one being prepared for. */
   plan: WavePlan | null;
   /** RNG state for wave planning, kept apart from the simulation's own stream. */
   rngState: number;
+  /**
+   * Lowest living count seen since the assault ended. Cleanup is bounded on this
+   * floor rather than on elapsed time, so a slow kill still counts as progress.
+   */
+  stallFloor: number;
+  /** Ticks the living count has stayed at or above `stallFloor`. */
+  stallTicks: number;
 }
 
 /** Everything the result card and a future leaderboard read. */

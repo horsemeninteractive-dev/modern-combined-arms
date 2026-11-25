@@ -273,8 +273,16 @@ interface TerrainGpu {
   count: number;
 }
 
-/** Ground lamps the terrain shader can evaluate in one pass. */
-const MAX_GROUND_SPOTS = 12;
+/**
+ * Ground lamps the terrain shader can evaluate in one pass.
+ *
+ * A defensive line spends them fast: every emplacement aims two lamps and every
+ * wall corner adds another, so twelve nests alone commit twenty-four slots. The
+ * budget is sized for a built-up perimeter and spent on the lamps nearest the
+ * camera (see `selectGroundSpots`) rather than on whichever entity the list
+ * happened to reach first.
+ */
+const MAX_GROUND_SPOTS = 32;
 
 /**
  * Occluder map for the lamp cones. Coarse on purpose: it only has to answer
@@ -582,6 +590,18 @@ export class Renderer {
    * through it.
    */
   private groundSpots: GroundSpot[] = [];
+  /** This frame's cone candidates with their squared distance to the eye. */
+  private spotCandidates: { spot: GroundSpot; d2: number }[] = [];
+  /**
+   * Brief light thrown by detonations.
+   *
+   * A blast that lights nothing is the clearest "this is a sprite" tell at
+   * night: the fireball itself is additive, but the road, the hulls and the walls
+   * around it have to catch the flash as well. Presentation only — it never
+   * enters the simulation's light list, because gunfire is not a sensor — and
+   * bounded, because a barrage would otherwise grow the light pass without end.
+   */
+  private blastFlashes: { x: number; y: number; z: number; size: number; ttl: number; life: number }[] = [];
   private spotSrc = new Float32Array(MAX_GROUND_SPOTS * 4);
   private spotAim = new Float32Array(MAX_GROUND_SPOTS * 4);
   private spotTint = new Float32Array(MAX_GROUND_SPOTS * 4);
@@ -1531,7 +1551,9 @@ export class Renderer {
       dayNight: this.dayNight,
       bloom: this.settings.lightBloom,
       effects: this.settings.effects,
-      powered: (owner) => !game.powerStatus(owner).brownout,
+      // An ownerless site has no grid at all: without an owner there is nothing
+      // to supply its lamps, so it stays dark until an engineer crews it.
+      powered: (owner) => owner >= 0 && !game.powerStatus(owner).brownout,
       eye: this.camera.eye,
       groundY: (x, z) => {
         const tx = Math.max(0, Math.min(width - 1, Math.floor(x / TILE_SIZE)));
@@ -1542,6 +1564,8 @@ export class Renderer {
       // the map as a dim silhouette, and an unseen one must not glow through
       // the fog of war.
       visible: (e) => game.visionStateOf(team, e.id) === 'visible',
+      // Searchlights sweep on the battle view clock; every other lamp ignores it.
+      time: this.time,
       // The drawn pose, not the tick pose: the same eased position and heading
       // the hull mesh uses, including the travel heading while it is driving.
       pose: (e) => {
@@ -1554,8 +1578,8 @@ export class Renderer {
     });
     for (const light of lights) {
       (light.glow > 0.5 ? this.lightGlows : this.lightPools).push(light);
-      if (light.spot && this.groundSpots.length < MAX_GROUND_SPOTS) this.groundSpots.push(light.spot);
     }
+    this.selectGroundSpots(lights);
     // Crystal seams light their own ground once the sun is down, but only in
     // ground the player has actually explored.
     const seen = (x: number, z: number): boolean =>
@@ -1567,6 +1591,44 @@ export class Renderer {
     for (const light of oreGlowLights(this.oreInstances, this.nightGlow(), this.camera.eye, seen)) {
       this.lightPools.push(light);
     }
+    // Detonations light their own surroundings for half a second. The pool goes
+    // down before the models and the lens glow after, exactly like a lamp, so a
+    // hull between the camera and the blast still occludes the ground light.
+    for (const blast of this.blastFlashes) {
+      const k = Math.max(0, blast.ttl / blast.life);
+      const grain = Math.min(1, blast.size * 0.7);
+      this.lightPools.push({
+        x: blast.x,
+        y: blast.y + 0.09,
+        z: blast.z,
+        radius: 2.6 + 4.4 * grain,
+        rotation: 0,
+        stretch: 1,
+        glow: 0,
+        cone: 0,
+        color: [1, 0.72, 0.4],
+        intensity: k * k * 1.15,
+      });
+      this.lightGlows.push({
+        x: blast.x,
+        y: blast.y + 1.5,
+        z: blast.z,
+        radius: 1.4 + 1.6 * grain,
+        rotation: 0,
+        stretch: 1,
+        glow: 1,
+        cone: 0,
+        color: [1, 0.86, 0.6],
+        intensity: k * 1.5,
+      });
+    }
+  }
+
+  /** Register one detonation's light. Bounded, and only while effects are on. */
+  private addBlastFlash(x: number, groundY: number, z: number, size: number): void {
+    if (!this.settings.effects) return;
+    while (this.blastFlashes.length >= 12) this.blastFlashes.shift();
+    this.blastFlashes.push({ x, y: groundY, z, size: Math.max(0.6, size), ttl: 0.5, life: 0.5 });
   }
 
   /**
@@ -1791,6 +1853,10 @@ export class Renderer {
     // step with the next mask upload even while the battle is paused.
     this.fogBlend = Math.min(1, this.fogBlend + dt / FOG_UPDATE_SECONDS);
     this.particles.update(dt);
+    for (const blast of this.blastFlashes) blast.ttl -= dt;
+    if (this.blastFlashes.some((b) => b.ttl <= 0)) {
+      this.blastFlashes = this.blastFlashes.filter((b) => b.ttl > 0);
+    }
     this.decals.update(dt);
     this.shake = Math.max(0, this.shake - dt * 1.7);
     if (this.game) {
@@ -2337,7 +2403,10 @@ export class Renderer {
               mz = anchor.z;
             }
           }
-          this.particles.muzzle(mx, my, mz, profile.muzzleScale, profile.muzzleSmoke);
+          // The barrel's own heading: a flash laid along the bore reads as the
+          // weapon that fired it, where a round blob reads as a firefly.
+          const aim = shooter ? (shooter.turretFacing ?? shooter.facing) : 0;
+          this.particles.muzzle(mx, my, mz, profile.muzzleScale, profile.muzzleSmoke, aim);
           break;
         }
         case 'impact': {
@@ -2367,6 +2436,7 @@ export class Renderer {
           } else {
             const explosionScale = profile.explosionScale || 0.8;
             this.particles.explosion(ev.x, y, ev.z, explosionScale);
+            this.addBlastFlash(ev.x, groundY, ev.z, explosionScale);
             this.addShake(ev.x, ev.z, Math.max(0.04, profile.shake));
             if (ev.surface === 'ground') {
               this.addScorchDecal(ev.x, ev.z, explosionScale);
@@ -2380,6 +2450,7 @@ export class Renderer {
           const y = groundY + 0.4;
           if (def?.domain === 'air') {
             this.particles.explosion(ev.x, y + 0.3, ev.z, 1.05);
+            this.addBlastFlash(ev.x, groundY, ev.z, 1.05);
             this.addShake(ev.x, ev.z, 0.18);
           } else {
             // The killing impact already produced the fireball. A wreck is a
@@ -2778,6 +2849,34 @@ export class Renderer {
    * aim and outer edge, colour and strength. Zeroes are never read because the
    * count gates the loop, so only the live entries are written.
    */
+  /**
+   * Keep the lamp cones nearest the camera.
+   *
+   * More lamps can be burning than the terrain pass evaluates cones for, and
+   * taking the first ones in entity order lit whichever gun pit was oldest while
+   * the rest of the line stood dark — lamps that looked broken rather than a
+   * budget. Ranking by distance to the eye spends the slots on what the player
+   * is actually looking at; a lamp out of shot keeps its lens and loses only its
+   * cone, so every emplacement still reads as lit.
+   */
+  private selectGroundSpots(lights: readonly GpuLight[]): void {
+    const candidates = this.spotCandidates;
+    candidates.length = 0;
+    for (const light of lights) {
+      const spot = light.spot;
+      if (!spot) continue;
+      const dx = spot.x - this.camera.eye[0];
+      const dz = spot.z - this.camera.eye[2];
+      candidates.push({ spot, d2: dx * dx + dz * dz });
+    }
+    if (candidates.length > MAX_GROUND_SPOTS) {
+      candidates.sort((a, b) => a.d2 - b.d2);
+      candidates.length = MAX_GROUND_SPOTS;
+    }
+    this.groundSpots.length = 0;
+    for (const candidate of candidates) this.groundSpots.push(candidate.spot);
+  }
+
   /** Fills the packed lamp arrays from this frame's cones; returns the count. */
   private packGroundSpots(): number {
     const count = Math.min(this.groundSpots.length, MAX_GROUND_SPOTS);
@@ -4133,8 +4232,10 @@ export class Renderer {
       if (!this.pointVisible(game, wreck.x, wreck.z)) continue;
       wreck.smokeTimer = (wreck.smokeTimer ?? 0) - dt;
       if (wreck.smokeTimer <= 0) {
-        wreck.smokeTimer = 0.9;
-        this.particles.smoke(wreck.x, wreck.y + 0.7, wreck.z, 1, 0.12);
+        // A hull still burning hard throws a column every half second; once the
+        // fuel is mostly gone it settles into a lazier, paler drift.
+        wreck.smokeTimer = age < 25 ? 0.5 : 1.6;
+        this.particles.burn(wreck.x, wreck.y + 0.7, wreck.z, 1);
       }
       if (age >= 25) continue;
       wreck.fireTimer = (wreck.fireTimer ?? 0) - dt;
@@ -5118,22 +5219,25 @@ export class Renderer {
     const additive: GpuParticle[] = [];
     const normal: GpuParticle[] = [];
     for (const p of this.particles.particles) {
+      // A staged sprite has not ignited yet: there is nothing to draw until its
+      // delay runs out, which is how one blast ignites in stages.
+      if ((p.delay ?? 0) > 0) continue;
       const k = 1 - p.life / p.maxLife;
       const size = p.size0 + (p.size1 - p.size0) * k;
-      const fade = p.additive ? Math.max(0, 1 - k * k) : Math.max(0, 1 - k * k * 0.9);
-      if (p.additive) {
-        additive.push({
-          x: p.x, y: p.y, z: p.z, size, r: p.r, g: p.g, b: p.b, a: p.alpha * fade,
-          stretch: p.stretch, soft: p.soft,
-          dirX: p.dir?.[0], dirY: p.dir?.[1], dirZ: p.dir?.[2],
-        });
-      } else {
-        normal.push({
-          x: p.x, y: p.y, z: p.z, size, r: p.r, g: p.g, b: p.b, a: p.alpha * fade,
-          stretch: p.stretch, soft: p.soft,
-          dirX: p.dir?.[0], dirY: p.dir?.[1], dirZ: p.dir?.[2],
-        });
-      }
+      // A puff arrives as a thin wisp and thickens; a flash is simply gone in a
+      // few frames. Without the fade-in every new sprite appeared at full
+      // opacity, which reads as a bubble popping rather than smoke blooming.
+      const fade = p.additive
+        ? Math.max(0, 1 - k * k)
+        : Math.min(1, k / 0.14) * Math.max(0, 1 - k * k * 0.9);
+      const gpu: GpuParticle = {
+        x: p.x, y: p.y, z: p.z, size, r: p.r, g: p.g, b: p.b, a: p.alpha * fade,
+        stretch: p.stretch, soft: p.soft,
+        dirX: p.dir?.[0], dirY: p.dir?.[1], dirZ: p.dir?.[2],
+        age: k, seed: p.seed ?? 0,
+      };
+      if (p.additive) additive.push(gpu);
+      else normal.push(gpu);
     }
     if (this.game) {
       for (const pr of this.game.state.projectiles) {
@@ -5162,9 +5266,17 @@ export class Renderer {
         const uy = dy / len;
         const uz = dz / len;
         const [r, g, b] = profile.tracerColor;
-        additive.push({ x: pos.x, y: pos.y, z: pos.z, size: profile.projectileSize, r, g, b, a: 0.92 });
+        // The round itself is a comet, not a dot: a bright head with a short
+        // streak behind it in its own direction of travel.
+        additive.push({
+          x: pos.x, y: pos.y, z: pos.z, size: profile.projectileSize, r, g, b, a: 0.92,
+          stretch: 1.5, soft: 0.22, dirX: ux, dirY: uy, dirZ: uz,
+        });
         for (let i = 1; i <= profile.tracerSegments; i++) {
           const t = i / profile.tracerSegments;
+          // Each tail sprite is stretched along that same axis and the dots
+          // overlap, so a burst of fire reads as one incandescent line trailing
+          // the round instead of a row of beads hanging in the air.
           additive.push({
             x: pos.x - ux * profile.tracerLength * t,
             y: pos.y - uy * profile.tracerLength * t,
@@ -5173,7 +5285,8 @@ export class Renderer {
             r,
             g,
             b,
-            a: 0.55 * (1 - 0.45 * t),
+            a: 0.6 * (1 - 0.45 * t),
+            stretch: 2.8, soft: 0.16, dirX: ux, dirY: uy, dirZ: uz,
           });
         }
       }

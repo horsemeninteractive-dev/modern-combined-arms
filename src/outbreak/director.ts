@@ -51,6 +51,20 @@ export interface DirectorEvent {
 /** Quiet beat between the last body falling and the next preparation clock. */
 const COMPLETE_PAUSE_SECONDS = 3;
 
+/**
+ * How long a wave's cleanup may go without the living count falling before the
+ * director closes the wave anyway.
+ *
+ * Cleanup used to wait for an empty field and nothing else, so one body that
+ * could not path anywhere — behind the wire, on an island of ground, in gear it
+ * can never reach — held the phase open for the rest of the run and no further
+ * wave was ever planned. The bound is measured against *progress*, not elapsed
+ * time: a slow kill still resets it, so a long fight against the last brute is
+ * never mistaken for a stall. Long enough that no legitimate fight trips it,
+ * short enough that an unreachable body costs a pause rather than the match.
+ */
+export const CLEANUP_STALL_SECONDS = 45;
+
 export class OutbreakDirector {
   readonly difficulty: OutbreakDifficulty;
   readonly mode: OutbreakScenarioConfig['mode'];
@@ -79,8 +93,11 @@ export class OutbreakDirector {
       pending: [],
       spawned: 0,
       spawnTimer: 0,
+      pushOpen: false,
       plan: null,
       rngState: this.rng.getState(),
+      stallFloor: 0,
+      stallTicks: 0,
     };
     this.beginWave(this.state.wave);
     this.emit('preparation');
@@ -191,18 +208,61 @@ export class OutbreakDirector {
           }
           if (placed === 0) break;
         }
+        // A push wave holds a block back and lands it in one instant, so the
+        // wave is a trickle, a wall and a tail rather than one steady stream.
+        // The wall still answers to the field's ceiling and to the ground: a
+        // block that cannot be placed is retried on the next batch, never
+        // dropped, and never marked open before a single body stands.
+        if (
+          plan.pushSize > 0 &&
+          !this.state.pushOpen &&
+          this.state.spawned >= plan.pushAt &&
+          this.state.spawned < this.state.pending.length
+        ) {
+          const room = Math.max(0, plan.maxAlive - host.aliveInfected);
+          let placed = 0;
+          while (
+            placed < Math.min(plan.pushSize, room) &&
+            this.state.spawned < this.state.pending.length
+          ) {
+            const entry = this.state.pending[this.state.spawned];
+            const region = this.regionFor(entry.regionId, host);
+            if (!regionsKnown(host) || !region) break;
+            if (!host.spawn(entry.kind, region)) break;
+            this.state.spawned++;
+            placed++;
+          }
+          if (placed > 0) this.state.pushOpen = true;
+        }
         if (this.state.spawned >= this.state.pending.length) {
           this.state.phase = 'cleanup';
           this.state.phaseTicks = 0;
+          this.state.stallFloor = host.aliveInfected;
+          this.state.stallTicks = 0;
           this.emit('wave-cleared');
         }
         return;
       }
       case 'cleanup': {
-        if (host.aliveInfected === 0) {
-          this.state.phase = 'complete';
-          this.state.phaseTicks = 0;
-          this.emit('wave-complete');
+        const alive = host.aliveInfected;
+        if (alive === 0) {
+          this.finishWave();
+          return;
+        }
+        // Kills are the progress this phase is waiting for: each one lowers the
+        // floor and buys the phase a fresh window. A body that stops dying — or
+        // that never could reach anything worth attacking — runs the window out,
+        // and the wave is closed rather than the run being held hostage. The
+        // bodies themselves stay with the simulation: the director schedules
+        // waves, it does not delete zombies, so a stall costs a pause and no more.
+        if (alive < this.state.stallFloor) {
+          this.state.stallFloor = alive;
+          this.state.stallTicks = 0;
+          return;
+        }
+        this.state.stallTicks++;
+        if (this.state.stallTicks >= CLEANUP_STALL_SECONDS * this.tickRate) {
+          this.finishWave();
         }
         return;
       }
@@ -225,11 +285,32 @@ export class OutbreakDirector {
   }
 
   restore(state: OutbreakDirectorState): void {
-    this.state = { ...state, pending: state.pending.map((entry) => ({ ...entry })) };
+    this.state = {
+      ...state,
+      // A save written before push waves carry no flag; read it as "not yet
+      // released" rather than letting `undefined` decide.
+      pushOpen: state.pushOpen === true,
+      pending: state.pending.map((entry) => ({ ...entry })),
+    };
     this.rng.setState(state.rngState);
   }
 
   /* ---------------------------------------------------------------- */
+
+  /**
+   * Close the wave and let the next one be planned.
+   *
+   * Reached from an empty field and from a stalled one alike: the players are
+   * owed the recovery beat either way, and every later balance measurement needs
+   * waves that actually finish.
+   */
+  private finishWave(): void {
+    this.state.phase = 'complete';
+    this.state.phaseTicks = 0;
+    this.state.stallFloor = 0;
+    this.state.stallTicks = 0;
+    this.emit('wave-complete');
+  }
 
   private beginWave(wave: number): void {
     const plan = planWave(wave, this.config, this.rng);
@@ -241,6 +322,7 @@ export class OutbreakDirector {
     );
     this.state.spawned = 0;
     this.state.spawnTimer = 0;
+    this.state.pushOpen = false;
     this.state.rngState = this.rng.getState();
   }
 

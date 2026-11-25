@@ -238,7 +238,7 @@ describe('destruction feedback', () => {
     const block = renderer.slice(start, end);
     expect(block).toContain('if (!this.settings.effects) return');
     expect(block).toContain('pointVisible(game, wreck.x, wreck.z)');
-    expect(block).toContain('this.particles.smoke');
+    expect(block).toContain('this.particles.burn');
     expect(block).toContain('this.particles.wreckFlame');
   });
 

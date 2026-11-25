@@ -28,6 +28,24 @@ export interface Particle {
   /** Sideways curl in tiles/s for smoke and dust. Default none. */
   turbulence?: number;
   /**
+   * Upward acceleration in tiles/s² while the puff is young, for gas that is
+   * still hot. It fades out with the puff's age, so a column climbs out of a
+   * burning hull and then stalls and hangs instead of rising forever.
+   */
+  lift?: number;
+  /**
+   * Stable 0..1 hash for this sprite. The shader rotates and offsets its noise
+   * by it, so two puffs born in the same frame never share a silhouette.
+   */
+  seed?: number;
+  /**
+   * Seconds to hold this sprite off-screen before it starts. One blast can then
+   * be authored as a single emission that ignites in stages — a fireball, then
+   * the pockets of propellant popping around it — instead of the caller keeping
+   * a timer per sub-effect.
+   */
+  delay?: number;
+  /**
    * World-space axis the streak is drawn along. Rain is stretched down its fall
    * direction and sparks along their flight, so the quad has to be laid in
    * world space rather than billboarded on the camera's right axis — otherwise
@@ -67,6 +85,7 @@ export class ParticleSystem {
     if (this.particles.length >= this.maxParticles) {
       this.particles.shift();
     }
+    if (p.seed === undefined) p.seed = Math.random();
     this.particles.push(p);
   }
 
@@ -80,24 +99,44 @@ export class ParticleSystem {
     let write = 0;
     for (let i = 0; i < this.particles.length; i++) {
       const p = this.particles[i];
+      if (p.delay !== undefined && p.delay > 0) {
+        // A staged sprite waits without ageing, so its full life is still ahead
+        // of it when it appears.
+        p.delay -= dt;
+        this.particles[write++] = p;
+        continue;
+      }
       p.life -= dt;
       if (p.life <= 0) continue;
+      const age = 1 - p.life / p.maxLife;
       const damping = Math.max(0, 1 - p.drag * dt);
       p.vx *= damping;
       p.vz *= damping;
       p.vy = p.vy * damping - p.gravity * dt;
+      // Buoyancy: hot gas lifts hardest the moment it is released and loses its
+      // push as it cools, which is what curves a column from a jet into a drift.
+      if (p.lift) p.vy += p.lift * (1 - age) * (1 - age) * dt;
       if (p.turbulence) {
         // A cheap curl field keyed on position, so neighbouring puffs do not
         // move in lockstep and a smoke column develops a ragged edge instead of
-        // expanding as a perfect circle.
-        const phase = this.elapsed * 1.7 + p.x * 0.35 + p.z * 0.27;
-        p.vx += Math.sin(phase) * p.turbulence * dt;
-        p.vz += Math.cos(phase * 1.13) * p.turbulence * dt;
+        // expanding as a perfect circle. The curl grows with age: a fresh puff
+        // is one parcel of gas, and an old one is torn apart by the air it is
+        // pushing through, so the same field reads as billowing rather than as
+        // every sprite wobbling in place.
+        const billow = 0.4 + 1.7 * age;
+        const phase = this.elapsed * 1.7 + p.x * 0.35 + p.z * 0.27 + (p.seed ?? 0) * 6.2831853;
+        p.vx += Math.sin(phase) * p.turbulence * billow * dt;
+        p.vz += Math.cos(phase * 1.13) * p.turbulence * billow * dt;
         p.vy += Math.sin(phase * 0.7) * p.turbulence * 0.25 * dt;
       }
       if (!p.additive) {
-        p.vx += (windX - p.vx) * carry * 0.7;
-        p.vz += (windZ - p.vz) * carry * 0.7;
+        // Wind shear: air moves faster the higher it is, so a column bends over
+        // downwind instead of sliding sideways as one rigid card. Only the
+        // puffs that carry a curl are sheared — rain's own fall angle is
+        // authored, and shearing it would flatten the lean of the storm.
+        const shear = p.turbulence ? 1 + Math.max(0, p.y) * 0.045 : 1;
+        p.vx += (windX * shear - p.vx) * carry * 0.7;
+        p.vz += (windZ * shear - p.vz) * carry * 0.7;
       }
       p.x += p.vx * dt;
       p.y += p.vy * dt;
@@ -228,7 +267,7 @@ export class ParticleSystem {
     });
   }
 
-  /** Bright flash + fireball + sparks + smoke. */
+  /** Bright flash + fireball + burning debris + a smoke cloud that keeps rising. */
   explosion(x: number, y: number, z: number, scale = 1, teamColor?: [number, number, number]): void {
     // The flash is a tight hot core rather than a soft disc: a detonation has a
     // hard edge for the two frames it lasts.
@@ -247,38 +286,168 @@ export class ParticleSystem {
       r: 1, g: 0.86, b: 0.62, alpha: 0.16, gravity: 0, drag: 0, additive: true,
       soft: 0.85,
     });
-    const fireCount = Math.round(10 + 8 * scale);
-    for (let i = 0; i < fireCount; i++) {
+    // A small, hotter core inside that flash, so the light has a source instead
+    // of one flat disc of white.
+    this.push({
+      x, y: y + 0.55, z, vx: 0, vy: 0, vz: 0,
+      life: 0.14, maxLife: 0.14, size0: 0.9 * scale, size1: 2.7 * scale,
+      r: 1, g: 0.96, b: 0.84, alpha: 1, gravity: 0, drag: 0, additive: true,
+      soft: 0.12,
+    });
+    // The fireball itself: a handful of big, soft, overlapping sprites that grow
+    // into each other. Sparks alone read as a firework; a luminous mass that
+    // swells, tears and cools is what reads as a detonation.
+    const ballCount = Math.round(4 + 3 * scale);
+    for (let i = 0; i < ballCount; i++) {
       const a = Math.random() * Math.PI * 2;
-      const sp = (2 + Math.random() * 9) * Math.sqrt(scale);
+      const off = Math.random() * 1.5 * scale;
+      const life = 0.5 + Math.random() * 0.45;
       this.push({
-        x, y: y + 0.4 + Math.random() * 1.8, z,
-        vx: Math.cos(a) * sp,
-        vy: 2 + Math.random() * 7 * scale,
-        vz: Math.sin(a) * sp,
-        life: 0.35 + Math.random() * 0.55,
-        maxLife: 0.9,
-        size0: 0.7 + Math.random() * 1.3,
-        size1: 0.2,
-        r: 1, g: 0.45 + Math.random() * 0.35, b: 0.08,
-        alpha: 0.95, gravity: 9, drag: 2.4, additive: true,
-        // Fireballs are torn along their trajectory, not spherical.
-        stretch: 1 + Math.random() * 0.5, soft: 0.4,
+        x: x + Math.cos(a) * off * 0.6,
+        y: y + 0.6 + Math.random() * 1.6,
+        z: z + Math.sin(a) * off * 0.6,
+        vx: Math.cos(a) * 0.5 * scale,
+        vy: 0.6 + Math.random() * 0.9,
+        vz: Math.sin(a) * 0.5 * scale,
+        life, maxLife: life,
+        size0: (1.0 + Math.random() * 0.9) * scale,
+        size1: (3.4 + Math.random() * 1.8) * scale,
+        r: 1, g: 0.62 + Math.random() * 0.26, b: 0.14 + Math.random() * 0.1,
+        alpha: 0.5 + Math.random() * 0.22, gravity: -0.4, drag: 1.1, additive: true,
+        // Feathered, so the lobes melt into one another instead of stacking as
+        // hard discs, and staggered over a few hundredths so the ball rolls.
+        soft: 0.62, delay: Math.random() * 0.07,
       });
     }
-    const smokeCount = Math.round(5 + 6 * scale);
+    const fireCount = Math.round(7 + 6 * scale);
+    for (let i = 0; i < fireCount; i++) {
+      const a = Math.random() * Math.PI * 2;
+      // Fire is thrown out along the ground and pushed up, but not evenly: the
+      // random vertical extent is what gives the ball a rolling, lopsided top
+      // rather than a symmetrical starburst.
+      const sp = (1.5 + Math.random() * 8) * Math.sqrt(scale);
+      const lift = 1.5 + Math.random() * 7 * scale;
+      this.push({
+        x, y: y + 0.4 + Math.random() * 2.2, z,
+        vx: Math.cos(a) * sp,
+        vy: lift,
+        vz: Math.sin(a) * sp,
+        life: 0.4 + Math.random() * 0.6,
+        maxLife: 1.0,
+        size0: 0.6 + Math.random() * 1.5,
+        size1: 0.18,
+        r: 1, g: 0.4 + Math.random() * 0.38, b: 0.06 + Math.random() * 0.05,
+        alpha: 0.95, gravity: 9, drag: 2.4, additive: true,
+        // Fireballs are torn along their trajectory, not spherical.
+        stretch: 1.1 + Math.random() * 0.7, soft: 0.4,
+      });
+    }
+    // Pockets of propellant going off a beat after the main charge. The eye
+    // reads the sequence as one bang too big for a single ignition.
+    const popCount = Math.round(2 + scale);
+    for (let i = 0; i < popCount; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const off = (0.7 + Math.random() * 1.7) * scale;
+      const life = 0.18 + Math.random() * 0.16;
+      this.push({
+        x: x + Math.cos(a) * off,
+        y: y + 0.5 + Math.random() * 1.4,
+        z: z + Math.sin(a) * off,
+        vx: 0, vy: 0.4, vz: 0,
+        life, maxLife: life,
+        size0: (0.7 + Math.random() * 0.8) * scale,
+        size1: (1.8 + Math.random()) * scale,
+        r: 1, g: 0.72, b: 0.34, alpha: 0.75, gravity: 0, drag: 0, additive: true,
+        soft: 0.5, delay: 0.1 + Math.random() * 0.24,
+      });
+    }
+    // Fragments of the thing that just came apart: dark, heavy, and still
+    // falling long after the light has gone.
+    const debrisCount = Math.round(3 + 3 * scale);
+    for (let i = 0; i < debrisCount; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const speed = (2.5 + Math.random() * 6) * Math.sqrt(scale);
+      const life = 0.8 + Math.random() * 0.9;
+      const tint = 0.1 + Math.random() * 0.08;
+      this.push({
+        x, y: y + 0.5 + Math.random(), z,
+        vx: Math.cos(a) * speed,
+        vy: (3 + Math.random() * 5) * scale,
+        vz: Math.sin(a) * speed,
+        life, maxLife: life,
+        size0: (0.22 + Math.random() * 0.22) * scale, size1: 0.12 * scale,
+        r: tint * 1.15, g: tint, b: tint * 0.85,
+        alpha: 0.9, gravity: 13, drag: 0.15, additive: false,
+        soft: 0.3, turbulence: 0.15,
+      });
+    }
+    // The ground takes the blast: a low skirt of dust thrown outwards, which is
+    // what makes a large explosion look like it happened on soil.
+    const skirtCount = Math.round(4 + 4 * scale);
+    for (let i = 0; i < skirtCount; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const speed = (1.6 + Math.random() * 3.4) * Math.sqrt(scale);
+      const life = 1.0 + Math.random() * 1.0;
+      const tint = 0.3 + Math.random() * 0.1;
+      this.push({
+        x, y: y + 0.1 + Math.random() * 0.3, z,
+        vx: Math.cos(a) * speed,
+        vy: 0.12 + Math.random() * 0.3,
+        vz: Math.sin(a) * speed,
+        life, maxLife: life,
+        size0: 0.5 * scale, size1: (2.2 + Math.random() * 1.4) * scale,
+        r: tint, g: tint * 0.94, b: tint * 0.8,
+        alpha: 0.2, gravity: 0, drag: 1.5, additive: false,
+        soft: 1, turbulence: 0.35 + Math.random() * 0.3,
+      });
+    }
+    // The stem: hot gas climbing in a tight column under the cap. It is what
+    // gives a big blast its mushroom outline instead of a round puff that
+    // simply fades where it landed.
+    const stemCount = Math.round(3 + 2 * scale);
+    for (let i = 0; i < stemCount; i++) {
+      const life = 1.8 + Math.random() * 1.6;
+      const grey = 0.1 + Math.random() * 0.08;
+      this.push({
+        x: x + (Math.random() - 0.5) * 1.2,
+        y: y + 0.8 + Math.random() * 1.2,
+        z: z + (Math.random() - 0.5) * 1.2,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: 1.8 + Math.random() * 1.2,
+        vz: (Math.random() - 0.5) * 0.3,
+        life, maxLife: life,
+        size0: 0.7, size1: 1.6 + Math.random() * 1.1,
+        r: grey * 1.1, g: grey, b: grey * 0.9, alpha: 0.3,
+        gravity: -0.15, drag: 0.35, additive: false, soft: 1,
+        turbulence: 0.4 + Math.random() * 0.3, lift: 1.6,
+      });
+    }
+    // Burning debris outlives the fireball and falls back through it, which is
+    // what makes a big blast read as thrown material rather than a light bulb.
+    this.embers(x, y + 0.6, z, Math.round(3 + 3 * scale), scale);
+    const smokeCount = Math.round(8 + 6 * scale);
     for (let i = 0; i < smokeCount; i++) {
       const a = Math.random() * Math.PI * 2;
-      const sp = (0.4 + Math.random() * 2.0) * scale;
-      const grey = 0.16 + Math.random() * 0.12;
+      const radius = (0.3 + Math.random() * 2.2) * scale;
+      const grey = 0.12 + Math.random() * 0.12;
+      // Long-lived and buoyant: the cloud has to still be climbing, and still
+      // growing, well after the fire itself is gone.
+      const life = 2.8 + Math.random() * 2.8;
       this.push({
-        x: x + (Math.random() - 0.5) * 2, y: y + 0.7 + Math.random() * 1.6, z: z + (Math.random() - 0.5) * 2,
-        vx: Math.cos(a) * sp, vy: 0.4 + Math.random() * 1.4, vz: Math.sin(a) * sp,
-        life: 1.6 + Math.random() * 2.4, maxLife: 4,
-        size0: 1.4 + Math.random() * 1.2, size1: 5.0 + Math.random() * 3.5,
-        r: grey, g: grey, b: grey * 0.96,
-        alpha: 0.34, gravity: -0.35, drag: 0.7, additive: false,
-        soft: 1, turbulence: 0.5 + Math.random() * 0.5,
+        x: x + Math.cos(a) * radius,
+        y: y + 0.6 + Math.random() * 2.0,
+        z: z + Math.sin(a) * radius,
+        vx: Math.cos(a) * (0.3 + Math.random() * 1.4) * scale,
+        vy: 0.9 + Math.random() * 1.7,
+        vz: Math.sin(a) * (0.3 + Math.random() * 1.4) * scale,
+        life, maxLife: life,
+        size0: 0.9 + Math.random() * 1.2,
+        size1: (3.6 + Math.random() * 2.6) * Math.min(1.4, scale),
+        // Soot is not neutral grey: the warm side keeps a trace of the fire it
+        // came out of, which stops the cloud reading as weather.
+        r: grey * 1.12, g: grey, b: grey * 0.88,
+        alpha: 0.28 + Math.random() * 0.12, gravity: -0.2, drag: 0.6, additive: false,
+        soft: 1, turbulence: 0.6 + Math.random() * 0.6, lift: 1.1 + Math.random() * 0.7,
       });
     }
     if (teamColor) {
@@ -291,6 +460,31 @@ export class ParticleSystem {
           alpha: 0.8, gravity: 12, drag: 1, additive: true,
         });
       }
+    }
+  }
+
+  /**
+   * Burning debris thrown out of a blast, keyed on its own flight direction so
+   * each ember reads as a short hot streak even as it arcs over and falls.
+   */
+  private embers(x: number, y: number, z: number, count: number, scale = 1): void {
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const speed = (3.5 + Math.random() * 7) * Math.sqrt(scale);
+      const vx = Math.cos(a) * speed;
+      const vy = (2.5 + Math.random() * 5.5) * scale;
+      const vz = Math.sin(a) * speed;
+      const len = Math.hypot(vx, vy, vz) || 1;
+      const life = 0.5 + Math.random() * 0.8;
+      this.push({
+        x, y, z, vx, vy, vz,
+        life, maxLife: life,
+        size0: 0.2 * scale, size1: 0.05,
+        r: 1, g: 0.6 + Math.random() * 0.22, b: 0.15,
+        alpha: 0.95, gravity: 11, drag: 0.55, additive: true,
+        stretch: 3.2, soft: 0.12,
+        dir: [vx / len, vy / len, vz / len],
+      });
     }
   }
 
@@ -311,13 +505,67 @@ export class ParticleSystem {
     this.dust(x, y, z, onWater ? 1 : Math.max(1, Math.round(2 * scale)), onWater ? 0.55 : 0.36);
   }
 
-  muzzle(x: number, y: number, z: number, scale = 1, smoke = 1): void {
+  /**
+   * A shot leaving the barrel: a hot core, a flash thrown along the bore, and a
+   * jet of propellant that is pushed forward before it starts to climb.
+   *
+   * The barrel axis matters. A single round blob at the muzzle is the one effect
+   * that looks the same whether it is a rifle or a tank gun; a flash that reaches
+   * ahead of the barrel and a smoke jet with the bore's own velocity reads as the
+   * gun it came out of, even at battle zoom.
+   */
+  muzzle(x: number, y: number, z: number, scale = 1, smoke = 1, facing = 0): void {
+    const cos = Math.cos(facing);
+    const sin = Math.sin(facing);
+    // White-hot core, gone in a few frames.
     this.push({
-      x, y, z, vx: 0, vy: 0.4, vz: 0,
-      life: 0.1, maxLife: 0.1, size0: 0.8 * scale, size1: 1.2 * scale,
-      r: 1, g: 0.74, b: 0.32, alpha: 0.9, gravity: 0, drag: 0, additive: true,
+      x, y, z, vx: 0, vy: 0.3, vz: 0,
+      life: 0.09, maxLife: 0.09, size0: 0.45 * scale, size1: 0.9 * scale,
+      r: 1, g: 0.94, b: 0.7, alpha: 0.95, gravity: 0, drag: 0, additive: true,
+      soft: 0.18,
     });
-    if (smoke > 0) this.smoke(x, y + 0.1, z, smoke, 0.55);
+    // The flash itself, laid along the bore and reaching past the muzzle.
+    this.push({
+      x: x + cos * 0.35 * scale, y, z: z + sin * 0.35 * scale,
+      vx: cos * 2 * scale, vy: 0.2, vz: sin * 2 * scale,
+      life: 0.1, maxLife: 0.1,
+      size0: 0.2 * scale, size1: 0.55 * scale,
+      r: 1, g: 0.78, b: 0.36, alpha: 0.85, gravity: 0, drag: 0, additive: true,
+      stretch: 4 + scale * 1.5, soft: 0.24,
+      dir: [cos, 0.06, sin],
+    });
+    // Big guns also throw a wide, dim halo: the recoil wave, not the flash.
+    if (scale > 0.9) {
+      this.push({
+        x: x + cos * 0.2, y, z: z + sin * 0.2,
+        vx: 0, vy: 0.25, vz: 0,
+        life: 0.14, maxLife: 0.14, size0: 0.7 * scale, size1: 1.7 * scale,
+        r: 1, g: 0.7, b: 0.4, alpha: 0.3, gravity: 0, drag: 0, additive: true,
+        soft: 0.8,
+      });
+    }
+    if (smoke > 0) {
+      const puffs = Math.round(smoke * 1.5 + 1);
+      for (let i = 0; i < puffs; i++) {
+        const spread = 0.3 * scale;
+        const life = 0.55 + Math.random() * 0.6;
+        const tint = 0.42 + Math.random() * 0.12;
+        this.push({
+          x: x + cos * (0.4 + Math.random() * 0.5) * scale + (Math.random() - 0.5) * spread,
+          y: y + (Math.random() - 0.4) * 0.3 * scale,
+          z: z + sin * (0.4 + Math.random() * 0.5) * scale + (Math.random() - 0.5) * spread,
+          // Pushed out of the bore, then slowed by the air and carried off.
+          vx: cos * (1.4 + Math.random() * 1.6) * scale + (Math.random() - 0.5) * 0.4,
+          vy: 0.25 + Math.random() * 0.35,
+          vz: sin * (1.4 + Math.random() * 1.6) * scale + (Math.random() - 0.5) * 0.4,
+          life, maxLife: life,
+          size0: 0.3 * scale, size1: (0.9 + Math.random() * 0.7) * scale,
+          r: tint, g: tint, b: tint * 0.95,
+          alpha: 0.26, gravity: -0.2, drag: 1.9, additive: false,
+          soft: 1, turbulence: 0.3 + Math.random() * 0.3, lift: 0.35,
+        });
+      }
+    }
   }
 
   /** A destroyed vehicle or squad: smoke and a small fire, not a second blast. */
@@ -328,12 +576,65 @@ export class ParticleSystem {
       size0: 0.65 * scale, size1: 0.15,
       r: 1, g: 0.52, b: 0.14, alpha: 0.75, gravity: 3, drag: 1.2, additive: true,
     });
-    if (armoured) {
-      this.smoke(x, y + 0.5, z, 4, 0.16);
-      this.dust(x, y + 0.2, z, 3, 0.24);
-    } else {
-      this.smoke(x, y + 0.3, z, 2, 0.28);
-      this.dust(x, y + 0.1, z, 2, 0.32);
+    this.dust(x, y + 0.2, z, armoured ? 3 : 2, armoured ? 0.24 : 0.32);
+    this.burn(x, y + (armoured ? 0.55 : 0.3), z, armoured ? 1 : 0.55);
+  }
+
+  /**
+   * One emission from a burning hull: a dark, soot-rich puff at the seat of the
+   * fire and a paler, larger one already climbing out of it. The pair travels
+   * together and separates as it rises, which is what a column is — a stack of
+   * single dots reads as a leak, not a fire.
+   */
+  burn(x: number, y: number, z: number, scale = 1): void {
+    const soot = 0.1 + Math.random() * 0.07;
+    const life = 2.6 + Math.random() * 2.2;
+    this.push({
+      x: x + (Math.random() - 0.5) * 0.5,
+      y: y + Math.random() * 0.3,
+      z: z + (Math.random() - 0.5) * 0.5,
+      vx: (Math.random() - 0.5) * 0.5,
+      vy: 0.9 + Math.random() * 0.7,
+      vz: (Math.random() - 0.5) * 0.5,
+      life, maxLife: life,
+      size0: 0.8 * scale, size1: (2.5 + Math.random() * 1.1) * scale,
+      r: soot * 1.06, g: soot, b: soot * 0.9,
+      alpha: 0.34, gravity: -0.18, drag: 0.5, additive: false,
+      soft: 1, turbulence: 0.7 + Math.random() * 0.6, lift: 1.15,
+    });
+    const pale = soot + 0.09 + Math.random() * 0.05;
+    const highLife = life * 0.85;
+    this.push({
+      x: x + (Math.random() - 0.5) * 0.8,
+      y: y + 0.75 + Math.random() * 0.7,
+      z: z + (Math.random() - 0.5) * 0.8,
+      vx: (Math.random() - 0.5) * 0.4,
+      vy: 1.2 + Math.random() * 0.8,
+      vz: (Math.random() - 0.5) * 0.4,
+      life: highLife, maxLife: highLife,
+      size0: 1.0 * scale, size1: (3.1 + Math.random() * 0.9) * scale,
+      r: pale * 1.04, g: pale, b: pale * 0.94,
+      alpha: 0.24, gravity: -0.1, drag: 0.45, additive: false,
+      soft: 1, turbulence: 0.9 + Math.random() * 0.6, lift: 0.9,
+    });
+    if (Math.random() < 0.35) {
+      // The odd ember spat off the engine deck.
+      const vx = (Math.random() - 0.5) * 1.2;
+      const vy = 1.4 + Math.random() * 1.3;
+      const vz = (Math.random() - 0.5) * 1.2;
+      const len = Math.hypot(vx, vy, vz) || 1;
+      const emberLife = 0.45 + Math.random() * 0.4;
+      this.push({
+        x: x + (Math.random() - 0.5) * 0.7,
+        y: y + 0.25,
+        z: z + (Math.random() - 0.5) * 0.7,
+        vx, vy, vz,
+        life: emberLife, maxLife: emberLife,
+        size0: 0.16 * scale, size1: 0.05,
+        r: 1, g: 0.6 + Math.random() * 0.2, b: 0.14, alpha: 0.9,
+        gravity: 7, drag: 0.7, additive: true, stretch: 2.6, soft: 0.15,
+        dir: [vx / len, vy / len, vz / len],
+      });
     }
   }
 
@@ -484,15 +785,22 @@ export class ParticleSystem {
     });
   }
 
+  /**
+   * A damaged unit bleeding smoke. A badly hurt hull gets a hot, leaning column
+   * that is already the width of the vehicle by the time it clears the deck;
+   * a dented one gets a thin wisp that barely clears it.
+   */
   damageSmoke(x: number, y: number, z: number, severe: boolean): void {
+    const life = (severe ? 2.4 : 1.8) + Math.random() * 2.2;
     this.push({
       x: x + (Math.random() - 0.5) * 1.2, y, z: z + (Math.random() - 0.5) * 1.2,
       vx: (Math.random() - 0.5) * 0.4, vy: 0.7 + Math.random() * 0.6, vz: (Math.random() - 0.5) * 0.4,
-      life: 1.8 + Math.random() * 2.2, maxLife: 4,
-      size0: 0.5, size1: severe ? 3.2 : 2.2,
-      r: severe ? 0.11 : 0.25, g: severe ? 0.11 : 0.25, b: severe ? 0.11 : 0.24,
-      alpha: severe ? 0.36 : 0.2, gravity: -0.25, drag: 0.5, additive: false,
-      soft: 1, turbulence: 0.35 + Math.random() * 0.4,
+      life, maxLife: life,
+      size0: 0.5, size1: severe ? 3.6 : 2.2,
+      r: severe ? 0.11 : 0.25, g: severe ? 0.11 : 0.25, b: severe ? 0.1 : 0.24,
+      alpha: severe ? 0.4 : 0.2, gravity: -0.25, drag: 0.5, additive: false,
+      soft: 1, turbulence: (severe ? 0.7 : 0.35) + Math.random() * 0.4,
+      lift: severe ? 1 : 0.3,
     });
   }
 

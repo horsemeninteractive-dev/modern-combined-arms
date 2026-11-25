@@ -160,7 +160,7 @@ float shadowAt(vec3 world, vec3 normal) {
  * stages that do not receive light.
  */
 const GROUND_SPOTS_GLSL = /* glsl */ `
-#define GROUND_SPOT_MAX 12
+#define GROUND_SPOT_MAX 32
 uniform vec4 uSpotSrc[GROUND_SPOT_MAX];
 uniform vec4 uSpotAim[GROUND_SPOT_MAX];
 uniform vec4 uSpotTint[GROUND_SPOT_MAX];
@@ -224,6 +224,9 @@ vec3 groundSpots(vec3 p, vec3 n) {
     float aim = dot(dir, uSpotAim[i].xyz);
     float inner = mix(uSpotAim[i].w, 1.0, 0.24);
     float cone = smoothstep(uSpotAim[i].w, inner, aim);
+    // Most fragments sit outside most cones, so the shadow probes are skipped
+    // for them: that is what keeps a full perimeter of lamps affordable.
+    if (cone <= 0.0005) continue;
     float reach = 1.0 - smoothstep(src.w * 0.62, src.w, dist);
     float facing = max(dot(n, -dir), 0.0);
     float visible = lampVisibility(p, n, src.xyz);
@@ -1736,25 +1739,43 @@ layout(location=5) in vec2 iShape;
 // along the particle's own direction of travel is what makes rain read as rain
 // at any camera pitch.
 layout(location=6) in vec3 iDir;
+// x = fraction of this sprite's life elapsed, y = its stable random seed. The
+// fragment shader uses both to give every puff its own rolling silhouette.
+layout(location=7) in vec2 iLife;
 uniform vec3 uRightDir;
 uniform vec3 uUpDir;
 ${CAMERA}
 out vec4 vColor;
 out vec2 vUv;
 out float vSoft;
+out vec2 vLife;
 void main() {
-  vec3 axis = normalize(iDir + vec3(0.0, 0.0001, 0.0));
-  // Width axis: perpendicular to both the streak and the view, so the quad
-  // always faces the camera and stays thin side-on.
-  vec3 side = cross(axis, uForward);
-  float sideLen = length(side);
-  side = sideLen > 0.001 ? side / sideLen : uRightDir;
+  vec3 axis;
+  vec3 side;
+  float dirLen = length(iDir);
+  if (dirLen > 0.001) {
+    // A streak is laid along its own direction of travel, so rain and tracers
+    // read at any camera pitch and never straighten out across the screen.
+    axis = iDir / dirLen;
+    // Width axis: perpendicular to both the streak and the view, so the quad
+    // always faces the camera and stays thin side-on.
+    vec3 perpendicular = cross(axis, uForward);
+    float sideLen = length(perpendicular);
+    side = sideLen > 0.001 ? perpendicular / sideLen : uRightDir;
+  } else {
+    // A round sprite is a volume, not a sheet of card. Laying it on world up
+    // squashed every puff toward the horizon at this camera pitch; the camera's
+    // own axes keep it circular from any angle.
+    axis = uUpDir;
+    side = uRightDir;
+  }
   vec3 world = iCenter
     + side * aPos.x * iSize
     + axis * aPos.y * iSize * max(iShape.x, 0.05);
   vColor = iColor;
   vUv = aUv;
   vSoft = iShape.y;
+  vLife = iLife;
   gl_Position = projectWorld(world);
 }
 `;
@@ -1764,20 +1785,58 @@ precision highp float;
 in vec4 vColor;
 in vec2 vUv;
 in float vSoft;
+in vec2 vLife;
 uniform float uAdditive;
 out vec4 outColor;
+
+float hash21(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+// Value noise: four hashed corners, smoothstepped interpolation.
+float valueNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash21(i);
+  float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0));
+  float d = hash21(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
 void main() {
-  float d = length(vUv - vec2(0.5)) * 2.0;
+  float soft = clamp(vSoft, 0.0, 1.0);
+  vec2 uv = vUv - vec2(0.5);
+  float d;
+  if (soft > 0.55) {
+    // Billowing vapour. The lookup is turned by the sprite's own seed, so a
+    // column never reads as the same soft circle stamped over and over, and it
+    // drifts with the sprite's age, so the silhouette rolls instead of gliding
+    // along unchanged like a decal.
+    float angle = vLife.y * 6.2831853;
+    float c = cos(angle);
+    float s = sin(angle);
+    uv = mat2(c, -s, s, c) * uv;
+    d = length(uv) * 2.0;
+    // Two octaves: broad lobes for the body of the puff, finer detail for its
+    // ragged edge. Both are moving at different rates on purpose.
+    float n = valueNoise(uv * 2.6 + vLife.y * 37.0 + vec2(vLife.x * 0.7, -vLife.x * 0.45)) * 0.62
+      + valueNoise(uv * 6.3 - vLife.y * 19.0 - vec2(vLife.x * 1.2, vLife.x * 0.85)) * 0.38;
+    // Displace the rim rather than shade it, so the puff has an irregular
+    // outline instead of a round one with a mottled skin.
+    d += (n - 0.5) * mix(0.5, 1.0, soft);
+  } else {
+    // Hot cores and sparks stay close to round; a fine grain keeps a big flash
+    // from reading as a flat disc of light.
+    d = length(uv) * 2.0;
+    float grain = valueNoise(uv * 9.0 + vLife.y * 23.0);
+    d += (grain - 0.5) * 0.06;
+  }
   // A soft puff fades from most of its radius; a hot core stays solid almost to
   // the rim and then drops off hard.
-  float core = mix(0.86, 0.18, clamp(vSoft, 0.0, 1.0));
+  float core = mix(0.86, 0.18, soft);
   float edge = smoothstep(1.0, core, d);
-  // Break the perfect circle. Weightless puffs get a fixed per-fragment wobble
-  // on their rim, which reads as billowing vapour; sparks stay clean.
-  if (vSoft > 0.6) {
-    float n = fract(sin(dot(vUv * 41.0, vec2(12.9898, 78.233))) * 43758.5453);
-    edge *= 0.82 + 0.36 * n;
-  }
   float a = clamp(edge, 0.0, 1.0) * vColor.a;
   if (uAdditive > 0.5) {
     outColor = vec4(vColor.rgb * a, a);

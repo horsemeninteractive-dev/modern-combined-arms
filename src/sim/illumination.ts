@@ -44,7 +44,9 @@ export const LIGHT_PROFILES: Record<Exclude<IlluminatorKind, 'none'>, LightProfi
     beam: true,
   },
   searchlight: {
-    radius: 6,
+    // Matches the drawn beam: a searchlight throws its pool about six and a
+    // half tiles, so what a crew can see is what the lamp actually reaches.
+    radius: 7,
     intensity: 0.8,
     color: [0.92, 0.96, 1.0],
     vertical: 'ground',
@@ -114,9 +116,9 @@ export function collectLightSources(
     const kind = profile.illuminator;
     if (kind === 'none') continue;
     if (e.kind === 'building') {
-      // Neutral city blocks keep their windows lit; a player's structure needs
-      // a working grid, and a construction site has no fittings yet.
-      if (e.owner >= 0 && (!powered(e.owner) || e.construction)) continue;
+      // Every structure draws its fittings from its owner's grid. An ownerless
+      // site has no grid, and a construction site has no fittings yet.
+      if (!powered(e.owner) || e.construction) continue;
     }
     const moving =
       e.state === 'moving' ||

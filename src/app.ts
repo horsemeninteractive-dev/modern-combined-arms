@@ -56,6 +56,7 @@ import {
 } from './outbreak/scenario';
 import type { OutbreakDifficulty } from './sim/scenario';
 import type { OutbreakHudState, OutbreakResult } from './outbreak/types';
+import { remoteWaveNotices, type RemoteWaveSample } from './outbreak/notices';
 import {
   acceptCampaignResult,
   buildCampaignScenario,
@@ -620,6 +621,8 @@ export class App {
    * kill on screen comes from here.
    */
   private networkOutbreak: OutbreakHudState | null = null;
+  /** Last published wave state, so a remote seat can announce transitions. */
+  private remoteOutbreakSeen: RemoteWaveSample | null = null;
 
   /**
    * A mission test run owns a disposable scenario copy. It is never campaign
@@ -2078,6 +2081,15 @@ export class App {
           : 1;
       fill.style.width = `${Math.round(fraction * 100)}%`;
     }
+    // The panel's INFECTED number is every living unit the Infected faction
+    // owns, which is the field count a player reads it as. It is deliberately
+    // not the director's `maxAlive`: that is a pacing rule that holds bodies in
+    // `pending`, not a count, and it is never displayed. The two differ on
+    // purpose — a wave can close with bodies still standing (the stall bound),
+    // and those bodies stay on the map, counted here and against the next
+    // wave's ceiling before it has spawned anything. So the label names the
+    // population rather than "this wave's force", and the number stays the
+    // honest field total instead of being clamped to the ceiling.
     const hostiles = document.getElementById('outbreak-hostiles');
     if (hostiles) {
       hostiles.textContent = String(remote ? remote.aliveInfected : match!.aliveInfected);
@@ -2086,15 +2098,26 @@ export class App {
     if (kills) {
       kills.textContent = String(remote ? remote.zombiesKilled : match!.statistics.zombiesKilled);
     }
-    // A networked seat gets no local announcements: the room owns the clock, so
-    // the wave notices below belong to the seat that is actually simulating.
-    const announcements = remote ? [] : match!.drainAnnouncements();
+    // A networked seat ticks no director of its own, so it has no event stream
+    // to drain. Its notices are derived from the wave state the room publishes
+    // instead — the same four beats, read off two consecutive samples — so the
+    // partner's screen and radio keep up without a second message channel.
+    const announcements = remote
+      ? remoteWaveNotices(this.remoteOutbreakSeen, remote)
+      : match!.drainAnnouncements();
+    this.remoteOutbreakSeen = remote ?? null;
     for (const event of announcements) {
       if (event.kind === 'warning') {
         this.notify(`Wave ${event.wave} is coming in ${Math.round(event.secondsToAssault)}s.`, 'warning');
         this.audio.announce('baseUnderAttack');
       } else if (event.kind === 'assault') {
         this.notify(`Wave ${event.wave} has made contact.`, 'critical');
+      } else if (event.kind === 'wave-cleared') {
+        // The director closes its arrival window here: every body this wave
+        // planned is now on the field and nothing else is coming. Without this
+        // beat the last arrival was silent, and the HUD's switch to CLEAR THE
+        // FIELD was the only sign the spawns had stopped.
+        this.notify(`Wave ${event.wave} deployed — clear the field.`, 'warning');
       } else if (event.kind === 'wave-complete') {
         this.notify(`Wave ${event.wave} held. Regroup.`, 'success');
       }
@@ -2103,6 +2126,9 @@ export class App {
 
   /** Hide the survival chrome when leaving the battlefield or a run. */
   private hideOutbreakUi(): void {
+    // Leaving the battlefield ends the comparison: a later room must not be
+    // announced against the wave state of the run that came before it.
+    this.remoteOutbreakSeen = null;
     document.getElementById('outbreak-hud')?.classList.add('hidden');
     document.getElementById('outbreak-results')?.classList.add('hidden');
     const note = document.getElementById('outbreak-results-note');
@@ -2124,10 +2150,7 @@ export class App {
     const api = this.accountApi;
     if (!api) return;
     const mode = result.mode === 'coop' ? 'coop' : 'solo';
-    // The board is the map's: read it back off the battlefield that ran, so a
-    // run can never land on a board for ground it was not fought on.
-    const runMapId = this.game?.state.scenario.meta.id;
-    const map = isOutbreakMapId(runMapId) ? runMapId : this.outbreakMapId;
+    const map = this.outbreakRunMapId();
     void api
       .submitOutbreakRun({
         mode,
@@ -2159,6 +2182,18 @@ export class App {
       });
   }
 
+  /**
+   * The battlefield an Outbreak run is fought on.
+   *
+   * The board is keyed by map, so the card and the post read the same ground:
+   * the battlefield that actually ran, not whatever the setup screen last
+   * selected.
+   */
+  private outbreakRunMapId(): string {
+    const runMapId = this.game?.state.scenario.meta.id;
+    return isOutbreakMapId(runMapId) ? runMapId : this.outbreakMapId;
+  }
+
   /** The survival results card: wave reached, kills, losses and the clock. */
   private showOutbreakResults(result: OutbreakResult): void {
     const overlay = document.getElementById('outbreak-results');
@@ -2187,6 +2222,9 @@ export class App {
       ['RESOURCES GATHERED', String(result.matsGathered)],
       ['SURVIVED', `${minutes}m ${String(seconds).padStart(2, '0')}s`],
       ['DIFFICULTY', OUTBREAK_DIFFICULTIES[result.difficulty].name.toUpperCase()],
+      // The board this run posts to is filtered by map, so the card names the
+      // ground it was fought on.
+      ['MAP', outbreakMap(this.outbreakRunMapId()).name.toUpperCase()],
       ['NATION', result.nations.map((id) => identityLabel(id)).join(' · ')],
       ['COMMANDERS', String(result.players)],
     ];
@@ -6059,6 +6097,10 @@ export class App {
       this.mode = 'none';
       this.accumulator = 0;
       this.victoryShown = 'none';
+      // The loaded run has not posted anything: without this, a resumed
+      // Outbreak save finished after an earlier run would silently skip its own
+      // leaderboard entry, because the flag still said that run was posted.
+      this.outbreakPosted = false;
       this.lastEventSeq = game.state.eventSeq;
       this.hud.mount(game);
       this.hud.seedLog(game);

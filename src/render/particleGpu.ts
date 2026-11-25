@@ -15,14 +15,22 @@ export interface GpuParticle {
   stretch?: number;
   /** Edge softness 0..1; 0 is a tight hot core, 1 a fully feathered puff. */
   soft?: number;
-  /** World-space streak axis, already normalised. Defaults to world up. */
+  /**
+   * World-space streak axis, already normalised. Absent means no axis: the quad
+   * is then billboarded on the camera's own right and up vectors, which is what
+   * keeps a round puff round at any camera pitch.
+   */
   dirX?: number;
   dirY?: number;
   dirZ?: number;
+  /** 0..1 fraction of life elapsed; rolls the sprite's own noise as it ages. */
+  age?: number;
+  /** Stable 0..1 hash, so two puffs never share a silhouette. */
+  seed?: number;
 }
 
-/** Floats per instance: centre(3) size(1) rgba(4) shape(2) dir(3). */
-const FLOATS_PER_INSTANCE = 13;
+/** Floats per instance: centre(3) size(1) rgba(4) shape(2) dir(3) life(2). */
+const FLOATS_PER_INSTANCE = 15;
 
 interface Batch {
   vao: WebGLVertexArrayObject;
@@ -84,6 +92,9 @@ export class ParticleGpu {
       gl.enableVertexAttribArray(6);
       gl.vertexAttribPointer(6, 3, gl.FLOAT, false, stride, 10 * 4);
       gl.vertexAttribDivisor(6, 1);
+      gl.enableVertexAttribArray(7);
+      gl.vertexAttribPointer(7, 2, gl.FLOAT, false, stride, 13 * 4);
+      gl.vertexAttribDivisor(7, 1);
       gl.bindVertexArray(null);
       return { vao, buffer, capacity: 0, data: new Float32Array(0), count: 0 };
     };
@@ -115,8 +126,10 @@ export class ParticleGpu {
       d[o + 8] = p.stretch ?? 1;
       d[o + 9] = p.soft ?? 0.5;
       d[o + 10] = p.dirX ?? 0;
-      d[o + 11] = p.dirY ?? 1;
+      d[o + 11] = p.dirY ?? 0;
       d[o + 12] = p.dirZ ?? 0;
+      d[o + 13] = p.age ?? 1;
+      d[o + 14] = p.seed ?? 0;
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, batch.buffer);
     gl.bufferData(

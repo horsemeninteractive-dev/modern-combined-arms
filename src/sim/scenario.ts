@@ -18,7 +18,7 @@ import {
   type TerrainId,
 } from './terrain';
 import type { MoveClass } from './types';
-import { BUILDINGS } from '../data/buildings';
+import { BUILDINGS, isCaptureObjective } from '../data/buildings';
 import { PROPS, isPropKind, type PropKind } from '../data/props';
 import { dist2 } from '../core/math';
 import { unitFamily, ALL_UNITS } from '../data/units';
@@ -1355,7 +1355,7 @@ export function validateScenario(scenario: Scenario): ValidationIssue[] {
   if (relays.length === 0) {
     add('info', 'no-relay', 'No signals relay: requisition will come only from command posts.');
   }
-  const objectives = scenario.structures.filter((s) => BUILDINGS[s.defId]?.capturable);
+  const objectives = scenario.structures.filter((s) => isCaptureObjective(s.defId));
   for (const objective of objectives) {
     if (objective.owner !== -1) {
       add(

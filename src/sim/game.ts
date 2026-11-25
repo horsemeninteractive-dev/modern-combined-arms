@@ -30,6 +30,8 @@ import {
   BUILDINGS,
   buildingFamily,
   buildingRequirements,
+  canSeizeStructure,
+  isCaptureObjective,
   isIndestructibleStructure,
 } from '../data/buildings';
 import { unitFamily, ALL_UNITS } from '../data/units';
@@ -910,6 +912,10 @@ export class Game {
     const hp = construction ? Math.round(def.hp * 0.2) : def.hp;
     const e = this.baseEntity('building', s.defId, s.owner, center.x, center.z, hp);
     if (s.key) e.authoredKey = s.key;
+    // The map left this site unmanned. Only a structure that started neutral is
+    // a position an engineer can crew; anything a player builds is the
+    // builder's own, whatever its blueprint says about capture.
+    if (s.owner < 0) e.neutralStart = true;
     // A yard turns its slipway toward its harbour so the gate, the berth and
     // the hulls all agree. Authored facing wins; otherwise it is read off the
     // coastline, which is deterministic for a given map and position.
@@ -957,8 +963,9 @@ export class Game {
       const player = this.player(s.owner);
       if (player && !construction) player.stats.buildingsBuilt++;
     }
-    if (def.capturable) {
-      // Anchors authored objectives visually even when neutral.
+    if (isCaptureObjective(def.id)) {
+      // Anchors authored objectives visually even when neutral. A seizable
+      // emplacement is ordinary defended ground, so it keeps no objective role.
       e.aiRole = def.id === 'relay' ? 'relay' : 'objective';
     }
     return e;
@@ -1022,6 +1029,25 @@ export class Game {
       }
     }
     return null;
+  }
+
+  /**
+   * Take a body off the field without a death.
+   *
+   * Outbreak calls this for an infected its own pathfinder has refused: the body
+   * is removed by the ordinary cleanup sweep in the same tick, which drops its id,
+   * its contacts and every order or target that names it, but no `unitLost` is
+   * emitted — a despawn is not a kill, so it scores nothing and rolls no drop.
+   */
+  despawn(entity: Entity): void {
+    if (entity.kind !== 'unit' || entity.hp <= 0) return;
+    entity.hp = 0;
+    entity.order = null;
+    entity.path = [];
+    entity.pathIndex = 0;
+    entity.state = 'idle';
+    entity.targetId = 0;
+    entity.aimTargetId = 0;
   }
 
   /**
@@ -1909,11 +1935,12 @@ export class Game {
    * of facing an invulnerable bunker.
    */
   private isAttackable(attackerOwner: number, target: Entity): boolean {
-    // A capturable objective cannot be destroyed: it changes hands only when an
-    // engineer takes it. Left in the target lists it is a wall a horde can beat
-    // on for the whole run, so no weapon is laid on it and no unit is asked to
-    // attack it. Capture is an order, not a target.
-    if (target.kind === 'building' && BUILDINGS[target.defId]?.capturable) return false;
+    // A capture-only objective cannot be destroyed: it changes hands only when
+    // an engineer takes it. Left in the target lists it is a wall a horde can
+    // beat on for the whole run, so no weapon is laid on it and no unit is asked
+    // to attack it. Capture is an order, not a target. A seizable emplacement is
+    // a different thing: it can be shelled like any other concrete.
+    if (target.kind === 'building' && isCaptureObjective(target.defId)) return false;
     if (this.isHostile(attackerOwner, target.owner)) return true;
     if (target.owner !== -1 || target.kind !== 'building') return false;
     // A neutral span is a shared crossing rather than a protected objective:
@@ -2927,6 +2954,17 @@ export class Game {
         x: target.x,
         z: target.z,
         text: `That ${targetDef.name.toLowerCase()} is already ours.`,
+        level: 'warning',
+        sound: 'denied',
+      });
+      return;
+    }
+    if (!canSeizeStructure(target.defId, target.owner, owner, target.neutralStart === true)) {
+      this.emit('orderFailed', {
+        team: owner,
+        x: target.x,
+        z: target.z,
+        text: `That ${targetDef.name.toLowerCase()} is held by an enemy — clear its crew first.`,
         level: 'warning',
         sound: 'denied',
       });
@@ -7610,11 +7648,12 @@ export class Game {
   refreshVision(initial: boolean): void {
     const dayNight = this.dayNight;
     // One bounded light list per refresh, shared by the simulation and the
-    // renderer. A browned-out base is dark, and a daylight map has none at all.
+    // renderer. A browned-out base is dark, an ownerless site has no grid to
+    // draw on at all, and a daylight map has none.
     this.lightSources = collectLightSources(
       this.state.entities,
       dayNight,
-      (owner) => !this.powerStatus(owner).brownout,
+      (owner) => owner >= 0 && !this.powerStatus(owner).brownout,
     );
     this.litGrid = this.lightSources.length
       ? buildIlluminationGrid(this.state.scenario.width, this.state.scenario.height, this.lightSources)
@@ -9694,7 +9733,13 @@ export class Game {
     }
     if (e.order?.type === 'capture') {
       const target = this.getEntity(e.order.targetId ?? 0);
-      if (!target || target.hp <= 0 || target.owner === e.owner) {
+      // The detail dies with the objective's condition: a site that falls, is
+      // already ours or has been crewed by the other side is no longer a walk-in.
+      if (
+        !target ||
+        target.hp <= 0 ||
+        !canSeizeStructure(target.defId, target.owner, e.owner, target.neutralStart === true)
+      ) {
         e.order = null;
         e.captureTargetId = 0;
         e.captureProgress = 0;

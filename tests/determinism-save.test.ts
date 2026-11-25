@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Game, SaveFormatError } from '../src/sim/game';
 import { createIslandAssault } from '../src/data/scenarios';
+import { createOutbreakScenario } from '../src/outbreak/scenario';
 import { TILE_SIZE } from '../src/sim/constants';
 
 function scenario() {
@@ -139,6 +140,62 @@ describe('save and load', () => {
     const restored = Game.fromSave(save, { enableAI: false });
     expect(Array.from(restored.state.map.ore)).toEqual(oreSnapshot);
     expect(restored.state.events.length).toBeGreaterThan(0);
+  });
+});
+
+describe('Outbreak save and load', () => {
+  it('resumes a survival run with its wave, phase, record and drops intact', () => {
+    const live = new Game(
+      createOutbreakScenario({
+        difficulty: 'nightmare',
+        mode: 'solo',
+        nationId: 'poland',
+        seed: 90210,
+      }),
+      { enableAI: false },
+    );
+    const match = live.outbreak!;
+    // Drops are rolled by kills, so the run is played until one is on the field:
+    // a save taken while crates are lying there has to bring them back too.
+    for (let ticks = 0; ticks < 6000 && match.hudState().pickups!.length === 0; ticks++) {
+      if (live.state.victory !== 'playing') break;
+      live.tick();
+    }
+    const drops = match.hudState().pickups!;
+    expect(drops.length).toBeGreaterThan(0);
+    const before = {
+      wave: match.wave,
+      phase: match.phase,
+      statistics: match.statistics,
+      drops,
+    };
+    expect(before.statistics.zombiesKilled).toBeGreaterThan(0);
+
+    const saved = JSON.parse(JSON.stringify(live.toSave()));
+    // The save path has to write the run, not just declare room for it.
+    expect(saved.state.outbreak).toBeTruthy();
+    expect(saved.state.outbreak.director.wave).toBe(before.wave);
+    expect(saved.state.outbreak.pickups).toHaveLength(drops.length);
+
+    const restored = Game.fromSave(saved, { enableAI: false });
+    const resumed = restored.outbreak!;
+    expect(resumed.wave).toBe(before.wave);
+    expect(resumed.phase).toBe(before.phase);
+    expect(resumed.statistics).toEqual(before.statistics);
+    expect(resumed.hudState().pickups).toEqual(drops);
+    expect(restored.stateHash()).toBe(live.stateHash());
+
+    // And it keeps the run's rhythm: the wave plan, the director's own random
+    // stream and the drop lifetime all have to advance exactly as the run that
+    // was never saved does.
+    live.advance(600);
+    restored.advance(600);
+    expect(resumed.wave).toBe(match.wave);
+    expect(resumed.phase).toBe(match.phase);
+    expect(resumed.statistics.zombiesKilled).toBe(match.statistics.zombiesKilled);
+    expect(resumed.statistics.matsGathered).toBe(match.statistics.matsGathered);
+    expect(resumed.hudState().pickups).toEqual(match.hudState().pickups);
+    expect(restored.stateHash()).toBe(live.stateHash());
   });
 });
 

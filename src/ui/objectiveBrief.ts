@@ -1,5 +1,5 @@
 import type { Game } from '../sim/game';
-import { BUILDINGS } from '../data/buildings';
+import { BUILDINGS, isCaptureObjective } from '../data/buildings';
 import { CAMPAIGNS } from '../data/campaign';
 import { TUTORIAL_SCENARIO_ID } from '../data/tutorial';
 import { tryIdentityDef } from '../data/factions';
@@ -55,7 +55,9 @@ export interface ObjectiveProgress {
 export function objectiveProgress(game: Game): ObjectiveProgress {
   const playerId = game.localPlayerId;
   const live = game.state.entities.filter((e) => e.hp > 0);
-  const objectives = live.filter((e) => e.kind === 'building' && !!BUILDINGS[e.defId]?.capturable);
+  const objectives = live.filter(
+    (e) => e.kind === 'building' && isCaptureObjective(e.defId),
+  );
   const relays = objectives.filter((e) => e.defId === 'relay');
   const depots = objectives.filter((e) => !!BUILDINGS[e.defId]?.matsPerSec);
   const stations = objectives.filter((e) => !!BUILDINGS[e.defId]?.scanRadius);

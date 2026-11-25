@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { Game } from '../src/sim/game';
 import { createIslandAssault } from '../src/data/scenarios';
-import { BUILDINGS } from '../src/data/buildings';
+import { BUILDINGS, canSeizeStructure } from '../src/data/buildings';
 import { FACTIONS } from '../src/data/factions';
 import { relayMeterState, RELAY_NEUTRAL_COLOR } from '../src/ui/relayMeter';
 
@@ -96,19 +96,51 @@ describe('relay ownership and capture meter', () => {
     expect(meter.caption).toBe('BALTIC');
   });
 
-  it('puts the control meter on every capturable objective, not just the sturdy ones', () => {
+  it('puts the control meter on every capture-only objective, not just the sturdy ones', () => {
     // A radar station changes hands by capture exactly like a relay. Gating the
     // world meter on indestructibility left the one destructible objective with
     // no owner label and no capture bar at all.
-    const capturable = Object.values(BUILDINGS).filter((b) => b.capturable);
-    expect(capturable.map((b) => b.id).sort()).toEqual(
-      ['radarStation', 'relay', 'supplyDepot'].sort(),
+    const objectives = Object.values(BUILDINGS)
+      .filter((b) => b.capturable && b.authoredOnly)
+      .map((b) => b.id)
+      .sort();
+    expect(objectives).toEqual(['radarStation', 'relay', 'supplyDepot'].sort());
+    // Emplacements left unmanned on a map are walk-ins too. They stay ordinary
+    // concrete — shellable, with an integrity bar and a crew to clear.
+    const emplacements = Object.values(BUILDINGS)
+      .filter((b) => b.capturable && !b.authoredOnly)
+      .map((b) => b.id)
+      .sort();
+    expect(emplacements).toEqual(
+      ['atTurret', 'bunker', 'coastalBattery', 'longRangeSam', 'mgNest', 'samBattery'].sort(),
     );
     const overlaySource = readFileSync(new URL('../src/ui/overlay.ts', import.meta.url), 'utf8');
-    expect(overlaySource).toContain("if (!BUILDINGS[relay.defId]?.capturable) continue;");
+    // The meter belongs to sites that can still change hands, so a gun pit the
+    // player raised off the same blueprint carries none.
+    expect(overlaySource).toContain(
+      'isSeizableSite(relay.defId, relay.owner, relay.neutralStart === true)',
+    );
     // Remembered ground keeps the holder's name but never live capture progress.
     expect(overlaySource).toContain('const caption = remembered ? meter.ownerLabel : meter.caption;');
     expect(overlaySource).toContain('const progress = remembered ? 0 : meter.progress;');
+  });
+
+  it('lets an engineer take an unheld emplacement but not a manned one', () => {
+    // A bunker the map left unmanned is a position waiting for a crew, whatever
+    // map it stands on — including Outbreak's neutral strongpoints.
+    expect(canSeizeStructure('bunker', -1, 0, true)).toBe(true);
+    expect(canSeizeStructure('mgNest', -1, 1, true)).toBe(true);
+    // An enemy's gun pit has its crew inside it: it has to be reduced first.
+    expect(canSeizeStructure('bunker', 1, 0, true)).toBe(false);
+    // A gun pit a player built is his own for good: the blueprint is capturable
+    // on an authored map, the structure is not.
+    expect(canSeizeStructure('mgNest', -1, 1, false)).toBe(false);
+    expect(canSeizeStructure('bunker', 1, 0, false)).toBe(false);
+    // Objectives are contested for the whole match, by either side.
+    expect(canSeizeStructure('relay', 1, 0, false)).toBe(true);
+    expect(canSeizeStructure('relay', 0, 0, false)).toBe(false);
+    // An ordinary structure is not a capture target at all.
+    expect(canSeizeStructure('barracks', -1, 0, true)).toBe(false);
   });
 
   it('takes a capture order on a relay that has slipped back into memory', () => {

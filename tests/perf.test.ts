@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { Game } from '../src/sim/game';
 import { createIslandAssault } from '../src/data/scenarios';
+import { createOutbreakScenario } from '../src/outbreak/scenario';
+import { zombieDefId } from '../src/data/zombies';
+import type { ZombieKind } from '../src/outbreak/types';
 import { TILE_SIZE } from '../src/sim/constants';
 import { TERRAIN, Terrain, tileIndex } from '../src/sim/terrain';
 import type { Scenario, ScenarioUnit } from '../src/sim/scenario';
@@ -60,7 +63,77 @@ function stressScenario(perSide: number): Scenario {
   return scenario;
 }
 
+/**
+ * An Outbreak field already at its living cap.
+ *
+ * The director fills a wave over minutes of simulated time, so waiting for it
+ * to reach `maxAlive` would measure mostly preparation. The bodies are placed
+ * on the map's own approaches instead — the same kinds, the same ground — and
+ * the wave director keeps running its own clock beside them, so a tick costs
+ * what a full assault costs.
+ */
+function outbreakHorde(bodies: number): { game: Game; spawned: number } {
+  const scenario = createOutbreakScenario({
+    difficulty: 'nightmare',
+    mode: 'solo',
+    nationId: 'poland',
+    seed: 4242,
+    // Nightmare caps at 150 living from roughly wave 42, so the plan this run
+    // prepares is at the ceiling rather than part-way up the ramp.
+    startWave: 45,
+  });
+  const game = new Game(scenario, { enableAI: false });
+  const regions = scenario.meta.outbreak!.entryRegions;
+  const owner = game.outbreak!.infectedOwner;
+  const roster: ZombieKind[] = ['shambler', 'shambler', 'runner', 'shambler', 'brute'];
+  let spawned = 0;
+  for (let i = 0; i < bodies; i++) {
+    const region = regions[i % regions.length];
+    // A golden-angle spiral, so the bodies are spread rather than stacked.
+    const angle = (i * 2.399963) % (Math.PI * 2);
+    const radius = (0.25 + ((i % 7) / 7) * 0.75) * region.radius;
+    const x = (region.x + Math.cos(angle) * radius + 0.5) * TILE_SIZE;
+    const z = (region.z + Math.sin(angle) * radius + 0.5) * TILE_SIZE;
+    if (game.spawnInfected(zombieDefId(roster[i % roster.length]), x, z, owner)) spawned++;
+  }
+  return { game, spawned };
+}
+
 describe('measured simulation performance', () => {
+  it('reports Outbreak tick cost with the horde at the living cap', () => {
+    const sizes = [30, 90, 150];
+    const numbers: Array<{ bodies: number; perTick: number }> = [];
+    for (const bodies of sizes) {
+      const { game, spawned } = outbreakHorde(bodies);
+      game.advance(40); // warm the path grids and the first-tick caches
+      const total = ms(() => game.advance(300)); // 15 simulated seconds of assault
+      const perTick = total / 300;
+      numbers.push({ bodies: spawned, perTick });
+      console.log(
+        `[perf] outbreak: ${spawned} bodies, 300 ticks in ${total.toFixed(1)}ms (${perTick.toFixed(3)}ms/tick), ${game.outbreak!.aliveInfected} still alive`,
+      );
+      expect(Number.isFinite(perTick)).toBe(true);
+      expect(spawned).toBeGreaterThan(bodies * 0.8);
+      if (bodies === 150) {
+        // The readout paths the HUD calls every frame, outside the tick.
+        const match = game.outbreak!;
+        const hudMs = ms(() => {
+          for (let i = 0; i < 200; i++) match.hudState();
+        });
+        let counted = 0;
+        const scanMs = ms(() => {
+          for (let i = 0; i < 200; i++) counted += match.aliveInfected;
+        });
+        console.log(
+          `[perf] outbreak readout: hudState ${(hudMs / 200).toFixed(3)}ms/call, aliveInfected ${(scanMs / 200).toFixed(3)}ms/call`,
+        );
+        expect(counted).toBeGreaterThan(0);
+      }
+    }
+    // Catastrophe guard, not a target: the same shape as the stress case above.
+    expect(Math.max(...numbers.map((n) => n.perTick))).toBeLessThan(150);
+  });
+
   it('reports baseline tick cost for the authored scenario', () => {
     const game = new Game(createIslandAssault(), { enableAI: true });
     game.advance(20); // warm up caches and path grids

@@ -720,6 +720,13 @@ export interface Entity {
    * veterans use, so it survives save/load unchanged.
    */
   authoredKey?: string;
+  /**
+   * The map placed this structure ownerless. A site that started neutral is a
+   * position waiting for a crew and an engineer can walk into it; a structure a
+   * player raised — even off the same blueprint — belongs to its builder and is
+   * never a capture target.
+   */
+  neutralStart?: boolean;
   x: number;
   z: number;
   hp: number;

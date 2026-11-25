@@ -1,4 +1,4 @@
-import { BUILDINGS, isIndestructibleStructure } from '../data/buildings';
+import { BUILDINGS, canSeizeStructure, isIndestructibleStructure } from '../data/buildings';
 import { ALL_UNITS } from '../data/units';
 import { containerAcceptsPassenger, containerSpec } from '../sim/containers';
 import { entityWeapons, usesPrimaryAmmo, weaponCanHurt } from '../sim/combat';
@@ -544,7 +544,10 @@ export class CommandGate {
         ) {
           return reject('target-hidden', 'Target is not known.');
         }
-        if (!BUILDINGS[target.defId]?.capturable || target.construction) {
+        if (
+          !canSeizeStructure(target.defId, target.owner, seat.playerId, target.neutralStart === true) ||
+          target.construction
+        ) {
           return reject('target-not-attackable', 'That structure cannot be captured.');
         }
         if (target.owner >= 0 && this.game.teamOf(target.owner) === seat.team) {

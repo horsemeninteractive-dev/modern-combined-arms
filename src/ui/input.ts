@@ -1,6 +1,6 @@
 import type { App } from '../app';
 import { actionForKey, type BindableActionId } from '../inputBindings';
-import { BUILDINGS } from '../data/buildings';
+import { canSeizeStructure } from '../data/buildings';
 import { isGarrisonTarget, isRepairTarget } from './orderIntent';
 import { edgePanVector } from './hudLayout';
 import { PAD, nextFocusIndex, nextGroupSlot, nextPopulatedGroup } from './gamepad';
@@ -387,8 +387,11 @@ export class InputController {
     }
     if (app.mode === 'capture') {
       const target = app.pickAt(clientX, clientY);
-      if (!target || !BUILDINGS[target.defId]?.capturable) {
-        app.notify('Select a signals relay, supply depot or radar station.', 'warning');
+      if (
+        !target ||
+        !canSeizeStructure(target.defId, target.owner, app.localPlayerId, target.neutralStart === true)
+      ) {
+        app.notify('Select an unheld emplacement, relay, supply depot or radar station.', 'warning');
         app.audio.play('denied');
         return;
       }

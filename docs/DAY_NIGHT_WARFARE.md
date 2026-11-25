@@ -78,9 +78,10 @@ almost its full reach, which is the tactical difference between the two.
 
 `src/sim/illumination.ts` derives a bounded set of lights (`MAX_LIGHTS`) from
 authoritative entities: floodlit bases, lit windows, signals beacons, vehicle
-headlights and searchlights. A light burns only when the owner has power, and a
-vehicle has to be moving (or holding a searchlight on a target) for its lamp to be
-on.
+headlights and searchlights. A light burns only when the owner has power, an
+ownerless site has no grid at all and so stands dark until an engineer crews it,
+and a vehicle has to be moving (or holding a searchlight on a target) for its lamp
+to be on.
 
 Illumination does two things, both deterministic:
 
@@ -107,7 +108,8 @@ graphics setting can conjure a light the simulation does not have.
   load, so it follows the rule the wall lamps already use: a brownout dims the
   windows in step with production, and a grid with no supply at all leaves them
   dark. A site still under construction has no supply, so it has no lit glass
-  either. A neutral structure, or one whose owner draws nothing, has no deficit to
+  either, and an ownerless site has no grid to draw on: its windows stay dark
+  until it is captured. A structure whose owner draws nothing has no deficit to
   share and keeps its glow.
 - **A charted structure's windows are dark.** The glow is gated by the same vision
   state as the mesh: a building drawn from memory shows the shape that was
@@ -132,7 +134,12 @@ graphics setting can conjure a light the simulation does not have.
   before the terrain pass and uploads up to `MAX_GROUND_SPOTS` of them as three
   packed `vec4` arrays (origin/reach, aim/edge, colour/strength). They come from
   the *rendered* pose, so they move with the eased hull rather than the 20 Hz tick.
-  The lamp's own lens still uses the additive light batch as a small glow.
+  A built-up perimeter burns more lamps than one pass evaluates — twelve nests
+  alone commit twenty-four cones — so the slots are spent on the lamps nearest the
+  camera (`selectGroundSpots`), not on whichever entity the list reaches first.
+  A cone that misses the budget still leaves its lens in the additive batch, so
+  nothing reads as an unlit lamp. The lamp's own lens still uses the additive
+  light batch as a small glow.
   The road deck is a mesh drawn above the terrain, so it evaluates the same
   `groundSpots()` field in `MESH_FS`; otherwise the pool would be painted only on
   the ground hidden under the road. `uSpotGate` keeps that loop off every other
@@ -153,6 +160,20 @@ graphics setting can conjure a light the simulation does not have.
   lighting the ground on the far side. Four probes with a soft depth compare keep
   the edge a fade rather than a staircase, and the map is rebuilt only on a night
   frame that actually has lamps.
+- **Searchlights sweep, hold a target, and climb.** A defensive emplacement
+  carries two lamps rather than one, each on its own phase and its own standing
+  direction, so a perimeter reads as several crews searching instead of one beam
+  repeated across the base. A crew with a target on its gunbook holds both beams
+  on that target: the emplacement's `targetId` is resolved each frame and the
+  cones are aimed at it with the reach trimmed to the range, which is what makes
+  an engaged nest read as engaged. Corner tiles of a concrete run are drawn as
+  bastions and carry a lamp on the bastion roof, sweeping like a gun pit's rather
+  than standing as a dark slab at every bend. Air-defence pieces (`samBattery`,
+  `longRangeSam`, the AA vehicle) throw their beam at the sky instead: a chain of
+  overlapping additive glows along the beam's own axis, held on an aircraft when
+  there is one and searching its sector when there is not. All of it is
+  presentation only; the simulation's searchlight is the pool around the mount,
+  and no beam can see for a unit that cannot.
 - `src/render/lightGpu.ts` draws one instanced additive batch, split into two passes:
   ground pools under the models, so a hull occludes the pool it stands in, and wall
   lamps, lens glows and beacons over them, so a building cannot cover the light it
