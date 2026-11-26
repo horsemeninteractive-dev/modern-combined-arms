@@ -1,7 +1,7 @@
 # Documentation Index
 
 This is the map of MCA's written record: 97 Markdown reports plus the visual and
-audio evidence they cite. The current release is **0.10.0 BETA**. The
+audio evidence they cite. The current release is **0.11.2 BETA**. The
 [GDD](../Modern_Combined_Arms_RTS_GDD_v0.1.md) §0 is the authoritative
 implementation snapshot, and the
 [codebase audit](<../MCA Codebase Audit, GDD Conformance Report and Roadmap.md>)

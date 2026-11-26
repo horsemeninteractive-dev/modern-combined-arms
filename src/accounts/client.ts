@@ -12,10 +12,9 @@ import type {
   CareerTotals,
   CareerMode,
   CareerOutcome,
-  CareerDifficulty,
   CareerProvenance,
 } from './career';
-import { EMPTY_CAREER, type CareerViewData } from './career';
+import { EMPTY_CAREER, isCareerRecordDifficulty, type CareerViewData } from './career';
 import type { RankSpec } from './ranks';
 import type { CareerStats, NationLine, StatBlock } from './stats';
 import type {
@@ -71,6 +70,7 @@ function asStatBlock(value: unknown): StatBlock | null {
     victories: num(row.victories),
     defeats: num(row.defeats),
     draws: num(row.draws),
+    outbreakMatches: num(row.outbreakMatches),
     winRate: optionalRate,
     playSeconds: num(row.playSeconds),
     xp: num(row.xp),
@@ -109,6 +109,7 @@ function asCareerStats(value: unknown): CareerStats | null {
       campaign: asStatBlock(modes.campaign) ?? fallback,
       skirmish: asStatBlock(modes.skirmish) ?? fallback,
       multiplayer: asStatBlock(modes.multiplayer) ?? fallback,
+      outbreak: asStatBlock(modes.outbreak) ?? fallback,
     },
     nations,
   };
@@ -261,9 +262,8 @@ export interface GuestMigrationResult {
   career: CareerView | null;
 }
 
-const MODES: readonly CareerMode[] = ['campaign', 'skirmish', 'multiplayer'];
+const MODES: readonly CareerMode[] = ['campaign', 'skirmish', 'multiplayer', 'outbreak'];
 const OUTCOMES: readonly CareerOutcome[] = ['victory', 'defeat', 'draw'];
-const DIFFICULTIES: readonly CareerDifficulty[] = ['recruit', 'veteran', 'elite'];
 const PROVENANCES: readonly CareerProvenance[] = ['local', 'guest', 'authoritative'];
 
 function num(value: unknown, fallback = 0): number {
@@ -279,6 +279,7 @@ function asTotals(value: unknown): CareerTotals {
     victories: num(row.victories),
     defeats: num(row.defeats),
     draws: num(row.draws),
+    outbreakMatches: num(row.outbreakMatches),
     kills: num(row.kills),
     unitsLost: num(row.unitsLost),
     playSeconds: num(row.playSeconds),
@@ -293,9 +294,7 @@ function asMatch(value: unknown): CareerMatchRecord | null {
     ref: row.ref,
     mode: MODES.includes(row.mode as CareerMode) ? (row.mode as CareerMode) : 'skirmish',
     outcome: OUTCOMES.includes(row.outcome as CareerOutcome) ? (row.outcome as CareerOutcome) : 'defeat',
-    difficulty: DIFFICULTIES.includes(row.difficulty as CareerDifficulty)
-      ? (row.difficulty as CareerDifficulty)
-      : 'veteran',
+    difficulty: isCareerRecordDifficulty(row.difficulty) ? row.difficulty : 'veteran',
     durationSeconds: num(row.durationSeconds),
     nation: typeof row.nation === 'string' ? row.nation : null,
     kills: num(row.kills),
@@ -831,14 +830,23 @@ export class HttpAccountApi {
    */
   async submitOutbreakRun(
     run: OutbreakRunInput,
-  ): Promise<{ improved: boolean; board: OutbreakBoard }> {
+  ): Promise<{ improved: boolean; board: OutbreakBoard; award: number; capped: boolean }> {
     const body = await this.request('/outbreak/runs', {
       method: 'POST',
       body: JSON.stringify(run),
     });
     const board = parseOutbreakBoard(body);
     if (!board) throw new AccountApiError('server-error', 'The leaderboard reply was malformed.', 500);
-    return { improved: body.improved === true, board };
+    const awardBody =
+      typeof body.award === 'object' && body.award !== null
+        ? (body.award as Record<string, unknown>)
+        : null;
+    return {
+      improved: body.improved === true,
+      board,
+      award: awardBody ? num(awardBody.xp) : 0,
+      capped: awardBody?.capped === true,
+    };
   }
 
   async multiplayerTicket(): Promise<{ ticket: string; expiresAt: number }> {

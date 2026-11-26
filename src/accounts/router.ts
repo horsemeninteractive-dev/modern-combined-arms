@@ -10,7 +10,10 @@ import {
   careerAccomplishmentXp,
   careerRecord,
   careerViewFrom,
+  outbreakCareerRecord,
   parseCareerMatch,
+  startOfUtcDay,
+  MAX_CAREER_MATCHES_PER_DAY,
   MAX_GUEST_IMPORT_MATCHES,
   type CareerMatchInput,
 } from './career';
@@ -838,6 +841,11 @@ class Router {
     }
     const stats = parseExtraStats(body.stats);
     const record = careerRecord(parsed.value, { provenance: 'local', now: this.now });
+    // A survival run is not a decided match: the run endpoint records it, and it
+    // alone knows the waves held and the infected killed.
+    if (record.mode === 'outbreak') {
+      throw new AccountError('invalid-request', 'Survival results are recorded by the run endpoint.', 400);
+    }
     record.xp += careerAccomplishmentXp(stats);
     const totalsBefore = await this.deps.store.careerTotals(resolved.account.id);
     const report: MatchReportRecord = {
@@ -1044,9 +1052,40 @@ class Router {
       recordedAt: this.now,
     };
     const outcome = await this.deps.store.saveOutbreakRun(record);
+    // A finished run is a career match. The reference is the run itself, so a
+    // retried post or an identical replay is the same ledger row and pays once,
+    // while a better result pays for the improvement. The run writes no report:
+    // survival has no opponent, no objectives and no structures destroyed, and
+    // the statistics read still counts the ledger row.
+    const career = outbreakCareerRecord(parsed.value, { now: this.now });
+    // The award is client-reported, so the day is capped: varied or forged posts
+    // cannot farm rank levels past it. The cap counts rows that actually paid,
+    // so a zero-XP run never consumes a slot; a run over the cap is still
+    // recorded as the defeat it was, it simply pays nothing. The check and the
+    // write are not one transaction, so two posts racing at the boundary can pay
+    // one or two rows past the cap — bounded by the hourly limit and not worth
+    // the atomic statement that would prevent it.
+    let capped = false;
+    if (career.xp > 0) {
+      const paidToday = await this.deps.store.careerPaidMatchesSince(
+        resolved.account.id,
+        startOfUtcDay(this.now),
+        'outbreak',
+      );
+      capped = paidToday >= MAX_CAREER_MATCHES_PER_DAY;
+      if (capped) career.xp = 0;
+    }
+    const paid = await this.deps.store.recordCareerEntry({
+      accountId: resolved.account.id,
+      record: career,
+      report: null,
+      audit: null,
+    });
+    const awarded = paid === 'ok' ? career.xp : 0;
     return jsonResponse({
       ok: true,
       improved: outcome === 'ok',
+      award: { xp: awarded, capped: capped && paid === 'ok' },
       ...(await this.outbreakBoardView(
         record.mode,
         record.difficulty,

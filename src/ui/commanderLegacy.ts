@@ -15,6 +15,7 @@
 import { CAMPAIGNS } from '../data/campaign';
 import { NATIONS, PLAYABLE_NATION_IDS } from '../data/factions';
 import type { CareerSnapshot } from '../accounts/careerService';
+import { careerWinRate } from '../accounts/career';
 import {
   ACHIEVEMENT_CATEGORY_LABEL,
   type AchievementView,
@@ -186,7 +187,10 @@ export function commanderLegacyMarkup(input: CommanderLegacyInput): string {
   const earned = entries.filter((entry) => entry.complete);
   const nationsServed = (view.stats?.nations ?? []).length;
   const campaignsCompleted = (view.campaigns ?? []).length;
-  const winRate = totals.matches > 0 ? Math.round((totals.victories / totals.matches) * 100) : 0;
+  // Survival runs stay on the record as defeats but are not decided matches, so
+  // the summary's rate ignores them (`careerWinRate` holds the rule).
+  const rate = careerWinRate(totals);
+  const winRate = rate === null ? 0 : Math.round(rate * 100);
   return `<div class="legacy" data-source="${snapshot.source}" data-state="${earned.length > 0 ? 'decorated' : 'opening'}">
     <section class="legacy-summary" aria-label="Career summary">
       <p class="section-title">SERVICE SUMMARY</p>

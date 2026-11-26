@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   careerRecord,
   careerViewFrom,
+  careerWinRate,
   careerXp,
   EMPTY_CAREER,
   MAX_MATCH_SECONDS,
+  outbreakCareerRecord,
+  outbreakCareerXp,
   parseCareerMatch,
   summariseCareer,
 } from '../src/accounts/career';
@@ -158,6 +161,53 @@ describe('rank ladder', () => {
     expect(view.rank.id).toBe('private');
     expect(view.next?.id).toBe('corporal');
     expect(view.progress).toBe(0);
+  });
+});
+
+describe('win rate with survival runs', () => {
+  const survival = outbreakCareerRecord(
+    {
+      mode: 'solo',
+      map: 'outbreak-relay-basin',
+      difficulty: 'normal',
+      wave: 12,
+      wavesCompleted: 11,
+      zombiesKilled: 410,
+      durationSeconds: 2_210,
+      structuresLost: 2,
+      unitsLost: 14,
+      nations: ['uk'],
+    },
+    { now: 2 },
+  );
+
+  it('keeps a survival defeat out of the denominator', () => {
+    const victory = careerRecord({ ...base, ref: 'skirmish:win-0001' }, { provenance: 'local', now: 1 });
+    const totals = summariseCareer([victory, survival]);
+    expect(totals.matches).toBe(2);
+    expect(totals.defeats).toBe(1);
+    expect(totals.outbreakMatches).toBe(1);
+    expect(careerWinRate(totals)).toBe(1);
+  });
+
+  it('reports no rate when survival is all that has been played', () => {
+    expect(careerWinRate({ matches: 1, victories: 0, outbreakMatches: 1 })).toBeNull();
+    expect(careerWinRate({ matches: 0, victories: 0, outbreakMatches: 0 })).toBeNull();
+  });
+});
+
+describe('outbreak career award', () => {
+  it('pays for the waves held and the infected killed, scaled by difficulty', () => {
+    expect(outbreakCareerXp({ wavesCompleted: 10, zombiesKilled: 400, difficulty: 'normal' })).toBe(150);
+    expect(outbreakCareerXp({ wavesCompleted: 10, zombiesKilled: 400, difficulty: 'nightmare' })).toBe(225);
+    expect(outbreakCareerXp({ wavesCompleted: 10, zombiesKilled: 400, difficulty: 'easy' })).toBe(113);
+  });
+
+  it('caps both halves so a padded easy run cannot approach a deep one', () => {
+    expect(
+      outbreakCareerXp({ wavesCompleted: 999, zombiesKilled: 1_000_000, difficulty: 'normal' }),
+    ).toBe(350);
+    expect(outbreakCareerXp({ wavesCompleted: 0, zombiesKilled: 0, difficulty: 'nightmare' })).toBe(0);
   });
 });
 

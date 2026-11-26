@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MAX_CAREER_MATCHES_PER_DAY, outbreakCareerRecord, outbreakCareerXp } from '../src/accounts/career';
 import { AccountHarness } from './accounts-harness';
 
 /**
@@ -31,6 +32,7 @@ async function signedIn(harness: AccountHarness, sub: string): Promise<string> {
 interface BoardBody {
   ok: boolean;
   improved?: boolean;
+  award?: { xp: number; capped?: boolean };
   mode: string;
   map: string;
   difficulty: string;
@@ -264,6 +266,173 @@ describe('Outbreak leaderboards', () => {
       }),
     );
     expect(unknownRun.error?.message).toMatch(/battlefield/);
+  });
+
+  it('pays career XP for a run, once, and records it on the service record', async () => {
+    const harness = await AccountHarness.create();
+    const cookie = await signedIn(harness, 'outbreak-career');
+
+    const first = await board(
+      await harness.request('/outbreak/runs', { method: 'POST', cookie, body: run() }),
+    );
+    const expected = outbreakCareerXp({
+      wavesCompleted: 11,
+      zombiesKilled: 410,
+      difficulty: 'normal',
+    });
+    expect(expected).toBeGreaterThan(0);
+    expect(first.award?.xp).toBe(expected);
+
+    const after = (await (await harness.request('/career', { cookie })).json()) as {
+      career: {
+        totals: { xp: number; matches: number; defeats: number };
+        matches: Array<{ mode: string; difficulty: string; kills: number; xp: number }>;
+        stats: { modes: Record<string, { matches: number; unitsDestroyed: number }> };
+      };
+    };
+    expect(after.career.totals.matches).toBe(1);
+    expect(after.career.totals.xp).toBe(expected);
+    expect(after.career.totals.defeats).toBe(1);
+    expect(after.career.matches[0].mode).toBe('outbreak');
+    expect(after.career.matches[0].difficulty).toBe('normal');
+    expect(after.career.matches[0].kills).toBe(410);
+    expect(after.career.stats.modes.outbreak.matches).toBe(1);
+    expect(after.career.stats.modes.outbreak.unitsDestroyed).toBe(410);
+
+    // The same run posted again is the same ledger row: the board is untouched
+    // and the career is paid once.
+    const replay = await board(
+      await harness.request('/outbreak/runs', { method: 'POST', cookie, body: run() }),
+    );
+    expect(replay.award?.xp).toBe(0);
+    const unchanged = (await (await harness.request('/career', { cookie })).json()) as typeof after;
+    expect(unchanged.career.totals.xp).toBe(expected);
+    expect(unchanged.career.totals.matches).toBe(1);
+
+    // A survival result cannot be posted through the decided-match endpoint.
+    const forged = await harness.request('/matches', {
+      method: 'POST',
+      cookie,
+      body: {
+        ref: 'outbreak:forged:0001',
+        mode: 'outbreak',
+        outcome: 'victory',
+        difficulty: 'normal',
+        durationSeconds: 600,
+      },
+    });
+    expect(forged.status).toBe(400);
+  });
+
+  it('keeps survival runs out of the win rate on the record and public profile', async () => {
+    const harness = await AccountHarness.create();
+    const cookie = await signedIn(harness, 'outbreak-win-rate');
+
+    const won = await harness.request('/matches', {
+      method: 'POST',
+      cookie,
+      body: {
+        ref: 'skirmish:outbreak-rate-win',
+        mode: 'skirmish',
+        outcome: 'victory',
+        difficulty: 'veteran',
+        durationSeconds: 600,
+        nation: 'uk',
+        kills: 5,
+        unitsLost: 1,
+      },
+    });
+    expect(won.status).toBe(200);
+    await harness.request('/outbreak/runs', { method: 'POST', cookie, body: run() });
+
+    const career = (await (await harness.request('/career', { cookie })).json()) as {
+      career: {
+        totals: { matches: number; victories: number; defeats: number; outbreakMatches: number };
+        stats: { overall: { matches: number; outbreakMatches: number; winRate: number | null } };
+        identity: { callsign: string } | null;
+      };
+    };
+    // The run is still a defeat on the record, and still an operation played.
+    expect(career.career.totals).toMatchObject({
+      matches: 2,
+      victories: 1,
+      defeats: 1,
+      outbreakMatches: 1,
+    });
+    expect(career.career.stats.overall.matches).toBe(2);
+    expect(career.career.stats.overall.outbreakMatches).toBe(1);
+    expect(career.career.stats.overall.winRate).toBe(1);
+
+    const callsign = career.career.identity?.callsign ?? '';
+    expect(callsign).not.toBe('');
+    const profile = (await (
+      await harness.request(`/players/${encodeURIComponent(callsign)}`, { cookie })
+    ).json()) as { player: { matches: number; winRate: number | null } };
+    expect(profile.player.matches).toBe(2);
+    expect(profile.player.winRate).toBe(1);
+  });
+
+  it('caps a day of XP-paying runs and pays again the next day', async () => {
+    const harness = await AccountHarness.create();
+    const { cookie: session, accountId } = await harness.signInGoogle('outbreak-daily-cap');
+    expect(accountId).not.toBeNull();
+    const cookie = `mca_session=${session}`;
+    const now = harness.now;
+
+    // A day already full of paid runs, written through the same store the route
+    // writes to. The results differ, so each one would have paid on its own.
+    for (let i = 0; i < MAX_CAREER_MATCHES_PER_DAY; i++) {
+      await harness.store.recordCareerEntry({
+        accountId: accountId!,
+        record: outbreakCareerRecord(
+          {
+            mode: 'solo',
+            map: 'outbreak-relay-basin',
+            difficulty: 'normal',
+            wave: 6,
+            wavesCompleted: 5,
+            zombiesKilled: 100 + i,
+            durationSeconds: 900,
+            structuresLost: 0,
+            unitsLost: 2,
+            nations: ['uk'],
+          },
+          { now },
+        ),
+        report: null,
+        audit: null,
+      });
+    }
+
+    type CareerBody = {
+      career: { totals: { matches: number; xp: number; outbreakMatches: number } };
+    };
+    const before = (await (await harness.request('/career', { cookie })).json()) as CareerBody;
+    expect(before.career.totals.matches).toBe(MAX_CAREER_MATCHES_PER_DAY);
+    expect(before.career.totals.outbreakMatches).toBe(MAX_CAREER_MATCHES_PER_DAY);
+
+    const capped = await board(
+      await harness.request('/outbreak/runs', { method: 'POST', cookie, body: run() }),
+    );
+    expect(capped.award?.xp).toBe(0);
+    expect(capped.award?.capped).toBe(true);
+
+    // The run is still recorded as the defeat it was; it simply did not pay.
+    const after = (await (await harness.request('/career', { cookie })).json()) as CareerBody;
+    expect(after.career.totals.matches).toBe(MAX_CAREER_MATCHES_PER_DAY + 1);
+    expect(after.career.totals.xp).toBe(before.career.totals.xp);
+
+    // The next UTC day opens a fresh allowance.
+    harness.advance(24 * 60 * 60_000);
+    const tomorrow = await board(
+      await harness.request('/outbreak/runs', {
+        method: 'POST',
+        cookie,
+        body: run({ zombiesKilled: 500 }),
+      }),
+    );
+    expect(tomorrow.award?.xp).toBeGreaterThan(0);
+    expect(tomorrow.award?.capped).toBe(false);
   });
 
   it('requires a session to post and refuses an unknown board', async () => {

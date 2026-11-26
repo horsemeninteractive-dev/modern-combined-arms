@@ -12,6 +12,48 @@ rendered in game from **Changelog** in the main-menu footer.
 When the version is bumped, rename it to the new `## [x.y.z STAGE] — date`
 heading: `tools/release.mjs` refuses to ship unless that heading exists.
 
+## [0.11.2 BETA] — 2026-11-26
+
+The record release. Outbreak pays into the same career the operations do, a
+survival run stops deflating a win rate it was never part of, and no number of
+posts can buy rank levels faster than the ledger allows.
+
+### Accounts and career
+
+- **Outbreak pays career XP.** A finished run writes one career ledger row
+  (`mode: 'outbreak'`, the run's own difficulty, outcome `defeat`) from
+  `outbreakCareerRecord`, so rank, level and the service record advance from the
+  same sums as every other operation. The award is `outbreakCareerXp`: 10 XP per
+  wave paid to 30, plus 1 XP per five infected paid to 250, scaled by the run's
+  difficulty (0.75 Easy, 1 Normal, 1.25 Hard, 1.5 Nightmare). Both caps mean
+  padding an easy wave cannot approach a deep Nightmare run, and a ten-wave
+  Normal run pays about one campaign victory rather than more.
+- **A run pays once.** The ledger key is derived by `outbreakCareerRef` from the
+  board and the result, not supplied by the client, so a retried post and an
+  identical replay land on the same row and pay once. A better result is a
+  different key, which is how an improved run pays for the improvement.
+- **`/matches` still refuses survival.** `outbreak` is not one of the modes a
+  match report may name; the run's own submission is its only way into the
+  ledger, and `recordMatch` refuses the mode outright.
+- **Sixty paid runs a day.** `MAX_CAREER_MATCHES_PER_DAY` was declared and
+  unused; it now caps the Outbreak runs that pay career XP, counted per account
+  per UTC day over the rows that actually paid (`xp > 0`). A run past the cap is
+  still recorded — its board row, matches and kills all stand — but pays 0 XP,
+  and the results card reads `· DAILY XP CAP` instead of the award. Thirty posts
+  an hour, forged or merely varied, cannot outrun 60 a day.
+- **Survival no longer spoils the win rate.** The defeat stays on the record, as
+  it should, but it is excluded from the win-rate denominator: `careerWinRate`
+  is now the one rule the career summary, the public profile and
+  `commanderLegacy` all use, and `outbreakMatches` carries the excluded count
+  through `CareerTotals` and `StatBlock`.
+- **Migration 0012 rebuilds the ledger.** `career_matches` gains the widened
+  `mode` and `difficulty` CHECKs the new row needs; SQLite cannot alter a CHECK
+  in place, so the table is rebuilt and its rows copied, and the existing index
+  is recreated. Applied and verified against a local D1 before release.
+- **`docs/OUTBREAK_5D_ACHIEVEMENTS.md`** audits the achievement surface and
+  designs four Outbreak commendations. Design only — no achievement code ships
+  in this release.
+
 ## [0.11.1 BETA] — 2026-11-25
 
 The audit release. Outbreak's director finally does what its difficulty table

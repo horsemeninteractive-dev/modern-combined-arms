@@ -2166,12 +2166,16 @@ export class App {
         unitsLost: result.unitsLost,
         nations: result.nations,
       })
-      .then(({ improved, board }) => {
+      .then(({ improved, board, award, capped }) => {
         if (!note) return;
         const boardName = `${outbreakMap(board.map).name} · ${mode === 'coop' ? 'Duo' : 'Solo'} · ${OUTBREAK_DIFFICULTIES[board.difficulty].name}`;
+        // A replay of a run already paid reports zero, and the card stays quiet
+        // rather than claiming an award that was not earned. A capped run is
+        // told plainly, so the missing XP does not look like a bug.
+        const xp = award > 0 ? ` · +${award} XP` : capped ? ' · DAILY XP CAP' : '';
         note.textContent = board.own
-          ? `${improved ? 'NEW BEST' : 'BEST KEPT'} · ${boardName} · rank ${board.own.rank}`
-          : `${boardName} · posted`;
+          ? `${improved ? 'NEW BEST' : 'BEST KEPT'} · ${boardName} · rank ${board.own.rank}${xp}`
+          : `${boardName} · posted${xp}`;
       })
       .catch((error: unknown) => {
         if (!note) return;

@@ -6,7 +6,7 @@
  * real semantics instead of a stub that always agrees with the caller. Tests use
  * it directly; it is not wired into the Worker.
  */
-import type { CareerMatchRecord, CareerTotals } from './career';
+import type { CareerMatchRecord, CareerMode, CareerTotals } from './career';
 import { EMPTY_CAREER, summariseCareer } from './career';
 import type {
   AccountRecord,
@@ -228,6 +228,16 @@ export class MemoryAccountStore implements AccountStore {
   async careerTotals(accountId: string): Promise<CareerTotals> {
     const rows = this.career.get(accountId);
     return rows && rows.length > 0 ? summariseCareer(rows) : { ...EMPTY_CAREER };
+  }
+
+  async careerPaidMatchesSince(
+    accountId: string,
+    since: number,
+    mode: CareerMode,
+  ): Promise<number> {
+    return (this.career.get(accountId) ?? []).filter(
+      (record) => record.mode === mode && record.xp > 0 && record.recordedAt >= since,
+    ).length;
   }
 
   async profile(accountId: string): Promise<PlayerProfileRecord | null> {

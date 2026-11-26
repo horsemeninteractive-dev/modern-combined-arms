@@ -8,7 +8,7 @@
  * than against a mock of HTTP.
  */
 
-import type { CareerMatchRecord, CareerTotals } from './career';
+import type { CareerMatchRecord, CareerMode, CareerTotals } from './career';
 import type { AvatarId } from './identity';
 import type { MatchRewardSummary, MpRewardStatus } from './matchCareer';
 import type {
@@ -250,6 +250,11 @@ export interface AccountStore {
   careerMatch(accountId: string, ref: string): Promise<CareerMatchRecord | null>;
   /** Aggregated from the ledger, never a separately maintained balance. */
   careerTotals(accountId: string): Promise<CareerTotals>;
+  /**
+   * Ledger rows of one mode that paid XP at or after `since`. Daily award caps
+   * count what was actually paid, so a zero-XP run never consumes a slot.
+   */
+  careerPaidMatchesSince(accountId: string, since: number, mode: CareerMode): Promise<number>;
 
   profile(accountId: string): Promise<PlayerProfileRecord | null>;
   profileByCallsignKey(callsignKey: string): Promise<PlayerProfileRecord | null>;

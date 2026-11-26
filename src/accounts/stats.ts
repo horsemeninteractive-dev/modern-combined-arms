@@ -35,6 +35,8 @@ export interface StatBlock {
   victories: number;
   defeats: number;
   draws: number;
+  /** Survival runs: defeats on the record, excluded from the win rate. */
+  outbreakMatches: number;
   /** 0..1, or null when nothing has been played. */
   winRate: number | null;
   playSeconds: number;
@@ -65,6 +67,7 @@ export function emptyStatBlock(): StatBlock {
     victories: 0,
     defeats: 0,
     draws: 0,
+    outbreakMatches: 0,
     winRate: null,
     playSeconds: 0,
     xp: 0,
@@ -84,6 +87,7 @@ function add(into: StatBlock, row: StatGroupRow): void {
   into.victories += row.victories;
   into.defeats += row.defeats;
   into.draws += row.draws;
+  if (row.mode === 'outbreak') into.outbreakMatches += row.matches;
   into.playSeconds += row.playSeconds;
   into.xp += row.xp;
   into.unitsDestroyed += row.unitsDestroyed;
@@ -99,8 +103,9 @@ function add(into: StatBlock, row: StatGroupRow): void {
 function finalise(block: StatBlock): StatBlock {
   // A draw is neither a win nor a loss, so the rate is wins over decided
   // matches and draws are reported separately; an undecided record is null
-  // rather than a misleading 0.
-  const decided = block.victories + block.defeats;
+  // rather than a misleading 0. A survival run is stored as a defeat but is not
+  // a decided match, so it is excluded from the denominator as well.
+  const decided = Math.max(0, block.victories + block.defeats - block.outbreakMatches);
   block.winRate = decided > 0 ? block.victories / decided : null;
   return block;
 }
@@ -111,6 +116,7 @@ export function buildCareerStats(rows: readonly StatGroupRow[]): CareerStats {
     campaign: emptyStatBlock(),
     skirmish: emptyStatBlock(),
     multiplayer: emptyStatBlock(),
+    outbreak: emptyStatBlock(),
   };
   const nations = new Map<string, StatBlock>();
   for (const row of rows) {
@@ -128,6 +134,7 @@ export function buildCareerStats(rows: readonly StatGroupRow[]): CareerStats {
       campaign: finalise(modes.campaign),
       skirmish: finalise(modes.skirmish),
       multiplayer: finalise(modes.multiplayer),
+      outbreak: finalise(modes.outbreak),
     },
     nations: [...nations.entries()]
       .map(([nation, block]) => ({ nation, ...finalise(block) }))

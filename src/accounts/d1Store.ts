@@ -10,10 +10,9 @@ import type {
   CareerMode,
   CareerOutcome,
   CareerProvenance,
-  CareerDifficulty,
   CareerTotals,
 } from './career';
-import { EMPTY_CAREER } from './career';
+import { EMPTY_CAREER, isCareerRecordDifficulty } from './career';
 import type {
   AccountRecord,
   AccountStore,
@@ -124,6 +123,7 @@ interface CareerTotalsRow {
   victories: number | null;
   defeats: number | null;
   draws: number | null;
+  outbreak_matches: number | null;
   kills: number | null;
   units_lost: number | null;
   play_seconds: number | null;
@@ -1105,6 +1105,21 @@ export class D1AccountStore implements AccountStore {
     return Number(row?.count ?? 0);
   }
 
+  async careerPaidMatchesSince(
+    accountId: string,
+    since: number,
+    mode: CareerMode,
+  ): Promise<number> {
+    const row = await this.db
+      .prepare(
+        `SELECT COUNT(*) AS count FROM career_matches
+          WHERE account_id = ? AND mode = ? AND xp > 0 AND recorded_at >= ?`,
+      )
+      .bind(accountId, mode, since)
+      .first<{ count: number | null }>();
+    return Number(row?.count ?? 0);
+  }
+
   async careerTotals(accountId: string): Promise<CareerTotals> {
     const row = await this.db
       .prepare(
@@ -1113,6 +1128,7 @@ export class D1AccountStore implements AccountStore {
                 COALESCE(SUM(CASE WHEN outcome = 'victory' THEN 1 ELSE 0 END), 0) AS victories,
                 COALESCE(SUM(CASE WHEN outcome = 'defeat' THEN 1 ELSE 0 END), 0) AS defeats,
                 COALESCE(SUM(CASE WHEN outcome = 'draw' THEN 1 ELSE 0 END), 0) AS draws,
+                COALESCE(SUM(CASE WHEN mode = 'outbreak' THEN 1 ELSE 0 END), 0) AS outbreak_matches,
                 COALESCE(SUM(kills), 0) AS kills,
                 COALESCE(SUM(units_lost), 0) AS units_lost,
                 COALESCE(SUM(duration_seconds), 0) AS play_seconds
@@ -1127,6 +1143,7 @@ export class D1AccountStore implements AccountStore {
       victories: Number(row.victories ?? 0),
       defeats: Number(row.defeats ?? 0),
       draws: Number(row.draws ?? 0),
+      outbreakMatches: Number(row.outbreak_matches ?? 0),
       kills: Number(row.kills ?? 0),
       unitsLost: Number(row.units_lost ?? 0),
       playSeconds: Number(row.play_seconds ?? 0),
@@ -1166,11 +1183,13 @@ function toIdentity(row: IdentityRow): IdentityRecord {
 }
 
 function toCareerMatch(row: CareerRow): CareerMatchRecord {
-  const mode: CareerMode = row.mode === 'campaign' || row.mode === 'multiplayer' ? row.mode : 'skirmish';
+  const mode: CareerMode =
+    row.mode === 'campaign' || row.mode === 'multiplayer' || row.mode === 'outbreak'
+      ? row.mode
+      : 'skirmish';
   const outcome: CareerOutcome =
     row.outcome === 'victory' || row.outcome === 'draw' ? row.outcome : 'defeat';
-  const difficulty: CareerDifficulty =
-    row.difficulty === 'recruit' || row.difficulty === 'elite' ? row.difficulty : 'veteran';
+  const difficulty = isCareerRecordDifficulty(row.difficulty) ? row.difficulty : 'veteran';
   const provenance: CareerProvenance =
     row.provenance === 'guest' || row.provenance === 'authoritative' ? row.provenance : 'local';
   return {
@@ -1244,7 +1263,10 @@ function parseBreakdown(raw: string | null): MatchRewardSummary['breakdown'] {
 }
 
 function toStatRow(row: StatRow): StatGroupRow {
-  const mode: CareerMode = row.mode === 'campaign' || row.mode === 'multiplayer' ? row.mode : 'skirmish';
+  const mode: CareerMode =
+    row.mode === 'campaign' || row.mode === 'multiplayer' || row.mode === 'outbreak'
+      ? row.mode
+      : 'skirmish';
   return {
     mode,
     nation: row.nation,

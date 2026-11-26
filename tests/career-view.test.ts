@@ -1,6 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { careerRecord, careerViewFrom, summariseCareer } from '../src/accounts/career';
+import {
+  careerRecord,
+  careerViewFrom,
+  outbreakCareerRecord,
+  summariseCareer,
+} from '../src/accounts/career';
 import type { CareerSnapshot } from '../src/accounts/careerService';
 import {
   careerHistoryMarkup,
@@ -30,6 +35,28 @@ const snapshot: CareerSnapshot = {
   source: 'account',
 };
 
+/** A finished survival run: a defeat on the record, never a decided match. */
+const survival = outbreakCareerRecord(
+  {
+    mode: 'solo',
+    map: 'outbreak-relay-basin',
+    difficulty: 'normal',
+    wave: 12,
+    wavesCompleted: 11,
+    zombiesKilled: 410,
+    durationSeconds: 2_210,
+    structuresLost: 2,
+    unitsLost: 14,
+    nations: ['uk'],
+  },
+  { now: Date.UTC(2026, 10, 5) },
+);
+
+const withSurvival: CareerSnapshot = {
+  view: careerViewFrom(summariseCareer([record, survival]), [record, survival]),
+  source: 'account',
+};
+
 describe('career summary', () => {
   it('shows the totals without restating the standing above them', () => {
     const html = careerSummaryMarkup(snapshot);
@@ -40,6 +67,13 @@ describe('career summary', () => {
     // Rank, level and XP progress belong to the account page head, once.
     expect(html).not.toContain('CAREER XP');
     expect(html).not.toContain('aria-valuenow');
+  });
+
+  it('keeps survival runs out of the win-rate denominator', () => {
+    const html = careerSummaryMarkup(withSurvival);
+    expect(html).toContain('<span>OPERATIONS</span><b>2</b>');
+    expect(html).toContain('100%');
+    expect(html).not.toContain('50%');
   });
 
   it('labels a guest career and its transfer route', () => {

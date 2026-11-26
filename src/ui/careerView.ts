@@ -5,7 +5,7 @@
  * end-of-match card all read the same career the same way. Nothing here decides
  * XP or rank: it renders the totals and standing it is handed.
  */
-import type { CareerMode, CareerOutcome } from '../accounts/career';
+import { careerWinRate, type CareerMode, type CareerOutcome } from '../accounts/career';
 import type { CareerSnapshot } from '../accounts/careerService';
 import type { CareerStats, StatBlock } from '../accounts/stats';
 import type {
@@ -30,6 +30,7 @@ const MODE_LABEL: Record<CareerMode, string> = {
   campaign: 'Campaign',
   skirmish: 'Skirmish',
   multiplayer: 'Multiplayer',
+  outbreak: 'Outbreak',
 };
 
 const OUTCOME_LABEL: Record<CareerOutcome, string> = {
@@ -83,7 +84,10 @@ export function careerSummaryMarkup(snapshot: CareerSnapshot | null): string {
   if (!snapshot) return '<p class="account-note">Reading your service record…</p>';
   const view = snapshot.view;
   const totals = view.totals;
-  const winRate = totals.matches > 0 ? Math.round((totals.victories / totals.matches) * 100) : 0;
+  // Survival runs count as operations but not as decided matches, so they never
+  // move the rate; `careerWinRate` is the one definition of that rule.
+  const rate = careerWinRate(totals);
+  const winRate = rate === null ? 0 : Math.round(rate * 100);
   const sourceText =
     snapshot.source === 'guest'
       ? 'Guest career on this device. Sign in and import it to keep it across devices.'
@@ -261,7 +265,7 @@ export function careerStatsMarkup(stats: CareerStats | null | undefined): string
   if (!stats) {
     return '<p class="account-note">A detailed breakdown is stored with an MCA account; a guest record keeps totals only.</p>';
   }
-  const modes = (['multiplayer', 'skirmish', 'campaign'] as CareerMode[])
+  const modes = (['multiplayer', 'skirmish', 'campaign', 'outbreak'] as CareerMode[])
     .map((mode) => {
       const row = stats.modes[mode];
       const body =

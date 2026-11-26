@@ -17,6 +17,8 @@
  */
 import {
   careerRecord,
+  isCareerDifficulty,
+  isCareerMode,
   parseCareerMatch,
   summariseCareer,
   MAX_GUEST_IMPORT_MATCHES,
@@ -171,14 +173,22 @@ export function localCareerMatches(storage: CareerStorage, limit = 20): CareerMa
  * that best reflect the career.
  */
 export function guestCareerPayload(storage: CareerStorage): CareerMatchInput[] {
-  return readLocalCareer(storage).matches.slice(0, MAX_GUEST_IMPORT_MATCHES).map((match) => ({
-    ref: match.ref,
-    mode: match.mode,
-    outcome: match.outcome,
-    difficulty: match.difficulty,
-    durationSeconds: match.durationSeconds,
-    nation: match.nation,
-    kills: match.kills,
-    unitsLost: match.unitsLost,
-  }));
+  const payload: CareerMatchInput[] = [];
+  for (const match of readLocalCareer(storage).matches.slice(0, MAX_GUEST_IMPORT_MATCHES)) {
+    // Every local row was validated on the way in, so these checks never drop a
+    // real match; they exist because the ledger type also admits a survival run,
+    // which is never submitted through the match endpoint.
+    if (!isCareerMode(match.mode) || !isCareerDifficulty(match.difficulty)) continue;
+    payload.push({
+      ref: match.ref,
+      mode: match.mode,
+      outcome: match.outcome,
+      difficulty: match.difficulty,
+      durationSeconds: match.durationSeconds,
+      nation: match.nation,
+      kills: match.kills,
+      unitsLost: match.unitsLost,
+    });
+  }
+  return payload;
 }
